@@ -33,7 +33,9 @@ import org.junit.jupiter.api.Test;
  *   <li>the boundary refuses a context, a credential and an endpoint the run did not make, each proven by a plant in every run;
  *   <li>a cluster the scope did not mark is neither reused nor deleted;
  *   <li>no fault goes on without the boundary, and every fault comes off on every way out;
- *   <li>every experiment keeps the step shape, and E01 measures what its register row names.
+ *   <li>every experiment keeps the step shape, and E01 measures what its register row names;
+ *   <li>E51 ({@code P16-TSK-016}) slows the database through the proxy and measures shedding, the correctness gauges and the recovery its
+ *       row names, and could not run when nothing was shed.
  * </ol>
  *
  * <p>Hermetic: it reads files only.
@@ -399,6 +401,33 @@ class ExperimentsRehearsalContractTest {
         assertThat(function(harness, "census")).as("the census counts E01's payout").contains("+ ${EXPERIMENTS_PAYOUTS:-0} ))");
         assertThat(function("e01_payout")).as("the merchant's key on stdin, never a command line").contains("IFS= read -r bearer")
                 .contains("printf '%s\\n' \"$E01_MERCHANT\" | kube -n finapp-edge exec -i np-edge");
+    }
+
+    @Test
+    @DisplayName("E51 slows the database through the proxy, sheds, keeps every correctness gauge readable, stops shedding after, and could not run when nothing was shed (P16-TSK-016)")
+    void e51MeasuresWhatItsRowNames() {
+        String steady = function("E51_steady");
+        assertThat(steady).as("the gauges read and the workload retrying by its keys before the fault, the meter read or the run cannot")
+                .contains("/- alert: CorrectnessUnverifiable$/").contains("a correctness gauge unreadable before the fault")
+                .contains("start_workload e51 retry").contains("[ -n \"$E51_SHED_BEFORE\" ] || cannot");
+        assertThat(function("E51_fault")).as("a latency toxic on the application's database hop, through the registry and its guard")
+                .contains("experiments_fault_on toxic postgres e51-latency latency \"latency=$E51_LATENCY_MS\"");
+        String observe = function("E51_observe");
+        assertThat(observe).as("a page, an unreadable gauge or no replica for 60 s stops it")
+                .contains("EXP_STOPPED=\"a correctness page during the experiment").contains("EXP_STOPPED=\"a correctness gauge no instance could read")
+                .contains("EXP_STOPPED=\"no replica ready for 60 s");
+        assertThat(observe).as("a fault that shed nothing proves nothing: could not run")
+                .contains("[ \"$shed\" -ge 1 ] || cannot \"E51: the slowed database shed nothing");
+        assertThat(function("e51_shed")).as("the fleet's shed answers, every outcome but admitted")
+                .contains("sum(finapp_shedding_requests_total{outcome!=\"admitted\"})");
+        assertThat(function("e51_unverifiable")).as("an unanswered Prometheus is not a readable gauge").contains("echo UNREADABLE")
+                .contains("*'\"result\":[]'*");
+        String recover = function("E51_recover");
+        assertThat(recover).as("the shedding stopped within its bound, every request resolved by its key, the shed attempts counted")
+                .contains("[ $((now - last_change)) -lt 60 ] || break").contains("still shedding $E51_RECOVERY_BOUND s after")
+                .contains("[ \"$(workload_unresolved e51)\" = 0 ] || fail").contains("assert_flows_ran e51")
+                .contains("answered 503: .*api\\.Overloaded");
+        assertThat(function(harness, "census")).as("E51's workload is the census's like any other").contains("expected_transfers=");
     }
 
     @Test

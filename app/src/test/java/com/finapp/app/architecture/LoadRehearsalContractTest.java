@@ -43,7 +43,9 @@ import org.junit.jupiter.api.Test;
  *       kind deployment can give one;
  *   <li>every run cuts its measures by stage in the host's seconds: the client's per operation, the pods' cgroups, the JVMs' and the
  *       pools' sums, the database's time;
- *   <li>the slow-statement probe drops the relay's index on the run's own server and puts it back as its migration defines it.
+ *   <li>the slow-statement probe drops the relay's index on the run's own server and puts it back as its migration defines it;
+ *   <li>the spike profile ({@code P16-TSK-016}) is ten times the peak three times, its shed answers honoured and counted, its shed-once
+ *       probes proven against the database to have left no claim and no transfer, and a spike that shed nothing is not a pass.
  * </ol>
  *
  * <p>Hermetic: it reads files only.
@@ -516,6 +518,54 @@ class LoadRehearsalContractTest {
         Matcher end = Pattern.compile("(?m)^}$").matcher(text);
         assertThat(end.find(start.end())).as("%s ends", name).isTrue();
         return text.substring(start.end(), end.start());
+    }
+
+    @Test
+    @DisplayName("the spike sheds before any claim and proves it: ten times the peak three times, Retry-After honoured, shed-once keys read against the database (P16-TSK-016)")
+    void theSpikeShedsBeforeTheClaimAndProvesItLeftNothing() {
+        String spike = read("infra/scripts/kind-rehearsal/load/spike.json");
+        Map<String, String> demonstration = operations();
+        Map<String, String> staged = new LinkedHashMap<>();
+        Matcher operation = OPERATION.matcher(spike);
+        while (operation.find()) {
+            staged.put(operation.group(1), operation.group(0));
+        }
+        assertThat(staged.keySet()).as("the spike drives what the demonstration drives").isEqualTo(demonstration.keySet());
+        for (Map.Entry<String, String> entry : staged.entrySet()) {
+            if (entry.getValue().contains("\"generator\": \"k6\"")) {
+                assertThat(field(entry.getValue(), "preAllocatedVUs")).as("spike: %s's users all allocated before the load", entry.getKey())
+                        .isEqualTo(field(entry.getValue(), "maxVUs"));
+                assertThat(field(entry.getValue(), "rate")).as("spike: %s at the target's peak, as the sustained profile", entry.getKey())
+                        .isEqualTo(field(read("infra/scripts/kind-rehearsal/load/sustained.json").lines()
+                                .filter(line -> line.contains("{\"name\": \"" + entry.getKey() + "\",")).findFirst().orElseThrow(), "rate"));
+            }
+        }
+        assertThat(spike).as("PHASE_16_PLAN.md section 5.1: ten times the peak for 10 s, three spikes, the peak between")
+                .contains("\"stages\": [[120, 1.0], [10, 10.0], [170, 1.0], [10, 10.0], [170, 1.0], [10, 10.0], [170, 1.0]],")
+                .contains("  \"retryShare\": 0.05,").contains("  \"shedOnceShare\": 0.05,").contains("  \"shedExpected\": true,")
+                .as("ten times the peak runs past the break: an iteration the generator cannot start there is recorded").contains("  \"stress\": true,");
+        assertThat(scenarios).as("a shed answer is the contract's: 503 api.Overloaded, counted per operation, its Retry-After honoured")
+                .contains("return response.status === 503 && json(response, 'code') === 'api.Overloaded';")
+                .contains("shed: new Counter(`shed_${name}`),")
+                .contains("const after = response && shedAnswer(response) ? Number(response.headers['Retry-After']) : NaN;")
+                .contains("pause(since, response);\n        response = send(op, req, primary);");
+        assertThat(scenarios).as("a shed-once probe is never a retried key, is sent once, and a shed one is logged and never retried")
+                .contains("it % ONCE_EVERY === ONCE_EVERY - 2 && it % RETRY_EVERY !== RETRY_EVERY - 1")
+                .contains("console.log(`SHED-ONCE ${op} ${req[3].headers['Idempotency-Key']} ${body.reference || '-'}`);")
+                .contains("return [SHED];").contains("if (answers.includes(SHED)) {\n        return SHED;");
+        String shed = function("load_shed");
+        assertThat(shed).as("the shed-once keys read from every generator's log")
+                .contains("sed -n 's/.*msg=\"SHED-ONCE \\([a-z]*\\) \\([A-Za-z0-9._:-]*\\) \\([A-Za-z0-9._:-]*\\)\".*/\\1\\t\\2\\t\\3/p'");
+        assertThat(shed).as("no claim under their keys, no transfer under their references")
+                .contains("SELECT count(*) FROM platform.idempotency_record WHERE idempotency_key IN (")
+                .contains("SELECT count(*) FROM transfers.transfer WHERE reference IN (")
+                .contains("[ \"$claims\" = 0 ] || fail").contains("[ \"$rows\" = 0 ] || fail");
+        assertThat(shed).as("a profile that expects shedding fails when nothing was shed once")
+                .contains("if [ \"$(load_profile_value shedExpected)\" = true ]; then").contains("[ \"$once\" -ge 1 ] || fail");
+        assertThat(shed).as("the shed rate per second and each spike's recovery recorded, never a verdict")
+                .contains("> \"$LOAD_ART/k6/shed.tsv\"").contains("> \"$LOAD_ART/k6/shed-recovery.tsv\"").contains("if (factor[i] >= 2)");
+        assertThat(load).as("the shed census runs after the judge and before the census").contains(
+                "step load-judge\n    load_judge\n    step load-shed\n    load_shed\n    step load-census\n");
     }
 
     @Test

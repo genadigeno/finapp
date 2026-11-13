@@ -38,6 +38,8 @@ class ApiVersionConfiguration implements WebMvcConfigurer {
     @NonNull private final SessionAuthenticationInterceptor sessionAuthentication;
     @NonNull private final com.finapp.app.merchant.MerchantKeyAuthenticationInterceptor merchantKey;
     @NonNull private final com.finapp.app.abuse.SourceLimitInterceptor sourceLimit;
+    @NonNull private final com.finapp.app.shedding.ShedAtTheDoor shedAtTheDoor;
+    @NonNull private final com.finapp.app.shedding.ShedOnTheDeadline shedOnTheDeadline;
 
     /**
      * Only handlers in this package tree are versioned.
@@ -72,6 +74,11 @@ class ApiVersionConfiguration implements WebMvcConfigurer {
      */
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        // FIRST, deliberately (`P16-TSK-016`, ADR-0137): the shedding door decides before anything of the request borrows a writer
+        // connection - the session's and the key's lookups below each do, and the per-source count - so a slow database queues at
+        // most the door's threshold of requests behind its pool. It only refuses: what it admits meets every check below unchanged.
+        registry.addInterceptor(shedAtTheDoor);
+
         registry.addInterceptor(new IdempotencyKeyInterceptor());
 
         // Ordered AFTER the idempotency check, deliberately. A request malformed for its endpoint
@@ -89,6 +96,10 @@ class ApiVersionConfiguration implements WebMvcConfigurer {
         // them: the decision lives in the declaration, and a path list here would be a second
         // copy of it that goes stale (the reasoning above, verbatim).
         registry.addInterceptor(merchantKey);
+
+        // After both authentications and before the count (`P16-TSK-016`): a command whose lookups above used its deadline is shed
+        // before its claim, and before it spends a per-source count.
+        registry.addInterceptor(shedOnTheDeadline);
 
         // Last, deliberately (`P15-TSK-022`): every check above is free of a database write on the routes it refuses, and the
         // per-source count is not, so a request one of them refuses never costs a row. Registered for every path for the same

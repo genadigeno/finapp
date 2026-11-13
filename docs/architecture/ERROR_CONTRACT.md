@@ -73,6 +73,7 @@ Failures of the *protocol*, raised before any business module is reached.
 | `api.TooManyRequests` | 429 | A door's per-source limit was reached; retry after the `Retry-After` it carries. |
 | `api.InternalError` | 500 | Something failed that the client cannot act on. |
 | `api.TemporarilyUnavailable` | 503 | The door could not count the request, so it did not serve it; try again shortly. |
+| `api.Overloaded` | 503 | The instance shed the request before serving it: nothing was done, no idempotency claim exists, and the same request under the same key, after the `Retry-After` it carries, is a first attempt. |
 
 ### `deadletter` — `DeadLetterErrorCode` *(`P15-TSK-028`)*
 
@@ -1750,6 +1751,15 @@ same for a taken identifier and a free one, because no identifier has been read,
 nothing else (`INV-IDN-07`). When the count cannot be taken the door answers
 `api.TemporarilyUnavailable` (503) and does not serve the request: it never fails open, and it carries no `Retry-After` because nothing
 knows one. A signed provider callback is not counted (`THREAT_MODEL.md` T1).
+
+**A request the instance cannot finish in time is shed before its handler** (`P16-TSK-016`, ADR-0137). A door ahead of every other
+check answers `api.Overloaded` (503) while the instance's writer pool already has its threshold of threads waiting, or, for a command
+(every method but `GET`, `HEAD`, `OPTIONS` and `TRACE`), while its command permits are all held; a second check after authentication
+sheds a command whose lookups left it less than one connection's wait of its deadline. Either way the handler was never entered, so
+nothing happened: no idempotency claim, no row, no posting, and the client's retry under the same key is a first attempt. The answer
+carries `Retry-After` in whole seconds, at least 1 and jittered so that clients shed together do not return together, and the same
+body for every caller and route: it says nothing about why, how busy, or the request. It is decided before authentication, and it
+only ever refuses. The operator surface and the provider callbacks are not shed (`API_CONVENTIONS.md` §5a).
 
 ### Correlation at the boundary
 

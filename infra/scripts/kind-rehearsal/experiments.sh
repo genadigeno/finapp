@@ -45,6 +45,13 @@
 # is taken over and completed once by another; every failed answer the edge gave was the killed replica's; no second replica unready
 # while it was replaced (its stop condition); the census green.
 #
+# E51 (P16-TSK-016, ADR-0137; OPERATIONS_RUNBOOK.md section 11.52; at three replicas): the database slowed by a latency toxic on the
+# application's database hop while the workload runs and retries by its keys. Requests are shed before their claims (the fleet's
+# finapp_shedding_requests_total rising, the workload's shed answers counted); no correctness page fires and every correctness gauge stays
+# readable (CorrectnessUnverifiable's expression, evaluated at once, empty) through the fault; once the toxic is removed the fleet stops
+# shedding within its bound, and every request the workload sent resolves by its key, one effect each, the census green. A fault that
+# sheds nothing proves nothing: E51 then could not run.
+#
 # THE PROBES (REHEARSAL_PROBE), each a deliberate break that must turn the run red:
 #   guard-off          the refusals answer "pass" without reading anything: every plant of experiments_boundary goes unrefused;
 #   crash-with-faults  every kind of fault put on, then an unguarded failure: the exit trap must leave none on (read on a kept cluster);
@@ -1054,4 +1061,125 @@ E01_recover() {
     [ "$failed_requests" -le "$failed_inside" ] \
         || fail "E01: $failed_requests of the workload's requests failed where the edge failed $failed_inside in the killed replica's window: a request failed that was not on it"
     pass "E01: the failed requests were those on the killed replica - its held payout and $failed_requests of the workload's, each a failure at the edge in its window, none outside it; $served answers served; none unresolved"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E51: the database slowed under the workload - shedding before the claim, the monitors readable, the shedding stopping after
+# (P16-TSK-016, ADR-0137; OPERATIONS_RUNBOOK.md section 11.52), at three replicas.
+# ---------------------------------------------------------------------------------------------------
+
+# The latency the toxic adds to every answer from the database, in milliseconds: enough for the schedules' and the workload's
+# transactions to hold the seven connections and queue past the shedding door's threshold.
+E51_LATENCY_MS=${REHEARSAL_E51_LATENCY_MS:-250}
+# How long the toxic stays on, and how long the fleet has to stop shedding once it is gone.
+E51_HOLD_SECONDS=300
+E51_RECOVERY_BOUND=600
+
+# e51_shed: the fleet's shed answers so far (every outcome of finapp_shedding_requests_total but admitted, summed), or nothing when the
+# cluster's Prometheus did not answer.
+e51_shed() {
+    experiments_prometheus "/api/v1/query?query=$(urlencode 'sum(finapp_shedding_requests_total{outcome!="admitted"})')" 2>/dev/null \
+        | sed -n 's/.*"value":\[[^,]*,"\([0-9.e+]*\)"\].*/\1/p' | awk '{printf "%d\n", $1}'
+}
+
+# e51_unverifiable: empty when every correctness gauge is readable on some instance (CorrectnessUnverifiable's expression, evaluated at
+# once, as the load sampler does); UNREADABLE when Prometheus did not answer; otherwise the gauges no instance can read.
+e51_unverifiable() {
+    answer=$(experiments_prometheus "/api/v1/query?query=$(urlencode "$E51_UNVERIFIABLE")" 2>/dev/null || true)
+    case $answer in *'"status":"success"'*) ;; *) echo UNREADABLE; return 0 ;; esac
+    case $answer in *'"result":[]'*) ;; *) printf '%s' "$answer" | grep -o '"__name__":"[^"]*"' | sort -u | tr '\n' ' ' ;; esac
+}
+
+E51_steady() {
+    E51_UNVERIFIABLE=$(awk '/- alert: CorrectnessUnverifiable$/ {found = 1; next} found && /^ *expr: / {sub(/^ *expr: /, ""); print; exit}' \
+        "$ROOT/infra/prometheus/rules/correctness.yml")
+    [ -n "$E51_UNVERIFIABLE" ] || cannot "E51: CorrectnessUnverifiable's expression could not be read from correctness.yml"
+    unverifiable=$(e51_unverifiable)
+    [ -z "$unverifiable" ] || fail "E51 steady state: a correctness gauge unreadable before the fault: $unverifiable"
+    start_workload e51 retry
+    sleep 8
+    experiments_sampler "$EXP_DIR" &
+    E51_SAMPLER=$!
+    BACKGROUND="$BACKGROUND $E51_SAMPLER"
+    E51_SHED_BEFORE=$(e51_shed)
+    [ -n "$E51_SHED_BEFORE" ] || cannot "E51: the fleet's shedding meter could not be read before the fault"
+    experiments_record "shed before" "$E51_SHED_BEFORE requests shed by the fleet before the fault; every correctness gauge readable"
+}
+
+E51_fault() {
+    experiments_fault_on toxic postgres e51-latency latency "latency=$E51_LATENCY_MS"
+    E51_FAULT_AT=$(date +%s)
+    experiments_record fault "a latency toxic of $E51_LATENCY_MS ms on every answer from the database, on the application's database hop, at $(date -u -d "@$E51_FAULT_AT" +%H:%M:%SZ)"
+    log "E51: the database slowed by $E51_LATENCY_MS ms an answer, the workload running"
+}
+
+E51_observe() {
+    deadline=$((E51_FAULT_AT + E51_HOLD_SECONDS))
+    E51_SHED_DURING=$E51_SHED_BEFORE
+    zero_since=""
+    : > "$EXP_DIR/observed.tsv"
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        firing=$(experiments_pages_firing)
+        if [ -n "$firing" ]; then
+            EXP_STOPPED="a correctness page during the experiment: $firing"
+            log "E51 STOP: $EXP_STOPPED"
+            return 0
+        fi
+        unverifiable=$(e51_unverifiable)
+        if [ -n "$unverifiable" ]; then
+            EXP_STOPPED="a correctness gauge no instance could read while the database was slow: $unverifiable"
+            log "E51 STOP: $EXP_STOPPED"
+            return 0
+        fi
+        ready=$(kube -n finapp get deployment finapp-app -o jsonpath='{.status.readyReplicas}' 2>/dev/null)
+        if [ "${ready:-0}" = 0 ]; then
+            [ -n "$zero_since" ] || zero_since=$(date +%s)
+            if [ $(( $(date +%s) - zero_since )) -ge 60 ]; then
+                EXP_STOPPED="no replica ready for 60 s while the database was slow"
+                log "E51 STOP: $EXP_STOPPED"
+                return 0
+            fi
+        else
+            zero_since=""
+        fi
+        shed=$(e51_shed)
+        [ -z "$shed" ] || E51_SHED_DURING=$shed
+        printf '%s\t%s\t%s\tnone\n' "$(date -u +%H:%M:%S)" "${ready:-0}" "${shed:-unread}" >> "$EXP_DIR/observed.tsv"
+        sleep 15
+    done
+    shed=$((E51_SHED_DURING - E51_SHED_BEFORE))
+    [ "$shed" -ge 1 ] || cannot "E51: the slowed database shed nothing in $E51_HOLD_SECONDS s, so shedding before the claim was not tried (REHEARSAL_E51_LATENCY_MS raises the toxic): see experiments/E51/observed.tsv"
+    experiments_record "shed during" "$shed requests shed by the fleet while the database was slow; no correctness page; every correctness gauge readable at every look (every 15 s)"
+    pass "E51: the slowed database made the fleet shed $shed requests, no correctness page fired and every correctness gauge stayed readable"
+}
+
+E51_recover() {
+    removed=$(date +%s)
+    # The fleet stops shedding: its shed count unchanged for 60 s, within the bound; the seconds from the toxic's removal to its last change.
+    last_count=$(e51_shed)
+    last_change=$removed
+    while :; do
+        sleep 5
+        now=$(date +%s)
+        count=$(e51_shed)
+        if [ -n "$count" ] && [ "$count" != "$last_count" ]; then
+            last_count=$count
+            last_change=$now
+        fi
+        [ $((now - last_change)) -lt 60 ] || break
+        if [ $((now - removed)) -ge "$E51_RECOVERY_BOUND" ]; then
+            EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }still shedding $E51_RECOVERY_BOUND s after the database's latency was removed"
+            break
+        fi
+    done
+    experiments_record recovered "the last shed $((last_change - removed)) s after the toxic was removed (read every 5 s; none for the 60 s after it)"
+    ready_three 400 || fail "E51: the fleet did not return to three ready replicas"
+    touch "$EXP_DIR/sampler-stop"
+    wait "$E51_SAMPLER" 2>/dev/null || true
+    stop_workload e51
+    [ "$(workload_unresolved e51)" = 0 ] || fail "E51: $(workload_unresolved e51) requests stayed unresolved by their keys: see workload-e51.tsv"
+    assert_flows_ran e51
+    shed_answers=$(grep -c 'ATTEMPT-FAILED .*answered 503: .*api\.Overloaded' "$CLIENT/workload-e51.tsv" || true)
+    experiments_record workload "$(cat "$CLIENT/workload-e51.summary"); $shed_answers of its attempts answered 503 api.Overloaded and retried by their keys"
+    pass "E51: the fleet stopped shedding $((last_change - removed)) s after the database recovered; every request resolved by its key, $shed_answers shed attempts among them"
 }

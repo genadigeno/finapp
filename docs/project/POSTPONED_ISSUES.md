@@ -621,3 +621,10 @@ commit and the date; do not delete the entry.
     ran on commit `a6fee3a1`: E01 `PASSED` there, and the plants and the probes were seen there (`MUTATION_TESTING.md` §2). The later
     commits - the standby's phrase delivered by `secretKeyRef`, the replication role's SQL by placeholder, the names the secret
     discoverer reads - ran only in containers and through `ExperimentsRehearsalContractTest`.
+  - `P16-TSK-016` (load shedding and the checkout's create, `OPERATIONS_RUNBOOK.md` §11.52, which carries their record): **E50**, the
+    spike profile at three replicas (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=spike`): the shed-once keys leaving no claim and no
+    transfer, the shed rate and each spike's recovery; **E51**, the database slowed by a latency toxic at three replicas
+    (`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E51`): shedding, every correctness gauge readable, the shedding stopping after;
+    **E52**, the stress profile at three replicas on the task's tree (`REHEARSAL_LOAD_PROFILE=stress`): every sample read past E30's
+    stop and no checkout abandoned. Nothing of the task ran on a cluster; its hermetic tests and probes, and the pinned k6's `inspect`
+    of the spike profile in a container, are what ran.

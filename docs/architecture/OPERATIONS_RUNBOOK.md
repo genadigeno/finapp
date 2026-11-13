@@ -3243,6 +3243,7 @@ latest; the run, as its record names it.
 | §11.43 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `7231d298` | `§11.43's tenth run and its probes` | — |
 | §11.45 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `89b8fc60`, `f021383f` | `§11.45's record: E30 at three replicas and the isolation run` | — |
 | §11.46 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `a6fee3a1` | `§11.46's record: E01's run and the probes` | — |
+| §11.52 | `platform`, `checkout` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -5089,6 +5090,87 @@ words that discoverer reads as credentials, and the boundary's cadence is worded
 on the same pinned image (a base backup at `verify-full` through the slot, streaming, `FIRST 1` synchronous, a commit held while the
 standby was stopped); on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks and tests"), it is owed under
 `POSTPONED_ISSUES.md` PI-025 with E01's run on the final bytes.
+
+### 11.52 A shedding platform: reading it, changing its bounds, and the drills that measure it (`P16-TSK-016`, ADR-0137)
+
+**What it is.** Each replica refuses, before the handler, a request it cannot serve in time, with `503 api.Overloaded` and a jittered
+`Retry-After` (`API_CONVENTIONS.md` §5a). Before the handler means before any idempotency claim: **a shed request did nothing**, so
+there is nothing to reconcile, reverse or look for, and the client's retry under the same key is a first attempt. Three rules, per
+replica: the writer pool's queue (`finapp.shedding.pool-waiters` threads already waiting: every public request shed), the command
+permits (`finapp.shedding.command-permits` commands in flight: the next command shed), and the deadline (a command whose session or
+key lookups left it less than one pool wait of `finapp.shedding.deadline`). The operator surface and the provider callbacks are never
+shed, so this section's steps work on a shedding platform.
+
+**The signals.**
+- `finapp_shedding_requests_total{type,outcome}` per replica: `type` is `command` or `read`, `outcome` is `admitted`, `pool`, `permits`
+  or `deadline`. The shed share of a class is `(pool + permits + deadline) / (admitted + pool + permits)`: the door counts each
+  request once, and the deadline counts the commands the door had admitted.
+- A shed is a `5xx` on its route, so sustained shedding spends the route's availability objective and the burn alerts page or ticket
+  (`SLOS.md` §2, §11.8): no alert of its own.
+- `hikaricp_connections_pending` and `hikaricp_connections_active` (the queue the door reads), `tomcat_threads_busy_threads`, and the
+  edge's access lines (`DownstreamStatus` 503 with `OriginStatus` 503: the replica's answer, not the edge's).
+
+**Reading a shedding platform** (the first procedure). Take the outcome that dominates, per replica, over the last 15 minutes:
+
+```
+sum by (instance, type, outcome) (increase(finapp_shedding_requests_total{outcome!="admitted"}[15m]))
+```
+
+1. **`pool` on every replica**: the database is slow or a statement is. Read §11.45's first limit in its order from the database's
+   side (`pg_stat_activity` by wait event, `pg_stat_statements` by total time). The fix is the statement or the database, never the
+   threshold: raising `pool-waiters` moves the queue into the pool, where the correctness monitors and the schedules wait behind it
+   (the source-join census starved there in E30).
+2. **`pool` on one replica**: that replica's connections are held (a long report, a stuck transaction). §11.8's "Instance down"
+   reasoning applies; restart that instance only under break-glass (§11.25) if it does not recover.
+3. **`permits`**: more commands at once than a replica holds. If the autoscaler is at its ceiling, that is capacity
+   (`CAPACITY_MODEL.md` §5); if not, scaling is behind the burst. Raising the permits toward the pool's size lets commands alone hold
+   every connection.
+4. **`deadline`**: the lookups before the command (the session's, the merchant key's) waited most of a pool wait: read as (1).
+5. **Every outcome `admitted` and clients still answered `503`**: not the door. `api.Overloaded` is the door's alone; another `503`
+   is its own code (`api.TemporarilyUnavailable`, a provider's), and an edge `503` with no origin status is the edge's.
+
+What not to do: never resend a shed client's request on its behalf (the client holds the key and the retry is its), never turn the
+door off to make the errors stop (no switch exists, by design), and never look for an effect of a shed request: none exists.
+
+**Changing a bound** (the second procedure). A literal in the environment's overlay (`FINAPP_SHEDDING_POOL_WAITERS`,
+`FINAPP_SHEDDING_COMMAND_PERMITS`, `FINAPP_SHEDDING_DEADLINE`, `FINAPP_SHEDDING_RETRY_AFTER`, `FINAPP_SHEDDING_RETRY_AFTER_SPREAD`;
+`CONFIGURATION_REGISTER.md`) rolled through the overlay (§11's first rule). A replica refuses to start when the command permits are
+not fewer than its pool's connections or the deadline does not exceed one pool wait (`LoadShedding`), so a rollout with such a value
+stops at its first pod. A change of the pool's size (`spring.datasource.hikari.maximum-pool-size`) or wait changes what these bound:
+read them again with it. The defaults come from the pool's arithmetic (7 connections, a 5 s wait), not from a measurement; the drills
+below calibrate them.
+
+**The drills** (the third procedure), each on the run's own `kind` cluster, one cluster at a time (§11.43, §11.46):
+
+```
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=spike infra/scripts/kind-rehearsal.sh          # E50
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E51 infra/scripts/kind-rehearsal.sh      # E51
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=stress infra/scripts/kind-rehearsal.sh         # E52
+```
+
+- **E50, the spike profile** (`load/spike.json`, `PHASE_16_PLAN.md` §5.1): the target's mix at its peak, three spikes of ten times it
+  for 10 s. One keyed command in twenty is sent once: a shed one is never retried and its key is logged (`SHED-ONCE`). The `load-shed`
+  step reads every such key against the database (no idempotency claim under any, no transfer under any reference;
+  `load/shed-census.txt`), and fails when the profile shed nothing. Every other shed request is retried after its `Retry-After`, and
+  the census counts one effect per key. Recorded, never a verdict: the shed answers per second (`load/k6/shed.tsv`) and, per spike,
+  those during it and after it and the seconds from its end to the last (`load/k6/shed-recovery.tsv`). If the edge's per-source
+  in-flight tier answers `429` before any replica sheds, the generators' addresses are too few for the spike: run again with
+  `REHEARSAL_LOAD_GENERATORS` raised, and record it.
+- **E51, the database slowed** (`experiments.sh`): a latency toxic on the application's database hop (`REHEARSAL_E51_LATENCY_MS`,
+  250 by default) while the workload retries by its keys. The fleet must shed (or the run could not run), no correctness page fire
+  and every correctness gauge stay readable through it, the fleet stop shedding within 10 minutes of the toxic's removal, and every
+  request resolve by its key; `experiments/E51/record.tsv`.
+- **E52, the stress profile's break with shedding**: E30's run again on this tree. Every sample must read past E30's stop (its 35th,
+  the census starved), and no checkout be abandoned (`k6/stages.tsv`'s abandoned column zero: no creating answer `500` after its
+  session committed).
+
+**The record.** None: no drill has run. The owner postponed Phase 16's `kind` runs on 2026-11-13 ("we dont need long running checks
+and tests"); E50 at three replicas, E51 at three and E52 at three are owed under `POSTPONED_ISSUES.md` PI-025, and this record is
+filled from their runs. Built and held meanwhile: `ShedBeforeTheClaimTest` (a shed leaves no claim and its retry is a first attempt,
+over the real executor), `SheddingIsWiredTest` (the door before every borrow, every money-moving route a command),
+`CheckoutCreateIsOneTransactionTest`, and the harness's text by `LoadRehearsalContractTest` and `ExperimentsRehearsalContractTest`;
+the spike profile's six scenarios read by the pinned k6's `inspect` (2026-11-13, a container check: each a ramping-arrival-rate
+executor, the spikes at ten times the peak).
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

@@ -20,6 +20,14 @@
 // twice under the same key: half of them the second copy beside the first, before either is answered, half of them after the first
 // answer. Every answer of a key must name the same transfer, payment or checkout; the report counts the keys retried and the keys
 // whose answers agreed.
+//
+// SHEDDING (P16-TSK-016, ADR-0137; OPERATIONS_RUNBOOK.md section 11.52). A platform that cannot finish a request answers 503
+// api.Overloaded before its handler, with a Retry-After: nothing was done, and the same request under the same key is a first attempt.
+// Every such answer is counted per operation (shed_<op>), and an iteration retrying after one waits the Retry-After it was given, as a
+// client honouring the contract does, rather than its usual pause. A profile with "shedOnceShare" sends that share of its keyed
+// commands ONCE: an iteration chosen so (never one of the retried ones) that is shed does not retry, logs "SHED-ONCE <op> <key>
+// <reference>" and concludes SHED - known to have asked for nothing, which kind-rehearsal/load.sh proves against the database: no
+// idempotency claim under any of those keys, and no transfer under any of their references. An admitted one is resolved as usual.
 
 import http from 'k6/http';
 import exec from 'k6/execution';
@@ -33,6 +41,8 @@ const RUN = __ENV.LOAD_RUN || 'run';
 const DURATION = __ENV.LOAD_DURATION || profile.duration;
 const BASE = fixture.publicBase;
 const RETRY_EVERY = Math.round(1 / profile.retryShare);
+// The shed-once probes (P16-TSK-016): none unless the profile asks for them.
+const ONCE_EVERY = profile.shedOnceShare ? Math.round(1 / profile.shedOnceShare) : 0;
 const RESOLVE_SECONDS = Number(__ENV.LOAD_RESOLVE_SECONDS);
 if (!(RESOLVE_SECONDS > 0)) {
     throw new Error('LOAD_RESOLVE_SECONDS is required: the bound within which every movement is resolved by its key');
@@ -80,6 +90,8 @@ for (const operation of driven) {
         abandoned: new Counter(`abandoned_${name}`),
         retried: new Counter(`retried_${name}`),
         agreed: new Counter(`retry_agreed_${name}`),
+        shed: new Counter(`shed_${name}`),
+        shedOnce: new Counter(`shed_once_${name}`),
     };
 }
 
@@ -108,9 +120,17 @@ function seen(response) {
     return t.blocked + t.connecting + t.tls_handshaking + t.duration;
 }
 
+// A shed answer (P16-TSK-016): the platform refused before the handler, so nothing was done under the key.
+function shedAnswer(response) {
+    return response.status === 503 && json(response, 'code') === 'api.Overloaded';
+}
+
 function record(op, response, primary) {
     const m = metrics[op];
     m.attempts.add(1);
+    if (shedAnswer(response)) {
+        m.shed.add(1);
+    }
     if (primary) {
         m.latency.add(seen(response));
     }
@@ -156,9 +176,17 @@ const UNRESOLVED = 'unresolved';
 // it back waited past the pool's 5 s bound and the creating answer was a 500. Recorded per operation and stage, never a pass of anything:
 // the outcome is known (no payment), unlike UNRESOLVED's.
 const ABANDONED = 'abandoned';
+// SHED (P16-TSK-016): a shed-once probe the platform shed, so it asked for nothing; load.sh proves no claim and no row exist for its key.
+const SHED = 'shed';
 
-// Between two asks: a second through the first minute, then five, as a client backs off while the platform concludes.
-function pause(since) {
+// Between two asks: the Retry-After a shed answer gave (P16-TSK-016), or a second through the first minute, then five, as a client backs
+// off while the platform concludes.
+function pause(since, response) {
+    const after = response && shedAnswer(response) ? Number(response.headers['Retry-After']) : NaN;
+    if (after >= 1) {
+        sleep(after);
+        return;
+    }
     sleep(Date.now() - since < 60000 ? 1 : 5);
 }
 
@@ -176,7 +204,7 @@ function resolve(op, req, accept, first, primary) {
         if (Date.now() >= until) {
             return UNRESOLVED;
         }
-        pause(since);
+        pause(since, response);
         response = send(op, req, primary);
     }
 }
@@ -186,6 +214,17 @@ function resolve(op, req, accept, first, primary) {
 // rides on the same iteration, under its intent's or its session's machine, and is not a second key.
 function command(op, it, req, accept, primary, keyed) {
     const m = metrics[op];
+    // A shed-once probe (P16-TSK-016): sent once; shed, it is never retried and its key goes to the shed census; admitted, it resolves.
+    if (keyed && ONCE_EVERY > 0 && it % ONCE_EVERY === ONCE_EVERY - 2 && it % RETRY_EVERY !== RETRY_EVERY - 1) {
+        const once = send(op, req, primary);
+        if (shedAnswer(once)) {
+            m.shedOnce.add(1);
+            const body = req[2] === null ? {} : JSON.parse(req[2]);
+            console.log(`SHED-ONCE ${op} ${req[3].headers['Idempotency-Key']} ${body.reference || '-'}`);
+            return [SHED];
+        }
+        return [resolve(op, req, accept, once, primary)];
+    }
     if (it % RETRY_EVERY !== RETRY_EVERY - 1) {
         return [resolve(op, req, accept, null, primary)];
     }
@@ -201,6 +240,9 @@ function command(op, it, req, accept, primary, keyed) {
 }
 
 function failedOutcome(answers) {
+    if (answers.includes(SHED)) {
+        return SHED;
+    }
     if (answers.includes(UNRESOLVED)) {
         return UNRESOLVED;
     }
@@ -210,7 +252,9 @@ function failedOutcome(answers) {
 function conclude(op, outcome, started) {
     const m = metrics[op];
     m.flow.add(Date.now() - started);
-    if (outcome === UNRESOLVED) {
+    if (outcome === SHED) {
+        // Counted by command() as shed_once; neither a movement nor a refusal.
+    } else if (outcome === UNRESOLVED) {
         m.unresolved.add(1);
     } else if (outcome === ABANDONED) {
         m.abandoned.add(1);
@@ -266,7 +310,7 @@ function pollPayment(op, id, bearer) {
         if (status === 'SUCCEEDED' || status === 'FAILED' || Date.now() - since >= RESOLVE_MS) {
             return status;
         }
-        pause(since);
+        pause(since, response);
     }
 }
 
@@ -314,7 +358,7 @@ function pollCheckout(op, checkoutId) {
         if (status === 'COMPLETED' || status === 'FAILED' || status === 'EXPIRED' || status === 'ABANDONED' || Date.now() - since >= RESOLVE_MS) {
             return status;
         }
-        pause(since);
+        pause(since, response);
     }
 }
 

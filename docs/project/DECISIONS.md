@@ -1385,6 +1385,12 @@ window, and a person releases money movement. → [ADR-0128](../adr/ADR-0128-rec
 financial-operation availability stated apart from service availability; a read replica, if any, serves the reporting pool
 alone. → [ADR-0129](../adr/ADR-0129-availability-and-the-multi-region-stance.md)
 
+**Shed before the financial effect, never after a claim** (`P16-TSK-016`, 2026-11-13). A door ahead of every interceptor that borrows
+a connection refuses with `503 api.Overloaded` and a jittered `Retry-After` while the writer pool's queue is at its threshold, a
+command past its instance's permits, or a command whose lookups used its deadline; never inside a handler, so a shed request left no
+claim and its retry is a first attempt. The operator surface and the provider callbacks are not shed. The checkout's create is one
+transaction. → [ADR-0137](../adr/ADR-0137-load-shedding-before-the-financial-effect.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

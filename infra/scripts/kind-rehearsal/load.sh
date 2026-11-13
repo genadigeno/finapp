@@ -455,6 +455,8 @@ load_scope() {
     load_run
     step load-judge
     load_judge
+    step load-shed
+    load_shed
     step load-census
     load_census
     step platform-signals
@@ -899,6 +901,57 @@ EOF
         [ "${allocated:-0}" = "$LOAD_SETTLEMENT_LINES" ] || fail "settlement: ${allocated:-0} of $LOAD_SETTLEMENT_LINES captures allocated to their expectations within 10 min"
         pass "settlement: one PSP file of $LOAD_SETTLEMENT_LINES captures taken whole ($lines lines with their fees), every line a reconciliation item, every capture allocated to its expectation"
     fi
+}
+
+# The shed census (P16-TSK-016, ADR-0137; OPERATIONS_RUNBOOK.md section 11.52). A shed request was refused before its handler, so it
+# must have left nothing. Every shed-once probe the platform shed (scenarios.js's SHED-ONCE lines in the generators' logs: the operation,
+# the key, a transfer's reference) is read against the database by the test-only superuser: no idempotency claim under any of those keys,
+# and no transfer under any of their references (a transfer's posting is its own, so no transfer is no posting). A shed probe that was
+# retried is a key like any other, and the census's one effect per key counts it. A profile that expects shedding ("shedExpected": the
+# spike) fails when no probe was shed: a check over no shed request shows nothing. The shed rate and its recovery are recorded, never a
+# verdict (PHASE_16_PLAN.md section 5.3): every 503 api.Overloaded per second of the generators' series (k6/shed.tsv), and for each stage
+# of at least twice the peak, the shed answers during it, after it until the next stage ended, and the seconds from its end to the last
+# shed answer (k6/shed-recovery.tsv), cut in the host's seconds as the stage tables are.
+load_shed() {
+    load_generators logs
+    : > "$LOAD_ART/shed-once.tsv"
+    for log in "$LOAD_ART"/k6-*.log; do
+        [ -f "$log" ] || continue
+        sed -n 's/.*msg="SHED-ONCE \([a-z]*\) \([A-Za-z0-9._:-]*\) \([A-Za-z0-9._:-]*\)".*/\1\t\2\t\3/p' "$log" >> "$LOAD_ART/shed-once.tsv"
+    done
+    once=$(grep -c . "$LOAD_ART/shed-once.tsv" || true)
+    if [ "$(load_profile_value shedExpected)" = true ]; then
+        [ "$once" -ge 1 ] || fail "shedding: the profile expects the platform to shed, and no shed-once probe was shed, so a shed request's leaving nothing was not tried: see load/k6-*.log"
+    fi
+    if [ "$once" -ge 1 ]; then
+        { printf 'SELECT count(*) FROM platform.idempotency_record WHERE idempotency_key IN (\n'
+          cut -f2 "$LOAD_ART/shed-once.tsv" | awk -v q="'" '{printf "%s%s%s%s\n", (NR > 1 ? "," : ""), q, $0, q}'
+          printf ');\n'; } > "$WORK/shed-claims.sql"
+        claims=$(psql_query -f - < "$WORK/shed-claims.sql" | tr -d '[:space:]')
+        { printf "SELECT count(*) FROM transfers.transfer WHERE reference IN ('-'\n"
+          cut -f3 "$LOAD_ART/shed-once.tsv" | awk -v q="'" '$0 != "-" {printf ",%s%s%s\n", q, $0, q}'
+          printf ');\n'; } > "$WORK/shed-transfers.sql"
+        rows=$(psql_query -f - < "$WORK/shed-transfers.sql" | tr -d '[:space:]')
+        printf 'shed-once probes\t%s\nclaims under their keys\t%s\ntransfers under their references\t%s\n' "$once" "${claims:-unread}" "${rows:-unread}" \
+            > "$LOAD_ART/shed-census.txt"
+        [ "$claims" = 0 ] || fail "shedding: ${claims:-an unread number of} idempotency claims exist under the keys of $once shed requests: a shed was not before the claim: see load/shed-once.tsv"
+        [ "$rows" = 0 ] || fail "shedding: ${rows:-an unread number of} transfers exist under the references of shed requests: see load/shed-once.tsv"
+        pass "shedding: $once requests shed once and never retried left no idempotency claim under their keys and no transfer under their references"
+    fi
+    for series in "$LOAD_ART"/k6/*/k6-series.csv.gz; do gzip -dc "$series"; done \
+        | awk -F, '$1 ~ /^shed_[a-z]+$/ {n[int($2)] += $3} END {for (s in n) print s "\t" n[s]}' | sort -n > "$LOAD_ART/k6/shed.tsv"
+    awk -F'\t' -v t0="${LOAD_T0:-0}" -v speed="${LOAD_SPEED:-1}" -v stages="$WORK/stages.txt" '
+        BEGIN { if (speed == "") speed = 1
+                while ((getline line < stages) > 0) { split(line, f, " "); n++; factor[n] = f[2]; upto[n] = upto[n - 1] + f[1] / speed } }
+        { shed[$1 + 0] += $2; total += $2 }
+        END { print "stage\tended\tshed_during\tshed_after\tlast_shed_after_s"
+              for (i = 1; i <= n; i++) if (factor[i] >= 2) {
+                  from = t0 + upto[i - 1]; end = t0 + upto[i]; limit = (i < n) ? t0 + upto[i + 1] : end + 600; during = 0; after = 0; last = 0
+                  for (s in shed) { if (s >= from && s < end) during += shed[s]
+                                    else if (s >= end && s < limit) { after += shed[s]; if (s - end + 1 > last) last = s - end + 1 } }
+                  printf "%d\t%d\t%d\t%d\t%d\n", i, end, during, after, last }
+              printf "all\t-\t%d\t-\t-\n", total }' "$LOAD_ART/k6/shed.tsv" > "$LOAD_ART/k6/shed-recovery.tsv"
+    log "recorded shedding: $(awk -F'\t' '$1 == "all" {print $3}' "$LOAD_ART/k6/shed-recovery.tsv") answers 503 api.Overloaded over the load; per spike, shed during it and after it and the seconds to the last: $(awk -F'\t' 'NR > 1 && $1 != "all" {printf "stage %s %s/%s, %s s; ", $1, $3, $4, $5}' "$LOAD_ART/k6/shed-recovery.tsv")see load/k6/shed.tsv"
 }
 
 # The platform's side per stage (P16-TSK-007, load/resources.awk): every sampled signal as "kind name epoch value" - the pods' cgroups by

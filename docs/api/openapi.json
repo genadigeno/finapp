@@ -1950,6 +1950,41 @@
           }
         }
       },
+      "api.Overloaded": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "api.Overloaded"
+                    },
+                    "status": {
+                      "const": 503
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/api.Overloaded"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[503] Busy; nothing was done. Retry the same request after the time given.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "api.PayloadTooLarge": {
         "content": {
           "application/problem+json": {

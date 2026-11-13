@@ -165,6 +165,22 @@ finapp:
       interval: ${FINAPP_ABUSE_SWEEP_INTERVAL:PT1M}
       batch-size: ${FINAPP_ABUSE_SWEEP_BATCHSIZE:1000}
       grace: ${FINAPP_ABUSE_SWEEP_GRACE:PT1M}
+  # Load shedding before the financial effect (P16-TSK-016, ADR-0137; OPERATIONS_RUNBOOK.md 11.52). Per instance, decided before the
+  # handler - before any idempotency claim - so a shed request did nothing and its retry under the same key is a first attempt. Set from
+  # the writer pool's arithmetic (7 connections, a 5 s borrow wait), not from a measurement: PI-025's runs (E50-E52) calibrate them.
+  # The pool's size and wait are read from the pool itself, and these are refused at start when they do not fit it.
+  shedding:
+    # A public request is shed while this many threads already wait for a writer connection: about one pool's worth of queue.
+    pool-waiters: ${FINAPP_SHEDDING_POOL_WAITERS:7}
+    # Commands (every method but GET, HEAD, OPTIONS, TRACE) in flight per instance: the pool less two, so commands alone never hold
+    # every connection and reads and the schedules - the correctness monitors among them - keep two. Fewer than the pool, or refused.
+    command-permits: ${FINAPP_SHEDDING_COMMAND_PERMITS:5}
+    # A command whose request has less than one borrow's wait left of this, after authentication, is shed: two borrows' waits, the
+    # lookups' and the command's own.
+    deadline: ${FINAPP_SHEDDING_DEADLINE:PT10S}
+    # Retry-After on a shed answer: this, plus a random 0 to the spread, whole seconds, so a crowd shed together returns spread.
+    retry-after: ${FINAPP_SHEDDING_RETRY_AFTER:PT1S}
+    retry-after-spread: ${FINAPP_SHEDDING_RETRY_AFTER_SPREAD:PT2S}
   database:
     # ADR-0014: N is never 1.
     instances: ${FINAPP_DB_INSTANCES:10}

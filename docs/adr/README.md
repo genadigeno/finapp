@@ -171,6 +171,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0127](ADR-0127-the-failure-injection-method.md) | The failure-injection method: scripted experiments on `kind`, registered with their stop conditions, never against anything the run did not create | Proposed | 16 | Platform · every module (operated under failure) |
 | [0128](ADR-0128-recovery-objectives-and-the-post-recovery-gate.md) | Recovery objectives and the post-recovery financial gate: RTO and RPO by tier, no money moves until the books are proven | Proposed | 16 | Platform · Ledger · Reconciliation |
 | [0129](ADR-0129-availability-and-the-multi-region-stance.md) | Availability and the multi-region stance: one writer, multi-AZ active-passive, no active-active writes | Proposed | 16 | Platform · Ledger · every module (availability) |
+| [0137](ADR-0137-load-shedding-before-the-financial-effect.md) | Load shedding before the financial effect: a door in front of every borrow, per-class bounds, never after a claim | Proposed | 16 | Platform · the API surface · checkout |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch
