@@ -117,6 +117,19 @@
 # generation bound, read from AccountingBeans' default (reports-reading.txt), and load/growth.awk reads every named table's growth per
 # hour and per money movement from the soak's own samples (growth.tsv). Every run must complete PROVISIONAL and the reader must see the
 # role's statements, or the run fails; the figures are the record's, never a verdict.
+#
+# THE OBJECTIVES JUDGED (P16-TSK-029; ADR-0148; docs/architecture/SLOS.md section 6; OPERATIONS_RUNBOOK.md section 11.63). After the census
+# every run writes load/slo-objectives.tsv: each objective of infra/prometheus/rules/slo.yml, read and never copied - its budget from its
+# fast pair, its five-minute SLI from slo-recording.yml taken over the run's window (rates as increases) - with the burn rate it ran at
+# (1 spends the 30-day budget exactly at its pace) and whether its fast or slow pair fired from the load's start until the judgement, and a
+# verdict: MET (a burn rate of at most 1 and neither pair fired), NOT MET, or NOT READ (no sample: nothing was sent to it). Recorded on
+# every run; judged only under REHEARSAL_LOAD_OBJECTIVES=1 (E84 rides the sustained profile, E74's run; E86 the decline profile): then every
+# objective must be read, the window's firing alerts must show the migrator Job planted before the load (the control: a query that sees
+# no alert proves no silence), and an objective NOT MET fails the run - recalibrating it is a reviewed change to slo.yml and SLOS.md with
+# its reason, never the run's. A profile with "declineShare" (declines.json, E86) has the simulator decline that share of card
+# authorizations by their key (Simulator.java's decline control, put on before the load and taken off after it, on a stop and in finish):
+# each checkout or top-up refused must be a decline the provider gave, their share within five points of the profile's, and the payment
+# objective's errors over the run within what the client saw answered 5xx or not at all - a decline spends no budget.
 
 LOAD_PROFILE_NAME=${REHEARSAL_LOAD_PROFILE:-demonstration}
 LOAD_CUSTOMERS=${REHEARSAL_LOAD_CUSTOMERS:-20}
@@ -126,6 +139,12 @@ LOAD_REPLICAS=${REHEARSAL_LOAD_REPLICAS:-3}
 # P16-TSK-012: E65's readings ride the soak (0 off, 1 on); the samples taken so far.
 LOAD_DECISIONS=${REHEARSAL_LOAD_DECISIONS:-0}
 LOAD_REPORTS_TAKEN=0
+# P16-TSK-029: the objectives judged over the run (0 recorded only, 1 judged: E84, E86); the decline profile's share of card authorizations
+# declined, as a whole percent; whether the simulator's decline control is on; the checkouts and top-ups the judge counted refused under it.
+LOAD_OBJECTIVES=${REHEARSAL_LOAD_OBJECTIVES:-0}
+LOAD_DECLINE_PERCENT=""
+LOAD_DECLINES_ON=""
+LOAD_DECLINED_REFUSED=0
 # Run inside the node every 10 s: one line per pod - its uid as systemd spells it, its CPU in nanoseconds, how many of its containers'
 # 100 ms periods hit their CPU limit and the task-time throttled there, its memory in bytes, and the periods its limited containers ran,
 # each cumulative. The reference machine's kind node runs cgroup v1 under the systemd driver (kubelet.slice); a pod's limits sit on its
@@ -275,6 +294,14 @@ load_preflight() {
             ;;
         *) cannot "REHEARSAL_LOAD_DECISIONS is 0 or 1, not '$LOAD_DECISIONS'" ;;
     esac
+    # P16-TSK-029: the objectives judged or recorded; the decline profile's share, a fraction between 0 and 1 read from the profile.
+    case $LOAD_OBJECTIVES in 0 | 1) ;; *) cannot "REHEARSAL_LOAD_OBJECTIVES is 0 or 1, not '$LOAD_OBJECTIVES'" ;; esac
+    share=$(load_profile_value declineShare)
+    if [ -n "$share" ]; then
+        LOAD_DECLINE_PERCENT=$(awk -v s="$share" 'BEGIN { if (s ~ /^0\.[0-9]+$/ && s > 0 && s < 1) printf "%d", s * 100 + 0.5 }')
+        [ -n "$LOAD_DECLINE_PERCENT" ] && [ "$LOAD_DECLINE_PERCENT" -ge 1 ] \
+            || cannot "the profile's declineShare is a fraction between 0 and 1, not '$share'"
+    fi
     [ "$(load_seconds "$LOAD_DURATION")" -gt 0 ] || cannot "the load's duration '$LOAD_DURATION' is not a number of seconds, minutes or hours"
     # The minimum to the kind overlay's ceiling (P16-TSK-009), read from the overlay that will be rendered, before any cluster exists.
     ceiling=$(sed -n '/^        path: \/spec\/maxReplicas$/{n;s/^        value: \([0-9]*\)$/\1/p;}' "$ROOT/deploy/overlays/kind/kustomization.yaml")
@@ -709,6 +736,9 @@ load_scope() {
     load_shed
     step load-census
     load_census
+    # The objectives over the run (P16-TSK-029: E84, E86), after the census and while the migrator Job planted before the load still pages.
+    step load-objectives
+    load_objectives
     # The autoscaler's decisions (P16-TSK-014, E70), judged after the census has counted one effect per key at the floor it returned to.
     if [ "$LOAD_AUTOSCALE" = true ]; then
         step load-autoscale
@@ -1301,6 +1331,8 @@ load_run() {
         CONTAINERS="$CONTAINERS $CLUSTER-load-callbacks-$s"
         s=$((s + 1))
     done
+    # The decline run (P16-TSK-029, E86): the simulator declines its share of card authorizations from before the first arrival.
+    [ -z "$LOAD_DECLINE_PERCENT" ] || load_declines on
     # The generator as LOAD_GENERATORS instances, each its own container and so its own address, each running its exact share of every
     # arrival rate (k6's execution segments). Customers arrive from many addresses; one address carrying the whole population would meet
     # the edge's per-source tiers, which are a client's limits, not the platform's, and measure them instead (OPERATIONS_RUNBOOK.md
@@ -1347,6 +1379,8 @@ load_run() {
     done
     LOAD_ENDED=$(date +%s)
     stop_sampler load
+    # Every generator has stopped, its graceful stop included: the declines end with the load (P16-TSK-029).
+    load_declines off
     [ -n "$settled" ] || fail "settlement: the load captured no card payment to settle"
     load_clock end
     [ "$PROBE" != slow-statement ] || load_restore_slow_statement
@@ -1405,6 +1439,164 @@ load_availability_objectives() {
 load_prom_at() {
     telemetry_get "$LOAD_PROM" "/api/v1/query?query=$(urlencode "$1" | sed 's/\\/%5C/g')&time=$LOAD_ENDED" 2>/dev/null \
         | sed -n 's/.*"value":\[[0-9.e+]*,"\([^"]*\)"\].*/\1/p' | head -1
+}
+
+# ---------------------------------------------------------------------------------------------------
+# The objectives judged (P16-TSK-029; ADR-0148; docs/architecture/SLOS.md section 6; OPERATIONS_RUNBOOK.md section 11.63). The functions
+# named objectives_* serve the load scope (load_objectives: E84, E86) and the experiments scope (E85) alike, each reading Prometheus through
+# the function OBJECTIVES_GET names, which takes an API path.
+# ---------------------------------------------------------------------------------------------------
+
+# The load scope's way to the cluster's Prometheus, for OBJECTIVES_GET.
+load_prom_get() {
+    telemetry_get "$LOAD_PROM" "$1"
+}
+
+# objectives_value <query> <epoch>: the query's first value at that moment, or nothing (no sample, or no answer).
+objectives_value() {
+    "$OBJECTIVES_GET" "/api/v1/query?query=$(urlencode "$1" | sed 's/\\/%5C/g')&time=$2" 2>/dev/null \
+        | sed -n 's/.*"value":\[[0-9.e+]*,"\([^"]*\)"\].*/\1/p' | head -1
+}
+
+# objectives_rules: one tab-separated line per objective, read from the committed rules and never copied - the objective, its budget (the
+# fast pair's), its fast alert, that pair's for and expression, its slow alert, that pair's for and expression, and its five-minute SLI
+# from slo-recording.yml. An objective whose line lacks a field is printed with it empty, and objectives_table refuses it.
+objectives_rules() {
+    awk -v OFS='\t' '
+        FNR == 1 { file++ }
+        file == 1 && /^      - record: finapp:slo_[a-z_]+:error_ratio_rate5m$/ {
+            r = $3; sub(/^finapp:slo_/, "", r); sub(/:error_ratio_rate5m$/, "", r); getline; sub(/^ *expr: /, ""); sli[r] = $0; next }
+        file == 2 && /^      - alert: [A-Za-z]+Burn(Fast|Slow)$/ { a = $3; next }
+        file == 2 && a != "" && /^        expr: / { e = $0; sub(/^        expr: /, "", e); ex[a] = e; next }
+        file == 2 && a != "" && /^        for: / { fr[a] = $2; next }
+        file == 2 && a != "" && /^          slo: / {
+            s = $2; if (a ~ /Fast$/) { fast[s] = a; if (!(s in seen)) { seen[s] = 1; list[++n] = s } } else slow[s] = a; next }
+        END { for (i = 1; i <= n; i++) { s = list[i]; b = ex[fast[s]]; if (b !~ /\(14\.4 \* [0-9.]+\)/) b = ""
+                  else { sub(/.*\(14\.4 \* /, "", b); sub(/\).*/, "", b) }
+                  print s, b, fast[s], fr[fast[s]], ex[fast[s]], slow[s], fr[slow[s]], ex[slow[s]], sli[s] } }' \
+        "$ROOT/infra/prometheus/rules/slo-recording.yml" "$ROOT/infra/prometheus/rules/slo.yml"
+}
+
+# objectives_burning: the burn alerts firing now (every alert carrying an slo label), space-separated; UNREADABLE when Prometheus did not answer.
+objectives_burning() {
+    answer=$("$OBJECTIVES_GET" "/api/v1/query?query=$(urlencode 'ALERTS{alertstate="firing",slo!=""}')" 2>/dev/null || true)
+    case $answer in *'"status":"success"'*) ;; *) echo UNREADABLE; return 0 ;; esac
+    printf '%s' "$answer" | grep -o '"alertname":"[^"]*"' | sed 's/.*:"\(.*\)"/\1/' | sort -u | tr '\n' ' ' | sed 's/ $//'
+}
+
+# objectives_fired <seconds> <epoch>: every burn alert that fired at any evaluation in the window of that many seconds ending then, one name
+# a line, or the word UNREADABLE.
+objectives_fired() {
+    answer=$("$OBJECTIVES_GET" "/api/v1/query?query=$(urlencode "max by (alertname) (max_over_time(ALERTS{alertstate=\"firing\",slo!=\"\"}[$1s]))")&time=$2" 2>/dev/null || true)
+    case $answer in *'"status":"success"'*) ;; *) echo UNREADABLE; return 0 ;; esac
+    printf '%s' "$answer" | grep -o '"alertname":"[^"]*"' | sed 's/.*:"\(.*\)"/\1/' | sort -u
+}
+
+# objectives_table <file> <from> <to> <alerts until>: each objective over [from, to] - its SLI taken over that window, the burn rate it ran at,
+# whether its fast or slow pair fired from <from> until <alerts until> (a slow pair's 15 minutes may end after the load), and its verdict:
+# MET (burn rate at most 1, neither pair fired), NOT MET, or NOT READ (no sample). Non-zero when the rules or the alerts could not be read.
+objectives_table() {
+    span=$(( $3 - $2 ))
+    objectives_rules > "$1.rules"
+    [ "$(grep -c . "$1.rules" || true)" -ge 1 ] || return 1
+    awk -F'\t' 'NF != 9 || $2 == "" || $3 == "" || $4 == "" || $6 == "" || $7 == "" || $9 == "" { bad = 1 } END { exit bad }' "$1.rules" || return 1
+    objectives_fired $(( $4 - $2 )) "$4" > "$1.fired"
+    ! grep -qx UNREADABLE "$1.fired" || return 1
+    printf 'objective\tbudget\terror_ratio\tburn_rate\tfast_fired\tslow_fired\tverdict\n' > "$1"
+    while IFS="$(printf '\t')" read -r slo budget fast _ _ slow _ _ sli; do
+        over="max($(printf '%s' "$sli" | sed "s/rate(/increase(/g; s/\[5m\]/[${span}s]/g"))"
+        ratio=$(objectives_value "$over" "$3")
+        f=no; ! grep -qx "$fast" "$1.fired" || f=yes
+        s=no; ! grep -qx "$slow" "$1.fired" || s=yes
+        burn=$(awk -v r="$ratio" -v b="$budget" 'BEGIN { if (r == "" || r != r + 0 || b <= 0) print "-"; else printf "%.4f", r / b }')
+        verdict=$(awk -v burn="$burn" -v f="$f" -v s="$s" 'BEGIN { if (burn == "-") print "NOT READ"; else if (burn + 0 <= 1 && f == "no" && s == "no") print "MET"; else print "NOT MET" }')
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$slo" "$budget" "${ratio:-none}" "$burn" "$f" "$s" "$verdict" >> "$1"
+    done < "$1.rules"
+}
+
+# objectives_held <file> <from> <to>: for each objective's fast and slow pair, whether its expression held, unbroken, for the pair's for and a
+# minute more at some point in [from, to] (Prometheus's own history, every 15 s), and whether its alert fired there. A pair that held and
+# never fired is the rule not paging a burn it saw. Non-zero when the rules could not be read.
+objectives_held() {
+    span=$(( $3 - $2 ))
+    objectives_rules > "$1.rules"
+    [ "$(grep -c . "$1.rules" || true)" -ge 1 ] || return 1
+    printf 'objective\talert\theld\tfired\n' > "$1"
+    while IFS="$(printf '\t')" read -r slo _ fast fastfor fastexpr slow slowfor slowexpr _; do
+        for pair in "$fast|$fastfor|$fastexpr" "$slow|$slowfor|$slowexpr"; do
+            alert=${pair%%|*}; rest=${pair#*|}; wait=$(load_seconds "${rest%%|*}"); expr=${rest#*|}
+            [ "$wait" -gt 0 ] && [ -n "$expr" ] || return 1
+            points=$(( (wait + 60) / 15 ))
+            held=$(objectives_value "max(max_over_time((count_over_time(($expr)[$((wait + 60))s:15s]) >= $points)[${span}s:15s]))" "$3")
+            fired=$(objectives_value "max(max_over_time(ALERTS{alertstate=\"firing\",alertname=\"$alert\"}[${span}s]))" "$3")
+            printf '%s\t%s\t%s\t%s\n' "$slo" "$alert" "$([ -n "$held" ] && echo held || echo no)" "$([ -n "$fired" ] && echo fired || echo no)" >> "$1"
+        done
+    done < "$1.rules"
+}
+
+# load_objectives: load/slo-objectives.tsv over the load's window on every run, recorded; judged under REHEARSAL_LOAD_OBJECTIVES=1 (E84, E86),
+# and the decline profile's declines judged with it (load_declines_judge). The alerts are read until now, so a slow pair's wait that began
+# under the load and ended after it counts.
+load_objectives() {
+    OBJECTIVES_GET=load_prom_get
+    now=$(date +%s)
+    if ! objectives_table "$LOAD_ART/slo-objectives.tsv" "$LOAD_STARTED" "$LOAD_ENDED" "$now"; then
+        [ "$LOAD_OBJECTIVES" = 1 ] || { log "the objectives over the run could not be read from the rules or Prometheus: recorded as unread"; return 0; }
+        cannot "the objectives: the rules or the window's alerts could not be read, so nothing could be judged: see load/slo-objectives.tsv.rules"
+    fi
+    control=$(objectives_value "max(max_over_time(ALERTS{alertstate=\"firing\",alertname=\"MigratorJobFailed\"}[$((now - LOAD_STARTED))s]))" "$now")
+    log "recorded the objectives over the run: $(awk -F'\t' 'NR > 1 {printf "%s %s (burn %s, fast %s, slow %s); ", $1, $7, $4, $5, $6}' "$LOAD_ART/slo-objectives.tsv")the planted MigratorJobFailed $([ -n "$control" ] && echo read || echo "not read") in the window"
+    # The decline run's refusals were excused by load_judge for this judge alone: it runs whether or not the objectives are judged.
+    [ -z "$LOAD_DECLINE_PERCENT" ] || load_declines_judge
+    [ "$LOAD_OBJECTIVES" = 1 ] || return 0
+    [ -n "$control" ] || cannot "the objectives: the window's firing alerts do not show the migrator Job planted before the load, so a silent burn rule would prove nothing: see load/slo-objectives.tsv"
+    unread=$(awk -F'\t' 'NR > 1 && $7 == "NOT READ" {printf "%s ", $1}' "$LOAD_ART/slo-objectives.tsv")
+    [ -z "$unread" ] || cannot "the objectives: no sample for ${unread}over the run, so they could not be judged: the profile sends them nothing"
+    missed=$(awk -F'\t' 'NR > 1 && $7 == "NOT MET" {printf "%s (burn rate %s, fast pair fired %s, slow %s); ", $1, $4, $5, $6}' "$LOAD_ART/slo-objectives.tsv")
+    [ -z "$missed" ] || fail "the objectives over the load: not met: ${missed}see load/slo-objectives.tsv. An objective is recalibrated only by a reviewed change to slo.yml and SLOS.md with its reason (OPERATIONS_RUNBOOK.md section 11.63), never by a run"
+    pass "the objectives over the load: every one of $(awk 'NR > 1' "$LOAD_ART/slo-objectives.tsv" | grep -c .) met - its burn rate over the run at most 1 and neither burn pair fired, the window's firing alerts read with the planted MigratorJobFailed among them"
+}
+
+# load_declines <on|off>: the simulator's decline control (Simulator.java: /tmp/decline-card-share holds a whole percent, and a card
+# authorization whose key falls in that share answers declined, the same answer for every retry of the key), on before the decline run's
+# load, off after it, on a stop and in finish - which a kept cluster would otherwise carry into its next run.
+load_declines() {
+    if [ "$1" = on ]; then
+        LOAD_DECLINES_ON=1
+        kube -n finapp-rehearsal exec deploy/finapp-simulator -- sh -c "printf '%s\n' $LOAD_DECLINE_PERCENT > /tmp/decline-card-share" \
+            >> "$ART/declines.log" 2>&1 || cannot "the simulator's decline control could not be put on"
+        [ "$(kube -n finapp-rehearsal exec deploy/finapp-simulator -- cat /tmp/decline-card-share 2>/dev/null | tr -d '[:space:]')" = "$LOAD_DECLINE_PERCENT" ] \
+            || cannot "the simulator's decline control does not read $LOAD_DECLINE_PERCENT"
+        log "the simulator declines $LOAD_DECLINE_PERCENT% of card authorizations by their key from $(date -u +%H:%M:%SZ)"
+    else
+        [ -n "$LOAD_DECLINES_ON" ] || return 0
+        kube -n finapp-rehearsal exec deploy/finapp-simulator -- rm -f /tmp/decline-card-share >> "$ART/declines.log" 2>&1 || true
+        LOAD_DECLINES_ON=""
+    fi
+}
+
+# load_declines_judge (E86): every checkout and top-up refused was a decline the provider gave - one FAILED(DECLINED) card attempt each since
+# the load began, read from the database - their share within five points of the profile's, at least one (the control); and the payment
+# objective's errors over the run (load/slo-availability.tsv, P16-TSK-023's reading) within what the client saw answered 5xx or not at all,
+# so no decline spent budget. Counting declines as errors would put a third of the payments in that count.
+load_declines_judge() {
+    counts=$(psql_query -c "SELECT count(*) FILTER (WHERE status = 'FAILED' AND failure_reason = 'DECLINED') || '|' || count(*)
+        FROM payments.payment_attempt WHERE rail = 'card' AND created_at >= to_timestamp($LOAD_FROM)" | tr -d '[:space:]')
+    IFS='|' read -r declined attempts <<EOF
+$counts
+EOF
+    case "$declined$attempts" in '' | *[!0-9]*) cannot "declines: the card attempts could not be counted ('$counts')" ;; esac
+    [ "$declined" -ge 1 ] || fail "declines: the provider declined nothing, so a decline spending no budget was not shown: the control"
+    [ "$declined" = "$LOAD_DECLINED_REFUSED" ] \
+        || fail "declines: $LOAD_DECLINED_REFUSED checkouts and top-ups refused where the provider declined $declined card authorizations: a refusal that was no decline, or a decline the client was not told"
+    share=$(awk -v d="$declined" -v a="$attempts" -v p="$LOAD_DECLINE_PERCENT" 'BEGIN { s = 100 * d / a; printf "%.1f %s", s, (s >= p - 5 && s <= p + 5) ? "within" : "outside" }')
+    case $share in *within) ;; *) fail "declines: ${share% *}% of $attempts card attempts declined, where the profile asks $LOAD_DECLINE_PERCENT%" ;; esac
+    sli=$(awk -F'\t' '$1 == "payment_checkout" {print $4}' "$LOAD_ART/slo-availability.tsv")
+    client=$(awk -F'\t' '($1 == "checkout" || $1 == "topup") && ($2 ~ /^5/ || $2 == "0") {n += $3} END {print n + 0}' "$LOAD_ART/k6/statuses.tsv")
+    case $sli in '' | none | *[!0-9.e+]*) cannot "declines: the payment objective's errors over the run could not be read from load/slo-availability.tsv ('$sli')" ;; esac
+    [ "$(awk -v e="$sli" -v c="$client" 'BEGIN { print (e <= c + 5 + c * 0.01) ? "ok" : "spent" }')" = ok ] \
+        || fail "declines: the payment objective counted $sli errors over the run where the client saw $client answered 5xx or not at all: a decline spent budget"
+    pass "declines: $declined of $attempts card authorizations declined (${share% *}%), each a refused checkout or top-up; the payment objective counted $sli errors, within the client's $client answered 5xx or not at all - no decline spent budget"
 }
 
 # load_generating: whether any generator instance still runs.
@@ -1513,6 +1705,7 @@ load_keep_senders() {
 load_stopped() {
     LOAD_ENDED=$(date +%s)
     load_clock end
+    load_declines off
     [ "$PROBE" != slow-statement ] || load_restore_slow_statement
     load_generators logs
     load_keep_senders
@@ -1590,10 +1783,18 @@ EOF
         target=$(load_operation_value "$op" errorTarget)
         if [ "$(load_operation_value "$op" money)" = true ]; then
             [ "$unresolved" = 0 ] || fail "$op: $unresolved movements unresolved by their keys: see load/k6/report.tsv"
+            # The decline run (P16-TSK-029, E86): a card payment refused is the provider's decline, a business outcome, counted here and
+            # held to the declines the provider gave by load_declines_judge; refused anything else, or in any other run, fails as before.
+            outcome="none refused"
+            if [ -n "$LOAD_DECLINE_PERCENT" ] && { [ "$op" = checkout ] || [ "$op" = topup ]; }; then
+                LOAD_DECLINED_REFUSED=$((LOAD_DECLINED_REFUSED + refused))
+                outcome="$refused refused, each to be the provider's decline (judged with the declines)"
+                refused=0
+            fi
             [ "$refused" = 0 ] || fail "$op: $refused movements refused: see load/k6/report.tsv"
             [ "$retried" -ge 1 ] || fail "$op: no key was retried, so one effect per key was not tried"
             [ "$agreed" = "$retried" ] || fail "$op: $agreed of $retried retried keys answered alike"
-            pass "$op: $iterations movements, every one resolved by its key and none refused, $agreed of $retried retried keys answered alike"
+            pass "$op: $iterations movements, every one resolved by its key and $outcome, $agreed of $retried retried keys answered alike"
             # A checkout whose creating answer was lost (scenarios.js ABANDONED): known to have moved nothing, recorded with the platform's
             # answer that lost it, never a verdict; the census counts no payment for it.
             abandoned=$(awk -F'\t' -v op="$op" 'NR > 1 && $1 == op {n += $22} END {print n + 0}' "$LOAD_ART/k6/stages.tsv")

@@ -90,7 +90,9 @@ owner may change.
 3,600 s, which is the day ÷ 36,000). *Burst* is three times peak, and *spike* is ten times peak. *In flight at peak* is
 Little's law: the peak rate multiplied by the latency target. It is the number of requests the open-model generator (ADR-0126
 decision 2) keeps outstanding at peak if every request takes its target. Latency and error targets are `SLOS.md`'s where an
-objective exists. Elsewhere they are proposed here and validated by `P16-TSK-029`.
+objective exists. Elsewhere they are proposed here and validated by `P16-TSK-029`. *(2026-11-13: that task built the judgement and
+left these targets proposed - none of them is adopted, so no bucket judges them - `SLOS.md` §6 and §7; its runs, E84 to E86, are owed
+under `POSTPONED_ISSUES.md` PI-025.)*
 
 | Operation | Day | From | Average | Peak | Burst | Spike | In flight at peak | Latency target | Error target | Scaling |
 |---|---|---|---|---|---|---|---|---|---|---|

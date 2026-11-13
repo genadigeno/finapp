@@ -2513,7 +2513,7 @@ A **fast** alert pages: errors over 1 hour and over 5 minutes exceed 14.4 times 
 1. **Open the dashboard `finapp-slo`** and read the burn rate of each window for that objective.
 2. **Find what is failing.** For a request objective, read `http_server_requests_seconds_count` by `uri` and `status` and the instance's log lines. For `EventFreshness…`, §11.21's outbox procedure. For `Consumption…`, §11.6's lag procedure; the alert names the group in `module`.
 3. **Check a deploy first.** A burn that began with a rollout is rolled back by digest (§11.3). Do not wait for the budget.
-4. **A provider cannot be asked** (a `503` from a payment command): it spends the budget and it is real. Read `finapp.payments.attempt` by outcome, and treat the provider as down: nothing is lost, since an unanswered attempt stays honestly `UNKNOWN` and its sweep resolves it.
+4. **A provider cannot be asked** (a `503` from a payment command): it spends the budget and it is real. Read `finapp.payments.attempt` by outcome, and treat the provider as down: nothing is lost, since an unanswered attempt stays honestly `UNKNOWN` and its sweep resolves it. *(2026-11-13: only an unconfigured provider answers that `503`. A configured provider that answers `503` or nothing leaves the payment `UNKNOWN` behind a success status and spends no budget: `PaymentUnknownAged` (§11.22) tells, not this table; `docs/architecture/SLOS.md` §6.)*
 5. **When it clears**, record the budget spent and, if it is spent, what the error-budget policy freezes (`docs/architecture/SLOS.md` section 4), with the date, in the incident record.
 
 **Never** raise a threshold to silence a burn: the targets are reference values, changed by Phase 16's calibration or by a reviewed change to `slo.yml` and `SLOS.md` together.
@@ -2608,6 +2608,7 @@ No amount appears in any of them: the audited operator reports answer the figure
 | `SettlementExpectationOverdue` (ticket) | Expected money has not arrived | Follow the expectation in the operator report; it is a break if it stays |
 | `SuspenseItemAged` (ticket) | A suspense item past 30 days | Work the queue; it stays aged and alerted until it is resolved |
 | `BreakAgeCritical`, `BreakAgeHigh`, `BreakAgeMedium`, `BreakAgeLow` | A break past its severity's bound | Work the break through its door. A `critical` break pages at once and is a correctness problem until it is explained |
+| `BreakNewlyAgedCritical`, `BreakNewlyAgedHigh` (page), `BreakNewlyAgedMedium`, `BreakNewlyAgedLow`, `SuspenseItemNewlyAged` (ticket) | Another break of that severity, or another suspense item, past the same bound while one already stood: the count of what is past it (`finapp.reconciliation.break.aged`, `.suspense.aged`) above its least of the last two hours (`THREAT_MODEL.md` §6 item 42 (a)). It stands until the rise leaves those two hours; the age rule beside it still holds the oldest | Find the new one: `GET .../breaks` by severity, newest raise first, or the suspense register by age. Own it as §11.11 step 2 says; a parked one is §11.11's. A count that fell and rose again within the window is a resolution and a new aging, and the alert is right. NaN on an instance is `ReconciliationGaugesUnreadable`'s |
 | `MustBeZeroGaugeUnreadable`, `ReconciliationGaugesUnreadable` (ticket) | A reconciliation gauge cannot be read | §11.8 |
 
 ### 11.24 FX and cross-border alerts
@@ -2908,11 +2909,16 @@ procedure.
    different `RECONCILIATION_OPERATOR`s, with a narrative saying why the value is nobody's (ADR-0070 §4). A
    `RECONCILIATION_CONTROLLER` cannot approve it: that role can shorten the minimum age through a new rule-set version, and by
    design never releases the gains it would bring forward. The other two types admit no gain at all.
-4. **Keep it aged and alerted, and know what the alerts do not show.** These breaks are HIGH, so `BreakAgeHigh` pages once one
+4. **Keep it aged and alerted, and know what each alert shows.** These breaks are HIGH, so `BreakAgeHigh` pages once one
    has stood a day, and the item's age raises `SuspenseItemAged` past 30 days. **Both read the oldest only**
-   (`max(...) > ...`): while a parked item stands, each stays firing on it, and a new HIGH break or a newly aged item behind it
-   raises nothing new. So with parked value standing, read the open HIGH breaks (`GET .../breaks`) and the suspense register
-   every working day; the page will not tell you of the next one.
+   (`max(...) > ...`): while a parked item stands, each stays firing on it. *(2026-11-13, `THREAT_MODEL.md` §6 item 42 (a), decided
+   (i):)* a new HIGH break that ages past its day behind it pages `BreakNewlyAgedHigh`, and a newly aged suspense item raises
+   `SuspenseItemNewlyAged` (§11.23): each counts what is past the same bound and fires when that count rises while one already stood.
+   Each such alert is a new item to own as in step 2, never the parked one again. Keep reading the open HIGH breaks (`GET .../breaks`)
+   and the suspense register every working day all the same, until these rules have been seen to fire on a real deployment: their
+   promtool cases hold them, and no cluster has run them (`POSTPONED_ISSUES.md` PI-025). *(Read "a new HIGH break or a newly aged item behind it
+   raises nothing new. So with parked value standing, read the open HIGH breaks and the suspense register every working day; the page
+   will not tell you of the next one" until 2026-11-13.)*
 5. **Escalate.** Each such item is listed, with its age and its owner, in the incident or review record that tracks parked
    value, for the owner to decide when the later payments phase's operation is scheduled. Nothing else moves it.
 
@@ -3267,6 +3273,7 @@ latest; the run, as its record names it.
 | §11.57 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.58 | `platform` | 0 | 6 | 6 | — | — | — | — | Phase 16 drill |
 | §11.59 | `platform` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
+| §11.63 | `platform`, `payments`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -6281,6 +6288,65 @@ autoscaled run at the floor refused; the step's bound read from the render; the 
 `pipeline_preflight`'s counts to ten), the pinned k6's `inspect` of the `autoscale` profile (sign-ins at 60,003 iterations per 1,000 s in
 the surge, every other operation at its quarter), and the harness's refusals of a count past the ceiling, a release probe at ten and an
 experiment written for three. `TenInstancesRehearsalContractTest` holds what the runs would assert.
+
+### 11.63 The objectives under load: judging them, a real burn, a decline wave, and recalibrating one (`P16-TSK-029`, ADR-0148)
+
+**What it is.** The runs that judge `docs/architecture/SLOS.md` §2's objectives under load, and what a person does with a verdict. The
+judgement is `SLOS.md` §6's: each objective read from the committed rules at run time, its burn rate over the run and whether its burn
+pairs fired, MET only at a burn rate of at most 1 with neither pair fired. Every load run records it (`load/slo-objectives.tsv`, beside
+`load/slo-availability.tsv`); a run judges it only when asked. Nothing here is a production objective met: a `kind` run on one machine says
+what that machine carried (ADR-0126 decision 1).
+
+**E84, every objective at the sustained profile** (E74's run, judged):
+`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=sustained REHEARSAL_LOAD_OBJECTIVES=1`, at three replicas, two and a half hours. Green when the
+load scope's own criteria hold and every objective is MET. `COULD NOT RUN` when an objective had no sample, or the window's firing alerts
+do not show the migrator Job planted before the load (`MigratorJobFailed`): a silence nobody could hear judges nothing.
+
+**E86, a decline wave** (business outcomes spend no budget): `REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=declines REHEARSAL_LOAD_OBJECTIVES=1`,
+twenty minutes at the target's peak. The harness writes the simulator's decline control before the first arrival (`/tmp/decline-card-share`,
+30: three card authorizations in ten declined by their key) and removes it after the load, on a stop and on every way out. Green when E84's
+judgement holds over the run and every refused checkout or top-up is one `FAILED(DECLINED)` card attempt, their share within five points
+of 30%, and the payment objective's errors are within what the client saw answered `5xx` or not at all. A run that declined nothing is red:
+it showed nothing.
+
+**E85, a real burn**: `REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E85`, at three replicas. E51's latency toxic on the database hop
+under the workload until a fast burn pair pages (15 minutes at most), then removed. Read from Prometheus's own history over the fault and
+after (`experiments/E85/held.tsv`): every objective whose pair held, unbroken, for its `for` and a minute must have fired; the page reaches
+the page receiver; the fleet's `503` answers over the fault cover at least 95% of what it shed; no fast pair still pages ten minutes after
+the removal. `COULD NOT RUN` when no pair held: raise `REHEARSAL_E85_LATENCY_MS`, since a fault that burned nothing fast enough to page
+proves nothing.
+
+**E17 records, never judges**, the payment objective's pairs during the card provider's outage: they stay silent by design, because a
+provider that answers `503` or nothing leaves the payment `UNKNOWN` behind a success status (`SLOS.md` §6). `PaymentUnknownAged` is the
+outage's signal.
+
+**Reading a verdict.** `load/slo-objectives.tsv`: the objective, its budget, its error ratio over the run, the burn rate, whether each pair
+fired, the verdict. A NOT MET names the objective; then, in this order:
+
+1. **The machine or the platform.** Read the run's saturation and the database's stalls (§11.45's record, `load/stages-resources.tsv`): a
+   burn that began with a disk stall of the reference machine (5 to 25 s on WAL writes) is an environment limit, recorded as such. So is
+   a burn at the target's peak on that machine, whose stress run (E30) carried 0.39 of it within every objective at three replicas and
+   broke at its next step on the database's CPU (`CAPACITY_MODEL.md` §3.4): E84 there is expected NOT MET, and its record names the limit.
+2. **The cause, by status and route**: `load/k6/statuses.tsv` (the client's), `http_server_requests_seconds_count` by `uri` and `status`
+   (the platform's), the shed answers (`load/k6/shed.tsv`). A shed is a burn on its route (ADR-0137 decision 4).
+3. **Recalibrate only by a reviewed change**: a target moves in `infra/prometheus/rules/slo.yml`, `slo-recording.yml` and `SLOS.md` §2 together,
+   with the reason written in `SLOS.md` §6's table, and `AlertCatalogueTest` holds the three to each other. Never raise a threshold to
+   silence a run, as §11.8 says; never recalibrate on a development machine's limit alone.
+
+**Adopting a proposed indicator** (`SLOS.md` §7, `THREAT_MODEL.md` §6 item 70): the owner's decision first; then its bucket boundary or meter,
+its four recording windows and its two burn pairs in one change, a row in `SLOS.md` §2, a row in §11.8's table, and its promtool cases.
+
+**The break-age counts** (`THREAT_MODEL.md` §6 item 42 (a)) are §11.23's and §11.11's: `BreakNewlyAged…` and `SuspenseItemNewlyAged`.
+
+**Failure and rollback.** Each run is a throwaway cluster of its own name. The decline control and the toxic live only in that cluster and
+are removed on every way out; no committed file changes.
+
+**The record.** None. Not run, owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of 2026-11-13, "we dont need long running
+checks and tests"): E84, E85 and E86, each at three replicas. What ran instead, on 2026-11-13, without a cluster: every PromQL expression
+the judgement builds, generated from the committed rules by the harness's own functions, parsed by the pinned `promtool check rules`, and
+evaluated by the pinned `promtool test rules` against a planted burn of the payment objective (the fast pair held and fired, the slow pair
+fired, the transfer objective neither, the ratio over the window as the series give it); the decline-wave promtool case
+(`infra/prometheus/tests/slo.test.yml`); the simulator compiled. `ObjectivesRehearsalContractTest` holds what the runs would assert.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

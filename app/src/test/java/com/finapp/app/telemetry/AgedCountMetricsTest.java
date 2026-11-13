@@ -72,7 +72,7 @@ class AgedCountMetricsTest {
      * Rows held in memory and counted with the statements' own predicates: a break counts when raised at or before its severity's
      * cutoff, a suspense item when opened on or before the suspense cutoff ({@code JdbcAgedReadings}).
      */
-    private static final class Rows implements AgedReadings {
+    private static class Rows implements AgedReadings {
         private final Map<Severity, List<Instant>> breaks = new EnumMap<>(Severity.class);
         private final List<LocalDate> suspense = new ArrayList<>();
         private final AtomicInteger reads = new AtomicInteger();

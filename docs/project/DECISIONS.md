@@ -1448,6 +1448,13 @@ cannot be written, and none is refused for the broker's sake. The operations are
 exactly one; every failure row is checked by registered experiments or designed-only; E05, E06, E09, E72 and E73 walk their rows at the
 edge and fail on a mismatch. No automatic refusal on a correctness signal: the freeze stays a person's act, proposed to the owner
 (`THREAT_MODEL.md` §6 item 66). Every run owed (PI-025). → [ADR-0144](../adr/ADR-0144-the-financial-operation-availability-matrix.md)
+**The objectives judged under load, and the break-age counts** (`P16-TSK-029`, 2026-11-13, `Proposed`). Every load run records each
+objective of `SLOS.md` §2 read from the committed rules - its burn rate over the run and whether its pairs fired - and judges it only when
+asked: MET at a burn rate of at most 1 with neither pair fired; a run never recalibrates a target. E84 judges the sustained profile, E85 a
+real burn by shedding under a slowed database, E86 a decline wave; every run owed (PI-025). A provider's outage spends no budget by design
+(an unknown answered as its state), so the processing, read, latency, settlement-ingestion and reconciliation-completion indicators are
+proposed, not adopted (`THREAT_MODEL.md` §6 item 70). Item 42 (a)'s counts of what is past each age rule's bound, with a rule beside each
+that fires on a rise while one stands. → [ADR-0148](../adr/ADR-0148-the-objectives-judged-under-load-and-break-age-counts.md)
 
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.

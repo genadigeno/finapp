@@ -181,6 +181,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0141](ADR-0141-one-journal-entry-per-posting-scope-then-the-idempotency-sweep.md) | One journal entry per posting scope, for ever, then the idempotency records swept | Proposed | 16 | Ledger · Platform |
 | [0142](ADR-0142-no-table-partitioned-and-no-read-replica-routed-at-the-target.md) | No table partitioned and no read replica routed at the target: each decision derived, its overturning measurement built (E65), criterion 6 held by a guard | Proposed | 16 | Platform · Ledger · Accounting (report generation) · every module (the data tier) |
 | [0144](ADR-0144-the-financial-operation-availability-matrix.md) | The financial-operation availability matrix: derived from where the record lives, held to the served routes, walked by the experiments; no automatic refusal on a correctness signal, proposed | Proposed | 16 | Platform · every module that serves a route |
+| [0148](ADR-0148-the-objectives-judged-under-load-and-break-age-counts.md) | The objectives judged under load, never recalibrated by a run; a real burn by shedding; the break-age counts | Proposed | 16 | Platform observability · Reconciliation |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch

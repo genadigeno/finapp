@@ -765,6 +765,17 @@ driving the simulators to decline 30% of payments and showing no burn. **Operati
 break-age counts (a gauge per severity of breaks past their bound, a rule when the count rises) are built here before any
 environment holds parked value.
 
+*(Erratum, 2026-11-13, `P16-TSK-029`, ADR-0148; `docs/architecture/SLOS.md` §6 and §7. **(1)** E17 cannot be the real burn: the card
+adapter reads a provider's `503` or silence as an indeterminate answer, the payment rests `UNKNOWN` and its command answers the payment's
+state with a success status (`INV-LIFE-03`), so `payment_checkout` spends nothing during a provider's outage, by design. E17 records the
+pairs and never judges them; the real burn is E85, the database slowed by E51's toxic until the fleet sheds (a shed is a `503` on its
+route, ADR-0137), judged from Prometheus's own history, which also stands for the policy's planted burn: the page routed, the freeze a
+person's recorded decision (`OPERATIONS_RUNBOOK.md` §11.8). "Silent at peak" is E84, E74's sustained run judged; the 30% declines are E86.
+**(2)** No latency target of §4.3 is adopted, so no bucket was added; those indicators, a payment-processing indicator that would see a
+provider's outage, the balance read's availability, and the settlement-ingestion and reconciliation-completion indicators are proposed in
+`SLOS.md` §7 for the owner (`THREAT_MODEL.md` §6 item 70). **(3)** "A rule when the count rises" is five rules, one beside each age rule,
+since an alert's severity and wait are its rule's. Every run is owed under `POSTPONED_ISSUES.md` PI-025.)*
+
 ---
 
 ## 16. The distributed-system audit (Part 23)

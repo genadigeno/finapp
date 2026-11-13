@@ -7,7 +7,8 @@ and the budget says how much. A **correctness signal** has no budget: a ledger o
 because "99.9% balanced" means nothing (ADR-0124 decision 4). Keep the two apart. The alerts are in `infra/prometheus/rules/`, the
 procedures in `OPERATIONS_RUNBOOK.md`, and `AlertCatalogueTest` holds this document and the rules to each other.
 
-Every target is a **reference value**. Phase 16's load model recalibrates them. Nothing here is a commitment to a customer, and no
+Every target is a **reference value**. Phase 16's load model recalibrates them *(2026-11-13: §6 says how each is judged under load, by
+runs owed under `POSTPONED_ISSUES.md` PI-025; none is validated or recalibrated yet, and §7 holds the indicators proposed beside them)*. Nothing here is a commitment to a customer, and no
 compliance is claimed by anything in it.
 
 ## 1. How an objective is measured and alerted
@@ -126,3 +127,72 @@ module, on the rule or on its group, and one runbook section that names it (`Ale
 **What a deployed environment must keep.** The rules select `job="finapp"`, so a deployed scrape configuration keeps that job name. A deployed
 scrape also labels its targets with no `env="local"`, which is how `CertificateExpirySeriesAbsent` tells a deployment from compose, and with an `env` naming its environment, because `ConfigFingerprintDisagrees` counts per `env` and two environments on one Prometheus without it would count as one fleet. cert-manager's
 `certmanager_certificate_expiration_timestamp_seconds` has to be scraped for the certificate alerts to read anything. Each is recorded on the tasks that build the deployment.
+
+## 6. Under load: how each objective is judged
+
+*(Written 2026-11-13 by Phase 16's objectives task, ADR-0148, from `PHASE_16_PLAN.md` §15. **No run has judged anything yet**: every run
+below is built, held by `ObjectivesRehearsalContractTest`, and owed under `POSTPONED_ISSUES.md` PI-025 by the owner's word of 2026-11-13.
+No objective here is claimed met, and none was recalibrated.)*
+
+**The judgement.** After the census, every `load` run writes `load/slo-objectives.tsv`: each objective of §2 read from the committed rules
+at run time, never copied - its budget from its fast pair in `slo.yml`, its five-minute SLI from `slo-recording.yml` taken over the run's
+window - with the burn rate the run spent it at (1 spends a 30-day budget exactly at its pace) and whether its fast or its slow pair fired
+from the load's start until the judgement. **MET** is a burn rate of at most 1 with neither pair fired; **NOT MET** is either; **NOT READ**
+is no sample, nothing having been sent to it. The availability objectives' requests and errors are also `load/slo-availability.tsv` (the
+data tier's availability task's reading, E74). A run judges only under `REHEARSAL_LOAD_OBJECTIVES=1`: then an objective NOT READ, or a
+window whose firing alerts do not show the migrator Job planted before every load (a silence nobody could have heard), stops the run as
+unable to judge, and an objective NOT MET fails it. **A run never recalibrates an objective**: a target changes by a reviewed change to
+`slo.yml` and this document together, with its reason written here.
+
+| Run | What it judges | Owed |
+|---|---|---|
+| E84 | Every objective at the sustained profile (E74's run: the target's average for 30 minutes, then its peak for two hours): MET, each | PI-025 |
+| E85 | A real burn: the database slowed under the workload until the fleet sheds (a shed is a `503` on its route, ADR-0137). Every objective whose burn pair's expression held for its `for` and a minute in Prometheus's own history must have fired, the page must reach its receiver, the fleet's `503`s must cover what it shed, and the fast pair must stop once the burn does | PI-025 |
+| E86 | Business outcomes spend no budget: the target's peak with 30% of card authorizations declined by the provider; each refusal a decline, the payment objective's errors within what the client saw answered `5xx` or not at all, and E84's verdict over the run | PI-025 |
+| E17 | Recorded, never judged: the payment objective's pairs during a provider's outage (below) | PI-025 |
+
+**Each objective, validated or recalibrated, and why.** None is either yet, because no run has judged one. What is known, and what the
+runs will settle. One recorded run bears on E84 before it is made: the workload baseline's stress run on the reference machine (E30,
+`CAPACITY_MODEL.md` §3.4) carried 0.39 of the target's peak within every objective at three replicas and broke at its next step, the
+database's CPU the first limit. E84 at the target's peak on that machine is therefore expected to read NOT MET, its record naming the
+machine's limit; that is no reason to recalibrate a production reference, and the record says so rather than the target moving.
+
+| Objective | Judged by | Today |
+|---|---|---|
+| `authentication_availability`, `merchant_api` | E84; E85 if its routes shed | Kept. The load harness's development runs on the reference machine answered sign-ins and the merchant API `5xx` past what 99.9% explains while the machine's disk stalled for 5 to 25 s on WAL writes (`OPERATIONS_RUNBOOK.md` §11.43's record): a limit of one development machine, not of the platform, and no reason to loosen a production reference |
+| `authentication_latency`, `transfer_latency` | E84; E85 | Kept: the only latency objectives adopted, each with its 1 s bucket (`SloLatencyBuckets`) |
+| `transfer_availability`, `payment_checkout` | E84, E86; E85 | Kept. A decline, a risk refusal or an insufficient-funds refusal spends nothing (`infra/prometheus/tests/slo.test.yml`'s decline-wave case); a provider's outage spends nothing either, below |
+| `provider_callbacks` | E84; the spike profile's run records it at the burst (E50, `load/slo-objectives.tsv`) | Kept: a callback is never shed (`@NotShed`) |
+| `operator_surface` | E84 (the settlement upload and the operator reads) | Kept: never shed, by the edges' marker |
+| `event_freshness`, `consumption` | E84 at peak; E09's outage reads the freshness ratio above zero | Kept |
+
+**What the objectives cannot see.** Each is a finding, not a defect of a rule, and each has its own signal:
+
+- **A provider's outage spends no budget.** A provider that answers `503`, or nothing, is an indeterminate answer to the adapter
+  (`PspWireClient`): the payment rests `UNKNOWN` and its command answers the payment's state with a success status, as `INV-LIFE-03` asks.
+  Only a provider that cannot be asked at all, an unconfigured one, answers `503`. So `payment_checkout`'s pairs stay silent through E17
+  by design, and `PaymentUnknownAged` (`OPERATIONS_RUNBOOK.md` §11.22) is what tells. A processing indicator that would spend budget there
+  is proposed in §7 (`THREAT_MODEL.md` §6 item 70).
+- **A request the edge answers itself.** The SLIs are the application's request timer: the edge's own `429` (its per-source in-flight
+  bound under a stall) and its `5xx` when no replica is ready never reach it. `EdgeErrorRatioHigh` (`OPERATIONS_RUNBOOK.md` §11.42) is
+  their signal; a load run records them per operation in `load/k6/statuses.tsv`.
+- **The balance read has no objective**, though it is the largest operation of the target (`PHASE_16_PLAN.md` §4.3). Proposed in §7.
+- **Shedding spends the budget it protects.** A spike the platform sheds is a burn on every shed route (ADR-0137 decision 4); the spike
+  profile's run records whether it pages (E50), which is the shedding thresholds' calibration, not the objectives'.
+
+## 7. Indicators proposed, not adopted
+
+*(Written 2026-11-13 by Phase 16's objectives task. Each is a proposal for the owner (`THREAT_MODEL.md` §6 item 70): nothing below has a
+recording rule, a bucket or an alert, because `PHASE_16_PLAN.md` §15 adds a bucket only where a target is adopted. The targets are
+`PHASE_16_PLAN.md` §4.3's proposed ones and the alerts' own bounds, never measured.)*
+
+| Indicator | SLI it would read | Proposed target | What adopting it builds | Status |
+|---|---|---|---|---|
+| `payment_processing` | Card payments reaching a final state (`SUCCEEDED` or `FAILED`) within 15 minutes of their creation, over those created | 99% within 15 minutes, `PaymentUnknownAged`'s own bound | A counter of concluded card payments by whether they concluded within the bound, counted after commit | proposed |
+| `account_read_availability` | Non-5xx ratio of `GET /v1/me/accounts/{id}/balance` and the account reads | 99.9% | Recording rules and burn pairs only: the request timer already carries the routes | proposed |
+| `account_read_latency` | Balance reads within 300 ms | 99% within 300 ms | A 300 ms boundary on those routes in `SloLatencyBuckets` | proposed |
+| `payment_latency` | Payment and checkout commands within 2 s, the simulated provider included | 99% within 2 s | A 2 s boundary on those routes | proposed |
+| `merchant_api_latency` | Merchant API requests within 1 s | 99% within 1 s | The 1 s boundary on `/v1/merchant/**` | proposed |
+| `settlement_ingestion` | Share of minutes in which no settlement file has waited more than 15 minutes from its arrival without being accepted, its second person's attestation left out (a person's wait, not the platform's) | 99% of minutes | A gauge of the oldest file waiting on the platform alone: `finapp.settlement.file.age` includes the attestation's wait | proposed |
+| `reconciliation_completion` | Share of minutes in which no reconciliation run has been incomplete more than 30 minutes after its batch | 99% of minutes | Recording rules over `finapp.reconciliation.run.age`, which already measures from the run's creation | proposed |
+| `ledger_posting_latency` | Postings within the posting's share of its command's latency | Read from the workload baseline's runs when they are made (E29, owed) | Buckets on `finapp.ledger.posting.latency` once a figure exists | proposed, no target |

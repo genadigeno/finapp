@@ -351,7 +351,10 @@ export function topup() {
     conclude(op, status === 'SUCCEEDED' ? null : status === 'FAILED' ? REFUSED : UNRESOLVED, started);
 }
 
-function pollCheckout(op, checkoutId) {
+// A session has no failure state: a declined payment is the payment's, and the session waits for its expiry (CheckoutSessionStatus). So in
+// a profile whose provider declines (P16-TSK-029, declines.json, E86) a PAYMENT_PENDING session's own payment is read beside it, by its payer,
+// and FAILED there concludes the checkout as refused - which kind-rehearsal/load.sh holds to a decline the provider gave.
+function pollCheckout(op, checkoutId, payer) {
     const since = Date.now();
     let status;
     for (;;) {
@@ -359,6 +362,13 @@ function pollCheckout(op, checkoutId) {
         status = response.status === 200 ? json(response, 'status') : undefined;
         if (status === 'COMPLETED' || status === 'FAILED' || status === 'EXPIRED' || status === 'ABANDONED' || Date.now() - since >= RESOLVE_MS) {
             return status;
+        }
+        const intent = profile.declineShare && status === 'PAYMENT_PENDING' ? json(response, 'paymentIntentId') : undefined;
+        if (intent) {
+            const payment = send(op, request(op, 'GET', `/v1/payments/${intent}`, null, payer, null, 'payment-read'), false);
+            if (payment.status === 200 && json(payment, 'status') === 'FAILED') {
+                return 'FAILED';
+            }
         }
         pause(since, response);
     }
@@ -404,7 +414,7 @@ export function checkout() {
     }
     let status = confirmed.map((answer) => json(answer, 'status')).find((value) => value === 'COMPLETED');
     if (!status) {
-        status = pollCheckout(op, checkoutId);
+        status = pollCheckout(op, checkoutId, who.token);
     }
     if (created.length === 2) {
         agreed(op, created, 'checkoutId');
