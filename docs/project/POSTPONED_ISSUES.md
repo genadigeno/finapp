@@ -797,6 +797,18 @@ commit and the date; do not delete the entry.
     size is E59's second size, in `P16-TSK-024`'s bullet above. Nothing of the task ran on a cluster; what ran instead, on 2026-11-13:
     `kind-secrets.sh`'s ring mode in its render mode with its six refusals, `sh -n` and ShellCheck over the changed scripts, and the
     contract test (§11.64's record).
+  - **`P16-TSK-028`** (security under scale and failure, `OPERATIONS_RUNBOOK.md` §11.62, whose record is empty; ADR-0147): the **security
+    probe** in the experiments it rides, first in **E01** and **E05** at three replicas (`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E01
+    E05"`): no protected request answered without its check while each fault is on, the sessions held from before each fault served after
+    it, the four-eyes plant's proposer refused while no primary serves and on the promoted one with each refusal recorded, the audit trail
+    whole across the failover, and E05's sign-in counts read across the promotion (the entry's probe: an unauthenticated request during
+    E05, refused); then **E81**, one source's burst at the sign-in door at ten replicas (`REHEARSAL_EXPERIMENTS=E81
+    REHEARSAL_EXPERIMENTS_REPLICAS=10`), exactly the door's limit admitted; and **E82**, a rolling restart of the whole fleet at ten replicas
+    (`REHEARSAL_EXPERIMENTS=E82 REHEARSAL_EXPERIMENTS_REPLICAS=10`), every new replica serving the held sessions. Every other experiment's
+    run under this list carries the probe from this task's tree on; E04's (`P16-TSK-020`'s bullet) also takes the edge's probe pod off its
+    worker first (2026-11-14), which its first run shows. Nothing ran on a cluster. What ran instead, on 2026-11-13:
+    `DegradedStorageFailsClosedTest` (the application's checks with the database away) and `SecurityUnderFailureContractTest`, `sh -n` and
+    ShellCheck 0.10.0 over the changed scripts, and `javac` over the rehearsal's client.
 
 ## PI-026 — The first real environment's managed-service decisions: the audit archive's bucket and read door, the restore's release and window
 

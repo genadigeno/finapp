@@ -143,6 +143,10 @@ public final class Rehearsal {
             case "load-customers" -> rehearsal.loadCustomers(Integer.parseInt(args[2]));
             case "load-fixture" -> rehearsal.loadFixture(args[2]);
             case "load-callbacks" -> rehearsal.loadCallbacks(args[2], Integer.parseInt(args[3]), Integer.parseInt(args[4]));
+            // Security under scale and failure (P16-TSK-028, OPERATIONS_RUNBOOK.md section 11.62): the held sessions and the four-eyes plant.
+            case "security-tokens" -> rehearsal.securityTokens(args[2]);
+            case "four-eyes-plant" -> rehearsal.fourEyesPlant();
+            case "four-eyes-self" -> rehearsal.fourEyesSelf(args[2]);
             default -> throw new IllegalArgumentException("unknown step " + args[1]);
         }
     }
@@ -2164,6 +2168,66 @@ public final class Rehearsal {
         if (payout != null) {
             state.setProperty("payout.held." + label, payout);
             save();
+        }
+    }
+
+    // ------------------------------------------------------------------ security under scale and failure (P16-TSK-028, section 11.62)
+
+    /**
+     * Two sessions for the experiments' security probe to hold: the first customer's, signed in on the public host, and the
+     * operator's, elevated on the operator host. Written to security-{label}.tokens in the work directory, which the harness reads
+     * and removes at once; never printed, so no log keeps them. Prints only that both are held.
+     */
+    private void securityTokens(String label) throws Exception {
+        String customer = authenticate(state.getProperty("customer.0.login"));
+        String operator = fresh("operator");
+        Files.writeString(work.resolve("security-" + label + ".tokens"), "customer=" + customer + "\noperator=" + operator + "\n");
+        System.out.println("security-tokens " + label + " customer=held operator=held");
+    }
+
+    /**
+     * The four-eyes plant: the controller, who also holds the accountant's role (granted by the harness on the run's own server, as
+     * prepare grants roles), proposes a GL mapping version - the reference chart again - taking effect next month, and its id is kept
+     * as security.mapping. Nobody ever activates it: only its proposer's own activation is tried (fourEyesSelf), which four eyes refuses.
+     */
+    private void fourEyesPlant() throws Exception {
+        String chart = Files.readString(Path.of("/src/gl-mapping.json"));
+        String next = java.time.YearMonth.now(java.time.ZoneOffset.UTC).plusMonths(1).toString();
+        String body = "{\"effectiveFromPeriod\":\"" + next + "\",\"reason\":"
+                + jsonString("the security probe's four-eyes plant, never to be activated (the kind rehearsal, P16-TSK-028)") + ","
+                + chart.strip().substring(1);
+        Answer proposed = post(operatorBase, "/v1/operator/accounting/mapping-versions", body, fresh("controller"), key());
+        String id = ok(proposed) ? field(proposed.body(), "id") : null;
+        if (id != null) {
+            state.setProperty("security.mapping", id);
+            save();
+        }
+        System.out.println("four-eyes-plant proposed status=" + proposed.status() + " code=" + codeOf(proposed) + " mapping=" + orDash(id));
+    }
+
+    /**
+     * The plant's activation, tried by its own proposer. Four eyes must refuse it whatever state the platform is in: 403
+     * accounting.SelfApprovalRefused when the platform can answer, and never a 2xx. A sign-in or a request that could not be made at
+     * all prints status=-1 and the stage it failed at.
+     */
+    private void fourEyesSelf(String label) throws Exception {
+        String id = state.getProperty("security.mapping");
+        if (id == null) {
+            throw new IllegalStateException("no four-eyes plant in this run's state");
+        }
+        String controller;
+        try {
+            controller = fresh("controller");
+        } catch (IOException | IllegalStateException unsigned) {
+            System.out.println("four-eyes-self " + label + " status=-1 code=- stage=sign-in");
+            return;
+        }
+        try {
+            Answer self = post(operatorBase, "/v1/operator/accounting/mapping-versions/" + segment(id) + "/activation",
+                    reasonBody("the proposer's own activation, tried by the security probe (the kind rehearsal, P16-TSK-028)"), controller, key());
+            System.out.println("four-eyes-self " + label + " status=" + self.status() + " code=" + codeOf(self) + " stage=activation");
+        } catch (IOException unanswered) {
+            System.out.println("four-eyes-self " + label + " status=-1 code=- stage=activation");
         }
     }
 

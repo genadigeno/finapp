@@ -58,6 +58,41 @@ final class InterceptorHarness {
                 }), surfaces, meters);
     }
 
+    /**
+     * The real interceptor over a database that is away (`P16-TSK-028`): with {@code reachable} false no connection can be had
+     * at all, as while a primary is lost and before its standby is promoted; with it true the session is found and the roles'
+     * read then fails, as a connection lost in the middle of a request does. Every begin, end and audit write captured.
+     */
+    static SessionAuthenticationInterceptor interceptorOverADatabaseAway(Session session, boolean reachable, List<String> events,
+            List<AuditRecord> written, IdGenerator ids, Clock clock) {
+        javax.sql.DataSource source = reachable ? new OneConnection() : new NoConnection();
+        return new SessionAuthenticationInterceptor(sessionsAnswering(session), transactions(events), source,
+                SessionPolicy.current(), new Authorization(unreadableRoles(), ids, clock, (uow, record) -> {
+                    events.add("write:" + record.operation().code());
+                    written.add(record);
+                }), new RequestSurfaces(true), new SurfaceRefusalMeters(new SimpleMeterRegistry()));
+    }
+
+    /**
+     * The real merchant key's door over the same two databases (`P16-TSK-028`): away, no connection to be had; reachable, a
+     * key that is not found (an unknown key's refusal, the control). Each lookup that reached the store is counted.
+     */
+    @SuppressWarnings("unchecked")
+    static com.finapp.app.merchant.MerchantKeyAuthenticationInterceptor merchantDoorOverADatabaseAway(boolean reachable,
+            List<String> events, AtomicInteger lookups) {
+        com.finapp.merchant.MerchantApiKeyStore<Connection> keys = (com.finapp.merchant.MerchantApiKeyStore<Connection>)
+                Proxy.newProxyInstance(com.finapp.merchant.MerchantApiKeyStore.class.getClassLoader(),
+                        new Class<?>[] {com.finapp.merchant.MerchantApiKeyStore.class}, (proxy, method, args) -> {
+                            if (method.getName().equals("findLiveFor")) {
+                                lookups.incrementAndGet();
+                                return Optional.empty();
+                            }
+                            throw new UnsupportedOperationException(method.getName());
+                        });
+        return new com.finapp.app.merchant.MerchantKeyAuthenticationInterceptor(keys, transactions(events),
+                reachable ? new OneConnection() : new NoConnection());
+    }
+
     /** The error contract's recorder over the same captures. */
     static StepUpRefusals stepUpRefusals(List<String> events, List<AuditRecord> written, IdGenerator ids, Clock clock) {
         return new StepUpRefusals(transactions(events), new OneConnection(),
@@ -128,6 +163,64 @@ final class InterceptorHarness {
                     }
                     throw new UnsupportedOperationException(method.getName());
                 });
+    }
+
+    /** Roles whose read fails as a connection lost mid-request fails it (`P16-TSK-028`). */
+    @SuppressWarnings("unchecked")
+    private static RoleAssignmentStore<Connection> unreadableRoles() {
+        return (RoleAssignmentStore<Connection>) Proxy.newProxyInstance(RoleAssignmentStore.class.getClassLoader(),
+                new Class<?>[] {RoleAssignmentStore.class}, (proxy, method, args) -> {
+                    if (method.getName().equals("liveRolesOf")) {
+                        throw new org.springframework.dao.DataAccessResourceFailureException(
+                                "the connection was lost in the middle of the request");
+                    }
+                    throw new UnsupportedOperationException(method.getName());
+                });
+    }
+
+    /** A data source with no connection to give: every borrow fails, as it does while the database is away. */
+    private static final class NoConnection implements javax.sql.DataSource {
+
+        @Override
+        public Connection getConnection() throws java.sql.SQLException {
+            throw new java.sql.SQLException("the database is away", "08001");
+        }
+
+        @Override
+        public Connection getConnection(String username, String password) throws java.sql.SQLException {
+            return getConnection();
+        }
+
+        @Override
+        public java.io.PrintWriter getLogWriter() {
+            return null;
+        }
+
+        @Override
+        public void setLogWriter(java.io.PrintWriter out) {}
+
+        @Override
+        public void setLoginTimeout(int seconds) {}
+
+        @Override
+        public int getLoginTimeout() {
+            return 0;
+        }
+
+        @Override
+        public java.util.logging.Logger getParentLogger() {
+            return java.util.logging.Logger.getGlobal();
+        }
+
+        @Override
+        public <T> T unwrap(Class<T> iface) {
+            throw new UnsupportedOperationException("unwrap");
+        }
+
+        @Override
+        public boolean isWrapperFor(Class<?> iface) {
+            return false;
+        }
     }
 
     /** A transaction manager that manages nothing and records each begin and its end, in order. */

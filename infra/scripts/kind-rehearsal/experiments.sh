@@ -59,6 +59,16 @@
 # shedding within its bound, and every request the workload sent resolves by its key, one effect each, the census green. A fault that
 # sheds nothing proves nothing: E51 then could not run.
 #
+# SECURITY UNDER SCALE AND FAILURE (P16-TSK-028, ADR-0147; OPERATIONS_RUNBOOK.md section 11.62), in every experiment by experiment_run's
+# hooks, the functions at the end of this file: a customer's and an operator's sessions held from the steady state, the security probe's
+# control, then from just before the fault to the recovery's end every application pod asked every 5 s - four protected requests with no
+# credential or a forged one, which must never be answered 2xx or 3xx (a fail-open observation fails the experiment), and the held
+# credentials, which must never be refused (a session lost fails it); a four-eyes plant whose proposer's own activation is tried while the
+# fault is on and after it, never a 2xx and every 403 recorded; every audit record read before the fault present and unchanged after it.
+# E05 adds the sign-in door's counts across the failover (the unlogged counter's fresh budgets, measured). Two experiments of its own,
+# written for a count: E81, one source's burst at the sign-in door spread over every replica, exactly the door's limit admitted; and E82,
+# a rolling restart of the whole fleet, every new replica serving the sessions held from before it.
+#
 # THE DATABASE (P16-TSK-022, ADR-0139; OPERATIONS_RUNBOOK.md sections 11.40 and 11.54), each under the workload retrying by key, with the
 # journal read with a digest per entry before the fault and compared after it, and the public edge's answers read for the interruption:
 #   E06  the primary stopped uncleanly in place (pg_ctl stop -m immediate), no failover: readiness down and back, no replica restarted, the
@@ -1026,6 +1036,8 @@ experiments_clear_faults() {
     done
     # The one setting an experiment puts on (E57's leg without the socket timeout), removed whether or not it was recorded: a no-op when absent.
     kube -n finapp set env deployment/finapp-app SPRING_APPLICATION_JSON- >> "$EXP_ART/faults.log" 2>&1
+    # And E81's (P16-TSK-028): the sign-in door at its own limit, removed the same way.
+    kube -n finapp set env deployment/finapp-app FINAPP_ABUSE_SIGN_IN_LIMIT- >> "$EXP_ART/faults.log" 2>&1
     # P16-TSK-013's: the brokers back at their count, any relay hold's session ended, the topics at the catalogue's posture.
     if [ "$(kube -n finapp get statefulset/finapp-kafka -o jsonpath='{.spec.replicas}' 2>/dev/null)" != "$KAFKA_BROKERS" ]; then
         experiments_undo brokers-stopped >> "$EXP_ART/faults.log" 2>&1
@@ -1518,14 +1530,23 @@ experiment_run() {
     experiments_guard
     experiments_steady
     "${1}_steady"
+    # Security under scale and failure (P16-TSK-028, ADR-0147): held sessions, the probe's control and the four-eyes plant after the
+    # experiment's own steady state; the probe from just before the fault to the recovery's end; the plant tried while the fault is on;
+    # the probe judged, the sessions, four eyes and the audit trail read after the recovery. Never inside an experiment's own steps.
+    security_steady "$1"
     step "$1-fault"
+    security_fault "$1"
     "${1}_fault"
+    security_during "$1"
     step "$1-observe"
     "${1}_observe"
+    security_observed "$1"
     step "$1-stop"
     experiments_stop
+    echo recover > "$EXP_DIR/security-phase"
     step "$1-recover"
     "${1}_recover"
+    security_after "$1"
     step "$1-census"
     # Under the load beside the experiments (P16-TSK-020) the census is the load's through the window, and the full one after the load.
     if [ -n "$EXPERIMENTS_LOAD_ON" ]; then
@@ -5081,6 +5102,411 @@ E51_recover() {
 }
 
 # ---------------------------------------------------------------------------------------------------
+# Security under scale and failure (P16-TSK-028; ADR-0147; PHASE_16_PLAN.md section 18; OPERATIONS_RUNBOOK.md section 11.62). Every
+# experiment carries it through experiment_run's hooks, and no experiment's own steps change:
+#   security_steady    after the experiment's own steady state: a customer's session and an elevated operator's, fresh from the
+#                      client, held beside the merchant's key; the probe's control on every ready replica - each held credential served
+#                      200, each of the four protected requests refused 401 - so that a refusal later is the check's own and a 2xx
+#                      would be seen; the four-eyes plant, once a run, and its recorded refusals counted;
+#   security_fault     just before the fault: every audit record's digest, E05's sign-in counts read, and the probe started. From
+#                      here to the end of the recovery, every 5 s, every application pod is asked straight from the edge's probe pod:
+#                      the four protected requests with no credential or a forged one, and the three held credentials. Its looks
+#                      are labelled arming until the experiment's fault step has put the fault on, then fault, then recover;
+#   security_during    just after the fault is put on: the looks labelled fault from here, and in the background the plant's
+#                      activation by its own proposer;
+#   security_observed  E05 only: the same window's counts once the fleet is ready on the promoted server;
+#   security_after     after the recovery: the probe stopped and judged - a protected request answered 2xx or 3xx is a fail-open
+#                      observation, a held credential answered 401 or 403 a session lost, a fault with no answered look unproven, each
+#                      failing the experiment; every held credential served by every ready replica again; the plant's activation by its
+#                      proposer never a 2xx, refused 403 accounting.SelfApprovalRefused after the recovery, every 403 recorded, the plant
+#                      still PROPOSED; every audit record read before the fault present and unchanged.
+# The probe asks replicas, not the edge: the edge authenticates nothing (THREAT_MODEL.md section 7), and a replica failing open alone
+# behind the Service would be one answer in N. E81 and E82, written for a count, follow it.
+# ---------------------------------------------------------------------------------------------------
+
+# The four protected requests the probe sends with no credential or a forged one, and the three it sends with a held one.
+SECURITY_REFUSED_CASES="customer-none customer-forged operator-forged merchant-forged"
+SECURITY_HELD_CASES="customer-held operator-held merchant-held"
+SEC_SAMPLER=""
+SEC_DURING=""
+
+# security_uuid: a random identifier in the platform's own shape, a version-7 UUID of the RFC variant, the public half of a forged merchant
+# key: an identifier of any other shape is refused as malformed before the store is asked (EntityId), so it would show nothing of the store.
+security_uuid() {
+    printf '%s%s\n' "$(experiments_rand)" "$(experiments_rand)" \
+        | sed 's/^\(.\{8\}\)\(.\{4\}\).\(.\{3\}\).\(.\{3\}\)\(.\{12\}\)$/\1-\2-7\3-8\4-\5/'
+}
+
+# security_tokens <label>: a fresh customer's session and a fresh elevated operator's, from the client, into SEC_CUSTOMER and SEC_OPERATOR.
+# The client writes them to one file of its work directory, read here and removed at once; no log or command line carries them.
+security_tokens() {
+    client security-tokens "$1" >> "$ART/security-client.log" 2>&1 \
+        || cannot "$EXP_ID: the client could not hold a customer's and an operator's sessions: see security-client.log"
+    SEC_CUSTOMER=$(sed -n 's/^customer=//p' "$CLIENT/security-$1.tokens" 2>/dev/null)
+    SEC_OPERATOR=$(sed -n 's/^operator=//p' "$CLIENT/security-$1.tokens" 2>/dev/null)
+    rm -f "$CLIENT/security-$1.tokens"
+    [ -n "$SEC_CUSTOMER" ] && [ -n "$SEC_OPERATOR" ] || cannot "$EXP_ID: the client held no customer's or no operator's session"
+}
+
+# security_look <dir> <phase>: one look at every application pod, straight from the edge's probe pod, every request in parallel there; a line
+# each into <dir>/security.tsv: epoch, phase, the pod's address, the case, the status (000: no answer). The held credentials travel on
+# stdin, never a command line. A look the probe pod could not make at all is one line, case exec, status 000.
+security_look() {
+    sl_ips=$(experiments_fleet | awk -F'|' 'NF >= 5 && $5 != "" {print $5}' | sort -u | tr '\n' ' ')
+    [ -n "$sl_ips" ] || return 0
+    sl_epoch=$(date +%s)
+    # shellcheck disable=SC2086
+    if ! printf '%s\n%s\n%s\n' "$SEC_CUSTOMER" "$SEC_OPERATOR" "$SEC_MERCHANT" | kube -n finapp-edge exec -i np-edge -c probe -- /bin/sh -c '
+        IFS= read -r customer
+        IFS= read -r operator
+        IFS= read -r merchant
+        stranger=$1
+        forged=$2
+        shift 2
+        for ip in "$@"; do
+            u="http://$ip:8080/v1"
+            curl -s -o /dev/null --max-time 8 -w "$ip customer-none %{http_code}\n" "$u/me" &
+            curl -s -o /dev/null --max-time 8 -w "$ip customer-forged %{http_code}\n" -H "Authorization: Bearer $stranger" "$u/me" &
+            curl -s -o /dev/null --max-time 8 -w "$ip operator-forged %{http_code}\n" -H "Authorization: Bearer $stranger" "$u/operator/events/dead-letters" &
+            curl -s -o /dev/null --max-time 8 -w "$ip merchant-forged %{http_code}\n" -H "Authorization: Bearer $forged" "$u/merchant/me" &
+            curl -s -o /dev/null --max-time 8 -w "$ip customer-held %{http_code}\n" -H "Authorization: Bearer $customer" "$u/me" &
+            curl -s -o /dev/null --max-time 8 -w "$ip operator-held %{http_code}\n" -H "Authorization: Bearer $operator" "$u/operator/events/dead-letters" &
+            curl -s -o /dev/null --max-time 8 -w "$ip merchant-held %{http_code}\n" -H "Authorization: Bearer $merchant" "$u/merchant/me" &
+        done
+        wait' probe "$(experiments_rand)" "$(security_uuid).$(experiments_rand)" $sl_ips > "$1/security-look.txt" 2>/dev/null; then
+        printf '%s\t%s\t-\texec\t000\n' "$sl_epoch" "$2" >> "$1/security.tsv"
+        return 0
+    fi
+    awk -v e="$sl_epoch" -v p="$2" 'NF == 3 {print e "\t" p "\t" $1 "\t" $2 "\t" $3}' "$1/security-look.txt" >> "$1/security.tsv"
+}
+
+# security_sampler <dir>: a look every 5 s, labelled with the phase <dir>/security-phase names, until <dir>/security-stop exists.
+security_sampler() {
+    set +e
+    while [ ! -f "$1/security-stop" ]; do
+        security_look "$1" "$(cat "$1/security-phase" 2>/dev/null || echo arming)"
+        sleep 5
+    done
+}
+
+# security_expected <phase>: on every ready replica, each held credential answered 200 and each protected request 401 in that phase's last
+# look; prints the first case that did not, as "<case> on <address> answered <status>", or nothing.
+security_expected() {
+    se_ready=$(experiments_fleet | awk -F'|' 'NF >= 5 && $2 == "True" && $6 == "" {print $5}' | sort -u)
+    [ -n "$se_ready" ] || { echo "no ready replica"; return 0; }
+    for se_ip in $se_ready; do
+        for se_case in $SECURITY_HELD_CASES $SECURITY_REFUSED_CASES; do
+            case " $SECURITY_HELD_CASES " in *" $se_case "*) se_want=200 ;; *) se_want=401 ;; esac
+            se_got=$(awk -F'\t' -v p="$1" -v ip="$se_ip" -v c="$se_case" '$2 == p && $3 == ip && $4 == c {s = $5} END {print s}' "$EXP_DIR/security.tsv")
+            [ "$se_got" = "$se_want" ] || { echo "$se_case on $se_ip answered ${se_got:-nothing}, not $se_want"; return 0; }
+        done
+    done
+}
+
+# security_self_records: how many refused self-approvals the audit trail holds (accounting.SelfApprovalRefused).
+security_self_records() {
+    psql_query -c "SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.SelfApprovalRefused'" | tr -d '[:space:]'
+}
+
+# security_plant: the four-eyes plant, once a run. The controller is given the accountant's role on the run's own server (as prepare grants
+# roles), so that four eyes alone - not a missing permission - can refuse its own activation; then it proposes a GL mapping version through
+# the operator edge, and the client keeps its id as security.mapping.
+security_plant() {
+    [ -z "$(experiments_state security.mapping)" ] || return 0
+    sp_login=$(experiments_state controller.login)
+    [ -n "$sp_login" ] || cannot "$EXP_ID: the client's state names no controller for the four-eyes plant"
+    psql_query -c "INSERT INTO identity.role_assignment (id, identity_id, role_name, assigned_by, assigned_at)
+        SELECT uuidv7(), i.id, 'ACCOUNTANT', i.id, now() FROM identity.identity i WHERE i.login_identifier = '$sp_login'
+        ON CONFLICT (identity_id, role_name) WHERE revoked_at IS NULL DO NOTHING" >> "$ART/security-client.log" 2>&1 \
+        || cannot "$EXP_ID: the controller could not be given the accountant's role for the four-eyes plant"
+    client four-eyes-plant >> "$ART/security-client.log" 2>&1 || cannot "$EXP_ID: the four-eyes plant could not be proposed: see security-client.log"
+    grep -q '^four-eyes-plant proposed status=201 ' "$ART/security-client.log" \
+        || cannot "$EXP_ID: the controller's GL mapping proposal was not accepted: see security-client.log"
+    [ -n "$(experiments_state security.mapping)" ] || cannot "$EXP_ID: the four-eyes plant's id was not kept"
+    log "the four-eyes plant: GL mapping version $(experiments_state security.mapping), proposed by the controller, who holds both accounting roles"
+}
+
+security_steady() {
+    printf 'epoch\tphase\taddress\tcase\tstatus\n' > "$EXP_DIR/security.tsv"
+    rm -f "$EXP_DIR/security-stop" "$EXP_DIR/security-phase"
+    security_tokens "$1"
+    SEC_MERCHANT=$(experiments_state merchant.key)
+    [ -n "$SEC_MERCHANT" ] || cannot "$EXP_ID: the client's state names no merchant key for the security probe"
+    security_look "$EXP_DIR" control
+    off=$(security_expected control)
+    [ -z "$off" ] || cannot "$EXP_ID: the security probe's control: $off - the probe would not see what it is there to see"
+    security_plant
+    SEC_SELF_BEFORE=$(security_self_records)
+    experiments_record "security control" "every ready replica served the three held credentials 200 and refused the four protected requests 401; the four-eyes plant $(experiments_state security.mapping), $SEC_SELF_BEFORE refused self-approvals recorded"
+}
+
+# security_audit_snapshot <label>: every audit record's id and the digest of its row, in id order, into <dir>/audit-<label>.tsv, read on the
+# server the harness's reads follow (after a promotion, the promoted one). An empty trail is refused: a comparison over nothing proves nothing.
+security_audit_snapshot() {
+    psql_query -F "$(printf '\t')" -c "SELECT audit_id, md5(a::text) FROM platform.audit_record a ORDER BY audit_id" \
+        > "$EXP_DIR/audit-$1.tsv" 2> "$EXP_DIR/audit-$1.err" || cannot "$EXP_ID: the audit trail could not be read ($1): see audit-$1.err"
+    [ -s "$EXP_DIR/audit-$1.tsv" ] || cannot "$EXP_ID: the audit trail read empty ($1): a comparison over nothing proves nothing"
+}
+
+# security_stride: the sign-in door's window, application.yaml's, refused if the run's overlay sets another.
+security_stride() {
+    ss=$(sed -n 's/^      window: ${FINAPP_ABUSE_SIGN_IN_WINDOW:\(PT[0-9]*[MH]\)}$/\1/p' "$ROOT/app/src/main/resources/application.yaml")
+    [ -n "$ss" ] || cannot "the sign-in door's window could not be read from application.yaml"
+    ! grep -q 'FINAPP_ABUSE_SIGN_IN_WINDOW' "$A/all.yaml" || cannot "the rendered overlay sets the sign-in door's window, which this reads from application.yaml"
+    printf '%s' "$ss"
+}
+
+# security_window_start: the sign-in door's window now, as the counter computes it on the database's clock, in epoch seconds.
+security_window_start() {
+    psql_query -c "SELECT extract(epoch FROM date_bin(interval '$(security_stride)', now(), timestamptz 'epoch'))::bigint" | tr -d '[:space:]'
+}
+
+# security_counts <window start>: the sign-in door's counts in that window, one line each, its key and how many it admitted.
+security_counts() {
+    psql_query -F "$(printf '\t')" -c "SELECT counter_key, admitted FROM platform.window_counter WHERE scope = 'door.sign-in'
+        AND window_start = to_timestamp($1) ORDER BY counter_key"
+}
+
+# security_sign_ins <address> <how many>: sign-ins with logins nobody holds, one after another, from the edge's probe pod straight to one
+# replica, so that they count under the probe pod's own source; one status a line.
+security_sign_ins() {
+    kube -n finapp-edge exec np-edge -c probe -- /bin/sh -c '
+        i=0
+        while [ "$i" -lt "$2" ]; do
+            i=$((i + 1))
+            curl -s -o /dev/null --max-time 20 -w "%{http_code}\n" -X POST -H "Content-Type: application/json" \
+                -d "{\"loginIdentifier\":\"$3.$i\",\"password\":\"not-the-password-$i\"}" "http://$1:8080/v1/authentications"
+        done' probe "$1" "$2" "sec$(experiments_rand)" 2>/dev/null
+}
+
+security_fault() {
+    if [ "$1" = E05 ]; then
+        # The unlogged counter across a failover: three sign-ins of this source counted, then the window's counts read before the fault.
+        sf_ip=$(experiments_a_ready_replica | cut -d' ' -f2)
+        [ -z "$sf_ip" ] || security_sign_ins "$sf_ip" 3 > "$EXP_DIR/counted.txt" || true
+        SEC_WINDOW=$(security_window_start)
+        security_counts "$SEC_WINDOW" > "$EXP_DIR/counts-before.tsv" 2>> "$EXP_DIR/counts.err" || true
+    fi
+    security_audit_snapshot before
+    # Labelled arming until the fault is on: a look taken before it must not count as one taken while it was on.
+    echo arming > "$EXP_DIR/security-phase"
+    security_sampler "$EXP_DIR" &
+    SEC_SAMPLER=$!
+    BACKGROUND="$BACKGROUND $SEC_SAMPLER"
+}
+
+security_during() {
+    echo fault > "$EXP_DIR/security-phase"
+    client four-eyes-self "$1-during" > "$EXP_DIR/four-eyes-during.txt" 2>&1 &
+    SEC_DURING=$!
+    BACKGROUND="$BACKGROUND $SEC_DURING"
+}
+
+# E05 only: the window's counts again once the fleet is ready on the promoted server. An unlogged table is empty on a promoted standby, so
+# every source may spend its budget again, once per failover (platform V014). Recorded as read, never a verdict; a window that ended
+# between the two reads measures nothing and is recorded so.
+security_observed() {
+    [ "$1" = E05 ] || return 0
+    [ -s "$EXP_DIR/counts-before.tsv" ] || { experiments_record "fresh budgets" "not measured: no count of the window was read before the fault"; return 0; }
+    if [ "$(security_window_start)" != "$SEC_WINDOW" ]; then
+        experiments_record "fresh budgets" "not measured: the window from $(iso "$SEC_WINDOW") ended before the fleet was ready on the promoted server"
+        return 0
+    fi
+    security_counts "$SEC_WINDOW" > "$EXP_DIR/counts-after.tsv" 2>> "$EXP_DIR/counts.err" || true
+    read -r so_keys so_lower <<COUNTS
+$(awk -F'\t' 'FNR == NR {after[$1] = $2; next} {n++; if (!($1 in after) || after[$1] + 0 < $2 + 0) l++} END {print n + 0, l + 0}' \
+    "$EXP_DIR/counts-after.tsv" "$EXP_DIR/counts-before.tsv")
+COUNTS
+    experiments_record "fresh budgets" "in the sign-in door's window from $(iso "$SEC_WINDOW"): $so_keys sources counted before the fault, $so_lower of them lower or gone after the promotion - each may spend its budget again, once per failover (platform V014)"
+}
+
+security_after() {
+    echo after > "$EXP_DIR/security-phase"
+    touch "$EXP_DIR/security-stop"
+    wait "$SEC_SAMPLER" 2>/dev/null || true
+    # Every held credential served again by every ready replica, and every protected request refused, once the recovery is over.
+    security_look "$EXP_DIR" after
+    off=$(security_expected after)
+    [ -z "$off" ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }after the recovery $off: a credential held from before the fault not served, or a protected request not refused"
+    read -r sa_open sa_lost sa_answered sa_refused sa_other sa_unanswered <<JUDGED
+$(awk -F'\t' -v held=" $SECURITY_HELD_CASES " 'NR > 1 && $2 != "control" {
+        h = index(held, " " $4 " ") > 0
+        if (!h && $5 ~ /^[23]/) open++
+        if (h && ($5 == 401 || $5 == 403)) lost++
+        if (!h && $2 == "fault" && $4 != "exec" && $5 != "000") answered++
+        if (!h && ($5 == 401 || $5 == 403)) refused++
+        if (!h && $5 ~ /^[45]/ && $5 != 401 && $5 != 403) other++
+        if (!h && $5 == "000") unanswered++
+    } END {print open + 0, lost + 0, answered + 0, refused + 0, other + 0, unanswered + 0}' "$EXP_DIR/security.tsv")
+JUDGED
+    experiments_record security "protected requests with no credential or a forged one, from the fault to the recovery's end: $sa_refused refused 401/403, $sa_other answered another 4xx or a 5xx, $sa_unanswered unanswered, $sa_open answered 2xx or 3xx (fail-open); held credentials refused 401/403: $sa_lost; looks answered while the fault was on: $sa_answered"
+    [ "$sa_open" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$sa_open protected requests answered 2xx or 3xx without their check (fail-open): see security.tsv"
+    [ "$sa_lost" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$sa_lost answers refused a credential held from before the fault (a session lost): see security.tsv"
+    [ "$sa_answered" -ge 1 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the security probe had no answer while the fault was on, so no fail-open could be ruled out: see security.tsv"
+    # Four eyes: the proposer's own activation never a 2xx, refused for its reason once the platform answers again, every 403 recorded.
+    wait "$SEC_DURING" 2>/dev/null || true
+    client four-eyes-self "$1-after" > "$EXP_DIR/four-eyes-after.txt" 2>&1 || true
+    sa_during=$(sed -n 's/^four-eyes-self [^ ]* status=\([-0-9]*\) code=\([^ ]*\) .*/\1 \2/p' "$EXP_DIR/four-eyes-during.txt" | tail -1)
+    sa_after=$(sed -n 's/^four-eyes-self [^ ]* status=\([-0-9]*\) code=\([^ ]*\) .*/\1 \2/p' "$EXP_DIR/four-eyes-after.txt" | tail -1)
+    case ${sa_during%% *} in 2*) EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }four eyes relaxed: the proposer's own activation answered ${sa_during%% *} while the fault was on" ;; esac
+    [ "$sa_after" = "403 accounting.SelfApprovalRefused" ] \
+        || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }after the recovery the proposer's own activation answered '${sa_after:-nothing}', not 403 accounting.SelfApprovalRefused"
+    sa_forbidden=0
+    for sa_answer in "$sa_during" "$sa_after"; do
+        [ "${sa_answer%% *}" != 403 ] || sa_forbidden=$((sa_forbidden + 1))
+    done
+    sa_recorded=$(( $(security_self_records) - SEC_SELF_BEFORE ))
+    [ "$sa_recorded" -ge "$sa_forbidden" ] \
+        || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$sa_forbidden refused self-approvals answered 403 and $sa_recorded recorded: a refusal without its record"
+    sa_plant=$(psql_query -c "SELECT status FROM accounting.gl_mapping_version WHERE id = '$(experiments_state security.mapping)'" | tr -d '[:space:]')
+    [ "$sa_plant" = PROPOSED ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the four-eyes plant is ${sa_plant:-gone}, not PROPOSED"
+    experiments_record "four eyes" "the proposer's own activation: '${sa_during:-none}' while the fault was on, '${sa_after:-none}' after the recovery; $sa_recorded refused self-approvals recorded for $sa_forbidden answered 403; the plant $sa_plant"
+    # The audit trail: every record read before the fault, present and unchanged.
+    security_audit_snapshot after
+    read -r sa_compared sa_missing sa_changed <<AUDITED
+$(awk -F'\t' 'FNR == NR {after[$1] = $2; next} {n++; if (!($1 in after)) m++; else if (after[$1] != $2) c++} END {print n + 0, m + 0, c + 0}' \
+    "$EXP_DIR/audit-after.tsv" "$EXP_DIR/audit-before.tsv")
+AUDITED
+    experiments_record "audit trail" "$sa_compared records read before the fault: $sa_missing missing after the recovery, $sa_changed changed"
+    [ "$sa_missing" = 0 ] && [ "$sa_changed" = 0 ] \
+        || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the audit trail before the fault is not whole after it: $sa_missing missing, $sa_changed changed of $sa_compared"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E81 (P16-TSK-028; written for a count, ten in the register): one source's burst at the sign-in door spread over every replica, the door
+# at application.yaml's own limit (a setting on the fleet, a rolling update: kind's overlay raises the limit out of a rehearsal's reach).
+# Exactly the limit admitted across the fleet, counted from the answers and read from the counter's row, inside one window.
+# ---------------------------------------------------------------------------------------------------
+
+E81_steady() {
+    E81_LIMIT=$(sed -n 's/^      limit: ${FINAPP_ABUSE_SIGN_IN_LIMIT:\([0-9]*\)}$/\1/p' "$ROOT/app/src/main/resources/application.yaml")
+    case $E81_LIMIT in '' | *[!0-9]* | 0) cannot "E81: the sign-in door's own limit could not be read from application.yaml" ;; esac
+    start_workload e81 retry
+    sleep 8
+    experiments_record door "the sign-in door at application.yaml's own limit, $E81_LIMIT a source a window of $(security_stride), set on the fleet for the burst"
+}
+
+E81_fault() {
+    experiments_fault_on setting FINAPP_ABUSE_SIGN_IN_LIMIT "$E81_LIMIT"
+    kube -n finapp rollout status deployment/finapp-app --timeout="${ROLLOUT_TIMEOUT}s" >> "$EXP_ART/faults.log" 2>&1 \
+        || cannot "E81: the fleet did not roll to the door's own limit within $ROLLOUT_TIMEOUT s"
+    ready_fleet 400 || cannot "E81: the fleet did not return to its $FLEET_REPLICAS ready replicas at the door's own limit"
+    E81_IPS=$(experiments_fleet | awk -F'|' 'NF >= 5 && $2 == "True" && $6 == "" {print $5}' | sort -u | tr '\n' ' ')
+    # shellcheck disable=SC2086
+    [ "$(printf '%s\n' $E81_IPS | grep -c .)" = "$FLEET_REPLICAS" ] || cannot "E81: the burst would not reach all $FLEET_REPLICAS replicas ($E81_IPS)"
+    # A burst that crossed a window's end would be counted by two windows: a fresh one is waited for when less than three minutes are left.
+    stride=$(security_stride)
+    left=$(psql_query -c "SELECT ceil(extract(epoch FROM date_bin(interval '$stride', now(), timestamptz 'epoch') + interval '$stride' - now()))::int" | tr -d '[:space:]')
+    case $left in '' | *[!0-9]*) cannot "E81: the door's window could not be read on the database's clock" ;; esac
+    [ "$left" -ge 180 ] || sleep $((left + 5))
+    E81_WINDOW=$(security_window_start)
+    if [ "$PROBE" != guard-off ]; then
+        experiments_context_check || fail "the safety boundary refused before the burst: $EXP_REASON"
+    fi
+    E81_AT=$(date +%s)
+    # shellcheck disable=SC2086
+    kube -n finapp-edge exec np-edge -c probe -- /bin/sh -c '
+        total=$1
+        shift
+        n=0
+        while [ "$n" -lt "$total" ]; do
+            for ip in "$@" "$@"; do
+                [ "$n" -lt "$total" ] || break
+                n=$((n + 1))
+                curl -s -o /dev/null --max-time 30 -w "$ip %{http_code}\n" -X POST -H "Content-Type: application/json" \
+                    -d "{\"loginIdentifier\":\"burst.$n\",\"password\":\"not-the-password-$n\"}" "http://$ip:8080/v1/authentications" &
+            done
+            wait
+        done' probe $((3 * E81_LIMIT)) $E81_IPS > "$EXP_DIR/burst.txt" 2>> "$EXP_DIR/burst.err" || cannot "E81: the burst could not be sent from the edge's probe pod"
+    E81_DONE=$(date +%s)
+    printf '%s\tburst\t%s sign-ins of one source over %s replicas\n' "$(date -u +%H:%M:%S)" $((3 * E81_LIMIT)) "$FLEET_REPLICAS" >> "$EXP_ART/faults.log"
+    experiments_record fault "the door at $E81_LIMIT a source a window on every replica; $((3 * E81_LIMIT)) sign-ins of one source, two to each replica at a time, from $(iso "$E81_AT") to $(iso "$E81_DONE")"
+}
+
+E81_observe() {
+    # The fault - the fleet at the door's own limit - stays on until the stop: one look of the security probe is let fall inside it.
+    sleep 15
+    [ "$(security_window_start)" = "$E81_WINDOW" ] || cannot "E81: the burst crossed the door's window end, so two windows counted it"
+    read -r sent admitted refused unavailable unanswered <<BURST
+$(awk 'NF == 2 {n++; if ($2 == 429) r++; else if ($2 == "000") u++; else if ($2 ~ /^5/) v++; else a++} END {print n + 0, a + 0, r + 0, v + 0, u + 0}' "$EXP_DIR/burst.txt")
+BURST
+    awk 'NF == 2 {s[$1]++; if ($2 != 429 && $2 != "000" && $2 !~ /^5/) a[$1]++} END {for (ip in s) print ip "\t" s[ip] "\t" a[ip] + 0}' "$EXP_DIR/burst.txt" \
+        | sort > "$EXP_DIR/burst-by-replica.tsv"
+    reached=$(grep -c . "$EXP_DIR/burst-by-replica.tsv" || true)
+    admitting=$(awk -F'\t' '$3 > 0' "$EXP_DIR/burst-by-replica.tsv" | grep -c . || true)
+    security_counts "$E81_WINDOW" > "$EXP_DIR/counts-after.tsv" 2>> "$EXP_DIR/counts.err" || cannot "E81: the counter's rows could not be read"
+    at_limit=$(awk -F'\t' -v l="$E81_LIMIT" '$2 + 0 == l' "$EXP_DIR/counts-after.tsv" | grep -c . || true)
+    above=$(awk -F'\t' -v l="$E81_LIMIT" '$2 + 0 > l' "$EXP_DIR/counts-after.tsv" | grep -c . || true)
+    experiments_record burst "$sent answered of $((3 * E81_LIMIT)) sent: $admitted admitted (neither 429 nor 5xx), $refused refused 429, $unavailable answered 5xx (no count taken), $unanswered unanswered; $reached replicas reached, $admitting of them admitting (burst-by-replica.tsv); the counter's rows in the window at the limit $at_limit, above it $above"
+    [ "$sent" -ge $((3 * E81_LIMIT)) ] || cannot "E81: $sent answers read of $((3 * E81_LIMIT)) sent"
+    [ "$reached" = "$FLEET_REPLICAS" ] || cannot "E81: the burst reached $reached replicas of $FLEET_REPLICAS"
+    [ "$admitted" = "$E81_LIMIT" ] \
+        || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the door admitted $admitted of one source's burst across $FLEET_REPLICAS replicas, not its limit of $E81_LIMIT"
+    [ "$admitting" -ge 2 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the admissions came from $admitting replica, so the count was not shown to be the fleet's"
+    { [ "$at_limit" -ge 1 ] && [ "$above" = 0 ]; } \
+        || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the counter's rows in the window: $at_limit at the limit, $above above it"
+    pass "E81: one source's $((3 * E81_LIMIT)) sign-ins over $FLEET_REPLICAS replicas: $admitted admitted, $refused refused, the counter's row at the limit"
+}
+
+E81_recover() {
+    kube -n finapp rollout status deployment/finapp-app --timeout="${ROLLOUT_TIMEOUT}s" >> "$EXP_ART/faults.log" 2>&1 \
+        || fail "E81: the fleet did not roll back to the overlay's limit within $ROLLOUT_TIMEOUT s"
+    ready_fleet 400 || fail "E81: the fleet did not return to its $FLEET_REPLICAS ready replicas"
+    experiments_workload_end e81
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E82 (P16-TSK-028; written for a count, ten in the register): every replica replaced by a rolling restart while the workload runs. The
+# sessions held from before it - the security probe's - served by every new replica and refused by none, the probe's protected requests
+# refused throughout (PHASE_16_PLAN.md section 18, "session during instance replacement").
+# ---------------------------------------------------------------------------------------------------
+
+E82_steady() {
+    start_workload e82 retry
+    sleep 8
+    E82_BEFORE=$(experiments_fleet | awk -F'|' 'NF >= 5 && $6 == "" {print $1}' | sort | tr '\n' ' ')
+    # shellcheck disable=SC2086
+    experiments_record fleet "$(printf '%s\n' $E82_BEFORE | grep -c .) replicas before the roll"
+}
+
+E82_fault() {
+    if [ "$PROBE" != guard-off ]; then
+        experiments_context_check || fail "the safety boundary refused before the roll: $EXP_REASON"
+    fi
+    E82_AT=$(date +%s)
+    kube -n finapp rollout restart deployment/finapp-app >> "$EXP_ART/faults.log" 2>&1 || cannot "E82: the fleet's rolling restart could not start"
+    printf '%s\trollout restart\tdeployment/finapp-app, every replica replaced\n' "$(date -u +%H:%M:%S)" >> "$EXP_ART/faults.log"
+    experiments_record fault "a rolling restart of the fleet at $(iso "$E82_AT")"
+}
+
+E82_observe() {
+    if ! kube -n finapp rollout status deployment/finapp-app --timeout="${ROLLOUT_TIMEOUT}s" >> "$EXP_DIR/rollout.log" 2>&1; then
+        EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the roll did not complete within $ROLLOUT_TIMEOUT s"
+        return 0
+    fi
+    ready_fleet 400 || { EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the fleet was not $FLEET_REPLICAS ready replicas after the roll"; return 0; }
+    E82_DONE=$(date +%s)
+    # The fleet as the roll left it, asked once more: every replica new, and each serving the three credentials held from before the roll.
+    security_look "$EXP_DIR" rolled
+    off=$(security_expected rolled)
+    [ -z "$off" ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }after the roll $off: a session held from before it not served by a new replica"
+    replaced=0
+    kept=""
+    for pod in $(experiments_fleet | awk -F'|' 'NF >= 5 && $2 == "True" && $6 == "" {print $1}'); do
+        case " $E82_BEFORE " in *" $pod "*) kept="$kept $pod" ;; *) replaced=$((replaced + 1)) ;; esac
+    done
+    [ -z "$kept" ] && [ "$replaced" = "$FLEET_REPLICAS" ] \
+        || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the roll left $replaced new replicas of $FLEET_REPLICAS and kept:${kept:- none}"
+    experiments_record roll "$replaced replicas replaced in $((E82_DONE - E82_AT)) s; each new one asked with the customer's, the operator's and the merchant's held credentials (security.tsv, phase rolled)"
+    pass "E82: $replaced replicas replaced by a rolling restart, the sessions held from before it served by each"
+}
+
+E82_recover() {
+    ready_fleet 400 || fail "E82: the fleet did not return to its $FLEET_REPLICAS ready replicas"
+    experiments_workload_end e82
+}
+
+# ---------------------------------------------------------------------------------------------------
 # The financial-operation availability matrix, walked (P16-TSK-023; ADR-0144; docs/architecture/AVAILABILITY.md sections 3 to 5;
 # OPERATIONS_RUNBOOK.md section 11.59). The matrix is read from the document itself, never copied here: its section 3 classes the routes the
 # edges serve into operations, its section 4 places every operation once per failure row. The probe matrix-mismatch points this at a planted
@@ -5498,15 +5924,18 @@ experiments_spare_render() {
 }
 
 # experiments_spare_left <pods file> <node>: what the run must not lose with E04's worker and still runs on it (a listing of
-# namespace/name|node|deletion), names on one line, nothing when none.
+# namespace/name|node|deletion), names on one line, nothing when none. The edge's probe pod among them (P16-TSK-028): every experiment's
+# security probe asks the replicas from it, so on the stopped worker it would answer nothing while E04's fault is on.
 experiments_spare_left() {
-    awk -F'|' -v node="$2" '$2 == node && $3 == "" && $1 ~ /^(kube-system\/coredns-|finapp-observability\/finapp-prometheus-|finapp-edge\/finapp-edge-|finapp\/finapp-postgres-|finapp-rehearsal\/finapp-simulator-|finapp-rehearsal\/finapp-archive-store-|finapp-experiments\/finapp-toxiproxy-)/ {print $1}' "$1" | tr '\n' ' '
+    awk -F'|' -v node="$2" '$2 == node && $3 == "" && $1 ~ /^(kube-system\/coredns-|finapp-observability\/finapp-prometheus-|finapp-edge\/finapp-edge-|finapp\/finapp-postgres-|finapp-rehearsal\/finapp-simulator-|finapp-rehearsal\/finapp-archive-store-|finapp-experiments\/finapp-toxiproxy-|finapp-edge\/np-edge$)/ {print $1}' "$1" | tr '\n' ' '
 }
 
 # experiments_spare: E04's worker - the spare zone's - cleared before any load of what the cluster's own manifests placed there and the run must
-# not lose with it: CoreDNS, the cluster's Prometheus (the run's eyes) and both edges' controllers (the generators' and the operators' way in).
+# not lose with it: CoreDNS, the cluster's Prometheus (the run's eyes) and both edges' controllers (the generators' and the operators' way in),
+# and the edge's probe pod, from which every experiment's security probe asks the replicas (P16-TSK-028, OPERATIONS_RUNBOOK.md section 11.62).
 # The worker is cordoned (a fault of the registry, so every way out lifts it), each of those Deployments with a pod there restarted and waited
-# for, then uncordoned; the application's replicas stay where the zone rule put them. Then everything that must not be lost is read back off it.
+# for, the probe pod - a bare Pod of the network-policy step - made again from the run's own manifest, then uncordoned; the application's
+# replicas stay where the zone rule put them. Then everything that must not be lost is read back off it.
 experiments_spare() {
     EXPERIMENTS_SPARE_NODE=$(kube get nodes -l "topology.kubernetes.io/zone=$EXPERIMENTS_SPARE_ZONE" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | head -1)
     [ -n "$EXPERIMENTS_SPARE_NODE" ] || cannot "E04: no worker in the spare zone $EXPERIMENTS_SPARE_ZONE"
@@ -5522,6 +5951,16 @@ experiments_spare() {
         kube -n "$namespace" rollout status "deployment/$name" --timeout=300s >> "$EXP_ART/spare.log" 2>&1 || fail "E04: $target did not return off $EXPERIMENTS_SPARE_NODE"
         moved="$moved $target"
     done
+    # The edge's probe pod (P16-TSK-028): a bare Pod, so it is made again rather than restarted, while the worker is cordoned so that it lands
+    # off it; on the stopped worker it would leave E04's security probe nothing to answer, and E04 would fail as unobserved.
+    if [ "$(kube -n finapp-edge get pod np-edge -o jsonpath='{.spec.nodeName}' 2>/dev/null)" = "$EXPERIMENTS_SPARE_NODE" ]; then
+        kube -n finapp-edge delete pod np-edge --wait=true --timeout=120s >> "$EXP_ART/spare.log" 2>&1 \
+            || cannot "E04: the edge's probe pod could not be taken off $EXPERIMENTS_SPARE_NODE"
+        kube apply -f - < "$WORK/pod-edge.yaml" >> "$EXP_ART/spare.log" 2>&1 || cannot "E04: the edge's probe pod could not be made again"
+        kube -n finapp-edge wait --for=jsonpath='{.status.containerStatuses[0].state.running}' pod/np-edge --timeout=120s >> "$EXP_ART/spare.log" 2>&1 \
+            || fail "E04: the edge's probe pod did not start again off $EXPERIMENTS_SPARE_NODE"
+        moved="$moved finapp-edge/np-edge"
+    fi
     experiments_fault_off cordoned "$EXPERIMENTS_SPARE_NODE"
     kube get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}|{.spec.nodeName}|{.metadata.deletionTimestamp}{"\n"}{end}' \
         > "$EXP_ART/spare-pods.txt" 2>&1 || cannot "E04: the pods could not be listed"
@@ -5539,7 +5978,7 @@ experiments_spare() {
     brokers=$(awk -F'|' -v node="$EXPERIMENTS_SPARE_NODE" '$2 == node && $3 == "" && $1 ~ /^finapp\/finapp-kafka-[0-9]+$/' "$EXP_ART/spare-pods.txt" | grep -c . || true)
     printf 'node\t%s\nzone\t%s\nmoved\t%s\napplication replicas\t%s\nbrokers\t%s\n' "$EXPERIMENTS_SPARE_NODE" "$EXPERIMENTS_SPARE_ZONE" "${moved:- none}" \
         "$replicas" "$brokers" > "$EXP_ART/spare.txt"
-    pass "E04's worker $EXPERIMENTS_SPARE_NODE ($EXPERIMENTS_SPARE_ZONE) runs none of the primary, the standby, the simulator, the fault proxy, the archive store, CoreDNS, Prometheus or an edge controller (moved:${moved:- none}); it runs $replicas application replicas and $brokers broker of three"
+    pass "E04's worker $EXPERIMENTS_SPARE_NODE ($EXPERIMENTS_SPARE_ZONE) runs none of the primary, the standby, the simulator, the fault proxy, the archive store, CoreDNS, Prometheus, an edge controller or the edge's probe pod (moved:${moved:- none}); it runs $replicas application replicas and $brokers broker of three"
 }
 
 # experiments_node_start <worker> <address>: a stopped worker started again, then held to the address it had: kind's network may give a
