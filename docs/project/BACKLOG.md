@@ -30126,7 +30126,13 @@ on none:
     (six ramping-arrival-rate scenarios each, sign-ins at 868 and 20,001 per 1,000 s in the burst profile); the manifest policy's new rule in the
     pinned Kustomize and conftest images (the committed production and staging streams clear of it, a planted 116-s window refused, the same
     plant passed with the rule taken out).
-  - **Tests**: TESTS_PLACEHOLDER
+  - **Tests**: one fresh `:app:test` run of named classes after the last change (2026-11-13 20:38-20:45Z, every XML newer than its start):
+    57 named classes, 694 tests, and the 7 ArchUnit suites the filter pulls in, 20 tests; 0 failed. The named: the new
+    `PerSourceLimitsAreCalibratedTest` and `CapacityCalibrationRehearsalContractTest`, `KubernetesManifestsTest`, every guard that reads a
+    changed file (the manifests, the policy and its check, the harness and the load scope, `application.yaml`, the documents and the ADR
+    index), the discoverers, and the four always run. No production class changed. **Owed** to PI-023's kind: none (no database case
+    written). **Probes**: eleven hermetic plants performed in two rounds and caught (`MUTATION_TESTING.md` §2), and the policy's rule probed
+    in containers; E76, the entry's probe on a cluster, owed.
   - **Ten instances**: `PASS` on design - nothing here adds state, a lock or a per-instance decision; the per-source counts stay one row per
     bucket and window across every replica (`WindowCounter`); the autoscaler is the count's one writer, its scale-down one pod per period at
     least the grace and its window at least the grace, so terminating pods never stack past the budget's one; no role split, so every
