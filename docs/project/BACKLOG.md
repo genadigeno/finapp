@@ -29840,7 +29840,7 @@ on none:
    note on its register row and on this task's PI-025 bullet). Routed: to `P16-TSK-014` (the load scope's three brokers, the pipeline
    sampler and the scale at ten).
 
-**P16-TSK-014 — Ten instances at load (`THREAT_MODEL.md` §6 item 43 (g); the Phase 15 exit review's acceptance B; `P15-REM-007`)** — `IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-014` from master `16581447`, wave E) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-013`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its dependencies, `P16-TSK-009` and `P16-TSK-013`, both `COMPLETE`)" until the design)*
+**P16-TSK-014 — Ten instances at load (`THREAT_MODEL.md` §6 item 43 (g); the Phase 15 exit review's acceptance B; `P15-REM-007`)** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-014` from master `16581447`, wave E; no migration, no application code, no alert rule, no ADR; **built and contract-tested, every run owed under `POSTPONED_ISSUES.md` PI-025**; marks no task `READY` - the coordinator does) *(read "`IN_PROGRESS` (2026-11-13; designed on branch `P16-TSK-014` from master `16581447`, wave E)" until the gate)* *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-013`'s merge, under the owner's word to start wave E as each task's dependencies merge, "start wave E after D too"; its dependencies, `P16-TSK-009` and `P16-TSK-013`, both `COMPLETE`)" until the design)*
 - **Objective**: the ten-instance answer counted. Ten application replicas carry the engineering workload on `kind`, scale between
   three and ten under a real metric, and roll during load, with one effect per key and the census green throughout. This closes the
   deviation B that the Phase 15 completion gate left with this task, and `P15-REM-007`'s observed scaling.
@@ -29894,6 +29894,51 @@ on none:
   It runs in the experiments scope (`REHEARSAL_EXPERIMENTS=E45`). `kind`'s overlay admits ten since ADR-0134, but `fleet_patch`
   holds every scope but `load` at three: a count for the experiments scope is what it needs from this entry. Owed under
   `POSTPONED_ISSUES.md` PI-025.
+- **As built (2026-11-13): built and contract-tested; every run owed under `POSTPONED_ISSUES.md` PI-025** (the owner's word of
+  2026-11-13, "we dont need long running checks and tests": nothing ran on `kind`). `OPERATIONS_RUNBOOK.md` §11.58 holds the procedure;
+  `TenInstancesRehearsalContractTest` (nine members) holds the text. No migration, no application code, no alert rule, no ADR: the
+  reserved ADR-0143 and `THREAT_MODEL.md` §6 item 65 are unused, since no architecture or owner decision arose (the autoscaler's
+  calibration is `P16-TSK-015`'s).
+  - *C11's pre-flight*: the Gradle tiers named exactly in §11.58 (`:platform:databaseTest`, `:platform:kafkaTest`, `:app:databaseTest`
+    over `domain`, `transfers`, `payments` and the source census); a Gradle run of PI-023's kind, **owed** with the runs.
+  - *The sustained profile at ten*: the `load` scope already ran any count to ten; registered as **E69** with its criteria. Its
+    hypothesis says plainly that ten replicas add no database CPU, the first limit at three (E30), so the target's peak is not expected
+    to be carried. **Run owed.**
+  - *The HPA scale 3 → 10 → 3 under load, each by the metric, each with the census after* (**E70**): a new `autoscale` profile (the
+    money mix at a quarter of the target's peak throughout; twenty minutes of sign-ins at nine times their peak, CPU-bound by the
+    credential hash, from eight generator addresses), because the replicas sit near a third of their request at the engineering workload
+    and the committed 70% target would not act there (derived from `CAPACITY_MODEL.md` §3.4); `fleet_patch` keeps the overlay's floor in an
+    autoscaled run's copy (`FLEET_AUTOSCALE`); `load_autoscale_floor`, `-_start`, `-_sampler` and `-_judge` (the count reached with every
+    replica ready after a reading above the target, back at the floor after one below it, a census sample `PASS` at ten and again at three);
+    a stage of four fields (`model.js`, `load_stages`, `load_expected`, `stages.awk`). **Run owed.**
+  - *A rolling deploy N − 1 → N at ten and a rollback* (**E26**): `REHEARSAL_RELEASE_REPLICAS` carries the release's whole walk to ten;
+    `ready_fleet`, `assert_floor`, `assert_reporting_open` and the eviction's moment read the run's count; a rollout of ten is bounded by
+    ten of the Deployment's own steps (`probe_budget`: 2,970 s), a loosening of E26's stop recorded with its reason; the release's probes
+    refused at another count (`fleet_resolve`). **Run owed.**
+  - *The peak `pg_stat_activity` within the budget with an operator admitted*: the release's rollout assertions at the run's count (E26)
+    and the load's `load_budget` (E69, E70), unchanged. **Owed with them.**
+  - *The probe* (`REHEARSAL_PROBE=scale-down-unbounded`): the autoscaler's scale-down policy removed before E70's load; every two-second
+    connection sample now records the count the Deployment was asked for, and `assert_within_count` holds each to the formula at that
+    count, (count + 3) × 8, the margin read from the run's copy. **Owed** as a cluster probe; its hermetic half recorded
+    (`MUTATION_TESTING.md` §2).
+  - *Routed from `P16-TSK-013`*: `pipeline_preflight` admits counts to the overlay's ceiling, read from it, and `pipeline_scale_judge`
+    judges each count's peak against the run's budget; registered as **E71** (`REHEARSAL_LOAD_SCALE="3 10 3"`). **Run owed.**
+  - *Routed from `P16-TSK-010`*: `REHEARSAL_EXPERIMENTS_REPLICAS`; the experiments scope runs at another count only what is written for
+    one (`EXPERIMENTS_AT_A_COUNT`, E45), its topology check and E45's recovery read the run's count. E45 at ten stays `P16-TSK-010`'s owed run.
+  - *Routed from `P16-TSK-009`*: the release's three-assuming waits read the count (above); the load sampler's comparison of scraped with
+    ready, which a moving fleet breaks for a scrape interval (E48 as built would have read `UNREADABLE` at its first step), is replaced in a
+    moving fleet by a read by set (`load_scraped`: every replica ready 60 s scraped, none unready 210 s after its creation, both bounds read
+    from the kind Prometheus's configuration and the run's Deployment); a held fleet keeps the exact equality.
+  - **Acceptance criteria**: a recorded run at ten with zero census failures at every sample - built (E69, E70; E41 is `P16-TSK-009`'s),
+    run owed; a scale-up and a scale-down observed - built (E70), run owed; zero failed requests through the roll beyond those in flight
+    on a killed pod - built (E26), run owed; the ten-instance answer recorded `PASS` on counts, or `FAIL` with its remediation - **not
+    recorded**: it rests on the owed runs, so the Phase 15 completion gate's deviation B and `P15-REM-007` stay open under PI-025. Met as
+    "built, contract-tested, run owed (PI-025)" under the owner's word.
+  - **Operational documentation**: §11.58 written, its record empty; §11.28's record at ten is E26's, owed; `P15-REM-007` not closed
+    (its entry carries a dated note).
+  - **Ran instead, 2026-11-13, no cluster**: the new shell functions, extracted from the committed scripts, under `dash` against a real
+    `kustomize` render of the `kind` overlay and stubbed cluster answers (31 checks, 0 failed); the pinned k6 2.3.0's `inspect` of the
+    `autoscale` profile; the harness's refusals of a count past the ceiling, a release probe at ten and an experiment written for three.
 
 **P16-TSK-015 — Capacity calibration: the HPA, the abuse limits, the edge's bound and the role split** — `PLANNED`
 - **Objective**: set the HPA's target and policies, the namespace quotas, the abuse limits (item 33 (b)) and the edge's connection

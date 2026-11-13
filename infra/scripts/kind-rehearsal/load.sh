@@ -444,20 +444,32 @@ load_autoscale_floor() {
     held=$(kube -n finapp get hpa finapp-app -o jsonpath='{.spec.minReplicas}/{.spec.maxReplicas}' 2>/dev/null || true)
     [ "$held" = "$LOAD_FLOOR/$LOAD_REPLICAS" ] \
         || fail "the autoscaler is not left to decide: it holds $held, where the run's copy gives it $LOAD_FLOOR to $LOAD_REPLICAS"
-    deadline=$(( $(date +%s) + 900 ))
-    until [ "$(kube -n finapp get deployment finapp-app -o jsonpath='{.spec.replicas}/{.status.readyReplicas}' 2>/dev/null)" = "$LOAD_FLOOR/$LOAD_FLOOR" ] \
-        && [ "$(sample_fleet | awk -F'|' 'NF >= 3 && ($2 != "" || $3 != "True") {n++} END {print n + 0}')" = 0 ]; do
-        [ "$(date +%s)" -lt "$deadline" ] || { kube -n finapp get pods -o wide > "$LOAD_ART/pods-at-failure.txt" 2>&1; kube -n finapp describe hpa finapp-app > "$LOAD_ART/hpa.txt" 2>&1; fail "the fleet did not settle at the autoscaler's floor of $LOAD_FLOOR before the load: see load/hpa.txt"; }
-        sleep 5
-    done
+    load_autoscale_settled "before the load's setup"
     kube -n finapp get hpa finapp-app -o yaml > "$LOAD_ART/autoscale-spec.yaml" 2>&1 || true
     kube -n finapp get pods -o wide > "$LOAD_ART/pods.txt" 2>&1 || true
     pass "the fleet is at the autoscaler's floor of $LOAD_FLOOR, the autoscaler left to decide between $LOAD_FLOOR and $LOAD_REPLICAS on $LOAD_HPA_TARGET% of the pods' CPU request"
 }
 
-# load_autoscale_start: the probe's plant, then the autoscaler's own reading every 10 s from the load's start.
+# load_autoscale_settled <when>: the fleet at the autoscaler's floor, its count asked and its ready replicas both the floor and no pod terminating
+# or unready, within 900 s (a step down is one pod per 120 s after a 300 s window, so a fleet the setup raised comes back within it).
+load_autoscale_settled() {
+    deadline=$(( $(date +%s) + 900 ))
+    until [ "$(kube -n finapp get deployment finapp-app -o jsonpath='{.spec.replicas}/{.status.readyReplicas}' 2>/dev/null)" = "$LOAD_FLOOR/$LOAD_FLOOR" ] \
+        && [ "$(sample_fleet | awk -F'|' 'NF >= 3 && ($2 != "" || $3 != "True") {n++} END {print n + 0}')" = 0 ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || {
+            kube -n finapp get pods -o wide > "$LOAD_ART/pods-at-failure.txt" 2>&1
+            kube -n finapp describe hpa finapp-app > "$LOAD_ART/hpa.txt" 2>&1
+            fail "the fleet did not settle at the autoscaler's floor of $LOAD_FLOOR $1: see load/hpa.txt"
+        }
+        sleep 5
+    done
+}
+
+# load_autoscale_start: the fleet at the floor again as the load starts (the autoscaler has had its metric since load_metrics_source, and the
+# setup's own work may have moved it), the probe's plant, then the autoscaler's own reading every 10 s from the load's start.
 load_autoscale_start() {
     [ "$LOAD_AUTOSCALE" = true ] || return 0
+    load_autoscale_settled "as the load starts"
     if [ "$PROBE" = scale-down-unbounded ]; then
         # PROBE scale-down-unbounded: the policy that lets one pod go per period no shorter than the grace removed; Kubernetes' default stands
         # in its place, every surplus pod at once once the window has passed.

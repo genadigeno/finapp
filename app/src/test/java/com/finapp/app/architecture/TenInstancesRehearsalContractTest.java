@@ -134,9 +134,15 @@ class TenInstancesRehearsalContractTest {
         assertThat(function(load, "load_target")).as("the load starts at the floor").contains("if [ \"$LOAD_AUTOSCALE\" = true ]; then\n        load_autoscale_floor");
         String floor = function(load, "load_autoscale_floor");
         assertThat(floor).as("the autoscaler read back from the cluster as the copy wrote it, the fleet settled at the floor")
-                .contains("[ \"$held\" = \"$LOAD_FLOOR/$LOAD_REPLICAS\" ]").contains("= \"$LOAD_FLOOR/$LOAD_FLOOR\" ]")
+                .contains("[ \"$held\" = \"$LOAD_FLOOR/$LOAD_REPLICAS\" ]").contains("load_autoscale_settled \"before the load's setup\"")
                 .contains("\"$A/HorizontalPodAutoscaler.finapp-app.yaml\"");
-        for (String name : new String[] {"load_autoscale_floor", "load_autoscale_sampler", "load_autoscale_judge"}) {
+        assertThat(function(load, "load_autoscale_settled")).as("the count asked and the ready replicas both the floor, nothing terminating or unready")
+                .contains("'{.spec.replicas}/{.status.readyReplicas}' 2>/dev/null)\" = \"$LOAD_FLOOR/$LOAD_FLOOR\" ]")
+                .contains("NF >= 3 && ($2 != \"\" || $3 != \"True\") {n++}");
+        String settledAgain = function(load, "load_autoscale_start");
+        assertThat(settledAgain.indexOf("load_autoscale_settled \"as the load starts\"")).as("the floor again as the load starts, before the probe and the reading")
+                .isPositive().isLessThan(settledAgain.indexOf("if [ \"$PROBE\" = scale-down-unbounded ]; then"));
+        for (String name : new String[] {"load_autoscale_floor", "load_autoscale_settled", "load_autoscale_sampler", "load_autoscale_judge"}) {
             assertThat(function(load, name)).as("%s never writes the count or the autoscaler: the metric decides it", name)
                     .doesNotContain("scale deployment").doesNotContain("patch hpa").doesNotContain("--replicas");
         }
@@ -170,8 +176,11 @@ class TenInstancesRehearsalContractTest {
         assertThat(harness).as("the margin: the copy's instances less the count it holds")
                 .contains("BUDGET_MARGIN=$((FLEET_INSTANCES - FLEET_REPLICAS))");
         String within = function(harness, "assert_within_count");
-        assertThat(within).as("each sample against (its count + the margin) x the pool, never the run's whole budget")
-                .contains("$5 + 0 > ($8 + m) * pool").doesNotContain("$BUDGET\"").contains("pool=$((WRITER_POOL + REPORTING_POOL))");
+        // The count of samples over it is what fails the run, so that line is held whole: the same comparison elsewhere in the function
+        // (the first sample named in the message) cannot stand in for it (P16-TSK-014's own probe P2 found the looser pin passing).
+        assertThat(within).as("each sample against (its count + the margin) x the pool, never the run's whole budget, and that count fails the run")
+                .contains("over=$(awk -F'\\t' -v pool=\"$pool\" -v m=\"$BUDGET_MARGIN\" 'NR > 1 && $8 ~ /^[0-9]+$/ && $5 + 0 > ($8 + m) * pool {n++} END {print n + 0}'")
+                .contains("[ \"$over\" = 0 ] || fail").doesNotContain("$BUDGET\"").contains("pool=$((WRITER_POOL + REPORTING_POOL))");
         assertThat(within).as("a run whose counts were not read is not a run that held them")
                 .contains("[ \"$counted\" -ge 1 ] && [ \"$counted\" -ge $((total * 9 / 10)) ]").contains("counts-$1.tsv");
     }

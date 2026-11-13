@@ -5498,7 +5498,8 @@ The `normal` profile holds 0.4167 of the target's peak for 30 minutes, at or jus
   Docker for its pinned images) and metrics-server's image pulled into each node by its digest. Then the render applied, its
   `v1beta1.metrics.k8s.io` API `Available` within three minutes, and the autoscaler reading its CPU utilisation with `ScalingActive`
   true within five. The run holds the autoscaler at its count (minimum and maximum), so it reads the metric and never acts on it:
-  scaling on the metric is `P16-TSK-014`'s. `load/hpa.txt` keeps its description.
+  scaling on the metric is `P16-TSK-014`'s *(2026-11-13: built as E70, §11.58, where the `autoscale` profile leaves the autoscaler at its
+  floor and the run's count)*. `load/hpa.txt` keeps its description.
 - `load-run`: the release's connection sampler through the load, every two seconds. Each sample records the ready, terminating and
   total pods, the fleet's `pg_stat_activity` and all client connections, and an operator connection (as `finapp_reporting`, over TLS)
   tried at each sample that reaches the peak so far (`samples-load.tsv`).
