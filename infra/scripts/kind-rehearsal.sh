@@ -1255,7 +1255,10 @@ WRITER_POOL=$(sed -n 's/^ *maximum-pool-size: *\([0-9]*\).*/\1/p' "$ROOT/app/src
 REPORTING_POOL=$(sed -n 's/^ *pool-size: *\${FINAPP_DB_REPORTING_POOL_SIZE:\([0-9]*\)}.*/\1/p' "$ROOT/app/src/main/resources/application.yaml" | head -1)
 BUDGET=$((FLEET_INSTANCES * (WRITER_POOL + REPORTING_POOL)))
 log "the budget's arithmetic: $FLEET_INSTANCES instances x ($WRITER_POOL + $REPORTING_POOL) = $BUDGET"
-[ "$BUDGET" = 48 ] || fail "the overlay's budget is $BUDGET, and this rehearsal measures 6 x (7 + 1) = 48"
+# The load scope at REHEARSAL_LOAD_REPLICAS (P16-TSK-007) patched its rendered copy to the formula at that count: (N + 3) x (7 + 1).
+WANT_INSTANCES=6
+[ "$SCOPE" != load ] || WANT_INSTANCES=$((LOAD_REPLICAS + 3))
+[ "$BUDGET" = $((WANT_INSTANCES * 8)) ] || fail "the overlay's budget is $BUDGET, and this rehearsal measures $WANT_INSTANCES x (7 + 1) = $((WANT_INSTANCES * 8))"
 
 REPORTING_LOGIN=$(kube -n finapp get secret finapp-app-secrets -o jsonpath='{.data.FINAPP_DB_REPORTING_PASSWORD}' | base64 -d)
 operator_connect() {

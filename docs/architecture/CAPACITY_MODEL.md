@@ -170,6 +170,13 @@ So W7 reads **≈ 7.3 events per money movement**, and the outbox carries about 
 million: 37 a second on average, 89 at peak, 268 in a burst. The ledger takes about 434,000 entries a day, not 600,000: 5 a
 second on average, 12 at peak, 36 in a burst.
 
+*(2026-11-13, `P16-TSK-007`: on `kind` the credit flows of this table cannot run. Every credit policy carries an exposure rule that
+reads the bureau's total balance, and no `kind` deployment can configure a bureau (the application refuses one until `CURRENT_STATE.md`'s
+unresolved question 13 is answered), so a decision there takes its fallback (`INV-CRD-10`) and a person's approval of a referral is
+refused (`INV-CRD-09`): no BNPL agreement and no loan exists for a purchase, an instalment or a repayment. The load profiles drive the
+other flows, 90.2% of the target's money movements; what the measured runs wrote per flow is in each run's
+`written-events-by-type.tsv`, and §3.4 reads the events and entries a second from them.)*
+
 ### 3.3 What each consumer group reads
 
 **Derived** from §3.2. One topic per producing module (`infra/kafka/topics.yaml`). A group reads every record of the topics its

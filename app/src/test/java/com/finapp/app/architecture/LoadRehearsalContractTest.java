@@ -253,6 +253,13 @@ class LoadRehearsalContractTest {
                 .contains("app/src/main/java/com/finapp/app/payments/PaymentSweeperSchedule.java")
                 .contains("LOAD_RESOLVE_SECONDS=$((2 * age * 60 + 300))").contains("SWEEPER_DISPATCHED_?AGE");
         assertThat(generatorCommand()).contains("-e \"LOAD_RESOLVE_SECONDS=$LOAD_RESOLVE_SECONDS\"");
+        assertThat(scenarios).as("two sessions under one key are never explained away; a checkout abandoned only when every answer was a"
+                        + " replay without its token, and its retried key still judged alike")
+                .contains("if (created.length === 2 && json(created[1], 'checkoutId') !== checkoutId) {\n        conclude(op, UNRESOLVED, started);")
+                .contains("if (!token) {\n        if (created.length === 2) {\n            agreed(op, created, 'checkoutId');\n        }\n"
+                        + "        conclude(op, ABANDONED, started);");
+        assertThat(function("load_judge")).as("abandoned sessions recorded, the unresolved still failing the run")
+                .contains("log \"recorded $op: $abandoned sessions abandoned");
         assertThat(scenarios).as("a payment in progress read until it concludes, within the bound; an iteration let finish within it")
                 .contains("throw new Error('LOAD_RESOLVE_SECONDS is required").contains("Date.now() - since >= RESOLVE_MS")
                 .contains("const GRACEFUL_STOP = `${RESOLVE_SECONDS + 120}s`;").contains("openModel(operation, DURATION, GRACEFUL_STOP, STAGES)")

@@ -176,15 +176,16 @@ load_replicas_patch() {
     [ "$LOAD_REPLICAS" != 3 ] || return 0
     instances=$((LOAD_REPLICAS + 3))
     connections=$((instances * 8 + 12))
+    # The split files the run applies, and all.yaml beside them, which the harness reads the budget from.
     sed -i "s/^\(  \)minReplicas: 3$/\1minReplicas: $LOAD_REPLICAS/; s/^\(  \)maxReplicas: 3$/\1maxReplicas: $LOAD_REPLICAS/" \
-        "$1/HorizontalPodAutoscaler.finapp-app.yaml"
-    for file in "$1"/ConfigMap.finapp-app-config*.yaml; do
+        "$1/HorizontalPodAutoscaler.finapp-app.yaml" "$1/all.yaml"
+    for file in "$1"/ConfigMap.finapp-app-config*.yaml "$1/all.yaml"; do
         sed -i "s/^\(  FINAPP_DB_INSTANCES: \)\"6\"$/\1\"$instances\"/; s/^\(  FINAPP_DB_SERVER_MAX_CONNECTIONS: \)\"60\"$/\1\"$connections\"/" "$file"
     done
-    sed -i "s/^\( *- \)max_connections=60$/\1max_connections=$connections/" "$1/StatefulSet.finapp-postgres.yaml"
+    sed -i "s/^\( *- \)max_connections=60$/\1max_connections=$connections/" "$1/StatefulSet.finapp-postgres.yaml" "$1/all.yaml"
     sed -i "s/^\(    pods: \)\"9\"$/\1\"$((instances + 3))\"/; s/^\(    requests.cpu: \)3750m$/\1$((instances * 500 + 750))m/;
         s/^\(    requests.memory: \)8704Mi$/\1$((instances * 1024 + 2560))Mi/; s/^\(    limits.cpu: \)\"15\"$/\1\"$((instances * 2 + 3))\"/;
-        s/^\(    limits.memory: \)8704Mi$/\1$((instances * 1024 + 2560))Mi/" "$1/ResourceQuota.finapp.yaml"
+        s/^\(    limits.memory: \)8704Mi$/\1$((instances * 1024 + 2560))Mi/" "$1/ResourceQuota.finapp.yaml" "$1/all.yaml"
     grep -q "minReplicas: $LOAD_REPLICAS\$" "$1/HorizontalPodAutoscaler.finapp-app.yaml" \
         && grep -q "maxReplicas: $LOAD_REPLICAS\$" "$1/HorizontalPodAutoscaler.finapp-app.yaml" \
         && grep -q "FINAPP_DB_INSTANCES: \"$instances\"" "$1"/ConfigMap.finapp-app-config*.yaml \
@@ -969,6 +970,18 @@ load_census() {
     done
     [ -z "$missing" ] || fail "saturation signals absent from Prometheus over the run:$missing: see load/prometheus"
     load_resources
+    # What the run wrote, counted by minute (P16-TSK-007): the events and when they were published, the journal's entries and lines, the
+    # events by type and the records each consumer took. Counts and times only, by the test-only server's superuser.
+    psql_query -F "$(printf '\t')" -c "SELECT extract(epoch FROM date_trunc('minute', occurred_at))::bigint, count(*),
+        count(*) FILTER (WHERE published_at IS NOT NULL), round(avg(extract(epoch FROM (coalesce(first_published_at, published_at) - occurred_at)))::numeric, 3),
+        round(max(extract(epoch FROM (coalesce(first_published_at, published_at) - occurred_at)))::numeric, 3)
+        FROM platform.outbox_event GROUP BY 1 ORDER BY 1" > "$LOAD_ART/written-events-per-minute.tsv" 2>&1 || true
+    psql_query -F "$(printf '\t')" -c "SELECT extract(epoch FROM date_trunc('minute', e.created_at))::bigint, count(DISTINCT e.id), count(*)
+        FROM ledger.journal_entry e JOIN ledger.journal_line l ON l.entry_id = e.id GROUP BY 1 ORDER BY 1" > "$LOAD_ART/written-entries-per-minute.tsv" 2>&1 || true
+    psql_query -F "$(printf '\t')" -c "SELECT event_type, count(*) FROM platform.outbox_event GROUP BY 1 ORDER BY 2 DESC" \
+        > "$LOAD_ART/written-events-by-type.tsv" 2>&1 || true
+    psql_query -F "$(printf '\t')" -c "SELECT consumer, count(*) FROM platform.inbox_message GROUP BY 1 ORDER BY 2 DESC" \
+        > "$LOAD_ART/consumed-by-consumer.tsv" 2>&1 || true
     pg_admin -c "SELECT s.queryid, s.calls, round(s.total_exec_time::numeric, 1), round(s.mean_exec_time::numeric, 3), s.rows,
         left(regexp_replace(s.query, '\s+', ' ', 'g'), 300) FROM pg_stat_statements s JOIN pg_database d ON d.oid = s.dbid
         WHERE d.datname = 'finapp' ORDER BY s.total_exec_time DESC LIMIT 50" > "$LOAD_ART/pg-statements-final.txt" 2>&1 || true
