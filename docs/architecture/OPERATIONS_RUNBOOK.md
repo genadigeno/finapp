@@ -3247,6 +3247,8 @@ latest; the run, as its record names it.
 | §11.43 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `7231d298` | `§11.43's tenth run and its probes` | — |
 | §11.45 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `89b8fc60`, `f021383f` | `§11.45's record: E30 at three replicas and the isolation run` | — |
 | §11.46 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `a6fee3a1` | `§11.46's record: E01's run and the probes` | — |
+| §11.47 | `platform` | 0 | 8 | 8 | — | — | — | — | Phase 16 drill |
+| §11.48 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.51 | `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
@@ -4981,6 +4983,11 @@ proxy disabled, a simulator hold, a partition (a NetworkPolicy), a paused node, 
 is instant and logged. A harness killed with `SIGKILL`, or a machine that stops, runs no trap: its kept cluster may hold a fault still.
 A reusing run deletes the namespaces that hold all but a paused node and a Deployment scaled outside them, and its steady state refuses
 to start an experiment while any fault reads on - unpause the node (`docker unpause`) or scale the Deployment back by hand.
+*(2026-11-13, `P16-TSK-021`: a partition here is not a NetworkPolicy's to make - policies only add what a pod may reach, and an
+established connection is admitted before any policy - so the network faults are a DROP in one replica's own namespace and the proxy's
+`timeout` toxic; §11.47 has them and their four new kinds. Of those, only a ballast lives outside a namespace: one a killed run left on
+a node is removed by hand, `docker exec <node> rm -f /mnt/finapp-experiments-pgdata/finapp-experiment-ballast`, or by naming E24, whose
+run makes the filesystem again.)*
 
 **Running it.** One full cluster at a time on the machine, under its lock. From the repository root, with the rehearsal's own
 prerequisites (§11.28):
@@ -5096,6 +5103,231 @@ words that discoverer reads as credentials, and the boundary's cadence is worded
 on the same pinned image (a base backup at `verify-full` through the slot, streaming, `FIRST 1` synchronous, a commit held while the
 standby was stopped); on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks and tests"), it is owed under
 `POSTPONED_ISSUES.md` PI-025 with E01's run on the final bytes.
+
+### 11.47 Network, DNS, connection and disk faults: each fault's signature, and running them (`P16-TSK-021`, ADR-0127)
+
+*(Written by `P16-TSK-021`, 2026-11-13, from the experiments' steps in `kind-rehearsal/experiments.sh`, the platform's configuration and
+its alert rules. **None of these experiments has run on a cluster**: the owner postponed Phase 16's cluster runs on 2026-11-13 ("we dont
+need long running checks and tests"), and every run below is owed under `POSTPONED_ISSUES.md` PI-025. What each signature says is read
+against the code, not seen: a first run may show otherwise, and its record then corrects this section.)*
+
+**What it is.** Eight experiments of `RESILIENCE_EXPERIMENTS.md` in §11.46's `experiments` scope, each in ADR-0127's step shape and each
+ending in the census: E07 (the database's connections exhausted), E11 (object storage away), E12 (latency on the database hop), E13
+(resets on it, then the entry's probe: a cut on a commit), E14 (one replica black-holed from the database), E15 (the broker's hop, then the
+provider's, black-holed), E16 (the cluster's resolver lost) and E24 (the database's volume full). Run them as §11.46 says, naming them:
+
+```
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E07 E12 E13 E14 E15 E16 E24" infra/scripts/kind-rehearsal.sh
+```
+
+E24 must be named when the run makes its data tier: only then does the primary get a filesystem of its own size (below). E11 needs
+`REHEARSAL_E11_STORE=<namespace>/<deployment>` naming the store the WAL archive writes to; without it E11 reads could-not-run (exit 2).
+
+**What the faults are, and why not a NetworkPolicy.** A NetworkPolicy only adds what a pod may reach, and the application's own policies
+already admit every hop; the policy engine also admits an established connection before any policy. So a policy can neither cut a
+replica the others' rules admit nor black-hole a connection already held, which is the case item 42 (h) is about. The faults are:
+- **one replica black-holed** (`blackhole`): a DROP rule each way in that replica's own network namespace, set from its node with the
+  node's `nsenter` and `iptables`, marked `finapp-experiment-fault`. Nothing is refused or reset: what it sends is never answered;
+- **a hop black-holed for every replica**: Toxiproxy's `timeout` toxic at 0, both ways. Removing it closes every link it held, and the
+  bytes it dropped are gone;
+- **the database's slots held** (`held`): sessions of a role with no superuser attribute on the server's own socket;
+- **a table locked** (`locked`): a session of the run's superuser holding an `EXCLUSIVE` lock;
+- **the volume filled** (`filled`): a ballast beside the data directory, from the node.
+Each passes the safety boundary and is registered first, and comes off at the stop and on every way out (§11.46).
+A fault whose own control does not show is a run that could not measure (exit 2), never a pass. Examples: nothing held by the black hole,
+nothing refused by the full volume, no connection reset.
+
+**E07 - the database's connections exhausted.** *Signature*: every replica's pool refused new connections (`remaining connection slots are
+reserved` in the server's lines), borrows timing out at the pool's 5 s, readiness `503` on every replica, `ConnectionPoolStarved`
+paging after two minutes of waiting threads. An ordinary role is refused too: the reporting role, the migrator, an operator's personal
+role. What still gets in is a superuser on PostgreSQL's reserved slots. *Do*: connect as the server's superuser (a reserved slot; the
+managed database's master user in a real environment), find the holder in `pg_stat_activity` by role and application name, and end its
+sessions (`pg_terminate_backend`). Leave the fleet alone: once the slots free, the pools refill and readiness returns. No replica
+restarts, because liveness never reads the database. The run takes the pools' share by closing the fleet's sessions with the database's
+proxy down while the holder fills the slots, then brings the proxy back.
+
+**E11 - object storage away.** *Signature*: nothing in the application; the application names no object store. The WAL archive's
+store away makes the primary's archiver fail (`pg_stat_archiver.failed_count` rising, `archive command failed` in the server's lines)
+while `pg_wal` grows. *Do*: bring the store back; the archiver retries by itself and catches up. Watch the database's free space
+meanwhile (E24). The store is the WAL archive's (`P16-TSK-024`); until it exists the experiment has no subject.
+
+**E12 - latency on the database hop.** *Signature*: every request slower by about its round trips times the latency; the pools' active
+connections and waiting threads rise; at the higher steps `ConnectionPoolSaturated` (5 minutes) and `ConnectionPoolStarved` (2 minutes)
+may follow. Nothing is partial: a statement that is slow is not a statement half done. *Do*: find where the latency is (the network, the
+database's own waits) before touching the fleet; more replicas add more connections to a slow server. The run steps 50, 200 and 1000 ms
+after a baseline and stops at a step whose p99 passes 30 s.
+
+**E13 - resets on the database hop, and a cut on a commit.** *Signature*: requests failing at once on a reset connection, the pools
+making connections anew, the client retrying by its key. A connection reset inside a transaction leaves nothing: the server rolls it
+back. A connection lost between a commit and its answer leaves the commit whole, and the client sees an error. The retry by the same
+key answers the stored result, because a transfer commits its claim, its row and its posting in one transaction. *Do*: nothing to repair
+from the failure alone. A client that retried without its key has made a new request; the census and `TransferKeyConflict` read that.
+The run's probe holds a transfer's answers 1500 ms (under the pool's 2 s validation), reads its row committed on the server's own socket,
+and disables the database's proxy at that moment. A reset toxic added then lets the held answer through first, so the run disables the
+proxy instead. The transfer must be whole and its retry must answer the committed transfer. A second transfer is cut while it waits on
+a table lock the run holds, after its transaction has written; it must leave nothing.
+
+**E14 - one replica black-holed from the database (item 42 (h)).** *Signature*: that replica alone: its pool's validations failing at
+2 s, new connections failing at the 5 s connect timeout, readiness `503`, its endpoint leaving the Service; the others serving and
+taking its leases as they lapse. The threads that held a connection at the cut stay blocked, because the data source sets no socket
+timeout. The kernel retransmits their unanswered sends until it gives up: `net.ipv4.tcp_retries2`, by default about fifteen minutes.
+Until then `GaugesStale` may ticket for that instance if its gauge thread was one of them. *Do*: §11.40 step 3: once the others serve,
+replace that one pod by eviction under break-glass (§11.25). It does not restart by itself: liveness never reads the database. The run
+measures, per held connection (the namespace's sockets to the hop with a retransmission timer running, read every 5 s), how long the
+kernel took to free it, or that it outlived the cut. That is the measurement `P16-TSK-022` decides the socket timeout from (§11.40).
+
+**E15 - the broker's hop, then the provider's, black-holed.** *Broker*: money still moves (Kafka is not in readiness). Events wait in the
+outbox, the oldest publishable growing, `OutboxPublicationStalled` paging after ten minutes and `event_freshness` burning. On the
+hop's return the outbox drains, each event published once, the inbox deduplicating any redelivery. *Do*: §11.6 and §11.21. Nothing
+financial is lost: the outbox is the source. *Provider*: calls time out at the adapter's own bounds. A call that never reached the
+provider answers `503`; one sent and unanswered is recorded unknown, never sent again. The sweeps ask the provider once it answers;
+a card payment caught mid-call waits the sweep's ten-minute dispatched age. *Do*: §11.22: watch `PaymentUnknownAged` and
+`MerchantPayoutUnknownAged` clear; never resend an ambiguous call by hand.
+
+**E16 - the cluster's resolver lost.** *Signature*: established connections carry on; only a new connection needs a name. In a
+deployment the client resolves the database's, the broker's and the provider's names itself, and a new connection fails with an unknown
+host. In the experiments' topology the proxy resolves them (`Unable to open connection to upstream` with a failed lookup in its lines).
+The Java runtime caches a resolved address for 30 s by default, so a deployment's first failures may come later. *Do*: restore the
+resolver (`kubectl -n kube-system get deployment coredns`, its replicas and its pods' events); the platform recovers on its own as new
+connections resolve again. Do not restart replicas: their held connections are the ones still working.
+
+**E24 - the database's volume full.** *Signature*: `No space left on device` in the server's lines. A table or index that must grow
+fails its statement, and its transaction rolls back whole. A WAL segment that cannot be written makes PostgreSQL stop (`PANIC`), and
+until space returns it cannot recover either. Readiness `503` on every replica while the server is down; requests failing; no partial
+effect. *Do*: free space on the database's volume first (in a real environment, grow the managed volume). Never delete anything under
+the data directory: WAL files there are the database's own. The server's crash recovery replays to the last commit once it can write,
+and the fleet returns by itself. Then run §11.40 step 4's checks. On `kind` a claim has no size of its own, so when E24 is named the run
+makes, on each worker, a 2 GiB filesystem in a file loop-mounted in the node (`/mnt/finapp-experiments-pgdata`), offered as a local
+volume of the test-only class `finapp-experiments-limited` (`kind-rehearsal/experiments/limited-volume.yaml`). The primary's claim names
+that class in the run's own copy, and the ballast fills that filesystem alone, from the node.
+
+**Reading the record** (under `$REHEARSAL_ARTEFACTS/experiments`, beside §11.46's files):
+
+| File | What it holds |
+|---|---|
+| `<id>/record.tsv` | The experiment's own record: steady state, each fault with its time, each observation, stop, verdict |
+| `<id>/pages.tsv` | Every 15 s: the correctness pages (none) and every alert firing |
+| `E07/fleet.tsv`, `holder.log` | The fleet every 2 s; the holder's sessions and the role made and dropped |
+| `E11/archiver.tsv`, `E11/edge-answers.tsv` | The archiver's counts every 5 s; the edge's answers while the store was away |
+| `E12/steps.tsv`, `E12/pool.tsv`, `E12/edge-answers.tsv` | Each step's window; the pools every 30 s; the edge's answers, from which each step's p50 and p99 come |
+| `E13/transfer-*.txt`, `E13/commit-*.watch`, `E13/retries.tsv`, `lock.log` | Each cut transfer's answer, the watcher's reading of its commit, its retries by key; the lock's session |
+| `E14/sockets.tsv`, `E14/sockets-read.tsv`, `E14/held.tsv`, `E14/endpoint.tsv` | The cut replica's sockets to the hop every 5 s; per held connection, seconds to held and to freed; its endpoint every second |
+| `E15/outbox.tsv`, `E15/unknown.tsv`, `E15/edge-broker.tsv`, `E15/edge-provider.tsv` | The outbox's backlog and oldest age; the unknown ages; the edge's answers on each hop |
+| `E16/toxiproxy.log`, `E16/edge-outage.tsv`, `E16/payout-recovery-*.txt` | The proxy's lines from the stimulus; the edge's answers during the outage; the recovery's payout |
+| `E24/server-lines.txt`, `E24/fleet.tsv` | The server's refusals and stops; the fleet every 2 s |
+
+**The last record**: not run. Every experiment above, and the crash probes' new kinds (§11.46's `crash-with-faults` and
+`term-with-faults` now also put on a black hole, the holder, a lock and, where E24's volume exists, a ballast), is owed under
+`POSTPONED_ISSUES.md` PI-025. What was proven without a cluster, in short container checks of 2026-11-13 on the pinned images (no
+`kind`, no application stack): the node image carries `nsenter`, `iptables`, `ss`, `losetup`, `mkfs.ext4` and `crictl`; Toxiproxy
+2.13.0's CLI takes `--tox` and `-u`. With PostgreSQL 18.6 behind it, a reset toxic added while a commit's answer was held let the answer
+through, and the proxy disabled instead lost it with the row committed. A reset between an insert and its commit left nothing. A
+removed `timeout` toxic closed the link it held. An unresolvable upstream is logged as `Unable to open connection to upstream`.
+
+**What this does not cover.** A real network's loss: Toxiproxy passes TCP and cannot drop a packet, so E13's loss is the resets a lossy
+link ends in. A managed database's volume or connection limits, or its failover (§11.40, E05). The loop device and the local volume on a
+cluster, which no run has exercised. A real resolver's own failure modes (answering errors, slow answers): E16 takes it away whole.
+
+### 11.48 Hot rows, locks, deadlocks and plans under load: the contention run, the soak and the sweeps' storm (`P16-TSK-008`, ADR-0133)
+
+**What it is.** Three runs that measure the platform's contended financial rows and the database under load (`PHASE_16_PLAN.md`
+§6.3–§6.5 and §6.7; `RESILIENCE_EXPERIMENTS.md` E38, E39 and E40): which row waits, for how long and at what rate; every deadlock and
+serialisation failure with the statements that made it; the tables' growth, autovacuum, checkpoints and WAL over hours; the top
+statements' plans; a transactional index build's write stop; the sweeps' failure records in a provider storm. Each runs on the reference
+machine, on the run's own cluster, as §11.43 and §11.46 run theirs. **None has run** (`POSTPONED_ISSUES.md` PI-025):
+what follows is how they run and how they are read, held by `ContentionRehearsalContractTest`.
+
+**Every setting is the run's own server's.** The harness sets the test-only server by `ALTER SYSTEM` and a reload, reads each setting back
+from a new session, and throws the server away with the cluster: `log_lock_waits` (E38), `log_autovacuum_min_duration` 0 and
+`log_checkpoints` (E39), and auto_explain's window (E39, E40). The `kind` overlay preloads `auto_explain` beside `pg_stat_statements`, inert:
+its threshold is unset until a window sets it, and the window resets it. A window logs plans with `ANALYZE` and `BUFFERS`, timing off, verbose
+so each ends in its `Query Identifier`, and `auto_explain.log_parameter_max_length` 0 so no parameter's value is logged. A custom plan's
+conditions can still print the run's generated values, and they stay in the run's artefacts on the machine that ran it. The
+server's log is followed while it is written (`pg_log_follow`), never read once at the end: the kubelet rotates a container's log at
+10 MiB, and `kubectl logs` reads only the current file.
+
+**E38, the concurrent-financial profile.** `REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=concurrent REHEARSAL_LOAD_REPLICAS=7`, then the
+same at 3. The profile (`kind-rehearsal/load/concurrent.json`) drives many clients on few accounts: every transfer between one pair of
+customers, one way and back by turns (`transferPair`), every checkout from every customer to the fixture's one merchant, and every card
+top-up through the one clearing. It runs 15 minutes at the engineering workload (E30's step 3) and then the target's burst (W2: three
+times its peak for 60 s) twice, each followed by the engineering workload. The burst is past `kind`'s break, so its dropped iterations are
+recorded as the stress profile's are. Reads, sign-ins and the merchant API are left undriven and the profile says why. BNPL purchases and
+lending repayments, whose rows are the capital row (L6) and `BNPL_MERCHANT_FEE_INCOME`, cannot be driven on `kind` (§11.45).
+- *Before the load* the sampler starts (`kind-rehearsal/load/contention.sql` under `\watch` every 250 ms, its own application name), and
+  it is shown a wait: one customer wallet's balance row held four seconds by the run's superuser while a second session waits on it. The
+  run fails unless the sampler places that wait on that row in at least four samples. After the load the server's log must hold it too.
+  A sampler or a log reader that sees nothing cannot pass for a platform with no waits.
+- *The artefacts* (`load/`): `contention-samples.txt`, every waiting backend each sample with its row (`balance:<purpose>:<currency>:<account>`,
+  `account:…`, `advisory:<namespace>:<key>`, `row:<table>`, `table:<table>`); `contention-rows.tsv`, per row and stage the waits seen, the
+  seconds waited, p50, p95 and the longest wait (to the 250 ms grid) and the most waiting at once; `lock-waits.tsv`, every wait of a second
+  or more as the server logged it, with how it ended and the relation; `deadlocks.txt`, every deadlock and serialisation failure whole;
+  `locks-summary.txt`; and §11.45's per-stage tables beside them.
+- *Reading a row's wait.* A row's waiting seconds over a stage's seconds is the mean number of transactions waiting on it. Divided by the
+  stage's movements that touch the row (from `k6/stages.tsv`), it is the mean wait per movement. Against the movement's mean latency, it
+  is the share of the command spent waiting. Read it beside the stage's database CPU throttling (`stages-resources.tsv`): in the bursts
+  the CPU saturates (E30's limit), and a holder slowed by the CPU holds its row longer. The throughput at which a row's wait passes the
+  operation's objective lies between the engineering stage and the burst. To place it finer, run the stress profile's steps with
+  `transferPair` set.
+- *The pair's history.* A transfer derives the source's balance from every line of its account while it holds the account's row
+  (ADR-0133). Read the pair's waits stage by stage against the pair's line count
+  (`SELECT count(*) FROM ledger.journal_line WHERE ledger_account_id = '<the pair's account>'`, by the run's superuser after the load).
+- *Explaining a deadlock.* The run passes only if every deadlock the server counted has its record in the server's log. Each one is then
+  explained in this section's record by a known path that rolls back whole and converges (its movement retried by its key and counted
+  once by the census). The known paths, by the statements its record names:
+  - the transfer's two account rows (`TransferExecution.lockBothInFixedOrder`, one fixed order): none expected;
+  - a posting's balance rows (`JdbcBalanceProjection.apply`, sorted by account): none expected;
+  - a multi-entry caller's rows (`PostingService.lockBalancesInOrder`): none of its callers is driven here;
+  - the idempotency claim row locked first in one transaction and last in the other (`CURRENT_STATE.md`'s debt row #52: a refund, a
+    withdrawal or a dispute answer meeting a lease takeover): none of them driven here;
+  - advisory namespace 3 (`advisory:3:<key>`, #53): only on a 32-bit collision.
+
+  A deadlock none of these explains is a defect, fixed in a task of its own.
+- **The probe** (the entry's; `MUTATION_TESTING.md` §2 once run). On a throwaway branch, `TransferExecution.lockBothInFixedOrder` takes the
+  source's row first and then the destination's (its fixed order dropped). Build, run E38 at seven replicas, and delete the branch. The
+  pair's transfers, one way and back, then meet each other's rows in opposite orders. The deadlock count rises from nought, every record in
+  `deadlocks.txt` names two transfers each holding one of the pair's account rows, every movement still resolves by its key, and the
+  census holds. The entry named `lockBalancesInOrder` on a multi-entry path. No caller of it is driven on `kind` (BNPL, lending,
+  chargebacks, reconciliation's parks, corridor returns), so the probe drops the same rule on the path the profile drives.
+
+**E39, the soak.** `REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=soak` at three replicas, eight hours (`kind-rehearsal/load/soak.json`). It
+holds the target's mix at the engineering workload, not at the peak, which is past `kind`'s break. The merchant API reads the merchant's
+own record alone: the payable read's cost grows with the run's age (ADR-0133) and would end the soak as E30's limit. It reads:
+- `pg-soak-tables.tsv` every 60 s: the journal, the balance projection, the outbox, the inbox, the idempotency claims, the audit trail, the
+  window counter, the payment attempts and their history, and both sweeps' failure records, each with its live and dead rows, writes,
+  HOT updates, vacuum and analyze runs and bytes. `pg-soak-database.tsv` holds the database's bytes and the WAL's position.
+  `autovacuum.txt` and `checkpoints.txt` come from the server's log. `wal-per-movement.tsv` holds the WAL's bytes over the money movements.
+  Growth per hour, multiplied by the target's ratio to the engineering workload (`CAPACITY_MODEL.md` §3.4), is `P16-TSK-012`'s input for
+  partitioning;
+- `plans/`, from auto_explain's window over 80% to 83% of the run (a twentieth of every plan). `top.tsv` holds the 25 statements
+  `pg_stat_statements` ranks highest by total time over the run, `<rank>-<queryid>.txt` the slowest plan of each the window caught,
+  `not-caught.tsv` the rest, and `seq-scans.tsv` every sequential scan by table and statement. A sequential scan on a table that grows
+  (`pg-soak-tables.tsv`) is recorded in the capacity model (§6.5);
+- `index-build.tsv`, `index-build.log` and `index-build-latency.tsv`. At 86% of the run `kind-rehearsal/load/index-build.sql` builds a plain
+  index on `ledger.journal_line` in one transaction, as a migration would, under the migrator's own `lock_timeout` (read from
+  `MigrationPlan.java`) and a 10-minute statement bound. It is tried three times if its lock is refused, then dropped. The write stop is
+  the time from its lock request to its commit. Beside it are the table's rows and bytes, and each operation's answers in that window
+  against the ten minutes before. The stop divided into the table's rows is a build rate: at the production target's journal it gives the
+  stop a migration would make, which decides `THREAT_MODEL.md` §6 item 42 (b) between (i), (ii) and (iii).
+
+**E40, the sweeps' failure storm.** `REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E40` at three replicas (§11.46's toolkit). Every call
+to the provider simulator hangs (a `timeout` toxic on its proxy, through the fault registry) for the payment sweep's dispatched age and
+fifteen minutes more. Every card payment then dispatched is left for the sweep, and every inquiry fails, so every candidate is recorded
+in `payments.sweep_row_failure` or `merchant.sweep_row_failure` and backed off. It reads, under `experiments/E40/`:
+- `empty/plans` and `storm/plans`: every statement naming a record table (the eight listings, the record's upsert), each the slowest
+  plan of a three-minute window of every plan. One window runs with both tables empty, one over the storm's last minutes. Compare each
+  listing's anti-join, a primary-key probe per candidate or a hash, and the rows each read;
+- `listings.tsv`: each such statement's calls, time, rows and buffers from `pg_stat_statements`, after the empty window and after the storm;
+- `tables.tsv` every 30 s: both tables' rows by leg, inserts, updates, HOT updates, dead rows, autovacuum runs and bytes. The write rate
+  is the inserts and updates a minute; the bloat is the dead rows and the bytes against the live rows.
+
+  The reading the code makes, which the run confirms or corrects: with every candidate backed off, a listing's `LIMIT` never stops early,
+  so each tick of each instance reads every candidate and probes the record for each, at a cost proportional to the candidates, not the
+  batch. After the storm every attempt must resolve within twice the dispatched age and the backoff's cap (both read from the code), and
+  the census holds.
+
+**The record.** Empty: none of E38, E39, E40 or the probe has run. Each is owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of
+2026-11-13), and the first run of each writes its record here with its commit, its artefacts and, for E38, the explanation of every
+deadlock it found.
 
 ### 11.51 The event pipeline at load: three brokers, a broker lost, all lost, duplicates, delays, a scaled fleet and a day's replay (`P16-TSK-013`, ADR-0136)
 

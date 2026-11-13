@@ -94,8 +94,10 @@ spec:
             # The load harness's statement statistics (P16-TSK-006, PHASE_16_PLAN.md section 5.2): loaded here, and the extension
             # created by the load scope in the server's maintenance database alone, so the finapp database gains no object. A
             # test-only server's setting: a managed database's statistics are its own (Performance Insights in the reference cloud).
+            # auto_explain beside it (P16-TSK-008, PHASE_16_PLAN.md section 6.5): loaded and inert, its threshold unset, until a load
+            # run's plans window sets it on this server alone and resets it (kind-rehearsal/load.sh, pg_plans_open and pg_plans_close).
             - -c
-            - shared_preload_libraries=pg_stat_statements
+            - shared_preload_libraries=pg_stat_statements,auto_explain
             - -c
             - track_io_timing=on
           ports:

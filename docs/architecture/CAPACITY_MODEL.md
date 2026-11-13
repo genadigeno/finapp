@@ -303,6 +303,54 @@ seconds (0.39 as written, times its clock ratio 1.083), so the target is 1 / 0.4
 second against the target's 10.5 (§3.1), 2.6 times. The step held 277 s; no longer hold was run (E29, owed above), and because the
 merchant read's cost grows with the history, a longer hold may carry less.
 
+### 3.5 Contention: the hot rows, locks, deadlocks and plans (`P16-TSK-008`)
+
+**Nothing in this section is measured.** The runs that measure it are built and owed under `POSTPONED_ISSUES.md` PI-025 (the owner,
+2026-11-13): E38 (the concurrent-financial profile, at seven and three replicas), E39 (the soak, with its plans and its index build) and
+E40 (the sweeps' failure storm), `RESILIENCE_EXPERIMENTS.md` and `OPERATIONS_RUNBOOK.md` §11.48. Every cell marked measured reads `—`
+until a run fills it. The readings are **read** from the code, or **derived** from W1–W8, and each says which. ADR-0133 records what is
+decided before the runs and what waits on them.
+
+**The contended rows** (`PHASE_16_PLAN.md` §6.4), each with what takes it, how long it is held, and the run that measures it:
+
+| Row | Taken by | Held for (read) | Measured by | Waits: p50 / p95 / longest; share of the command | Throughput at which the wait passes the objective |
+|---|---|---|---|---|---|
+| A customer wallet's account row (`ledger.ledger_account FOR UPDATE`) and its balance row | Transfers (both accounts, one fixed order), top-ups, withdrawals, refunds to a wallet | The command's transaction, which **derives the source's balance from every line of its account under the lock** (`AvailableBalance.underLock`): the hold grows with the account's history | E38 (the pair) | — | — |
+| A merchant's payable balance row | Every capture and refund of that merchant (the projection's upsert in the posting's transaction) | The posting's remainder of its transaction; E30 saw a mean upsert of 14 ms for the one merchant | E38 (the one merchant) | — | — |
+| `FEE_REVENUE` per currency | Every capture with a fee | As above | E38 | — | — |
+| `SETTLEMENT_CLEARING` per currency (and each counterparty-keyed clearing) | Every card capture and top-up | As above | E38 | — | — |
+| `FX_POSITION`, `FX_SPREAD_REVENUE` per currency | Every conversion | As above; Phase 9's storm measured the conversion door's p99 at 713–760 ms (ADR-0076 §9) | Not driven on `kind` (no load profile drives a conversion) | — | — |
+| `LENDING_CAPITAL` per currency (L6) and `BNPL_MERCHANT_FEE_INCOME` | Every loan acceptance and draw, every BNPL purchase and principal-reinstating reversal, across their (P) and L8 waits | From the capital check to the commit | Not drivable on `kind`: no credit approval can be given there (§3.4); Phase 12's storm: 65 waits, p95 142 ms, max 1,070 ms (two instances) | — | — |
+| `settlement.source FOR UPDATE` | An acceptance, and every upload, pull and parse of the same source | A whole acceptance | E38's one mid-run file; at W5 (four files a day per source, **derived**) one acceptance per source every six hours | — | — |
+| The idempotency claim row (`platform.idempotency_record`) | Every keyed command; a lease takeover meets the original's last transaction (#52) | Its two transactions | E38 (any `40P01` attributed); a slow flight is `P16-TSK-018`'s E21 | — | — |
+| Advisory namespace 3 (`hashtext(attempt_id)`) | Refunds and dispute answers per attempt (#53) | The transaction | E38's sampler names any wait on it (`advisory:3:<key>`) | — | — |
+| The abuse window counter (`platform.window_counter`, unlogged) | Each request at an abuse limit's door, one row per source bucket and window (a refused count reads only) | One conditional upsert | E38, E39 | — | — |
+| The posting cutoff's namespace 14, shared | Every journal insert, against a cutoff move | The posting's transaction | No move during a load: none expected | — | — |
+
+**Deadlocks and serialisation failures.** Read: every multi-account path takes its rows in one order (the transfer's fixed order, the
+projection's sorted apply, `lockBalancesInOrder` for the multi-entry callers), and money moves under `READ COMMITTED`, so none is expected
+on what the load drives. E38 counts them against the server's own counter, and each record is explained in §11.48's record. Measured: —.
+
+**The whole-history folds** (ADR-0133). Read: the merchant API's payable read and every balance decision fold an account's whole history.
+The first does it on every call; the second does it under the account's row lock. **Derived** at W4 for the payable read: about 2 ms of a
+core per read per day of a merchant's history, so about 60 ms a read after a month and 0.73 s after a year, against 5.56 payable reads a
+second in the busiest hour. The read was **measured** as E30's first limit (§3.4). Its bound is ADR-0133 decision 3, proposed, and its build
+is the owner's to place (`THREAT_MODEL.md` §6 item 55). The decision path's fold is measured by E38's pair.
+
+**The sweeps' failure records in a storm** (routed by `P16-TSK-017`). Read: each of the eight listings' `NOT EXISTS` probe is one primary-key
+probe of `(leg, row_id)` per candidate the listing reads. With the tables empty it adds that probe and no more. In a storm that backs off
+every candidate, a listing's `LIMIT` never stops early, so each tick of each instance reads every candidate, the card legs with their
+lateral age read too. The cost is the candidate count, not the batch. The record table takes at most one write per row per backoff window
+(1 minute doubling to 10), and its updates change no indexed column, so they can be heap-only. E40 measures the plans, the latency, the
+write rate and the bloat. Measured: —.
+
+**The transactional index build** (`THREAT_MODEL.md` §6 item 42 (b)). Read: a plain `CREATE INDEX` holds `SHARE` on its table for the whole
+build, so every insert into the journal, and with it every posting, waits that long. The migrator's `lock_timeout` bounds only the wait for
+the lock. E39 measures the stop on the soak's journal, and the build rate extrapolates it to the target's. Measured: —.
+
+**The plans and the soak's growth** (`PHASE_16_PLAN.md` §6.5, §6.7). E39 writes the top statements' plans, every sequential scan, the named
+tables' growth and dead rows, autovacuum's runs, the checkpoints and the WAL a money movement. Measured: —.
+
 ---
 
 ## 4. The connection budget at ten
@@ -384,6 +432,12 @@ checkout peak with no resource near its limit (routed to `P16-TSK-013`). Neither
 merchants, ten replicas), and neither has been changed. *(2026-11-13, `P16-TSK-013`: the relay's drain changed by ADR-0136, the ADR
 this section asks for, and not yet measured: E47, owed under PI-025, §3.4's note.)*
 
+*(2026-11-13, `P16-TSK-008`, read and derived, nothing measured: §3.5.)* The payable read's bound is ADR-0133 decision 3, proposed, its build
+the owner's to place (`THREAT_MODEL.md` §6 item 55). Read from the code beside it: **every balance decision folds the account's whole
+history under its row lock**, so a hot account's hold grows with its age, measured by E38's pair. The per-currency hot rows, the
+source lock, risk's whole-day proofs and the rescreening census are each ruled in `CURRENT_STATE.md`'s debt rows, and none has a
+mechanism before E38 or E39 names it (ADR-0133 decision 2).
+
 Each one confirmed becomes an ADR before any change.
 
 ---
@@ -393,6 +447,8 @@ Each one confirmed becomes an ADR before any change.
 - `P16-TSK-007` fills §3.4 and names the first limit. A later run replaces a cell only with its own named run. *(2026-11-13: filled
   from two runs at three replicas; the runs at seven, the normal, peak and sustained profiles and the planted slow statement are owed
   under `POSTPONED_ISSUES.md` PI-025.)*
+- `P16-TSK-008` writes §3.5's readings and leaves its measured cells `—`: E38, E39 and E40 fill them, each cell naming its run, when
+  PI-025 is run.
 - A change to W1–W8 is the owner's. It changes the derived cells that cite it, by a dated note.
 - A change to the code that adds or removes an event on a flow changes §3.2. The counts were read on master `6981c167`.
 - A change to the pool, the replicas, the surge or the server changes §4. `ConnectionPoolSizingGuard` holds the live arithmetic,
