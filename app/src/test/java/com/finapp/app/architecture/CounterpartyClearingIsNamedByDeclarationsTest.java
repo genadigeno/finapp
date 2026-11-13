@@ -30,7 +30,9 @@ import org.junit.jupiter.api.Test;
  * named {@code FX_PROVIDER_CLEARING} itself would stop following the counterparty whose position
  * it is - the {@code CLEARING_POSITIONS} lesson of {@code RailVocabularyIsConfinedTest}, at the
  * counterparty boundary. Read from the code with comments stripped and from the string literals
- * (the {@code FxBooksHaveOnePosterTest} scanner); planted violations prove it bites.
+ * (the {@code FxBooksHaveOnePosterTest} scanner); planted violations prove it bites. A census reader
+ * ({@link #CENSUS_READERS}, `P15-TSK-035`'s source-join read port) is permitted by name AND held to {@link CensusReaderForm}:
+ * the clearing a string in a figure, no counterparty resolved, no ledger type reached.
  */
 @DisplayName("a counterparty clearing is named only by its declarations (P9-TSK-010, INV-RAIL-04)")
 class CounterpartyClearingIsNamedByDeclarationsTest {
@@ -61,6 +63,23 @@ class CounterpartyClearingIsNamedByDeclarationsTest {
                     "DECLARATION: the corridor rail's clearingPurpose() (P9-TSK-014) - the settlement"
                             + " composition and the counterparty chart read it off the rail, never name it");
 
+    /**
+     * The census read ports permitted to name a counterparty clearing, each held to {@link CensusReaderForm} as well as named:
+     * a permit by file name alone would admit a posting or a source planted beside the reader.
+     */
+    static final Map<String, String> CENSUS_READERS =
+            Map.of(
+                    "FxJournalSources.java",
+                    "CENSUS READER (P15-TSK-035; permitted when the guard was found red on master, 2026-11-13): fx's read port"
+                            + " for the source-join census states a cover's executed figures on the lines whose purpose is the"
+                            + " string FX_PROVIDER_CLEARING, read from fx.cover_execution by SELECT; it resolves no counterparty"
+                            + " and posts nothing",
+                    "PaymentJournalSources.java",
+                    "CENSUS READER (P15-TSK-035; permitted when the guard was found red on master, 2026-11-13): payments' read"
+                            + " port for the source-join census states an outbound credit's and its return's figures on the lines"
+                            + " whose purpose is the string CORRIDOR_CLEARING, read from payments.outbound_credit and"
+                            + " outbound_credit_return by SELECT; it resolves no counterparty and posts nothing");
+
     /** Every counterparty-owned purpose, derived. */
     static final List<String> COUNTERPARTY_PURPOSES =
             Arrays.stream(AccountPurpose.values())
@@ -86,6 +105,7 @@ class CounterpartyClearingIsNamedByDeclarationsTest {
                 .isEmpty();
         Map<String, Boolean> seen = new java.util.TreeMap<>();
         PERMITTED.keySet().forEach(file -> seen.put(file, false));
+        CENSUS_READERS.keySet().forEach(file -> seen.put(file, false));
         seen.put(DECLARING_FILE, false);
         sources.forEach((path, text) -> {
             String fileName = Paths.get(path).getFileName().toString();
@@ -121,6 +141,42 @@ class CounterpartyClearingIsNamedByDeclarationsTest {
                 .noneMatch(violation -> violation.contains("FxProviderDeclaration.java"));
     }
 
+    @Test
+    @DisplayName("a census reader is permitted only in its read-only form: a source planted in the permitted file, a by-name"
+            + " resolver, a raw ledger read of the clearing and an unpermitted port are caught")
+    void aCensusReaderIsHeldToItsForm() {
+        String port = "public final class PaymentJournalSources implements JournalSources {\n"
+                + "private static final Set<String> CORRIDOR = Set.of(\"CORRIDOR_CLEARING\");\n";
+        Map<String, String> planted = new LinkedHashMap<>();
+        planted.put(
+                "/reader/payments/src/main/java/com/finapp/payments/PaymentJournalSources.java",
+                port + "static final String CREDIT_ROW = \"SELECT id::text AS key_text FROM payments.outbound_credit WHERE id = ANY (?)\";\n}");
+        planted.put(
+                "/source/payments/src/main/java/com/finapp/payments/PaymentJournalSources.java",
+                port + "Optional<AccountPurpose> clearingPurpose() { return Optional.of(AccountPurpose.CORRIDOR_CLEARING); }\n}");
+        planted.put(
+                "/byname/fx/src/main/java/com/finapp/fx/FxJournalSources.java",
+                "public final class FxJournalSources implements JournalSources {\n"
+                        + "Object clearing() { return AccountPurpose.valueOf(\"FX_PROVIDER_CLEARING\"); }\n}");
+        planted.put(
+                "/rawsql/fx/src/main/java/com/finapp/fx/FxJournalSources.java",
+                "public final class FxJournalSources implements JournalSources {\n"
+                        + "static final String CLEARING = \"SELECT id FROM ledger.ledger_account WHERE purpose = 'FX_PROVIDER_CLEARING'\";\n}");
+        planted.put(
+                "/unpermitted/crossborder/src/main/java/com/finapp/crossborder/CrossBorderJournalSources.java",
+                "public final class CrossBorderJournalSources implements JournalSources {\n"
+                        + "private static final Set<String> CORRIDOR = Set.of(\"CORRIDOR_CLEARING\");\n}");
+
+        assertThat(violations(planted, PERMITTED.keySet()))
+                .as("the reader in its form passes; each other plant names a clearing outside its declarations")
+                .hasSize(4)
+                .noneMatch(violation -> violation.contains("/reader/"))
+                .anyMatch(violation -> violation.contains("/source/"))
+                .anyMatch(violation -> violation.contains("/byname/"))
+                .anyMatch(violation -> violation.contains("/rawsql/"))
+                .anyMatch(violation -> violation.contains("/unpermitted/"));
+    }
+
     // -----------------------------------------------------------------
 
     private static List<String> violations(Map<String, String> sources, Set<String> permitted) {
@@ -129,6 +185,13 @@ class CounterpartyClearingIsNamedByDeclarationsTest {
                 (path, text) -> {
                     String fileName = Paths.get(path).getFileName().toString();
                     if (DECLARING_FILE.equals(fileName) || permitted.contains(fileName)) {
+                        return;
+                    }
+                    if (CENSUS_READERS.containsKey(fileName)) {
+                        if (!CensusReaderForm.holds(text, TOKEN)) {
+                            outside.add("a counterparty clearing in " + path + ": a census reader's permit, but not in a"
+                                    + " census reader's read-only form (CensusReaderForm)");
+                        }
                         return;
                     }
                     if (mentions(text)) {

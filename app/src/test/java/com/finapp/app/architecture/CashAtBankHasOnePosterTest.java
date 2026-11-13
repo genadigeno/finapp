@@ -37,6 +37,10 @@ import org.junit.jupiter.api.Test;
  * in code (qualified or statically imported — both spell it whole) and any string literal
  * carrying it (a {@code valueOf("CASH_AT_BANK")} or a SQL text). The declaring enum is exempt;
  * every other occurrence must be in a permitted file with its stated role.
+ *
+ * <p>A census reader (`P15-TSK-035`'s source-join read port, {@link #CENSUS_READERS}) is permitted by name AND held to
+ * {@link CensusReaderForm}: the purpose a string in a figure, no ledger type reached, SQL that only reads. A resolver planted in
+ * that very file is still a second poster.
  */
 @DisplayName("CASH_AT_BANK has one poster (P8-TSK-016, INV-SET-06)")
 class CashAtBankHasOnePosterTest {
@@ -65,6 +69,18 @@ class CashAtBankHasOnePosterTest {
                     "READER: the cash proof derives the account's balance and compares it with"
                             + " the statement chain's closing; it posts nothing");
 
+    /**
+     * The census read ports permitted to name the purpose, each held to {@link CensusReaderForm} as well as named: a permit
+     * by file name alone would admit a poster planted beside the reader.
+     */
+    static final Map<String, String> CENSUS_READERS =
+            Map.of(
+                    "SettlementJournalSources.java",
+                    "CENSUS READER (P15-TSK-035; permitted when the guard was found red on master, 2026-11-13): settlement's"
+                            + " read port for the source-join census states a statement's net as a figure on the lines whose"
+                            + " purpose is the string CASH_AT_BANK, read from settlement.batch by SELECT; the census compares"
+                            + " it with the journal and posts nothing");
+
     private static final Pattern TOKEN = Pattern.compile("\\bCASH_AT_BANK\\b");
 
     @Test
@@ -82,6 +98,7 @@ class CashAtBankHasOnePosterTest {
 
         Map<String, Boolean> seen = new TreeMap<>();
         PERMITTED.keySet().forEach(file -> seen.put(file, false));
+        CENSUS_READERS.keySet().forEach(file -> seen.put(file, false));
         seen.put(DECLARING_FILE, false);
         sources.forEach(
                 (path, text) -> {
@@ -133,6 +150,49 @@ class CashAtBankHasOnePosterTest {
                 .noneMatch(violation -> violation.contains("BatchAcceptance.java"));
     }
 
+    @Test
+    @DisplayName("a census reader is permitted only in its read-only form: a poster planted in the permitted file, a"
+            + " by-name resolver, a raw ledger write, a port that is not the census's and an unpermitted port are caught")
+    void aCensusReaderIsHeldToItsForm() {
+        String port = "public final class SettlementJournalSources implements JournalSources {\n";
+        Map<String, String> planted = new LinkedHashMap<>();
+        planted.put(
+                "/reader/settlement/src/main/java/com/finapp/settlement/SettlementJournalSources.java",
+                port + "private static final Set<String> CASH = Set.of(\"CASH_AT_BANK\");\n"
+                        + "static final String BATCH = \"SELECT b.id::text AS key_text FROM settlement.batch b WHERE b.id = ANY (?)\";\n"
+                        + "// a statement's net on CASH_AT_BANK\n}");
+        planted.put(
+                "/resolver/settlement/src/main/java/com/finapp/settlement/SettlementJournalSources.java",
+                port + "private static final Set<String> CASH = Set.of(\"CASH_AT_BANK\");\n"
+                        + "Account cash(Connection uow) { return chart.resolve(uow, AccountPurpose.CASH_AT_BANK, eur); }\n}");
+        planted.put(
+                "/byname/settlement/src/main/java/com/finapp/settlement/SettlementJournalSources.java",
+                port + "private static final Set<String> CASH = Set.of(\"CASH_AT_BANK\");\n"
+                        + "Object cash() { return Enum.valueOf(purposes, \"CASH_AT_BANK\"); }\n}");
+        planted.put(
+                "/rawsql/settlement/src/main/java/com/finapp/settlement/SettlementJournalSources.java",
+                port + "private static final Set<String> CASH = Set.of(\"CASH_AT_BANK\");\n"
+                        + "static final String TOP_UP = \"INSERT INTO ledger.journal_line (account_id, direction)"
+                        + " SELECT id, 'DEBIT' FROM ledger.ledger_account WHERE purpose = 'CASH_AT_BANK'\";\n}");
+        planted.put(
+                "/notaport/settlement/src/main/java/com/finapp/settlement/SettlementJournalSources.java",
+                "final class SettlementJournalSources { Set<String> cash = Set.of(\"CASH_AT_BANK\"); }");
+        planted.put(
+                "/unpermitted/lending/src/main/java/com/finapp/lending/LendingJournalSources.java",
+                "public final class LendingJournalSources implements JournalSources {\n"
+                        + "private static final Set<String> CASH = Set.of(\"CASH_AT_BANK\");\n}");
+
+        assertThat(violations(planted))
+                .as("the reader in its form passes; each other plant is a second way cash could move")
+                .hasSize(5)
+                .noneMatch(violation -> violation.contains("/reader/"))
+                .anyMatch(violation -> violation.contains("/resolver/"))
+                .anyMatch(violation -> violation.contains("/byname/"))
+                .anyMatch(violation -> violation.contains("/rawsql/"))
+                .anyMatch(violation -> violation.contains("/notaport/"))
+                .anyMatch(violation -> violation.contains("/unpermitted/"));
+    }
+
     // -----------------------------------------------------------------
 
     private static List<String> violations(Map<String, String> sources) {
@@ -141,6 +201,13 @@ class CashAtBankHasOnePosterTest {
                 (path, text) -> {
                     String fileName = Paths.get(path).getFileName().toString();
                     if (DECLARING_FILE.equals(fileName) || PERMITTED.containsKey(fileName)) {
+                        return;
+                    }
+                    if (CENSUS_READERS.containsKey(fileName)) {
+                        if (!CensusReaderForm.holds(text, TOKEN)) {
+                            outside.add("CASH_AT_BANK in " + path + ": a census reader's permit, but not in a census"
+                                    + " reader's read-only form (CensusReaderForm)");
+                        }
                         return;
                     }
                     if (mentions(text)) {

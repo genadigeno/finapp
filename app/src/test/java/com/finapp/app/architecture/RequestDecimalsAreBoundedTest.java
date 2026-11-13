@@ -33,7 +33,9 @@ import org.junit.jupiter.api.Test;
  * appears only in {@code DecimalText} itself and in the named adapters that parse a provider's own answers, already
  * shape-checked (the reference rate source's pattern, the FX adapter's {@code requireDecimal})
  * and the chargeback report's own computed ratio. A planted violation proves the rule bites. *(The instant callback left this
- * list with `P15-TSK-036`: the door no longer reads an amount at all.)*
+ * list with `P15-TSK-036`: the door no longer reads an amount at all.)* The comments and literals are stripped by a one-pass
+ * scanner (2026-11-13): the patterns before it overflowed the stack on a long text block, and the guard went red on its own
+ * reading.
  */
 @Tag("architecture")
 @DisplayName("no request decimal is parsed unbounded (the Phase 9 to 10 transition)")
@@ -84,17 +86,77 @@ class RequestDecimalsAreBoundedTest {
         assertThat(unbounded("class A { String s = \"new BigDecimal(raw)\"; }")).isFalse();
     }
 
+    @Test
+    @DisplayName("the reading is one pass: a text block of any length is read without recursing, a text block, a character"
+            + " literal and an escaped quote each close where Java closes them, and a parse after them is still seen")
+    void theReadingNeverOverflowsAndClosesEachLiteralWhereJavaDoes() {
+        // ReportingPool's capability check is a 3,893-character text block; this one is fifty times that.
+        String block = "SELECT 1;\n".repeat(20_000);
+        assertThat(unbounded("class A { static final String SQL = \"\"\"\n" + block + "\"\"\";"
+                        + " Money m(String raw) { return of(new BigDecimal(raw)); } }"))
+                .as("a parse after a long text block is seen, and reading the block does not overflow the stack")
+                .isTrue();
+        assertThat(unbounded("class A { static final String S = \"\"\"\n new BigDecimal(raw) \\\"\"\" new BigDecimal(raw) \"\"\"; }"))
+                .as("a text block's content, an escaped delimiter inside it included, is a literal")
+                .isFalse();
+        assertThat(unbounded("class A { char q = '\"'; Money m(String raw) { return of(new BigDecimal(raw)); }"
+                        + " String s = \"x\"; }"))
+                .as("a quote in a character literal opens no string, so the code after it is still read")
+                .isTrue();
+        assertThat(unbounded("class A { String s = \"a\\\"b\"; Money m(String raw) { return of(new BigDecimal(raw)); } }"))
+                .as("an escaped quote does not close its string")
+                .isTrue();
+    }
+
     private static boolean unbounded(String source) {
         Matcher matcher = UNBOUNDED.matcher(stripped(source));
         return matcher.find();
     }
 
-    /** The source with comments and string literals blanked, so prose and literals never match. */
+    /**
+     * The source with each comment blanked and every string literal, text block and character literal emptied, so prose and
+     * literals never match.
+     *
+     * <p>A character scanner, one pass with no backtracking. The patterns it replaced (2026-11-13, a coordinator's repair)
+     * blanked a literal with {@code "(?:\\.|[^"\\])*"}, whose repeated alternation the JDK's regex engine matches by recursing
+     * once per character: {@code ReportingPool.CAPABILITY_CHECK}, a text block `P15-TSK-043`'s review round lengthened to 3,893
+     * characters, overflowed the test worker's stack, and the guard failed on its own reading rather than on a parse. The
+     * patterns also opened a string at a quote inside a character literal ({@code '"'}); the scanner skips one.
+     */
     private static String stripped(String source) {
-        return source
-                .replaceAll("(?s)/\\*.*?\\*/", " ")
-                .replaceAll("//[^\\n]*", " ")
-                .replaceAll("\"(?:\\\\.|[^\"\\\\])*\"", "\"\"");
+        StringBuilder kept = new StringBuilder(source.length());
+        int i = 0;
+        int length = source.length();
+        while (i < length) {
+            char c = source.charAt(i);
+            if (c == '/' && i + 1 < length && source.charAt(i + 1) == '/') {
+                int end = source.indexOf('\n', i);
+                kept.append(' ');
+                i = end < 0 ? length : end;
+            } else if (c == '/' && i + 1 < length && source.charAt(i + 1) == '*') {
+                int end = source.indexOf("*/", i + 2);
+                kept.append(' ');
+                i = end < 0 ? length : end + 2;
+            } else if (source.startsWith("\"\"\"", i)) {
+                int j = i + 3;
+                while (j < length && !source.startsWith("\"\"\"", j)) {
+                    j += source.charAt(j) == '\\' ? 2 : 1;
+                }
+                kept.append("\"\"");
+                i = Math.min(length, j + 3);
+            } else if (c == '"' || c == '\'') {
+                int j = i + 1;
+                while (j < length && source.charAt(j) != c) {
+                    j += source.charAt(j) == '\\' ? 2 : 1;
+                }
+                kept.append(c).append(c);
+                i = Math.min(length, j + 1);
+            } else {
+                kept.append(c);
+                i++;
+            }
+        }
+        return kept.toString();
     }
 
     private static Path repositoryRoot() {
