@@ -24,9 +24,18 @@
 # object - generated or taken from the caller - is appended to it, and nothing else: no name, no value. The kind rehearsal's experiments
 # scope reads it to refuse any Secret value its run did not make (ADR-0127 decision 5).
 #
+# THE KEY RINGS FROM AN ESCROW (P16-TSK-025, ADR-0149). With KIND_SECRETS_RINGS=stdin, every version of every field-level key ring is
+# read from stdin as NAME=value lines, the disaster-recovery exercise's escrow decrypted into a pipe, and never generated: a ring's
+# version made afresh in a recovery would leave every row written under it unreadable. A ring's version is a name ending in _KEY
+# that the inventory holds a second version beside (its stem's _V2_KEY), or a numbered version itself, read from the ExternalSecret
+# like every other name here, never from a list. Every such name must arrive on stdin, and the run refuses before any object is
+# written when one does not. A line naming anything else - a password, a provider's or a callback's key, a name the inventory does
+# not hold - is refused: a recovery carries the rings and nothing else, and every credential is generated again.
+#
 # Usage:
 #   FINAPP_DB_URL=... [every other non-secret name] infra/scripts/kind-secrets.sh apply <namespace>
 #   FINAPP_DB_URL=... [every other non-secret name] infra/scripts/kind-secrets.sh render <empty directory outside the repository>
+#   <the escrow's NAME=value lines> | KIND_SECRETS_RINGS=stdin FINAPP_DB_URL=... infra/scripts/kind-secrets.sh apply|render ...
 #
 # Exit status: 0 done; 1 refused; 2 usage.
 set -eu
@@ -58,6 +67,12 @@ if [ -n "$LEDGER" ]; then
     esac
 fi
 
+RINGS=${KIND_SECRETS_RINGS:-}
+case $RINGS in
+    '' | stdin) ;;
+    *) echo "KIND_SECRETS_RINGS is stdin or unset, not $RINGS" >&2; exit 2 ;;
+esac
+
 # The keys one ExternalSecret writes. Its file is the list, and an empty answer is refused: a parser that finds nothing has failed.
 # So is one that finds fewer than the file holds: an entry written in another order, or quoted, is valid YAML this sed cannot read.
 keys_of() {
@@ -74,7 +89,14 @@ remember() {
     eval "known=\${value_$1:-}"
     [ -z "$known" ] || return 0
     case $1 in
-        *_KEY) fresh=$(head -c 32 /dev/urandom | base64 | tr -d '\n') ;;
+        *_KEY)
+            # A ring's version from the escrow, when one was given: read whole from stdin before anything was written (below).
+            if [ "$RINGS" = stdin ] && is_ring "$1"; then
+                eval "fresh=\${ring_$1}"
+            else
+                fresh=$(head -c 32 /dev/urandom | base64 | tr -d '\n')
+            fi
+            ;;
         *_PASSWORD) fresh=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n') ;;
         *)
             eval "fresh=\${$1:-}"
@@ -115,6 +137,35 @@ named() {
 # Assigned first: a failure inside a command substitution given as an argument is ignored even under set -e.
 app_keys=$(keys_of externalsecret-app.yaml)
 migrator_keys=$(keys_of externalsecret-migrator.yaml)
+
+# is_ring <name>: a version of a field-level key ring - a numbered version, or a base key the inventory holds a second version beside.
+is_ring() {
+    case $1 in
+        *_V[0-9]_KEY) return 0 ;;
+    esac
+    printf '%s\n' "$app_keys" | grep -qx "${1%_KEY}_V2_KEY"
+}
+
+# The escrow's lines, read whole before any object is written: every one a ring's version the inventory holds, and every ring's version
+# the inventory holds among them. Nothing is half-applied by a recovery that lacks a version.
+if [ "$RINGS" = stdin ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -n "$line" ] || continue
+        name=${line%%=*}
+        case $name in
+            '' | *[!A-Z0-9_]*) echo "a line on stdin names no key: only a key ring's versions are read there" >&2; exit 1 ;;
+        esac
+        printf '%s\n' "$app_keys" | grep -qx "$name" || { echo "$name, on stdin, is not in the inventory" >&2; exit 1; }
+        is_ring "$name" || { echo "$name, on stdin, is not a key ring's version: only a ring is recovered, every other secret is generated" >&2; exit 1; }
+        [ -n "${line#*=}" ] && [ "$line" != "$name" ] || { echo "$name, on stdin, has no value" >&2; exit 1; }
+        eval "ring_$name=\${line#*=}"
+    done
+    for name in $app_keys; do
+        is_ring "$name" || continue
+        eval "held=\${ring_$name:-}"
+        [ -n "$held" ] || { echo "no value for $name on stdin: a key ring's version is never generated in its place" >&2; exit 1; }
+    done
+fi
 # The simulators' URLs (P15-TSK-012). No ExternalSecret delivers a provider URL and the policy refuses one in a ConfigMap, so the
 # rehearsal names them here; each follows the suffix rule above, a URL being a name the caller must supply. Unset, nothing is added.
 # shellcheck disable=SC2086

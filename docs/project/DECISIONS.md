@@ -1448,6 +1448,14 @@ cannot be written, and none is refused for the broker's sake. The operations are
 exactly one; every failure row is checked by registered experiments or designed-only; E05, E06, E09, E72 and E73 walk their rows at the
 edge and fail on a mismatch. No automatic refusal on a correctness signal: the freeze stays a person's act, proposed to the owner
 (`THREAT_MODEL.md` §6 item 66). Every run owed (PI-025). → [ADR-0144](../adr/ADR-0144-the-financial-operation-availability-matrix.md)
+**The disaster-recovery plan** (`P16-TSK-025`, 2026-11-13, `Proposed`). What must already exist outside the environment (the
+repository at the release's commit, the encrypted backup and its manifest, an escrow of every key ring's versions under a key apart
+from the backup's, the release record, the image set, the configuration fingerprint); every credential regenerated and never restored,
+the rings recovered and never generated, their check values published so another value refuses to start; the released digests
+redeployed, never rebuilt, with no registry reached; the recovered database held `NOLOGIN` until it matches its manifest, the
+platform's own verification passes and a person releases it; every step timed, every tier's objective naming its evidence or its
+owed run (E87, E88, E89 owed, PI-025). Where the rings and the images live in a real environment is `THREAT_MODEL.md` §6 item 71. →
+[ADR-0149](../adr/ADR-0149-the-disaster-recovery-plan-what-survives-what-is-regenerated.md)
 
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.

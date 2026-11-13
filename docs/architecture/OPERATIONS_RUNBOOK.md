@@ -3267,6 +3267,7 @@ latest; the run, as its record names it.
 | §11.57 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.58 | `platform` | 0 | 6 | 6 | — | — | — | — | Phase 16 drill |
 | §11.59 | `platform` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
+| §11.64 | `platform` | 0 | 11 | 11 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -4320,6 +4321,116 @@ For every restore, logical or to an instant (ADR-0128 decision 3, ADR-0140). The
 |---|---|---|
 | The seed's check | `RESTORE_STOP_AFTER=source` on head `8e357114` (the seed, `RestoreVerification` and `RestoreVerdicts` as they stand at the gate), 14:21-14:31Z: the launcher, the source archiving, its migration, the base backup, the seed and the source's verification | Exit 0. The seed: the period, the chart, four funded wallets, credit's two policies and the scorecard and both products' terms in force by two persons, the first contribution's statement `ACCEPTED`, the second awaiting its own, two decisions `APPROVED`, one loan `ACTIVE`, one BNPL obligation, one merchant payable, the census at the end of 9 entries, six transfers after it. **All seven drill checks `PASS`**: 1 of 1 currencies balanced; 1 period agreeing (2026-11 `OPEN`, 0 locked); the projection and 8 product proofs complete with no discrepant subject; the census walked 15 of 15; 5 rows in 11 stamped columns each under a version its ring holds (credit evidence 4 rows under version 2, the settlement file 1 under version 1); each of 9 proofs over at least one subject (`LOAN_SUBLEDGER` 1, `LOAN_REPLAY` 1, `BNPL_SUBLEDGER` 1, `BNPL_THREE_WAY` 1, `MERCHANT_PAYABLE` 1, `LENDING_CAPITAL` 5, `FX_BOOKS` 25, `POSITION` 26, `PROJECTION` 13). The base backup: 77067296 encrypted bytes. **It found a defect, fixed after it:** `switched` waited for the segment in use after the base backup's stop, because `pg_switch_wal()` does nothing when nothing important was written since the last switch and then answers a position inside the segment in use; the run was released by a manual `pg_switch_wal()` on its own throwaway source at 14:29Z, from outside the script, and `switched` now waits for the segments before the one in use (`bfd4b64e`). The seed and the verification were not touched by the fix |
 | The recovery's mechanics | the script's own functions and settings (`server` archiving, `switched`, `pitr`, `archive_copy`, `ARCHIVE_COMMAND`, `RESTORE_COMMAND`, `HBA_HOLD`), extracted from it and driven over a bare PostgreSQL with one table of 5000 rows instead of the platform's books: no Gradle, no seed, no application. Twice: first on head `8e357114`'s functions (14:12-14:18Z), then on the fixed `switched` (the script at sha256 `7265f262…1ead2616`, 14:32-14:35Z), each with the same result | Exit 0, 4 assertions each. The archive held `.enc` and `.sha256` files only, and the base backup at rest was no tar. A session of the administrator with `options=-c role=finapp_app` read `finapp_app` as its role and `postgres` as its session's, with `finapp_app` unable to log in, and was refused a `CREATE` the administrator could make. The recovery to T stopped "before commit of transaction 768", the write after T, and was promoted on a new timeline; it held the 5000 rows written before T, the line the bad write after T removed, and not the later write; the three roles were refused by `pg_hba.conf` and then `NOLOGIN`. `wal-gap` and `wal-damaged` each ended in `recovery ended before configured recovery target was reached` after the two segments the base backup's own WAL needed, and stopped their servers. Its durations are a toy table's on a loaded machine and are not a restore rate |
+
+### 11.64 Disaster recovery: the plan, the exercise, and each tier's objective with what confirms it (`P16-TSK-025`, ADR-0149, ADR-0128)
+
+*(Written by `P16-TSK-025`, 2026-11-13, from `infra/scripts/kind-rehearsal.sh`'s `dr` scope, `infra/scripts/kind-rehearsal/dr.sh` and `infra/scripts/kind-secrets.sh`'s ring mode. Not run: by the owner's word of 2026-11-13 the exercise is owed (`POSTPONED_ISSUES.md` PI-025; `RESILIENCE_EXPERIMENTS.md` E87, E88 and E89), and no recovery time, loss window or verdict of it is claimed here. What did run is the record at the end. The cloud half - the infrastructure applied into a clean account, the managed restore of the copied snapshot, the key store and the registry in the recovery account - is designed only (owner decision C4).)*
+
+**When.** The environment is lost whole: the production account lost or compromised (ADR-0128's tier 3), or its region (tier 4, the same procedure into another region). It is declared an incident (section 11.12), and its lead names the person who will release the recovered database. A database instance lost is a failover, not this (sections 11.40 and 11.54, tier 1); a bad write is a recovery to an instant (section 11.55, tier 2). **The plan's rule: a recovered platform proves itself before any platform role can log in**, and every tier's objective names its evidence or the run that is owed.
+
+#### The objectives, and what confirms each
+
+The targets are ADR-0128's (owner decision C9), each from the record's criticality, the financial risk of loss, the cost and what the decided architecture can do. What a local run measures is the procedure's own durations at the local size, never a managed service's: none is claimed until its run is made.
+
+| Tier | Event | RPO | RTO, to money movement | Basis | What shows the procedure locally | The run that confirms it | Today |
+|---|---|---|---|---|---|---|---|
+| 1 | A database instance or zone lost | 0 | 15 min | The synchronous standby holds every acknowledged commit; the time allows the failover, readiness and a person's reading of the correctness signals | The test-only synchronous pair promoted under the workload, the application's interruption measured (section 11.54) | E05 at three replicas, with E06 and E57 | Owed (PI-025); the managed failover designed only (D01) |
+| 2 | A logical corruption or deletion | at most 5 min before the bad write | 4 h | Point-in-time recovery from continuous log archiving, then the verification and the window | The recovery to an instant from the encrypted archive, its two refusals and the gate (section 11.55); the restore's rate per GiB at two sizes | E59, E60 and E61 | Owed (PI-025); the managed restore designed only (`THREAT_MODEL.md` §6 item 38 (a)) |
+| 3 | The production account lost or compromised | 24 h | 24 h | The backup account's daily copy (item 21 (a)); the infrastructure rebuilt from code into a clean account | The cluster and its data lost, the platform rebuilt from the repository and the vault, every step timed (this section) | E87 with E88 and E89, at three and then seven replicas | Owed (PI-025); the cloud half designed only (D04's note) |
+| 4 | A region lost | 24 h; minutes only if cross-region replication is bought (C10 (B)) | 24 h | As tier 3, into another region | E87, for the platform's half | No local run of its own | Designed only (D04) |
+| - | Kafka lost | none of financial truth: refilled from the outbox inside the inbox's dedupe window | 1 h to drained | Kafka is not the record | Every broker away under the workload (E09); the broker rebuilt empty, the relay and the replay (E87) | E09 and E87 | Owed (PI-025) |
+
+**Tier 3's time, term by term.** The exercise times each term the local machine has: the cluster made, the images imported, the credentials generated, the data tier, the restore (its bytes and milliseconds), the counter, the comparison, the verification, the release, the fleet ready, the replay, money moved and proven, the scale-out. A real environment adds terms no local run has - the infrastructure applied into a clean account, the copied snapshot restored by the provider, the key store and the registry in the recovery account - and changes one by size: the restore and the verification grow with the database, which is why the restore's rate is taken at the seeded source's size and at a `kind` database's after the soak (E59's two sizes), the size this plan's workload assumption names. The local recovery times say how long the procedure takes here; whether 24 hours holds for a real account is a reading a real environment makes.
+
+**Tier 3's loss.** Everything committed after the backup's instant T is lost by construction. The exercise does not measure a recovery point - its backup's age is its own schedule's choice - it shows that exactly that window is what is lost: every fact committed by T present and counted, none after it.
+
+#### Ownership, frequency and retention
+
+- **Ownership.** The `platform` module owns this plan, the procedure and the exercise; a real environment names the person or rota (`PRODUCTION_READINESS.md`'s Ownership row). The incident lead declares the disaster and names the person who releases, who is recorded by name with the release.
+- **The database.** In the reference: continuous log archiving and a daily snapshot, kept 35 days in production and 7 in staging, and a daily copy across the account boundary into the backup account, kept as the copy's own retention (`PHASE_16_PLAN.md` §11.2, the Terraform module's range; a jurisdiction's legal period is not set here, `DATA_RETENTION.md`). Locally: one logical backup in one snapshot at the exercise's T.
+- **The key rings.** A ring's version is copied out when it is made, before it is listed (section 11.29's step 0), never later: a version listed before its copy exists is a version a disaster can take. Where the copy lives in a real environment is `THREAT_MODEL.md` §6 item 71 (a).
+- **The release record, the image set and the configuration fingerprint.** One of each per release, kept with that release (section 11.36's record names the digests).
+
+#### What must exist outside the environment before the disaster
+
+| Part | What it is | In the exercise | In a real environment | Why |
+|---|---|---|---|---|
+| The repository | The tree at the release's commit: manifests, overlays, topics, migrations, the restore's commands | This repository, the rebuild refusing any other commit | The Git host | Everything but data and keys is rebuilt from it |
+| The backup and its manifest | The database in one snapshot; every table's count, every sequence, each schema history's head and the instant, read in that snapshot | Ciphertext in the vault, each part's digest beside it | The backup account's daily copy | The books |
+| The key-ring escrow | Every version of every field-level ring, and each listed version's check value | Ciphertext under a key apart from the backup's; the check values beside it | Item 71 (a) | Evidence is unreadable without the version it was written under |
+| The release record | The digests the fleet ran | `release.txt` | The promotion record (section 11.36) | The released bytes, never a rebuild |
+| The image set | Every image the release needs | Exported from the lost node's store, with each name's digest | A registry in the recovery account (item 71 (b)) | No registry is assumed reachable |
+| The configuration fingerprint | Each replica's `finapp_config_fingerprint` | `fingerprint.txt` | The metrics store's copy, or the release's record | Drift is found, never carried |
+
+The vault never holds a credential, and nothing in it is plaintext but the image set and the fingerprint, which hold none. The exercise's vault lives in the first run's own work directory, outside the repository and the artefacts, and is removed when that run ends.
+
+#### Credentials regenerated, key rings recovered
+
+- **Generated again, never restored**: every database password, the broker's credential, the local CA and every certificate, every provider's, report's and callback's key, the abuse key. In tier 3 the account may be the compromise, so its credentials must not come back. A provider's shared secret is issued again with that provider (a real provider's process; the exercise rebuilds the simulator with the new ones).
+- **Recovered, never generated**: every version of every field-level ring - the documents', the provider evidence's, the dispute and payout evidence's, the settlement files', the FX and credit evidence's, the operators' factors'. Rows stand under the version that wrote them and are never re-encrypted (section 11.29), so a version generated afresh in a lost one's place would leave every one of those rows unreadable. Each ring's check value is published in the rebuilt configuration, so a replica given another value under that number refuses to start.
+- **The local generator enforces the line**: `kind-secrets.sh` with `KIND_SECRETS_RINGS=stdin` reads every ring's version from the escrow, decrypted into its standard input, refuses before writing any object when one is missing, refuses any other name, and generates everything else. A recovery cannot carry a password through it.
+- **The key store and KMS of a real environment**: designed only (ADR-0123); where the rings' copy lives is item 71 (a).
+
+#### The recovery, in order
+
+Each step is a step of the exercise, timed into its `timings.tsv`.
+
+1. **Declare** (section 11.12): the disaster's instant is the recovery's clock.
+2. **The infrastructure from code**: in a real environment the Terraform roots into a clean account; in the exercise a new `kind` cluster from the repository's configuration, under another name than the lost one.
+3. **The images** (below): imported from the image set; no node can reach a registry.
+4. **Namespaces and policies** from the overlays.
+5. **Credentials generated, rings recovered** (above).
+6. **The data tier and the broker** from code: the database empty; the topics from `infra/kafka/topics.yaml`, empty.
+7. **The bootstrap step** (section 11.1b), which makes the platform's roles.
+8. **The roles held**: `ALTER ROLE ... NOLOGIN` for `finapp_app`, `finapp_migrator` and `finapp_reporting`, each confirmed refused with `is not permitted to log in`, before anything is restored. Nothing has connected: no fleet and no migrator exist yet.
+9. **The restore**: the backup's digest checked, then `pg_restore --single-transaction --exit-on-error` from a pipe; nothing plaintext at rest.
+10. **The counter** (section 11.35 step 4): past every restored `xid8`. On `kind` the server is scaled to zero so it stops cleanly, `pg_resetwal -e` runs on its own volume from a pod of the same image under the restricted profile, and it is scaled back; the roles are confirmed still held.
+11. **The comparison** with the manifest the backup's own session read: every table's count, every sequence at or past, each schema history's head.
+12. **The verification** (section 11.35's checks, the evidence held by the key rings among them), as the administrator in read-only sessions, through the API server's port-forward: an administrator's path, which no network policy governs and none is opened for.
+13. **The window** (section 11.55): every provider file delivered after T, delivered again with money held. On `kind` there is none to deliver (below).
+14. **The release, by a person, recorded**: the three roles in one transaction with the database's instant read; the record names the person (`REHEARSAL_DR_RELEASED_BY`), the reason, the instant, the backup's digest and the digest of each report it rests on. Into the restored database's own audit trail it goes with the first real environment's managed restore rehearsal (item 62 (a)); until then the incident's record holds it.
+15. **The migrator**, which validates and applies nothing on a backup of this release; **the fleet at its floor of three**; **the edge**.
+16. **The broker's step** (section 11.35 step 6): a broker rebuilt empty holds nothing from after T, so no group has anywhere to stand but its beginning; the relay publishes what the restored outbox holds unpublished; the audited replay of the window before T, per event type, where m is 24 hours because the lag at T lived in the lost metrics store, and never before the restored outbox's first publication.
+17. **Money moved and proven**: a smoke through the edge, then the census over the restored and the new facts together.
+18. **The configuration compared** (below), then **the fleet scaled** to its count, money moved and the census again, the configuration again.
+
+A refusal anywhere from step 8 leaves the database held and unused (section 11.35 step 8): nothing is corrected to make a recovery pass.
+
+#### Configuration: drift found, never carried
+
+The configuration comes back from the repository at the release's commit and nowhere else: the overlay rendered again, the ring check values published from the vault. Each recovered replica's `finapp_config_fingerprint` is then read and compared with the fingerprint the lost fleet ran; a replica on another configuration is a drift, and section 11.31 step 3's reading applies (a change no revision explains is a security event). The exercise's probe `config-drift` changes one `FINANCIAL` value in the rebuild alone and must turn the run red.
+
+#### Images, and a registry that cannot be reached (T42)
+
+The fleet runs the release record's digests, never images built again: a rebuild would not be the released bytes, and its own dependencies need registries. A replica starting while the registry is unreachable is T42 (accepted by the owner until 2027-06-30). **On `kind`** the answer is built: every node of the rebuild refuses outbound connections outside the cluster's own networks from the moment it exists, a pull of an image no vault holds is seen refused at the start and at the end, every image comes from the image set imported into each node, and the scale-out to seven starts four replicas behind that cut (E88). **In a real environment** pre-pulled images help only the nodes that pulled them: a node the autoscaler adds, or every node of a rebuilt cluster, has none. The design is a registry in the recovery account holding each release's images, copied across the account boundary with the backup, which the rebuilt cluster's nodes pull from; designed only, item 71 (b).
+
+#### What a recovery loses, and how it is found
+
+Everything after T. A provider that acted after T - a capture, a payout, a settlement line - is ahead of the recovered books; the resolution sweeps ask the providers about every operation the books hold unresolved, and the providers' next statements raise the rest as breaks for a person to explain (sections 11.35 and 11.55). **On `kind` the provider's side is lost too**: the simulator kept its state in the lost cluster, so no provider file survives for the window and the rebuilt simulator knows nothing of before. The exercise therefore asserts the loss itself - none of the transfers acknowledged after T is in the recovered books, and each was in the lost one - and counts the provider's side only for what the rebuilt simulator saw. The window's delivery is E61's drill (section 11.55).
+
+#### Running the exercise and reading its record
+
+`REHEARSAL_SCOPE=dr REHEARSAL_DR_RELEASED_BY=<the person> infra/scripts/kind-rehearsal.sh`; what section 11.28 needs, plus room for two clusters one after the other and for the image set - every image the lost node held but its node image's own - in the run's work directory. One command makes two runs. The first builds release N at three replicas (`REHEARSAL_DR_SCALE`, seven by default, is the count the budget is set for and the rebuild scales to), smokes it, runs its suites, then runs `REHEARSAL_DR_WORKLOAD_SECONDS` (300) of workload, takes the backup and keeps everything above in the vault, runs `REHEARSAL_DR_LOST_SECONDS` (60) more, and deletes the cluster. It then starts the second, `REHEARSAL_DR_PHASE=rebuild`, on a cluster named `<cluster>-recovered`, with its artefacts under `rebuild/`. Nothing else may name a phase or a vault, and the scope refuses `REHEARSAL_STEPS` and a reused cluster: a record of a recovery is only ever of a whole one. The probes are `skip-verification` (the verification skipped: the release must refuse, the fleet deployed anyway must be refused by the database and move nothing, and the run is red) and `config-drift` (above). Artefacts: `dr-record.tsv` (every step's seconds in both runs, the window lost by the database's clock, the recovery times to the release, the fleet ready, money moved and the scale-out by this machine's clock), `rebuild/release-dr.tsv`, `rebuild/dr-verdicts*.txt`, `rebuild/dr-rates.tsv`, `rebuild/dr-fingerprints-*.tsv`, `rebuild/dr-containerd-*.log`, every census of both runs. Exit `0` every assertion of both runs held, `1` one failed, `2` a step could not run.
+
+#### When the exercise refuses
+
+- **A vault part does not match its digest**: refused before it is read; the backup or the escrow from another copy, never the damaged one.
+- **An escrow short of a ring's version** (E89): refused before any Secret is written. Find the version (the escrow's other copy, the store's older version); if none is left, rows under it cannot be read anywhere, which is an incident of its own (section 11.29), and the version is never made again in its place.
+- **A replica, or the verification, refusing on a check value** (E89): the value under that version is not the one it was listed with. Never change the check value.
+- **The restore differs from its manifest, or a check fails**: the recovery is unused and held (section 11.35 step 8).
+- **A pull seen on a node, or a pod waiting on its image** (E88): an image the set did not carry; the set is incomplete, which is a finding about the release's record, not a reason to open the registry.
+- **A fingerprint that differs**: a drift (above).
+- **A transfer of the window after T in the recovered books**: the restore is not the backup it names.
+
+#### The last record
+
+No run of the exercise, by the owner's word (PI-025): E87, E88 and E89 are owed, and so are both probes. What ran on 2026-11-13, on one development machine, with no cluster:
+
+| What ran | What it showed |
+|---|---|
+| `kind-secrets.sh`'s ring mode in its render mode, no cluster: the 24 ring versions the inventory holds (eight rings, three versions each) made into a stand-in escrow and given on stdin, then six refusals | With the escrow: exit 0, every one of the 24 lines carried verbatim into `finapp-app-secrets`, every other value generated (the application's password differing from a default run's); a default run's render held none of them. Refused, each with exit 1 and no object written: the MFA ring's version 1 withheld (`no value for FINAPP_MFA_KEY on stdin`); a password on stdin; a callback key on stdin; a name built to break the shell's quoting; an empty value. An unknown `KIND_SECRETS_RINGS` exit 2 |
+| `sh -n` over the four changed scripts; ShellCheck 0.10.0 (its image already on the machine) over `dr.sh` and `kind-secrets.sh` | No syntax error; no finding at error level, the warnings and notes the kinds the harness's other files carry |
+| `DisasterRecoveryRehearsalContractTest` and the guards that read the changed files | See `docs/project/history/CHANGE_LOG.md`'s row of 2026-11-13 |
 
 ### 11.33 Rotations rehearsed on kind: running them, reading them, the last record (`P15-TSK-020`)
 

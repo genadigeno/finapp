@@ -1,5 +1,5 @@
 # The telemetry pipeline's steps of the kind rehearsal (P15-TSK-023, ADR-0124 decisions 1 and 8). Sourced by infra/scripts/kind-rehearsal.sh, whose
-# helpers it uses (dock, kube, log, pass, fail, cannot, psql_query, client, probe_pod, must_reach, must_not_reach, load_tagged, normalized, render_overlay); every
+# helpers it uses (dock, kube, log, pass, fail, cannot, psql_query, client, probe_pod, must_reach, must_not_reach, load_tagged, normalized, render_overlay, dr_held); every
 # result is in the run's artefacts, under telemetry-*.
 #
 #   telemetry_deploy    the collector, Tempo, Loki and Prometheus of deploy/observability/overlays/kind, before N rolls out, so N exports from its start
@@ -34,6 +34,8 @@ telemetry_image() {
     # telemetry_image <repository> <version> <digest>: into the node as load_tagged puts it there, except an image whose configuration names no
     # platform (Loki's, built with Nix): `docker save --platform` refuses it, and saved whole it names the blobs of the platforms the host never
     # pulled, which the node's import cannot find. The node pulls that one itself, its own platform of the pinned digest, under both names.
+    # The disaster-recovery exercise's rebuild (P16-TSK-025): what the vault's image set brought is held, behind the node's registry cut.
+    ! dr_held "$1@$3" || return 0
     dock image inspect "$1:$2" >/dev/null 2>&1 || { dock pull --platform linux/amd64 "$1@$3" >/dev/null && dock tag "$1@$3" "$1:$2"; } \
         || cannot "could not pull $1@$3"
     if [ -n "$(dock image inspect --format '{{.Architecture}}' "$1:$2" 2>/dev/null)" ]; then

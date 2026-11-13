@@ -57,6 +57,15 @@
 # REHEARSAL_E11_STORE naming a store. It runs three brokers (P16-TSK-013, kind-rehearsal/brokers.sh), each behind a proxy of its own,
 # for the event pipeline's experiments E08, E09, E22, E23, E49 and E68 (OPERATIONS_RUNBOOK.md section 11.51).
 #
+# `dr` (P16-TSK-025, ADR-0149, OPERATIONS_RUNBOOK.md section 11.64): the disaster-recovery exercise, tier 3's local analogue. Release N alone
+# at three replicas, a workload, the backup and everything else a recovery needs kept in a vault outside the cluster, a further window of
+# money moved, then the cluster deleted with its data; then a run of its own (REHEARSAL_DR_PHASE=rebuild) rebuilds the platform from the
+# repository and the vault on a new cluster whose node can reach no registry: the vault's images, every credential generated again and the
+# key rings recovered from the escrow, the database restored with the platform's roles held until the platform's own verification passes and
+# a person (REHEARSAL_DR_RELEASED_BY) releases it, the fleet at three, the window's replay, money moved, the configuration fingerprint
+# compared, the fleet scaled to REHEARSAL_DR_SCALE (seven by default); every step timed (kind-rehearsal/dr.sh: E87, E88, E89). Its probes are
+# skip-verification and config-drift.
+#
 # THE COUNT (P16-TSK-009, P16-TSK-014; OPERATIONS_RUNBOOK.md sections 11.49 and 11.58). Every run holds its fleet at its own count in its own
 # rendered copy, the connection budget's formula at that count (fleet_patch): three by default; REHEARSAL_LOAD_REPLICAS in the load scope;
 # REHEARSAL_RELEASE_REPLICAS, to ten, carries the release's whole walk (E26: N - 1 to N, the kill, the rollback with its eviction and the
@@ -92,6 +101,9 @@ DIR="$ROOT/infra/scripts/kind-rehearsal"
 # The event pipeline at load (P16-TSK-013): functions only, called by the load scope's run (E47, E48).
 # shellcheck source=infra/scripts/kind-rehearsal/pipeline.sh
 . "$DIR/pipeline.sh"
+# The disaster-recovery exercise (P16-TSK-025): functions only, called under REHEARSAL_SCOPE=dr.
+# shellcheck source=infra/scripts/kind-rehearsal/dr.sh
+. "$DIR/dr.sh"
 
 CLUSTER=${REHEARSAL_CLUSTER:-finapp-rehearsal}
 NODE="$CLUSTER-control-plane"
@@ -110,7 +122,7 @@ ROLLOUT_TIMEOUT=${REHEARSAL_ROLLOUT_TIMEOUT:-1500}
 # What the run rehearses: `release` (the default, P15-TSK-012's walk from N - 1 to N and back) or `rotations` (P15-TSK-020: release N alone,
 # then every credential and certificate rotation of kind-rehearsal/rotations.sh, each under the workload, each with its census and its rollback).
 SCOPE=${REHEARSAL_SCOPE:-release}
-case $SCOPE in release | rotations | signals | incidents) ;; delivery) ;; rolls) ;; load) ;; experiments) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals, incidents, delivery, rolls, load or experiments, not $SCOPE" >&2; exit 2 ;; esac
+case $SCOPE in release | rotations | signals | incidents) ;; delivery) ;; rolls) ;; load) ;; experiments) ;; dr) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals, incidents, delivery, rolls, load, experiments or dr, not $SCOPE" >&2; exit 2 ;; esac
 # Every scope but `release` deploys release N alone: the steps below that name N - 1 deploy N.
 N_ONLY=""
 case $SCOPE in rotations | signals | incidents | delivery) N_ONLY=1 ;; esac
@@ -120,6 +132,8 @@ case $SCOPE in rotations | signals | incidents | delivery) N_ONLY=1 ;; esac
 [ "$SCOPE" != load ] || N_ONLY=1
 # The experiments scope (P16-TSK-019) too.
 [ "$SCOPE" != experiments ] || N_ONLY=1
+# The disaster-recovery exercise (P16-TSK-025) too: both its runs deploy the one release the vault records.
+[ "$SCOPE" != dr ] || N_ONLY=1
 # The brokers (P16-TSK-013): three in the experiments scope, one or three in the load scope, one elsewhere; refused before anything is built.
 brokers_resolve
 # The platform scopes' API audit log (Q12): only they write one.
@@ -138,6 +152,9 @@ FLEET_REPLICAS=3
 [ "$SCOPE" != experiments ] || FLEET_REPLICAS=${REHEARSAL_EXPERIMENTS_REPLICAS:-3}
 FLEET_AUTOSCALE=""
 FLEET_START=$FLEET_REPLICAS
+# The disaster-recovery exercise (P16-TSK-025): the budget at its scale-out's count, REHEARSAL_DR_SCALE (seven by default), the fleet starting
+# at the autoscaler's floor; the rebuild raises the floor to the count once money has moved (dr_after_rebuild).
+[ "$SCOPE" != dr ] || { FLEET_REPLICAS=${REHEARSAL_DR_SCALE:-7}; FLEET_AUTOSCALE=1; }
 # The experiments that read the run's count rather than three: the others are refused at any other count.
 EXPERIMENTS_AT_A_COUNT="E45"
 # fleet_resolve (P16-TSK-014): the run's count refused before anything is built unless it is three to the kind overlay's ceiling, read from the
@@ -161,6 +178,8 @@ fleet_resolve() {
                 esac
             done ;;
         load) ;;
+        # The disaster-recovery exercise (P16-TSK-025): its count is the scale-out's, reached from three after the recovery.
+        dr) ;;
         *) echo "?? the $SCOPE scope is written for three replicas, not $FLEET_REPLICAS" >&2; exit 2 ;;
     esac
 }
@@ -203,11 +222,16 @@ dpath() {
     fi
 }
 
+# The disaster-recovery exercise's phase, vault and person (P16-TSK-025), refused before anything is built; no other scope may name them.
+dr_resolve
+
 mkdir -p "$ART"
 : > "$ART/rehearsal.log"
 : > "$ART/not-exercised.txt"
 : > "$ART/timings.tsv"
 : > "$ART/assertions.tsv"
+# The exercise's instants (P16-TSK-025): a record of this run alone.
+[ "$SCOPE" != dr ] || : > "$ART/dr-marks.tsv"
 
 log() {
     printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*" | tee -a "$ART/rehearsal.log"
@@ -327,6 +351,11 @@ normalized() {
 # image by the digest it names without the node reaching a registry. Every node of the cluster ($NODES): one, except in the experiments
 # scope (P16-TSK-019), whose workers run every pod.
 load_tagged() {
+    # The disaster-recovery exercise's rebuild (P16-TSK-025): what the vault's image set brought is held already, and the node's registry is
+    # cut, so it is neither loaded nor pulled again.
+    if [ -n "${3:-}" ] && dr_held "$1@$3"; then
+        return 0
+    fi
     source_ref="$1:$2"
     if ! dock image inspect "$source_ref" >/dev/null 2>&1; then
         if [ -n "${3:-}" ]; then
@@ -735,6 +764,8 @@ CLUSTER_UP=1
 [ "$SCOPE" != experiments ] || experiments_cluster_made
 fi
 [ "$SCOPE" != experiments ] || NODES=$(experiments_nodes | tr '\n' ' ')
+# The disaster-recovery exercise's rebuild (P16-TSK-025, E88): every node's registry cut before anything can pull, and the cut seen.
+[ "$SCOPE" != dr ] || dr_cluster_made
 SERVER_VERSION=$(kube version -o json | sed -n 's/.*"gitVersion": *"\(v[^"]*\)".*/\1/p' | tail -1)
 log "cluster up: Kubernetes $SERVER_VERSION, node image $KIND_NODE_VERSION, kind $("$KIND_BIN" version)"
 printf '%s\n' "$SERVER_VERSION" > "$ART/server-version.txt"
@@ -772,6 +803,10 @@ if [ -n "$REUSING" ]; then
         IMAGE_APP_NM1=$(ref_of_built finapp-app:rehearsal-nminus1)
         IMAGE_MIGRATOR_NM1=$(ref_of_built finapp-migrator:rehearsal-nminus1)
     fi
+elif [ "$DR_PHASE" = rebuild ]; then
+    # The disaster-recovery exercise's rebuild (P16-TSK-025): every image from the vault's set, behind the cut; the fleet's by the release
+    # record's digests. Nothing is built and nothing is pulled.
+    dr_images_loaded
 else
 if [ "$POLICY_ENGINE" = kube-router ]; then
     load_tagged "$KUBE_ROUTER_REPOSITORY" "$KUBE_ROUTER_VERSION" "$KUBE_ROUTER_DIGEST"
@@ -851,7 +886,14 @@ fi
 [ "$SCOPE" != experiments ] || EXTRA_PROVIDER_NAMES="$EXTRA_PROVIDER_NAMES FINAPP_FX_REFERENCE_URL FINAPP_FX_PROVIDER_URL"
 # The application's database URL, the same in every scope: the experiments scope's boundary holds the delivered Secret to it (P16-TSK-019).
 DB_URL="jdbc:postgresql://$PG_HOST:5432/finapp?sslmode=verify-full&sslrootcert=/etc/finapp-local-ca/ca.crt"
-PATH="$WORK/bin:$PATH" KIND_SECRETS_LEDGER="$WORK/ledger" \
+# The disaster-recovery exercise (P16-TSK-025, ADR-0149): the key rings from the escrow on kind-secrets.sh's stdin, never generated; every
+# other value generated, in the rebuild too. Every other scope gives it nothing there and it reads nothing.
+DR_RINGS=""
+if [ "$SCOPE" = dr ]; then
+    dr_rings_ready
+    DR_RINGS=stdin
+fi
+{ [ -z "$DR_RINGS" ] || dr_open rings; } | PATH="$WORK/bin:$PATH" KIND_SECRETS_LEDGER="$WORK/ledger" KIND_SECRETS_RINGS="$DR_RINGS" \
     FINAPP_DB_URL="$DB_URL" \
     FINAPP_DB_APP_USER=finapp_app FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_MIGRATOR_USER=finapp_migrator FINAPP_DB_MASTER_USER=finapp \
     FINAPP_KAFKA_BOOTSTRAPSERVERS="$KAFKA_HOST:9092" FINAPP_KAFKA_SASL_USERNAME=finapp_app \
@@ -878,6 +920,8 @@ fleet_patch "$A"
 # The brokers at the run's count (P16-TSK-013), after the fleet's patch, which reads the overlay's own quota and writes it in the forms
 # brokers_render grows.
 brokers_render "$A"
+# The disaster-recovery exercise (P16-TSK-025): every ring's check value published in the run's own configuration, in both of its runs.
+[ "$SCOPE" != dr ] || dr_render "$A"
 # Only under kube-router, which programs a new pod asynchronously (see kube-router.yaml): a Job pod's first connection, a JVM's start after it is created, can be
 # refused before its policy exists, and the migrator is built to fail fast on that and leave retries to its Job. A wait in front of it keeps that failure out of this
 # run's record; the Job itself is the base's, unchanged, and kindnetd needs none of this.
@@ -1027,6 +1071,9 @@ step bootstrap-roles
 sed "s#MIGRATOR_IMAGE#$IMAGE_MIGRATOR_NM1#; s#PROBE_IMAGE#$CURL_IMAGE#" "$DIR/bootstrap-job.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the bootstrap Job"
 wait_job finapp finapp-role-bootstrap 300 role-bootstrap
 log "bootstrap said: $(grep -c . "$ART/role-bootstrap.log") lines; $(tr '\n' ';' < "$ART/role-bootstrap.log" | cut -c1-400)"
+# The disaster-recovery exercise's rebuild (P16-TSK-025): the backup restored into the rebuilt database with the platform's roles held, compared,
+# verified and released by a person, before the migrator, the fleet or anything else can log in to it.
+[ "$DR_PHASE" != rebuild ] || dr_restore
 
 step migrator-nminus1
 apply_files "$A/Job.finapp-migrator.yaml"
@@ -1062,6 +1109,7 @@ if ! ready_fleet 900; then
     fail "$FLEET_START replicas did not become ready: see pods-at-failure.txt"
 fi
 log "$FLEET_START replicas ready: $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name | tr '\n' ' ')"
+[ "$DR_PHASE" != rebuild ] || dr_mark fleet-ready
 kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o wide > "$ART/pods-nminus1.txt" 2>&1 || true
 
 # ---------------------------------------------------------------------------------------------------
@@ -1086,6 +1134,8 @@ kube create namespace cert-manager >> "$ART/apply.log" 2>&1 || cannot "could not
 # The node pulls these three itself, as it would from any registry: `docker save` of a Docker-schema image from a containerd store here writes only its manifest.
 for component in cert-manager-controller cert-manager-webhook cert-manager-cainjector; do
     for node in $NODES; do
+        # The disaster-recovery exercise's rebuild (P16-TSK-025): brought by the vault's image set, behind the cut.
+        ! dr_held "quay.io/jetstack/$component:$CERT_MANAGER_VERSION" "$node" || continue
         dock exec "$node" crictl pull "quay.io/jetstack/$component:$CERT_MANAGER_VERSION" >> "$ART/images.log" 2>&1 \
             || cannot "the node $node could not pull $component: see images.log"
     done
@@ -1192,6 +1242,19 @@ census() {
     expected_payouts=$(( $(flow_ok_count payout) + SMOKE_PAYOUTS + ${EXPERIMENTS_PAYOUTS:-0} ))
     # Every top-up credits one wallet: 5.00 in a smoke, 0.05 in the workload. Transfers move money between the same wallets and a checkout is paid by card.
     expected_wallets=$(( SMOKE_TOPUPS * 500 + $(flow_ok_count top-up) * 5 + ${TELEMETRY_TOPUP_MINOR:-0} + ${LOAD_WALLET_MINOR:-0} ))
+    # The disaster-recovery exercise's rebuild (P16-TSK-025): what the restored books held at the backup's instant, as the census before it was
+    # told (the vault's expected.env, read by dr_resolve); zero in every other scope and before the disaster. The rebuilt simulator never saw
+    # those payments, so the provider's side counts only what was told after the release.
+    expected_transfers=$((expected_transfers + DR_TRANSFERS))
+    expected_topups=$((expected_topups + DR_TOPUPS))
+    expected_checkouts=$((expected_checkouts + DR_CHECKOUTS))
+    expected_payouts=$((expected_payouts + DR_PAYOUTS))
+    expected_wallets=$((expected_wallets + DR_WALLET_MINOR))
+    provider_captures=$((expected_topups + expected_checkouts - DR_TOPUPS - DR_CHECKOUTS))
+    provider_payouts=$((expected_payouts - DR_PAYOUTS))
+    # What the client was told, kept beside the census: the disaster-recovery exercise carries the last one before its backup into its vault.
+    printf 'transfers=%s\ntopups=%s\ncheckouts=%s\npayouts=%s\nwallets=%s\n' "$expected_transfers" "$expected_topups" "$expected_checkouts" \
+        "$expected_payouts" "$expected_wallets" > "$ART/census-$label.expected"
     if ! lag_settled "$label"; then
         # Each replica's last lines, kept before the cluster goes: a loop stuck on one record says why only in its own log.
         for pod in $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name 2>/dev/null); do
@@ -1219,10 +1282,10 @@ census() {
     captures=$(provider_keys /captures)
     payouts=$(provider_keys /payouts)
     {
-        if [ "${captures:-0}" = "$((expected_topups + expected_checkouts))" ]; then verdict=PASS; else verdict=FAIL; fi
-        printf '%s|one capture key at the provider per card payment|%s keys, client was told %s\n' "$verdict" "${captures:-0}" "$((expected_topups + expected_checkouts))"
-        if [ "${payouts:-0}" = "$expected_payouts" ]; then verdict=PASS; else verdict=FAIL; fi
-        printf '%s|one payout key at the provider per payout|%s keys, client was told %s\n' "$verdict" "${payouts:-0}" "$expected_payouts"
+        if [ "${captures:-0}" = "$provider_captures" ]; then verdict=PASS; else verdict=FAIL; fi
+        printf '%s|one capture key at the provider per card payment|%s keys, client was told %s\n' "$verdict" "${captures:-0}" "$provider_captures"
+        if [ "${payouts:-0}" = "$provider_payouts" ]; then verdict=PASS; else verdict=FAIL; fi
+        printf '%s|one payout key at the provider per payout|%s keys, client was told %s\n' "$verdict" "${payouts:-0}" "$provider_payouts"
         printf '%s\n' "$lost"
         printf 'INFO|simulator\n%s\n' "$sim"
         printf 'INFO|connections|%s\n' "$(psql_query -c "SELECT count(*), count(*) FILTER (WHERE s.ssl) FROM pg_stat_activity a JOIN pg_stat_ssl s USING (pid) WHERE a.application_name = 'finapp'" | tr '|' ' ')"
@@ -1250,12 +1313,18 @@ fi
 # Smoke, then the hold, then N - 1 on N's schema.
 # ---------------------------------------------------------------------------------------------------
 step smoke-nminus1
+# The disaster-recovery exercise's rebuild (P16-TSK-025) keeps the participants, their onboarding and the GL mapping its restore brought, and
+# the client's memory of them from the vault: nothing is set up again.
+if [ "$DR_PHASE" != rebuild ]; then
 client prepare >> "$ART/client.log" 2>&1 || fail "the smoke's participants could not be registered: see client.log"
 psql_query -f - < "$CLIENT/seed-1.sql" >> "$ART/seed.log" 2>&1 || fail "the seed failed: see seed.log"
 client onboard >> "$ART/client.log" 2>&1 || fail "the onboarding failed: see client.log"
 psql_query -f - < "$CLIENT/seed-2.sql" >> "$ART/seed.log" 2>&1 || fail "the destination seed failed: see seed.log"
 # The first GL mapping of a deployment, two persons (runbook 10.12): without one the General Ledger cannot be read.
 client map-gl >> "$ART/client.log" 2>&1 || fail "the GL mapping could not be activated: see client.log"
+fi
+# The rebuild's broker step (section 11.35 step 6.3), its fleet started: the window before the restore point replayed from the restored outbox.
+[ "$DR_PHASE" != rebuild ] || dr_replay_window
 smoke() {
     client smoke "$1" >> "$ART/client.log" 2>&1 || fail "the smoke ($1) failed: see client.log"
     SMOKE_TRANSFERS=$((SMOKE_TRANSFERS + 1))
@@ -1267,6 +1336,8 @@ smoke() {
 smoke nminus1
 grep -F 'smoke nminus1' "$ART/client.log" | tee -a "$ART/rehearsal.log" > /dev/null
 census nminus1
+# The rebuild: money moved on the recovered books and proven by the census, the restored facts and the new together.
+[ "$DR_PHASE" != rebuild ] || dr_mark money-moved
 
 # ---------------------------------------------------------------------------------------------------
 # The two cluster acceptance suites that need only a ready fleet: NetworkPolicy and admission (P15-TSK-010), and the edge (P15-TSK-011).
@@ -1967,6 +2038,15 @@ fi
 # suites passed, the telemetry pipeline up, the fault proxy on the application's hops and the standby synchronous.
 if [ "$SCOPE" = experiments ]; then
     experiments_scope
+    step end
+    finish
+fi
+
+# The disaster-recovery exercise (P16-TSK-025) stops it here too: before the disaster, N deployed, smoked, its census green, the cluster suites
+# passed and the telemetry pipeline up, then its workload, its backup, its window and the disaster, and the rebuild run; in the rebuild, the
+# recovered platform released, money moved and its census green, then its configuration, its scale-out and the registry's cut judged.
+if [ "$SCOPE" = dr ]; then
+    dr_scope
     step end
     finish
 fi

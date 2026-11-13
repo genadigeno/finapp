@@ -753,3 +753,14 @@ commit and the date; do not delete the entry.
     on a cluster; what ran instead, outside one: the walk's shell functions over a fabricated edge-answers file (every verdict both ways,
     an empty window, the planted copy) and the objectives' reading with Prometheus stubbed, both with the machine's own `bash` and `awk`,
     and the client compiled with the JDK.
+  - **`P16-TSK-025`** (the disaster-recovery plan and exercise, `OPERATIONS_RUNBOOK.md` §11.64, whose last record holds only what ran
+    without a cluster; ADR-0149): **E87**, the whole exercise in the `dr` scope (`REHEARSAL_SCOPE=dr REHEARSAL_DR_RELEASED_BY=<the person>`,
+    `REHEARSAL_DR_SCALE=7`): release N at three replicas under its workload, the vault, the window after the backup, the cluster deleted,
+    the rebuild on a new cluster, the restore held, compared, verified and released, the fleet at three and then seven, its
+    `dr-record.tsv` (every step's seconds, the window lost, the four recovery times) into §11.64's last record; **E88**, the registry cut
+    for that whole rebuild, and **E89**, the escrow's two refusals, both on the same run; and the scope's two probes, each a run of its
+    own with its `MUTATION_TESTING.md` §2 row: `REHEARSAL_PROBE=skip-verification` (the release refused, the database refusing the fleet
+    deployed anyway) and `REHEARSAL_PROBE=config-drift` (the recovered fleet's fingerprint seen differing). The restore's term at a soak's
+    size is E59's second size, in `P16-TSK-024`'s bullet above. Nothing of the task ran on a cluster; what ran instead, on 2026-11-13:
+    `kind-secrets.sh`'s ring mode in its render mode with its six refusals, `sh -n` and ShellCheck over the changed scripts, and the
+    contract test (§11.64's record).

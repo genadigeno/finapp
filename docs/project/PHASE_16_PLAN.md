@@ -637,6 +637,14 @@ environment names a person or rota (`PRODUCTION_READINESS.md`'s Ownership row). 
 gate; a drill that skipped it is not a drill. **Restoration is tested, not merely backup creation**: the exit requires the
 local restore and PITR drills executed with their numbers, and the managed ones accepted as designed-only (C4).
 
+*(Dated note, 2026-11-13, `P16-TSK-025`: the plan is `OPERATIONS_RUNBOOK.md` §11.64 and ADR-0149 - what must exist outside the
+environment before a disaster, what is regenerated (every credential) and what is recovered (the key rings, from an escrow), the order,
+and each tier's objective above beside the evidence or the owed run that confirms it. Tier 3's local analogue is the kind rehearsal's
+`dr` scope: E87, the cluster and its data lost and the platform rebuilt from the repository and the vault; E88, T42's answer on `kind`,
+the registry cut through the whole rebuild; E89, a ring's version lost from the escrow. Built and contract-tested, every run owed under
+`POSTPONED_ISSUES.md` PI-025; no recovery time or loss window is claimed. Where the rings and the images live in a real environment is
+put to the owner as `THREAT_MODEL.md` §6 item 71.)*
+
 ---
 
 ## 12. Multi-region assessment (Part 19)
