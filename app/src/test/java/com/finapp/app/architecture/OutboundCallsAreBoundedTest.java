@@ -33,7 +33,7 @@ import org.junit.jupiter.api.Test;
  * <ol>
  *   <li>every HTTP client in the application's code is built with a connect timeout, and none is built without one;
  *   <li>every request is built with its own timeout (the bound to the response's headers);
- *   <li>every exchange goes through {@code OutboundExchange.send} (the bound over the whole exchange, body included), and no
+ *   <li>every exchange goes through {@code OutboundExchange.send} (the bound on the body, from the headers), and no
  *       streaming body handler, whose body would be read outside that bound, is used anywhere;
  *   <li>the inventory's table of clients names exactly the classes that build one, each with all three bounds;
  *   <li>the inventory's table of schedules names exactly the classes that schedule work, nothing is scheduled any other way, every
@@ -45,7 +45,7 @@ import org.junit.jupiter.api.Test;
  * <p>Hermetic: it reads files only, the application's sources (every module's {@code src/main/java}) and the inventory.
  */
 @Tag("architecture")
-@DisplayName("every outbound call is bounded and every retry classified, and the inventory names exactly the code (P16-TSK-018)")
+@DisplayName("every provider exchange is bounded, every retry is classified, and the inventory names exactly the code (P16-TSK-018)")
 class OutboundCallsAreBoundedTest {
 
     private static final String INVENTORY = "docs/architecture/TIMEOUTS_AND_RETRIES.md";
@@ -169,7 +169,7 @@ class OutboundCallsAreBoundedTest {
     }
 
     @Test
-    @DisplayName("every exchange goes through the overall bound, and no body is read as a stream outside it")
+    @DisplayName("every exchange goes through the body's bound, and no body is read as a stream outside it")
     void everyExchangeIsBoundedOverall() {
         Map<String, String> problems = new TreeMap<>();
         for (Map.Entry<String, String> source : sources.entrySet()) {
@@ -198,9 +198,12 @@ class OutboundCallsAreBoundedTest {
         assertThat(problems).isEmpty();
         String helper = sources.entrySet().stream().filter(source -> source.getKey().endsWith("/" + HELPER))
                 .map(Map.Entry::getValue).findFirst().orElseThrow();
-        assertThat(helper).as("the helper awaits the exchange for its bound, cancels it past the bound, and keeps a refused connection's class")
-                .contains("exchange.get(overall.toNanos(), TimeUnit.NANOSECONDS)")
-                .contains("exchange.cancel(true);\n            throw new HttpTimeoutException(")
+        assertThat(helper).as("the helper bounds the body from the headers, failing it as a timeout and cancelling it past the bound,"
+                        + " refuses a request with no bound to its headers, and keeps a refused connection's class")
+                .contains("responseInfo -> new BoundedBody<>(handler.apply(responseInfo), bodyBound)")
+                .contains("if (body.completeExceptionally(new HttpTimeoutException(\"the response body passed its bound of \" + bound))) {")
+                .contains("taken.cancel();")
+                .contains("if (request.timeout().isEmpty()) {")
                 .contains("if (failure instanceof IOException io) {\n            return io;");
     }
 
@@ -270,7 +273,7 @@ class OutboundCallsAreBoundedTest {
     }
 
     @Test
-    @DisplayName("every retry that is not a schedule's tick is classified too")
+    @DisplayName("each retry the inventory lists beside the schedules is classified too")
     void everyOtherRetryIsClassified() {
         int start = inventory.indexOf("\n### 3.2 ");
         assertThat(start).isPositive();

@@ -92,7 +92,7 @@ public final class HttpReferenceRateSource implements RateSource {
                         .GET()
                         .build();
         try {
-            // The body read inside the exchange's overall bound (`P16-TSK-018`): a stream returned at the headers was read
+            // The body read inside the exchange's bound on the body (`P16-TSK-018`): a stream returned at the headers was read
             // by readNBytes with no bound at all, so a source that stopped after its headers held the fetch's thread.
             HttpResponse<byte[]> answer =
                     OutboundExchange.send(http, get, OutboundExchange.limitedBytes(BODY_BOUND_BYTES + 1), timeout);

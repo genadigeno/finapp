@@ -29876,10 +29876,13 @@ on none:
   retries, the other outbound calls, the 35 schedules and 10 other retries, each classified (a), (b) or (c) by `PHASE_16_PLAN.md`
   section 8's rule, held both ways by `OutboundCallsAreBoundedTest` (7 members). **What the inventory found**: every request already
   had its timeout, but the JDK 21 client's request timeout ends at the response's headers, so no exchange bounded its body, and the
-  reference rate source read its body from a stream with no bound at all. **The overall bound**: `platform`'s
-  `OutboundExchange.send` (the exchange awaited for its bound, cancelled past it and raised as an `HttpTimeoutException`, a refused
-  connection still a `ConnectException`), used by every one of the 13 adapters' 18 exchanges; `limitedBytes` for the reference
-  source; `OutboundExchangeTest` (6) shows the JDK's own send still waiting on a stalled body where the bound cuts it. **Jitter**:
+  reference rate source read its body from a stream with no bound at all. **The body's bound**: `platform`'s
+  `OutboundExchange.send` (the body bounded from the headers, failed as an `HttpTimeoutException` and its connection closed past the
+  bound; the JDK's handling before the headers untouched, so a refused connection, which the JDK retries once, is still a
+  `ConnectException`), used by every one of the 13 adapters' 18 exchanges; `limitedBytes` for the reference source;
+  `OutboundExchangeTest` (7) shows the JDK's own send still waiting on a stalled body where the bound cuts it. Its first form, a bound
+  from the call, cut the JDK's retry of a refused connection and turned it into a timeout, which `SimulatedInstantSchemeAdapterTest`
+  caught in the gate's run; the bound now starts at the headers. **Jitter**:
   `TickPhase`, a first tick drawn from one interval to just under two, on the 15 schedules that reach a provider or the broker from
   every instance; the relay's per-row backoff kept unjittered (its herd bounded by construction; E09 measures it), the Kafka clients
   jittering their own. **The experiments**: the simulator's degradation controls (`/tmp/degrade-<rail>-unavailable|silent`, no effect
@@ -29892,7 +29895,7 @@ on none:
   no rate measured, availability stays an operator's recorded act. **Found and put to the owner**: no production path runs a KYC
   case's checks (`VerificationRunService.runChecks` has test callers only), `THREAT_MODEL.md` section 6 item 60. **Routed**:
   `P16-TSK-016` - `CallbackInquiryBulkhead`'s refusals are counted by no meter (a log line only). **Owed under PI-025**: E17, E18 and
-  E21 at three replicas, with their failure rates per rail. **Tests**: TESTS_PLACEHOLDER **Probes**: PROBES_PLACEHOLDER
+  E21 at three replicas, with their failure rates per rail. **Tests**: TESTS_PLACEHOLDER **Probes**: eighteen hermetic plants in two rounds, each caught by its own member (`MUTATION_TESTING.md` section 2); none on a cluster
 
 **P16-TSK-019 — The failure-injection toolkit and its safety boundary (ADR-0127, C6, C7)** — `COMPLETE` (2026-11-13; branch `P16-TSK-019` from master `0a09a273`; gate `COMPLETE` 2026-11-13; marked `READY` by the coordinator at the owner's start of wave C, "start next wave"; its one dependency, `P16-TSK-006`, `COMPLETE`)
 - **Objective**: build the `experiments` scope:

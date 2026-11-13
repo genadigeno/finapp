@@ -5095,7 +5095,7 @@ standby was stopped); on a cluster, by the owner's word of 2026-11-13 ("we dont 
 ### 11.53 A provider unavailable, silent or slow; the provider experiments (`P16-TSK-018`)
 
 **What the platform does by itself.** Every call to a provider is bounded three times, by one setting per provider: the connection,
-the response's headers, and the whole exchange, body included (`docs/architecture/TIMEOUTS_AND_RETRIES.md` section 2). A provider that
+the response's headers, and the body after them (`docs/architecture/TIMEOUTS_AND_RETRIES.md` section 2). A provider that
 answers `503`, says nothing past the bound, or stalls its body is an ambiguous answer, never a failure and never a success: the payment,
 payout, withdrawal or cover rests `UNKNOWN`, and its sweep asks the provider (an inquiry, which changes nothing) until it answers. Nothing
 is resent blind: a sweep re-sends only after the provider's own inquiry said it never saw the first attempt, and then under the first

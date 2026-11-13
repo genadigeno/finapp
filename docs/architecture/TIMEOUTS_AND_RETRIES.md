@@ -33,12 +33,16 @@ said the provider never saw the operation (`unrecognised`), and then under the f
 Three bounds, each a configured `Duration` (one setting per provider, all three from it):
 
 - **Connect**: `HttpClient.Builder.connectTimeout`, how long a TCP and TLS connection may take.
-- **Headers**: `HttpRequest.Builder.timeout`, from the start of the exchange until the response's headers. In JDK 21 this is
+- **Headers**: `HttpRequest.Builder.timeout`, from the start of each attempt until the response's headers. In JDK 21 this is
   all the request timeout covers: `MultiExchange` cancels its response timer as soon as the headers arrive, and the body is read
   with no timer.
-- **Overall**: `OutboundExchange.send`
-  (`platform/src/main/java/com/finapp/platform/outbound/OutboundExchange.java`), from the call to the body's last byte. Past it
-  the exchange is cancelled and an `HttpTimeoutException` raised: the class every adapter already reads as a timeout. *(Until
+- **Body**: `OutboundExchange.send`
+  (`platform/src/main/java/com/finapp/platform/outbound/OutboundExchange.java`), from the headers' arrival to the body's last
+  byte. Past it the body is failed with an `HttpTimeoutException`, the class every adapter already reads as a timeout, and its
+  subscription cancelled, which closes the connection. With the JDK's two, every phase is bounded, so the exchange is bounded
+  overall. The bound starts at the headers, not at the call, so that the JDK's own handling before them stands untouched, its
+  retry of a refused connection included: a bound from the call cut that retry short and turned a refused connection into a
+  timeout, which the instant scheme adapter's own test found on the bound's first form. *(Until
   2026-11-13 no exchange had this bound: a provider answering its headers and then stalling its body held the calling thread
   until the connection died. `HttpReferenceRateSource` read its body from a stream returned at the headers, with no bound at all.)*
 
@@ -46,7 +50,7 @@ A refused connection stays a `ConnectException` through all three, the one trans
 transmitted). Every adapter maps every other failure to its own "we do not know" (`INDETERMINATE`, `UNKNOWN`, `TIMEOUT`,
 `Unavailable`), never to success or failure by assumption.
 
-| Adapter | Provider and operations | Connect | Headers | Overall | Setting (default; `kind`) | Called from | A timeout is |
+| Adapter | Provider and operations | Connect | Headers | Body | Setting (default; `kind`) | Called from | A timeout is |
 |---|---|---|---|---|---|---|---|
 | `PspWireClient` | Card PSP: authorize, capture, void, refund, dispute respond (POST, `Idempotency-Key`); operation, clearing and dispute inquiries (GET) | yes | yes | yes | `finapp.payments.provider.timeout` (PT2S; PT15S) | Request threads (confirmation, void, refund, dispute answers, the webhook door's inquiries); the card sweep, the dispute-response and hint sweeps, risk's actions | `INDETERMINATE`: the attempt `*_UNKNOWN`, inquired by the sweep |
 | `SchemeWireClient` | Instant scheme: initiate, send, return, exchange (POST, `Idempotency-Key`); initiation, execution and return inquiries (GET) | yes | yes | yes | `finapp.payments.instant.timeout` (PT2S; not configured) | Request threads (pay-in confirmation, refunds, withdrawals, bank accounts, the instant webhook door's inquiries); the pay-in, return, withdrawal and hint sweeps, the loan payout | `INDETERMINATE`, inquired by its sweep |
