@@ -3336,7 +3336,8 @@ source-join census (§11.27) and the audit trail are read for whatever else that
   (`POST /v1/operator/reconciliation/opening-position`, `500` on a corrupt `journal_entry_id` among the payout returns) still fail
   closed: a total that skipped a row would misstate the position, and monitoring that skipped one movement would skip exactly the
   one a raw writer touched. `RiskMonitoringLagging` and `RiskRescreeningFailing` (§9) page for the first two; the third answers its
-  operator. Whether to change that is `THREAT_MODEL.md` §6 item 51's.
+  operator. The owner decided to keep it so (`THREAT_MODEL.md` §6 item 51, 2026-11-13). *(Read "Whether to change that is
+  `THREAT_MODEL.md` §6 item 51's." until the owner's decision of 2026-11-13.)*
 
 #### (b) A row that keeps failing, and a sweep that fails whole
 
