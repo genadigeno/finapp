@@ -1,5 +1,5 @@
 # Admission verification (P15-TSK-007, ADR-0122 decision 3, C7; THREAT_MODEL.md T5, T27): what the Sigstore policy controller
-# admits into the namespaces that opt in (deploy/namespaces: finapp and finapp-edge carry policy.sigstore.dev/include). The controller
+# admits into the namespaces that opt in (deploy/namespaces: finapp, finapp-edge and finapp-console carry policy.sigstore.dev/include). The controller
 # itself is installed from deploy/operators/policy-controller/values.yaml, which refuses an image no policy here matches
 # (no-match-policy: deny) and refuses when it cannot answer (failurePolicy: Fail).
 #
@@ -13,8 +13,13 @@
 # finapp-migrator (the overlays' names, and the kind check's). In an environment's registry, finapp-<environment>-app and
 # finapp-<environment>-migrator: infra/terraform/modules/registry names each repository from the conventions' prefix, and
 # ImageAdmissionTest reads that naming and holds every name it yields to both platform policies. A glob that matches more only asks
-# more: any image so named, from anywhere, must carry the trusted authority's signature and both attestations. A third image of ours is
+# more: any image so named, from anywhere, must carry the trusted authority's signature and both attestations. A further image of ours is
 # refused until it is added here.
+#
+# THE THIRD, since X-TSK-020: finapp-console, the Operator Console's static server (deploy/console), built by finapp-admin-panel, not by this
+# repository's image job. Held to the same two policies under the same two names (finapp-console; finapp-<environment>-console), because an
+# image of ours is signed and attested or it does not run. NOT YET SIGNED BY ANYTHING: neither CI's image job nor admission-check.sh builds
+# it, and infra/terraform/modules/registry makes it no repository, so as committed every console pod is refused - the safe direction.
 #
 # EVERY POLICY IS HERE. ImageAdmissionTest refuses a policy.sigstore.dev document anywhere else under deploy/, and anything in this
 # root but this file: a fourth policy that passed everything would open both namespaces to any image, and so would a patch to these.
@@ -39,6 +44,8 @@ spec:
     - glob: "**/finapp-migrator@sha256:*"
     - glob: "**/finapp-*-app@sha256:*"
     - glob: "**/finapp-*-migrator@sha256:*"
+    - glob: "**/finapp-console@sha256:*"
+    - glob: "**/finapp-*-console@sha256:*"
   authorities:
     - name: ci
       key:
@@ -57,6 +64,8 @@ spec:
     - glob: "**/finapp-migrator@sha256:*"
     - glob: "**/finapp-*-app@sha256:*"
     - glob: "**/finapp-*-migrator@sha256:*"
+    - glob: "**/finapp-console@sha256:*"
+    - glob: "**/finapp-*-console@sha256:*"
   authorities:
     - name: ci
       key:

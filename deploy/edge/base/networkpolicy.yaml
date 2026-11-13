@@ -116,6 +116,18 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+    # The Operator Console's static server (X-TSK-020), on its one port: the operator controller alone, never the public one. The console's
+    # side is deploy/console/base/networkpolicy.yaml, which admits this controller and nothing else.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-console
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-console
+      ports:
+        - protocol: TCP
+          port: 8080
     # Its own log and its access log, to the collector's platform receiver (P16-TSK-003), which admits the controllers by this label.
     - to:
         - namespaceSelector:

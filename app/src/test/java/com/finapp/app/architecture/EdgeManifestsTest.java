@@ -126,10 +126,20 @@ class EdgeManifestsTest {
         assertThat(com.finapp.app.surface.Surface.PUBLIC.admitsRoleHolders()).as("the public edge's word refuses staff").isFalse();
         assertThat(com.finapp.app.surface.Surface.OPERATOR.admitsRoleHolders()).as("the operator edge's word admits them").isTrue();
         for (String routes : List.of("deploy/edge/base/public-routes.yaml", "deploy/edge/base/operator-routes.yaml")) {
-            map(map(yaml(read(routes)), "http"), "routers").forEach((name, router) ->
+            map(map(yaml(read(routes)), "http"), "routers").forEach((name, router) -> {
+                // The Operator Console's static router (X-TSK-020) reaches no replica of the application, so it carries no surface: its headers
+                // are console-headers, held by ConsoleHostingManifestsTest. Every router to the application marks its surface.
+                if (!isConsoleRouter(routes, router)) {
                     assertThat(stringList(((Map<?, ?>) router).get("middlewares"))).as("%s: %s marks its surface", routes, name)
-                            .contains("edge-headers"));
+                            .contains("edge-headers");
+                }
+            });
         }
+    }
+
+    /** The console's router: the operator file's, to the console's service. A public router naming that service is not exempted here. */
+    private static boolean isConsoleRouter(String routes, Object router) {
+        return routes.endsWith("operator-routes.yaml") && "finapp-console".equals(((Map<?, ?>) router).get("service"));
     }
 
     @Test
@@ -152,7 +162,10 @@ class EdgeManifestsTest {
             assertThat(routers).isNotEmpty();
             routers.forEach((name, router) -> {
                 assertThat(cast(router)).as("%s serves TLS only", name).containsKey("tls");
-                assertThat(stringList(((Map<?, ?>) router).get("middlewares"))).as("%s", name).contains("edge-headers");
+                // HSTS and its siblings on every route: edge-headers on the application's, console-headers (the same four, and the console's
+                // own policy; ConsoleHostingManifestsTest) on the console's.
+                assertThat(stringList(((Map<?, ?>) router).get("middlewares"))).as("%s", name)
+                        .contains(isConsoleRouter(routes, router) ? "console-headers" : "edge-headers");
             });
         }
     }

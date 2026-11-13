@@ -31972,6 +31972,127 @@ entry, the plan and `CURRENT_STATE.md` until numbered here)*
   - the three suites and the whole `:settlement:databaseTest` green from a fresh run, read from the JUnit XML, with
     `:settlement:test` and `:settlement:architectureTest`.
 
+**X-TSK-020 — The Operator Console served on the operator edge: its own workload, router and headers** — `COMPLETE`
+*(2026-11-14, on branch `P17-TSK-004` from master `e56d1e69`; cross-referenced **finapp-admin-panel `P17-TSK-004`**
+(`PHASE_17_PLAN.md` §15 there, G-02), under **owner decision D-12 (2026-11-13)**: the console's milestone M1 completes now,
+ahead of the Phase 16 → 17 transition, this backend half included. Cross-cutting: no milestone, no Phase 16 item, marks no
+task `READY`, and leaves `CURRENT_STATE.md`, `THREAT_MODEL.md`, `PRODUCTION_READINESS.md` and `AVAILABILITY.md` to the Phase 16
+coordinator. The number is the next free one on master and on branch `P17-TSK-003` (`X-TSK-019`); the two entries sit at the
+same place in this file, so whichever merges second takes the other's entry above its own)*
+- **Context**: the edge (ADR-0120 decision 6, `P15-TSK-011`), the delivery's manifests (`deploy/`), admission (ADR-0122
+  decision 3, `P15-TSK-007`). The Operator Console (finapp-admin-panel ADR-0130, ADR-0131) is a static single-page application
+  that calls the API same-origin, so it must be served by the operator host, and its pages need a Content-Security-Policy the
+  API's `default-src 'none'` cannot be. `THREAT_MODEL.md` T1, T3, T5, T31.
+- **Objective**: `GET /console/**` on the operator host alone, from a hardened static server, under the console's own headers,
+  with every API route's headers unchanged and nothing of the console on the public host.
+- **Scope**: `deploy/console` (base and `kind`, `staging`, `production` overlays): `finapp-console`, a Deployment of two
+  replicas of the console's image (nginx-unprivileged, uid 101, read-only root, `/tmp` a sized memory `emptyDir`, every
+  capability dropped, no service-account token, no service links, probes on `GET /console/` port 8080, requests and limits), its
+  ServiceAccount, PodDisruptionBudget, ClusterIP Service, a default-deny NetworkPolicy and one admitting the operator controller
+  alone on 8080 with no egress, and a quota at the namespace's worst moment; the image by digest in every overlay (sixty-four
+  zeros, as the application's). The namespace `finapp-console` (Pod Security `restricted`, admission-watched). The operator
+  edge: a `finapp-console` service, a `console-headers` middleware and its egress to the console. The generated operator list:
+  an `operator-console` router. Admission: both platform policies name `finapp-console` and `finapp-<environment>-console`.
+  The guards and the edge's check taught all of it.
+- **Exclusions**: any application (Java) code; the public edge (never); building, signing or attesting the console's image;
+  an Argo CD Application for `deploy/console`, a promotion of its digest, and a registry repository for it; the `kind`
+  rehearsal's loading and applying it.
+- **Design** (decided by the console's brief; recorded):
+  - **A static route, stated, not derived.** `/console/**` is no handler's, so `EdgeRoutes` states it once
+    (`CONSOLE_CLAUSES`: `GET` on `Path(/console)` - the console's nginx redirects it to the slash - and `PathPrefix(/console/)`,
+    so `/consoles` is not the console's) and renders it as the operator file's first router, to `finapp-console`, behind
+    `console-headers`, `internal-only` and `body-cap`. `PathPrefix` enters the clause grammar for this router alone, and the
+    generator refuses an API route under `/console` rather than hand it to the console.
+  - **Headers.** `console-headers` carries the console's one definition (finapp-admin-panel `config/console-headers.mjs`,
+    `CONSOLE_CSP`) exactly, with HSTS as the operator edge already states it (`stsSeconds: 31536000`), `nosniff`,
+    `no-referrer` and `frameDeny`, and removes what `edge-headers` removes from requests. It sets no surface marker: it
+    reaches no replica of the application. The console router runs it and never `edge-headers`; every API router runs
+    `edge-headers` and never it, so the API's `default-src 'none'` is untouched and no answer carries two policies.
+  - **No `Cache-Control` at the edge**, deliberately: the console's nginx (`deploy/nginx.conf` there) sets `no-cache` on
+    `index.html` and deep links and `public, max-age=31536000, immutable` on `/console/assets/`, and a header middleware's value
+    would overwrite both. `console-headers.mjs` also lists `Cache-Control: no-store`, which is its catalogue preview's.
+  - **A namespace of its own**, not `finapp-edge` or `finapp`: each of those holds a quota equal to its worst moment, which a
+    second release in it would break, and the console's one flow in (from the operator controller) and none out are clearest as
+    a namespace that denies everything else. Not `finapp/role: ingress-controller`, the label `finapp-app-ingress` admits.
+  - **Admitted as the application's images are**, signature and both attestations, under both names an image of ours goes by.
+- **Tests**: `ConsoleHostingManifestsTest` (new, 8): the headers exactly the console's, no `Cache-Control` by any key, the
+  API's policy on both edges, the service address, the workload's hardening, the overlays' digests and namespace, the network
+  both ways, the quota, and that the edge's check renders and asks for all of it. `EdgeAllowListTest` (+3): the console router
+  on the operator file alone with its clauses, service and middlewares; no console path admitted by any public rule in any
+  spelling; no API route under `/console` and a planted one refused. `EdgeManifestsTest`: every router to the application still
+  marks its surface and carries `edge-headers`. `ImageAdmissionTest` (+1): the console's image under every name meets both
+  platform policies and a look-alike none. `NamespaceSecurityManifestsTest`: four namespaces, each restricted. `edge.rego`:
+  `[edge-console-routes]`, `[edge-console-headers]`, `[edge-api-csp]`, `[edge-console-network]`, `[edge-console-workload]`,
+  the quota rules over `finapp-console` too, `[edge-surface]` exempting the console router alone, and `[edge-network]`'s
+  default-deny asked of `finapp-edge` itself (it had been satisfied by `finapp`'s, rendered in the same stream);
+  `edge-check.sh`: twenty plants for them and one more for the application's operator router's allow-list (the existing plant's
+  first match is now the console's router), the console's stream rendered with each overlay, and the pinned proxy asked for
+  `/console` on both hosts.
+- **Accept**:
+  - the operator file's console router is generated, never hand-edited, and the public file is unchanged;
+  - the console's policy is the console's string exactly, no `Cache-Control` is set at the edge, and every API router keeps
+    `default-src 'none'`;
+  - `/console` is refused on the public host and served on the operator host, by the pinned proxy;
+  - each new policy rule is refused by its plant, for its reason; loosening the console's policy fails a guard.
+- **DoD**: `DOD-BUILD`, `DOD-SEC`.
+- **As built** (2026-11-14): as designed above. `deploy/console/{base,overlays/kind,overlays/staging,overlays/production}`;
+  `deploy/namespaces` (`finapp-console`); `deploy/edge/base/operator-edge.yaml` (`finapp-console` service, `console-headers`),
+  `networkpolicy.yaml` (the operator controller's egress to the console) and `operator-routes.yaml` (generated: one router,
+  copied from what `EdgeAllowListTest` wrote to `app/build/edge/`; the public file byte-identical); `deploy/admission` (two
+  globs on each platform policy); `deploy/operators/policy-controller/values.yaml` (a comment). Guards and the edge's check as
+  listed under Tests. Documented in ADR-0120 (dated note), `API_CONVENTIONS.md` §8a, `SECURITY_ARCHITECTURE.md` (the edge),
+  `DISTRIBUTED_EXECUTION.md` §3 (a register row, the rollout's asset window named), `OPERATIONS_RUNBOOK.md` §11.32.
+  - **Verified** (fresh, read from the JUnit XML and the script's own lines):
+    - `:app:test --rerun-tasks` over `com.finapp.app.architecture.*`, `.api.*`, `.security.*`, `.telemetry.*`, `.surface.*`,
+      `.lifecycle.*`, `.audit.*`, `.crossborder.*`, `.fx.*`, `.reconciliation.*`, `SafeguardingReturnTest` and
+      `CredentialReachesNoEmittedSinkTest`: 2034 tests across 233 classes, 3 failed. One was this branch's:
+      `CommittedConfigurationHoldsNoSecretTest` read a plant named `edge-console-token` as a credential key; renamed
+      `edge-console-mounted-account`, the class re-run 44, 0 failed. Two are not: `ArchitectureRulesAreDocumentedTest` (five
+      rules of `OnePrimaryServesEveryDoorTest`, `P16-TSK-012`, absent from `MODULE_ARCHITECTURE.md` §6) and
+      `HandlerSetCatalogueTest` (`SpannedInboxHandler` and its siblings), red again when run alone; this branch changes neither
+      their code nor their documents, and they were not re-run on a master build. Among the green: `ConsoleHostingManifestsTest` 8,
+      `EdgeAllowListTest` 21, `EdgeManifestsTest` 17, `ImageAdmissionTest` 11, `NamespaceSecurityManifestsTest` 16,
+      `KubernetesManifestsTest` 20, `DeliveryManifestsTest` 10, `KindRehearsalContractTest` 15, `DistributedExecutionRegisterTest`
+      6, `ApiConventionsAreAccurateTest` 10, `ThreatModelIsCompleteTest` 14, `ProductionReadinessIsEvidencedTest` 8. Own-container
+      suites, `databaseTest`, `kafkaTest` and `build` not run. `FINAPP_DB_URL` was set to a closed loopback port, as
+      `X-TSK-019`'s run did, so no context reached the PostgreSQL another session's E2E holds on `127.0.0.1:5432`.
+    - After this entry was written (`--rerun`): every app test class reading `docs/`, the backlog, the ADRs or `deploy/` that
+      the hermetic tier runs, with the guards above - 78 classes, 796 tests - and then the seven classes reading this file
+      again, 79 tests: 0 failed.
+    - `infra/scripts/edge-check.sh`, on Docker Desktop: every overlay renders with the console's stream; the edge policies green
+      on `kind`, `staging` and `production`; 77 plants refused for their reasons (56 before, 21 new) and 2 accepted; the pinned Traefik serves
+      `/console/`, a deep link and an asset `200` on the operator host under the console's policy, HSTS, `nosniff`, `DENY` and
+      `no-referrer`, each once and no `Cache-Control`; refuses `POST /console/` and `/consoles`; answers `404` for `/console`,
+      `//console/` and `/Console/` on the public host; keeps `default-src 'none'; frame-ancestors 'none'` on an operator API
+      route; and neither backend received the other's path. **`kubeconform` did not run**: this machine's TLS is intercepted,
+      and the schemas' download fails certificate verification (left verifying, not worked around).
+    - By hand, once: the console's real image (`finapp-console:m1-runtime`, built from finapp-admin-panel) behind the pinned
+      Traefik with the committed operator files, read-only root, uid 101, `/tmp` a tmpfs alone: `/console/` `200` with the
+      edge's headers and nginx's `Cache-Control: no-cache`, an asset with `public, max-age=31536000, immutable`, `/console` a
+      relative `301` to `/console/`; 10 MiB resident at 12 workers.
+  - **Probes, three of three caught**, each restored byte-identical (sha256): M1 `'unsafe-inline'` added to the console's
+    `script-src` - `ConsoleHostingManifestsTest#theConsoleHeadersAreTheConsolesOwnDefinition` red; M2 a router to the console
+    appended to `public-routes.yaml` - `EdgeAllowListTest#theRouteFilesAreGenerated`, `#aTierIsOneRouter`,
+    `#theConsoleIsAStaticRouteOnTheOperatorHostAlone` and `#theConsoleIsNeverOnThePublicHost` red; M3 `Cache-Control` in
+    `console-headers` - the same `ConsoleHostingManifestsTest` case red. The policy plants are the rego half of the same probes.
+  - **Not done, and why**:
+    - **No `kind` rehearsal** (`kind` is not installed here). `kind-rehearsal.sh` renders and applies the application and the
+      edge, never `deploy/console`, so it neither loads a console image nor applies the overlay; until it does, `/console` on
+      the operator host answers the proxy's `502` on `kind`. The plan's acceptance (sign-in through `/console` against three
+      replicas) is unproven.
+    - **The image is not built, signed or attested here.** Both platform policies name it, so admission refuses every console
+      pod until the console's release path signs it with the environment's authority - the safe direction; `admission-check.sh`
+      does not exercise it. The digest is sixty-four zeros in every overlay.
+    - **Not delivered**: no Argo CD Application or project destination for `deploy/console`, `promote.sh` writes no console
+      digest, and the registry module creates no `finapp-<environment>-console` repository.
+    - **The rollout's asset window**: during a rollout a page from a new pod may ask an old one for an asset it lacks and get a
+      `404` until the rollout ends or a reload; closing it is the image's (carry the previous release's assets).
+    - `THREAT_MODEL.md` (T1, T3, T5, T31 gain the console's route, headers and image) is left to the Phase 16 coordinator.
+  - **Multi-instance: PASS.** The console holds no state: every replica is the same bytes, any replica serves any asset, and
+    the pods open no connection. The edge's controllers are unchanged in shape (one more router, one more service, one more
+    middleware, all in the one hash-named ConfigMap, so every controller holds the same routes after its rollout). Nothing is
+    arbitrated; the API's correctness is the application's, untouched.
+
 ---
 
 # Phases 11–16 — Epics

@@ -356,7 +356,78 @@ class EdgeAllowListTest {
         String publicFile = EdgeRoutes.renderPublic(derived);
         String operatorFile = EdgeRoutes.renderOperator(derived);
         assertThat(publicFile).contains("Method(`GET`)").doesNotContain("Method(`POST`)");
-        assertThat(operatorFile).contains("Method(`POST`)").doesNotContain("Method(`GET`)");
+        assertThat(operatorFile).contains("Method(`POST`) && PathRegexp(`^/v1/widgets").doesNotContain("Method(`GET`) && PathRegexp(`^/v1/widgets");
+    }
+
+    // ------------------------------------------------------------------------------- the Operator Console's static route (X-TSK-020)
+
+    @Test
+    @DisplayName("the console is one static router of the operator file alone: GET /console and /console/**, to the console's service, behind"
+            + " console-headers and the internal allow-list, never edge-headers")
+    @SuppressWarnings("unchecked")
+    void theConsoleIsAStaticRouteOnTheOperatorHostAlone() {
+        Map<String, Object> console = routers(OPERATOR_FILE).get(EdgeRoutes.CONSOLE_ROUTER);
+        assertThat(console).as("the operator file holds the console's router").isNotNull();
+        assertThat(console.get("service")).isEqualTo(EdgeRoutes.CONSOLE_SERVICE);
+        assertThat((List<String>) console.get("middlewares")).as("its own headers, the internal ranges and the body cap; never the API's CSP")
+                .containsExactly("console-headers", "internal-only", "body-cap");
+        assertThat(List.of(((String) console.get("rule")).split(Pattern.quote(EdgeRoutes.CLAUSE_SEPARATOR))))
+                .as("GET on the bare path and under the slash, and nothing else").isEqualTo(EdgeRoutes.CONSOLE_CLAUSES);
+
+        // Every other router, on both hosts, is the application's, under the application's headers alone.
+        for (String file : List.of(PUBLIC_FILE, OPERATOR_FILE)) {
+            routers(file).forEach((name, router) -> {
+                if (!name.equals(EdgeRoutes.CONSOLE_ROUTER) || !file.equals(OPERATOR_FILE)) {
+                    assertThat(router.get("service")).as("%s %s", file, name).isEqualTo(EdgeRoutes.APP_SERVICE);
+                    assertThat((List<String>) router.get("middlewares")).as("%s %s keeps the API's strict headers", file, name)
+                            .contains("edge-headers").doesNotContain("console-headers");
+                    assertThat((String) router.get("rule")).as("%s %s: a whole path only, PathPrefix is the console's alone", file, name)
+                            .doesNotContain("PathPrefix");
+                }
+            });
+        }
+
+        List<Rule> consoleRules = routerRules(OPERATOR_FILE, EdgeRoutes.CONSOLE_ROUTER);
+        for (String path : List.of("/console", "/console/", "/console/index.html", "/console/approvals/" + SAMPLE, "/console/assets/index-CjSZB-uo.js")) {
+            assertThat(consoleRules).as("GET %s is the console's", path).anyMatch(rule -> rule.admits("GET", path));
+            for (String method : List.of("POST", "PUT", "PATCH", "DELETE")) {
+                assertThat(consoleRules).as("%s %s: the console is read, never written", method, path).noneMatch(rule -> rule.admits(method, path));
+            }
+        }
+        for (String path : List.of("/consoles", "/console.json", "/Console/", "/v1/console/", "/v1/me", "/")) {
+            assertThat(consoleRules).as("%s is not the console's", path).noneMatch(rule -> rule.admits("GET", path));
+        }
+    }
+
+    @Test
+    @DisplayName("the public host never serves the console: no rule admits a console path in any spelling, and the file names neither the path nor the service")
+    void theConsoleIsNeverOnThePublicHost() {
+        List<Rule> publicRules = rules(PUBLIC_FILE);
+        for (String path : List.of("/console", "/console/", "/console/index.html", "/console/assets/index-CjSZB-uo.js", "//console/",
+                "/console%2F", "/v1/../console/", "/Console/", "/CONSOLE/")) {
+            for (String method : List.of("GET", "HEAD", "POST")) {
+                assertThat(publicRules).as("%s %s on the public host", method, path).noneMatch(rule -> rule.admits(method, path));
+            }
+        }
+        assertThat(RepositoryPaths.read(PUBLIC_FILE)).doesNotContain(EdgeRoutes.CONSOLE_PATH).doesNotContain(EdgeRoutes.CONSOLE_SERVICE)
+                .doesNotContain("console-headers").doesNotContain("PathPrefix");
+        assertThat(RepositoryPaths.read(PUBLIC_EDGE)).as("the public edge defines no console service and no console headers")
+                .doesNotContain(EdgeRoutes.CONSOLE_SERVICE).doesNotContain("console-headers");
+        assertThat(EdgeRoutes.renderPublic(routes)).doesNotContain(EdgeRoutes.CONSOLE_PATH);
+    }
+
+    @Test
+    @DisplayName("no route the application serves lives under /console, and a planted one is refused by the generator rather than handed to the console")
+    void noApplicationRouteIsUnderTheConsolePath() throws NoSuchMethodException {
+        assertThat(routes).as("the routes were read").hasSizeGreaterThan(300)
+                .noneMatch(route -> EdgeRoutes.isConsolePath(route.template()));
+        for (String template : List.of("/console", "/console/planted", "/Console/planted")) {
+            Map<String, HandlerMethod> planted = new TreeMap<>();
+            planted.put("GET " + template, new HandlerMethod(new Planted(), Planted.class.getMethod("guarded")));
+            assertThatThrownBy(() -> EdgeRoutes.derive(planted)).as(template)
+                    .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Operator Console");
+        }
+        assertThat(EdgeRoutes.isConsolePath("/consoles")).as("beside the prefix is not under it").isFalse();
     }
 
     // ----------------------------------------------------------------------------------------------------------- the limits
@@ -393,7 +464,7 @@ class EdgeAllowListTest {
     @DisplayName("a tier is one router, so its limit is one bucket per source and not one per route")
     void aTierIsOneRouter() {
         assertThat(routers(PUBLIC_FILE).keySet()).containsExactlyInAnyOrder("public-door", "public-session", "public-machine", "public-callback");
-        assertThat(routers(OPERATOR_FILE).keySet()).containsExactlyInAnyOrder("operator-default", "operator-settlement-upload");
+        assertThat(routers(OPERATOR_FILE).keySet()).containsExactlyInAnyOrder("operator-console", "operator-default", "operator-settlement-upload");
         assertThat(rules(PUBLIC_FILE)).as("every clause still names one route").hasSize((int) routes.stream().filter(route -> route.surface() == Surface.PUBLIC).count());
     }
 
@@ -494,6 +565,16 @@ class EdgeAllowListTest {
         return rules;
     }
 
+    private static List<Rule> routerRules(String file, String router) {
+        List<Rule> rules = new ArrayList<>();
+        for (String clause : ((String) routers(file).get(router).get("rule")).split(Pattern.quote(EdgeRoutes.CLAUSE_SEPARATOR))) {
+            Matcher parsed = EdgeRoutes.CLAUSE.matcher(clause);
+            assertThat(parsed.matches()).as("%s: %s", router, clause).isTrue();
+            rules.add(new Rule(parsed.group(1), parsed.group(2), parsed.group(3)));
+        }
+        return rules;
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Map<String, Object>> routers(String file) {
         return (Map<String, Map<String, Object>>) ((Map<String, Object>) yaml(file).get("http")).get("routers");
@@ -503,14 +584,18 @@ class EdgeAllowListTest {
         return new Yaml(new SafeConstructor(new LoaderOptions())).load(RepositoryPaths.read(file));
     }
 
-    /** One generated router's matcher, evaluated as the proxy evaluates it: exact path, or a regex over the whole path. */
+    /** One generated router's matcher, evaluated as the proxy evaluates it: exact path, a regex over the whole path, or a prefix. */
     private record Rule(String method, String matcher, String argument) {
 
         boolean admits(String askedMethod, String path) {
             if (!method.equals(askedMethod)) {
                 return false;
             }
-            return "Path".equals(matcher) ? argument.equals(path) : Pattern.compile(argument).matcher(path).matches();
+            return switch (matcher) {
+                case "Path" -> argument.equals(path);
+                case "PathPrefix" -> path.startsWith(argument);
+                default -> Pattern.compile(argument).matcher(path).matches();
+            };
         }
     }
 

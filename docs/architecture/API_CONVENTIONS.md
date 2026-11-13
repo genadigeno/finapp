@@ -320,6 +320,13 @@ Two edge hosts serve the one API, and which route lives where is derived from wh
 The generated lists, `deploy/edge/base/public-routes.yaml` and `operator-routes.yaml`, are never edited. A route added or
 moved shows up as a failing `EdgeAllowListTest` until the regenerated file is copied over, so the change is a reviewed line.
 
+**One operator route is not the API's** *(`X-TSK-020`, 2026-11-14, for finapp-admin-panel `P17-TSK-004`)*. `GET /console` and
+`GET /console/**` are the Operator Console's static assets: the operator file's `operator-console` router, generated with the rest
+but stated once in `EdgeRoutes` rather than derived, sends them to the console's own Service (`deploy/console`) under the console's own
+headers (`console-headers`: the console's Content-Security-Policy with Trusted Types, HSTS, `nosniff`, `no-referrer`, `frameDeny`; no
+`Cache-Control`, which the console's server sets per path). Every API route keeps `edge-headers` and `default-src 'none'`; the public
+host never serves `/console`; and no API route may be served under `/console`, which the generator refuses.
+
 **For a route's author.** A route is listed by method and whole path, so a new method on an existing path is a new line. A
 path variable's value is letters, digits, `_` and `-`, with a dot only between other characters: an identifier, a code, an enum
 name, a settlement source's dotted code. A value carrying `;`, `%` or `/`, or a segment of `.` or `..`, never reaches the

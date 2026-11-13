@@ -1,0 +1,37 @@
+# The console's namespace, closed (X-TSK-020): everything denied, then one flow in. The operator edge's controllers reach the console on its one
+# port; nothing else does, and the console reaches nothing at all - not the resolver, not the application, not the collector. Its pages call
+# the API from the browser, through the operator edge, same-origin; the pod itself never does. The edge's side of the flow is
+# deploy/edge/base/networkpolicy.yaml's finapp-edge-operator egress rule naming this namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-console-default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-console
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-console
+  # Egress stated and given no rule: the console's pods open no connection.
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-edge
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-edge-operator
+      ports:
+        - protocol: TCP
+          port: 8080

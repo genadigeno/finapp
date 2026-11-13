@@ -9,6 +9,14 @@ http:
         passHostHeader: false
         servers:
           - url: "http://finapp-app.finapp.svc.cluster.local:8080"
+    # The Operator Console's static server (X-TSK-020): its own namespace, its one port. Only operator-routes.yaml's operator-console router
+    # names it, and the public edge defines no such service, so no public route could reach it by name.
+    finapp-console:
+      loadBalancer:
+        serversTransport: no-reuse
+        passHostHeader: false
+        servers:
+          - url: "http://finapp-console.finapp-console.svc.cluster.local:8080"
 
   serversTransports:
     no-reuse:
@@ -37,6 +45,31 @@ http:
           # by. An operator request always starts a trace of its own; staff's tooling finds it by the X-Correlation-Id every answer
           # carries, which this edge neither sets nor removes. edge-check.sh proves both on the pinned proxy; EdgeManifestsTest and
           # edge.rego's [edge-trace-context] hold the three names on both edges.
+          traceparent: ""
+          tracestate: ""
+          baggage: ""
+
+    # THE OPERATOR CONSOLE'S OWN HEADERS (X-TSK-020; finapp-admin-panel P17-TSK-004, ADR-0131 decision 4), on the operator-console router
+    # alone: the API routers keep edge-headers and its default-src 'none', and no router runs both. The policy is a copy of the console's one
+    # definition, finapp-admin-panel config/console-headers.mjs (CONSOLE_CSP), under which its catalogue proves every component: scripts,
+    # styles and fonts from the console's own origin, images from it or data: URLs, the API same-origin, no form posted elsewhere, no
+    # <base>, no frame, and Trusted Types required of every DOM sink. HSTS, nosniff, no-referrer and frameDeny are edge-headers' own.
+    # NO Cache-Control HERE, deliberately: the console's nginx sets it per path (index.html and deep links no-cache, so a release is the
+    # next load's; /console/assets/ immutable for a year, safe because every asset's name is its content's hash), and a value here would
+    # overwrite both. console-headers.mjs's own Cache-Control (no-store) is its catalogue preview's, not production's. ConsoleHostingManifestsTest
+    # and edge.rego's [edge-console-headers] hold the policy to that string and refuse a Cache-Control here.
+    console-headers:
+      headers:
+        stsSeconds: 31536000
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: no-referrer
+        contentSecurityPolicy: "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'"
+        # What edge-headers removes, removed here too: nginx reads none of them, and none reaches anything behind this edge unasked.
+        customRequestHeaders:
+          Forwarded: ""
+          X-Forwarded-Prefix: ""
+          Upgrade: ""
           traceparent: ""
           tracestate: ""
           baggage: ""

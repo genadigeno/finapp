@@ -1,0 +1,12 @@
+# Staging's console (X-TSK-020). Nothing real is committed: the digest is sixty-four zeros until a release names one, as the application's
+# overlay's are. DESIGNED, NOT DELIVERED: no Application in deploy/delivery syncs this root yet, and infra/scripts/promote.sh writes the
+# application's two digests, not this one (the console's own release path is finapp-admin-panel's; X-TSK-020 records the remainder).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+images:
+  - name: finapp-console
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000

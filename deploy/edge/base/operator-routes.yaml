@@ -3,6 +3,14 @@
 # A changed route is accepted by copying that file here, and the change is then a reviewed line in this diff.
 http:
   routers:
+    operator-console:
+      entryPoints: [websecure]
+      rule: >-
+        (Method(`GET`) && Path(`/console`))
+        || (Method(`GET`) && PathPrefix(`/console/`))
+      service: finapp-console
+      middlewares: [console-headers, internal-only, body-cap]
+      tls: {}
     operator-default:
       entryPoints: [websecure]
       rule: >-
