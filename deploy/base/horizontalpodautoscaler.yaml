@@ -9,7 +9,8 @@ spec:
     kind: Deployment
     name: finapp-app
   minReplicas: 3
-  # Bounded by the budget: 7 + 2 x maxSurge + 1 = 10 = FINAPP_DB_INSTANCES.
+  # Bounded by the budget: 7 + 2 x maxSurge + 1 = 10 = FINAPP_DB_INSTANCES. Ten takes a larger declared server first, 13 x 8 + 12 = 116
+  # (ADR-0134, kind's overlay); production stays at seven until the ten-instance runs and the calibration (THREAT_MODEL.md section 6 item 56).
   maxReplicas: 7
   metrics:
     - type: Resource

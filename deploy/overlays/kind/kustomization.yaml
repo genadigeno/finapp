@@ -1,6 +1,8 @@
 # The kind rehearsal's values, test-only (PHASE_15_PLAN.md section 14). No endpoint or credential here either: the
-# rehearsal generates its Secrets per run (infra/scripts/kind-secrets.sh). Three replicas, with the budget set to section 6.1's formula exactly, so
-# the rehearsal measures the rule rather than a margin: 3 + 2 x 1 + 1 = 6, and 6 x (7 + 1) + 12 = 60.
+# rehearsal generates its Secrets per run (infra/scripts/kind-secrets.sh). Up to ten replicas, with the budget set to section 6.1's formula for ten
+# exactly (P16-TSK-009, owner decision C3, ADR-0134: the test-only server is the larger one): 10 + 2 x 1 + 1 = 13, and 13 x (7 + 1) + 12 = 116.
+# A rehearsal run holds its fleet at its own count in its own rendered copy, with the formula at that count (kind-rehearsal.sh's
+# fleet_patch: three unless the load scope asks for more), so a run at three still measures the rule rather than a margin: 6 and 60 there.
 #
 # THE LOCAL CA, mounted by both workloads at /etc/finapp-local-ca from the Secret finapp-kind-local-ca the rehearsal generates per run:
 # ca.crt for PostgreSQL's sslrootcert and Kafka's truststore, and truststore.jks for the JVM's own, so the application's provider
@@ -27,8 +29,8 @@ configMapGenerator:
   - name: finapp-app-config
     behavior: merge
     literals:
-      - FINAPP_DB_INSTANCES=6
-      - FINAPP_DB_SERVER_MAX_CONNECTIONS=60
+      - FINAPP_DB_INSTANCES=13
+      - FINAPP_DB_SERVER_MAX_CONNECTIONS=116
       - FINAPP_DB_RESERVED_CONNECTIONS=12
       - FINAPP_EDGE_PROXIES=10.244.0.0/16
       - FINAPP_KAFKA_SECURITYPROTOCOL=SASL_SSL
@@ -53,13 +55,14 @@ configMapGenerator:
       - FINAPP_ACCOUNTING_REPORT_PROVISIONALFRESHNESS=PT1S
 
 patches:
+  # Ten, the owner's "10+ instances", on the test-only server the budget above was raised for. The base's minimum of three stands.
   - target:
       kind: HorizontalPodAutoscaler
       name: finapp-app
     patch: |-
       - op: replace
         path: /spec/maxReplicas
-        value: 3
+        value: 10
   # kind's nodes carry no zone label, and DoNotSchedule on a missing label schedules nothing.
   # A CI runner's memory, not production's; the heap is still 75% of the limit.
   - target:
@@ -118,7 +121,7 @@ patches:
       - op: replace
         path: /spec/limits/0/max/memory
         value: 1Gi
-  # The quota follows the maximum: 6 app pods at 1 GiB (3 + 2 x 1 + 1), the migrator, and the two test-only copies (the PostgreSQL at
+  # The quota follows the maximum: 13 app pods at 1 GiB (10 + 2 x 1 + 1), the migrator, and the two test-only copies (the PostgreSQL at
   # 1 GiB since P16-TSK-006, the broker at 1 GiB).
   - target:
       kind: ResourceQuota
@@ -126,16 +129,16 @@ patches:
     patch: |-
       - op: replace
         path: /spec/hard/pods
-        value: "9"
+        value: "16"
       - op: replace
         path: /spec/hard/requests.cpu
-        value: 3750m
+        value: 7250m
       - op: replace
         path: /spec/hard/requests.memory
-        value: 8704Mi
+        value: 15872Mi
       - op: replace
         path: /spec/hard/limits.cpu
-        value: "15"
+        value: "29"
       - op: replace
         path: /spec/hard/limits.memory
-        value: 8704Mi
+        value: 15872Mi

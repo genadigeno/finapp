@@ -342,7 +342,7 @@ YAML
     plant_on budget-max-replicas "$HPA" 's/maxReplicas: 7/maxReplicas: 8/'
     plant_on budget-surge "$DEPLOYMENT" 's/maxSurge: 1/maxSurge: 2/'
     plant_on budget-overlay-lowers-instances "$PRODUCTION" 's/FINAPP_DB_INSTANCES=10/FINAPP_DB_INSTANCES=9/'
-    plant_on budget-kind-max "$KIND" 's/value: 3/value: 4/' kind
+    plant_on budget-kind-max "$KIND" 's/value: 10$/value: 11/' kind
     plant_on budget-staging-instances overlays/staging/kustomization.yaml 's/FINAPP_DB_INSTANCES=7/FINAPP_DB_INSTANCES=6/' staging
     plant budget-undeclared
     mutate budget-undeclared base/kustomization.yaml '/FINAPP_DB_RESERVED_CONNECTIONS/d'
@@ -355,7 +355,7 @@ YAML
     plant_on budget-one-source-canonical "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - SPRING_DATASOURCE_HIKARI_MAXIMUMPOOLSIZE=20/'
     plant_on budget-one-source-idle "$PRODUCTION" 's/- FINAPP_DB_INSTANCES=10/- FINAPP_DB_INSTANCES=10\n      - SPRING_DATASOURCE_HIKARI_MINIMUMIDLE=2/'
     plant_on budget-one-source-relaxed "$DEPLOYMENT" 's/^          env:$/          env:\n            - name: FINAPP_DATABASE_INSTANCES\n              value: "99"/'
-    plant_on budget-server-max overlays/kind/postgres.yaml 's/max_connections=60/max_connections=100/' kind
+    plant_on budget-server-max overlays/kind/postgres.yaml 's/max_connections=116/max_connections=100/' kind
 
     # The autoscaler.
     plant_on hpa-min "$HPA" 's/minReplicas: 3/minReplicas: 2/'
@@ -1085,7 +1085,7 @@ YAML
     plant_on quota-follows-the-autoscaler "$HPA" 's/maxReplicas: 7/maxReplicas: 8/'
     plant_on quota-follows-the-surge "$DEPLOYMENT" 's/maxSurge: 1/maxSurge: 2/'
     plant_on quota-follows-the-request "$DEPLOYMENT" 's/cpu: 500m/cpu: 600m/'
-    plant_on quota-kind-short "$KIND" 's/value: "9"/value: "8"/' kind
+    plant_on quota-kind-short "$KIND" 's/value: "16"/value: "15"/' kind
     plant_on quota-staging-short overlays/staging/kustomization.yaml 's/value: "8"/value: "7"/' staging
     plant_on quota-pods-widened "$QUOTA" 's/pods: "11"/pods: "1000"/'
     plant_on quota-limits-memory-widened "$QUOTA" 's/limits.memory: 20992Mi/limits.memory: 40000Mi/'

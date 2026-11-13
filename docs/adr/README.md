@@ -172,6 +172,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0128](ADR-0128-recovery-objectives-and-the-post-recovery-gate.md) | Recovery objectives and the post-recovery financial gate: RTO and RPO by tier, no money moves until the books are proven | Proposed | 16 | Platform · Ledger · Reconciliation |
 | [0129](ADR-0129-availability-and-the-multi-region-stance.md) | Availability and the multi-region stance: one writer, multi-AZ active-passive, no active-active writes | Proposed | 16 | Platform · Ledger · every module (availability) |
 | [0133](ADR-0133-contention-measured-before-any-mechanism-and-the-whole-history-folds.md) | Contention measured before any mechanism, and the whole-history folds bounded by a commit-order checkpoint (the checkpoint proposed, its build the owner's to place) | Proposed | 16 | Ledger · Merchant · Platform (operated under load) |
+| [0134](ADR-0134-the-connection-budget-at-ten-replicas.md) | The connection budget at ten replicas: a larger server, no smaller pool, no transaction-mode pooler yet | Proposed | 16 | Platform · every module (operated at scale) |
 | [0137](ADR-0137-load-shedding-before-the-financial-effect.md) | Load shedding before the financial effect: a door in front of every borrow, per-class bounds, never after a claim | Proposed | 16 | Platform · the API surface · checkout |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
@@ -254,3 +255,4 @@ task whose measurement justifies it (`PHASE_16_PLAN.md` §6.5, §24; `P16-TSK-01
 (2026-11-12) wrote ADR-0126 (the workload model and load testing), ADR-0127 (the failure-injection method), ADR-0128 (recovery
 objectives and the post-recovery gate) and ADR-0129 (availability and the multi-region stance), all `Proposed`, from
 `PHASE_16_PLAN.md`; the next free number is ADR-0130.)*
+*(`P16-TSK-009`, 2026-11-13, wrote ADR-0134 (the connection budget at ten replicas), `Proposed`, the number the coordinator reserved for it in wave D.)*
