@@ -2846,8 +2846,9 @@ the disaster-recovery plan and awaits the owner.**
       customers and staff sign in again; then every identity and key act recorded after the point - read from the audit archive's copy
       where one is configured, or from the damaged database while it still exists - repeated by the window's command acting as the
       application's role (as the window already does for provider files), each through its own domain code and recorded; the release
-      record names the acts repeated and any it could not read. Built with `P16-TSK-025`'s exercise, whose rebuild from a backup would
-      show it, its database cases owed with PI-023's kind;
+      record names the acts repeated and any it could not read. Built in a task of its own, shown by the disaster-recovery exercise's
+      rebuild from a backup (`OPERATIONS_RUNBOOK.md` §11.64), its database cases owed with PI-023's kind *(this read "Built with the
+      disaster-recovery task's exercise" by that task's id until the task merged complete, 2026-11-14)*;
     - **(ii) End every session and revoke every merchant key at every restore**, each merchant issued a new key through its door:
       simpler, but it cuts every merchant's integration for any restore, and roles, suspensions and passwords stay undone;
     - **(iii) Keep the interim**: the incident record lists the acts after the point, and a person repeats each through its door after
