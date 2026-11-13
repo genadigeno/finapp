@@ -253,6 +253,68 @@ class PipelineRehearsalContractTest {
     }
 
     @Test
+    @DisplayName("E68 writes a burst of poison records, every group parks each once and keeps applying, its page the only one, each park discarded by two persons")
+    void e68ParksABurstWithoutStoppingTheGroup() {
+        assertThat(read("app/src/main/java/com/finapp/app/eventing/EventingBeans.java")).as("the budget the observation's bound is built on")
+                .contains("@Value(\"${finapp.inbox.park-after-attempts:5}\") int attempts")
+                .contains("@Value(\"${finapp.inbox.park-after-failing-for:PT2M}\") Duration failingFor");
+        assertThat(read("platform/src/main/java/com/finapp/platform/inbox/kafka/KafkaEventReceiver.java")).as("an unreadable record's key")
+                .contains("new InboxKey(groupId, \"malformed:\" + record.topic() + \":\" + record.partition() + \":\" + record.offset())");
+        assertThat(experiments).as("a burst, not one record").contains("\nE68_RECORDS=6\n");
+        String steady = function(experiments, "E68_steady");
+        assertThat(steady).as("the groups that read the topic, the discard's second person, the evictions before")
+                .contains("$2 == \"finapp.payments\" {print $1}").contains("'EVENT_OPERATOR'").contains("s/^controller.login=//p")
+                .contains("sum(finapp_inbox_consumer_evictions_total) or vector(0)").contains("start_workload e68 retry");
+        String fault = function(experiments, "E68_fault");
+        assertThat(fault).as("records that are no event, a key each, through the brokers' administrator")
+                .contains("printf 'e68-%s-%s:this is not an event\\n' \"$E68_TAG\" \"$i\"")
+                .contains("kafka_admin kafka-console-producer.sh --topic finapp.payments --command-property acks=all")
+                .contains("--reader-property parse.key=true --reader-property key.separator=:");
+        String ticks = function(experiments, "e68_pages_tick");
+        assertThat(ticks).as("the parked page its positive control, any other page a stop")
+                .contains("grep -vx InboxDeadLetterParked").contains("E68_PAGED=${E68_PAGED:-$now}").contains("return 1");
+        String observe = function(experiments, "E68_observe");
+        assertThat(observe).as("each record parked once by every group within its bound, the group applying, nobody evicted, nothing else parked")
+                .contains("E68_EXPECTED=$((E68_RECORDS * groups))").contains("E68_RECORDS * 180 + 300").contains("e68_pages_tick || return 0")
+                .contains("InboxDeadLetterParked did not fire").contains("lag_settled e68 ||")
+                .contains("[ \"$listed\" = \"$groups\" ] && [ \"$short\" = 0 ] || fail").contains("[ \"$applied\" -ge 1 ] ||")
+                .contains("[ \"$evicted\" = 0 ] ||").contains("[ \"$others\" = 0 ] ||");
+        String recover = function(experiments, "E68_recover");
+        assertThat(recover).as("a release refused, each park discarded by two persons, the page cleared")
+                .contains("client release-parked").contains("code=deadletter.NotReleasable").contains("client discard INBOX_RECORD \"$park\"")
+                .contains("'^platform discard self status=403'").contains("'^platform discard approved status=200'")
+                .contains("d.decided_by <> d.proposed_by").contains("while experiments_alert_firing InboxDeadLetterParked");
+        assertThat(read("platform/src/main/resources/db/migration/platform/V011__dead_letters_and_replay.sql"))
+                .as("an approved discard's approver is never its proposer").contains("CHECK (status <> 'APPROVED' OR decided_by <> proposed_by)");
+        String census = read("infra/scripts/kind-rehearsal/census.sql");
+        int clause = census.indexOf("'nothing parked'");
+        assertThat(clause).as("the census's nothing-parked clause").isPositive();
+        String parked = census.substring(census.lastIndexOf("\n\n", clause), census.indexOf(";\n", clause));
+        assertThat(parked).as("sampled during load, and leaving out only a record two persons discarded through the door")
+                .contains("-- [sampled during load]").contains("WHERE NOT (p.state = 'DISCARDED'")
+                .contains("d.subject_kind = 'INBOX_RECORD' AND d.subject_id = p.park_id AND d.status = 'APPROVED'")
+                .doesNotContain("'HANDLED'").doesNotContain("'PARKED'");
+    }
+
+    @Test
+    @DisplayName("E15's cut on the broker's hop takes every broker's own proxy as well as the bootstrap's, and removes them all")
+    void e15CutsEveryBrokersHop() {
+        String fault = function(experiments, "E15_fault");
+        assertThat(fault).as("the bootstrap's proxy and each broker's, both ways")
+                .contains("experiments_fault_on toxic kafka e15-broker-down timeout timeout=0")
+                .contains("while [ \"$i\" -lt \"$KAFKA_BROKERS\" ]; do")
+                .contains("experiments_fault_on toxic \"kafka-$i\" \"e15-broker-$i-down\" timeout timeout=0")
+                .contains("experiments_fault_on toxic \"kafka-$i\" \"e15-broker-$i-up\" timeout timeout=0 stream=upstream");
+        String observe = function(experiments, "E15_observe");
+        int brokersOff = observe.indexOf("experiments_fault_off toxic \"kafka-$i\" \"e15-broker-$i-down\" timeout timeout=0");
+        assertThat(brokersOff).as("each broker's cut removed").isPositive();
+        assertThat(observe).contains("experiments_fault_off toxic \"kafka-$i\" \"e15-broker-$i-up\" timeout timeout=0 stream=upstream");
+        assertThat(observe.indexOf("experiments_fault_off toxic kafka e15-broker-down timeout timeout=0")).as("the bootstrap's removed after them")
+                .isGreaterThan(brokersOff);
+        assertThat(function(brokers, "brokers_resolve")).as("the experiments scope is three brokers").contains("experiments:3");
+    }
+
+    @Test
     @DisplayName("the probe lowers the posture with a one-copy topic beside it, holds its victim down, the copy check sees the writes, and every way out puts it back")
     void theProbeIsWiredAndUndone() {
         String fault = function(experiments, "E08_fault");

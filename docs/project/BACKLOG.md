@@ -29740,16 +29740,21 @@ on none:
    `CAPACITY_MODEL.md` §3.2's note); lag at peak and drain after a burst, the relay's ceiling - E47, the `pipeline` profile at three
    and seven replicas; scale 3 → 7 → 3 during load - E48 (`REHEARSAL_LOAD_SCALE`); E08, E09, E22, E23 - the experiments scope; a day's
    replay through the audited door - E49 and §11.51's procedure (the door's 1,000-event bound kept; one order for a day is item 58
-   (b)); a poison record burst parking without stopping the group - not rebuilt here: E22 and E49 fail on any parked record, and the
-   poison step is PI-024's `platform-dead-letters`. **The probe** (`REHEARSAL_PROBE=min-isr-one`): every topic at
+   (b)); a poison record burst parking without stopping the group - **E68** (reserved by the coordinator for this scope item): six
+   records that are no event, a key each, on `finapp.payments`; every group that reads it parks each once while it keeps applying, no
+   member evicted, `InboxDeadLetterParked` its only page; a release refused and each park discarded by two persons; the census's
+   nothing-parked clause now leaves out a record whose approved discard's approver is not its proposer, and counts every other row (a
+   change to a shared clause, without which no run that discards through the door could end green). **The probe** (`REHEARSAL_PROBE=min-isr-one`): every topic at
    `min.insync.replicas` 1 and a probe topic of two copies, its victim held down 90 s, E08's copy check required to name the one-copy
    writes; its premise proven in containers on the third attempt (§11.51's record), the cluster probe owed. **Acceptance
    (`PHASE_GATES.md` §5 Phase 16's Kafka block)**: lag per group at peak and drained after a burst; scale under load with one effect per
    record; one broker lost without an error; all brokers lost 10 minutes and every row published once after; a day's replay with zero
    second effects - each **built, contract-tested (`PipelineRehearsalContractTest`), run owed (PI-025)**; every experiment's register
-   row filled in the not-run form. §11.6's rehearsal (that part of PI-024 under C11) closes only with E09. Routed: to `P16-TSK-021`
-   (E15 must take all four broker proxies down) and to `P16-TSK-014` (the load scope's three brokers, the pipeline sampler and the
-   scale at ten).
+   row filled in the not-run form. §11.6's rehearsal (that part of PI-024 under C11) closes only with E09. **E15** (`P16-TSK-021`'s,
+   merged before this task's end, so the note routed to it had no owner): its broker-hop cut widened here to every broker's own proxy
+   as well as the bootstrap's, held by `PipelineRehearsalContractTest#e15CutsEveryBrokersHop`, its run owed with the cut (a dated
+   note on its register row and on this task's PI-025 bullet). Routed: to `P16-TSK-014` (the load scope's three brokers, the pipeline
+   sampler and the scale at ten).
 
 **P16-TSK-014 — Ten instances at load (`THREAT_MODEL.md` §6 item 43 (g); the Phase 15 exit review's acceptance B; `P15-REM-007`)** — `PLANNED`
 - **Objective**: the ten-instance answer counted. Ten application replicas carry the engineering workload on `kind`, scale between

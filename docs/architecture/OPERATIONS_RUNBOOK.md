@@ -5182,7 +5182,9 @@ hop's return the outbox drains, each event published once, the inbox deduplicati
 financial is lost: the outbox is the source. *Provider*: calls time out at the adapter's own bounds. A call that never reached the
 provider answers `503`; one sent and unanswered is recorded unknown, never sent again. The sweeps ask the provider once it answers;
 a card payment caught mid-call waits the sweep's ten-minute dispatched age. *Do*: §11.22: watch `PaymentUnknownAged` and
-`MerchantPayoutUnknownAged` clear; never resend an ambiguous call by hand.
+`MerchantPayoutUnknownAged` clear; never resend an ambiguous call by hand. *(2026-11-13: the scope runs three brokers, §11.51, and a
+client reaches each through that broker's own proxy once the bootstrap has answered, so the broker's hop is four proxies - `kafka` and
+`kafka-0` to `kafka-2` - and the cut takes all four, both ways. Not run: owed under `POSTPONED_ISSUES.md` PI-025.)*
 
 **E16 - the cluster's resolver lost.** *Signature*: established connections carry on; only a new connection needs a name. In a
 deployment the client resolves the database's, the broker's and the provider's names itself, and a new connection fails with an unknown
@@ -5329,7 +5331,7 @@ in `payments.sweep_row_failure` or `merchant.sweep_row_failure` and backed off. 
 2026-11-13), and the first run of each writes its record here with its commit, its artefacts and, for E38, the explanation of every
 deadlock it found.
 
-### 11.51 The event pipeline at load: three brokers, a broker lost, all lost, duplicates, delays, a scaled fleet and a day's replay (`P16-TSK-013`, ADR-0136)
+### 11.51 The event pipeline at load: three brokers, a broker lost, all lost, duplicates, delays, a poison burst, a scaled fleet and a day's replay (`P16-TSK-013`, ADR-0136)
 
 *Written by `P16-TSK-013` (2026-11-13) from what it built. **Nothing here has run on a cluster**: the owner postponed Phase 16's `kind`
 runs until after the project's phases ("we dont need long running checks and tests"), and every run below is owed under
@@ -5355,15 +5357,15 @@ state: every broker ready, a quorum of three with a leader, every topic at the p
 to its Service's address. The safety boundary reads four alias entries and six upstreams, and the topology check holds that every
 replica reached the database hop and all four broker hops through the proxy. A fault on "the broker hop" is a fault on the four.
 
-#### Running the experiments: E08, E09, E22, E23 and E49
+#### Running the experiments: E08, E09, E22, E23, E49 and E68
 
 ```
-REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E08 E09 E22 E23 E49" infra/scripts/kind-rehearsal.sh
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E08 E09 E22 E23 E49 E68" infra/scripts/kind-rehearsal.sh
 ```
 
 Each in the step shape of §11.46, each ending in the census, each under the workload unless it says otherwise. What each counts is
 PostgreSQL's, never the broker's: every outbox row published, every record a catalogued handler names found once in its consumer's inbox
-(the census's lost-event check), no inbox row added for a record already applied, nothing parked.
+(the census's lost-event check), no inbox row added for a record already applied, nothing parked but E68's own.
 
 - **E08, one broker of three lost.** The quorum's leader's broker JVM killed with SIGKILL from its node; the admin tools moved to a
   survivor. Every partition's in-sync replicas and end offset are read about every 10 s into `experiments/E08/isr.tsv`: a partition that
@@ -5389,6 +5391,19 @@ PostgreSQL's, never the broker's: every outbox row published, every record a cat
   in their aggregates' order, after every other aggregate's later records. The held rows must be late by at least 300 s; per consumer
   and aggregate, no record may be applied before an earlier one (each inbox row's server time against the outbox's order); nothing parked.
 - **E49, a day's replay.** The procedure below, performed by the harness for every handled type over the run's own day.
+- **E68, a burst of poison records.** Six records that are no event, each with a key of its own so they spread over the partitions,
+  written to `finapp.payments` by the brokers' administrator (`kafka_admin`'s console producer, `acks=all`) while the workload runs.
+  Every group that reads the topic (read from the groups at the steady state) must park each record once, after its budget of five
+  failures and two minutes, both (§11.6's poison record, six at once): the observation is bounded at three minutes a record and five
+  more, as if every record had landed on one partition. Meanwhile those groups must go on applying records written after the burst
+  (`parking.tsv`), no member may be evicted (`finapp_inbox_consumer_evictions_total` unchanged), nothing else may park, and no
+  correctness page but `InboxDeadLetterParked` may fire - which must fire, its positive control. Then every partition settles past the
+  burst. The recovery stops the workload, waits until no record of the burst is still failing, and does §11.6's procedure for each:
+  a release refused (`deadletter.NotReleasable`), then a discard proposed by the operator, refused to the operator and approved by the
+  controller, until the page clears. The controller is given `EVENT_OPERATOR` from SQL at the steady state, as the `load` scope seeds its
+  operators; this scope runs no grant door. Each discard waits for a fresh second-factor step, so expect about half a minute a park. The
+  census's nothing-parked clause leaves out a record whose approved discard's approver is not its proposer, and counts every other row,
+  a handled one included: a record two persons discarded is decided, not stopped, and its row stays as evidence.
 
 **The probe** (`REHEARSAL_PROBE=min-isr-one`, with `E08`): every topic's `min.insync.replicas` set to 1 and a probe topic of two copies
 (the highest-ordinal broker's and the admin broker's) written once a second with `acks=all`; that broker killed and held down 90 s by
@@ -5440,7 +5455,8 @@ Whether the door should take a day in one order is `THREAT_MODEL.md` §6 item 58
 #### Reading a run
 
 `experiments/<id>/record.tsv` for each experiment, beside `isr.tsv` (E08), `fleet.tsv`, `held.txt` (E23), `windows.txt` and
-`replays.tsv` (E49), `faults.log` and `relay-hold.out`; `load/pipeline-summary.txt` and its tables for E47 and E48. A result goes into
+`replays.tsv` (E49), `parking.tsv`, `parks-by-group.tsv`, `parks.txt` and `client.log` (E68), `faults.log` and `relay-hold.out`;
+`load/pipeline-summary.txt` and its tables for E47 and E48. A result goes into
 `RESILIENCE_EXPERIMENTS.md` in §1.2's form, and the run's record here.
 
 #### The record
@@ -5466,8 +5482,13 @@ Whether the door should take a day in one order is `THREAT_MODEL.md` §6 item 58
   evaluated by the overlay's `postgres:18.6` for five UUIDs (the two ends of the range among them) equalled Java's `UUID.hashCode()` for
   each, read from `jshell` in the build's JDK image. The hold's whole script, taken out of `experiments.sh`, ran for 3 s against a
   stand-in outbox of two aggregates with waiting rows: both held and printed, and no advisory lock left after its `pg_advisory_unlock_all()`.
-- **Owed under PI-025**: every cluster run of this section - E08 (with the probe), E09, E22, E23 and E49 in the `experiments` scope at
-  three replicas; E47 at three and at seven; E48.
+- **2026-11-13, the image only, no broker: E68's writer.** `kafka-console-producer.sh --help` from the overlay's `apache/kafka:4.3.1` by
+  its digest, in a container with no network, lists `--command-config`, `--command-property` and `--reader-property`, the flags E68's
+  burst passes through `kafka_admin` (and `--property`, `--producer.config` and `--producer-property` as deprecated). Nothing was
+  produced or consumed.
+- **Owed under PI-025**: every cluster run of this section - E08 (with the probe), E09, E22, E23, E49 and E68 in the `experiments` scope
+  at three replicas; E47 at three and at seven; E48. And §11.47's E15 with its cut widened to every broker's own proxy (its register
+  row's note of 2026-11-13).
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 
