@@ -473,6 +473,17 @@ class TelemetryPipelineManifestsTest {
                 .anySatisfy(mount -> assertThat(mount).containsEntry("name", "rules").containsEntry("mountPath", "/etc/prometheus-rules"))
                 .anySatisfy(mount -> assertThat(mount).containsEntry("name", "config").containsEntry("mountPath", "/etc/prometheus"));
         assertThat(String.valueOf(scraper.get("volumes"))).contains("name=finapp-prometheus-rules").contains("name=finapp-prometheus-config");
+        // The rules in two ConfigMaps (2026-11-13), one directory: the rules volume projects every rules ConfigMap the overlay generates, and
+        // nothing else, so a ConfigMap generated and never mounted is no rule loaded.
+        Map<String, Object> rules = ((List<Map<String, Object>>) scraper.get("volumes")).stream()
+                .filter(volume -> "rules".equals(volume.get("name"))).findFirst().orElseThrow();
+        List<String> projected = ((List<Object>) map(rules, "projected").get("sources")).stream()
+                .map(source -> String.valueOf(map(cast(source), "configMap").get("name"))).toList();
+        List<String> generated = ((List<Object>) yaml(read(KIND + "kustomization.yaml")).get("configMapGenerator")).stream()
+                .map(generator -> String.valueOf(((Map<String, Object>) cast(generator)).get("name")))
+                .filter(name -> name.startsWith("finapp-prometheus-rules")).toList();
+        assertThat(projected).as("the rules volume projects every rules ConfigMap, once, and nothing else")
+                .containsExactlyInAnyOrderElementsOf(generated).contains("finapp-prometheus-rules", "finapp-prometheus-rules-domain");
         assertThat(read(KIND + "kustomization.yaml")).contains("  - name: finapp-prometheus-config\n    files:\n      - prometheus.yml\n"
                 + "    options:\n      disableNameSuffixHash: true\n");
 
