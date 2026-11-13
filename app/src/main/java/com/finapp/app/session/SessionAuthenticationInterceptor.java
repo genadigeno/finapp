@@ -72,6 +72,14 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
      */
     public static final String CURRENT_SESSION = SessionAuthenticationInterceptor.class.getName();
 
+    /**
+     * Where the identity's standing is left for the handler, when this request read one (`X-TSK-019`): an operator act, a
+     * {@link RequiresAnyRole} handler, a door that refuses staff on the public surface. The roles the request was admitted
+     * by, so a handler that reports them reports the read that decided, never a second one. A request attribute, for
+     * {@link #CURRENT_SESSION}'s reason: nothing about one request is held where another could see it.
+     */
+    public static final String CURRENT_STANDING = CURRENT_SESSION + ".standing";
+
     private static final String SCOPE_ATTRIBUTE = CURRENT_SESSION + ".scope";
     private static final String SCHEME = "Bearer ";
 
@@ -108,6 +116,9 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
         // a failed authentication writes an audit record that throwing would roll back. Presenting
         // a dead session is not an authentication attempt against a credential.
         RequiresPermission operatorAct = annotation(handlerMethod, RequiresPermission.class);
+        // Any live role (`X-TSK-019`): an operator's read about themselves. Its roles are read with the session, exactly as
+        // an operator act's are, and the same read types the actor and decides the refusal.
+        RequiresAnyRole anyRole = annotation(handlerMethod, RequiresAnyRole.class);
         // A door that strengthens a session or what proves the identity, reached on a surface that does not admit staff
         // (`P15-TSK-042`): the roles are read with the session, as an operator act's are, and only then - the operator
         // surface and the single port pay nothing.
@@ -116,7 +127,7 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
                 surface.admitsRoleHolders() ? null : annotation(handlerMethod, com.finapp.app.surface.OperatorsRefusedOnPublic.class);
         Established established =
                 presentedToken(request)
-                        .flatMap(token -> authenticate(token, operatorAct != null || door != null))
+                        .flatMap(token -> authenticate(token, operatorAct != null || anyRole != null || door != null))
                         .orElseThrow(
                                 () ->
                                         new ApiException(
@@ -150,7 +161,9 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
             refuseStaffOnThePublicSurface(door, surface, established);
             requireAssurance(request, handlerMethod, session);
             requirePermission(handlerMethod, established);
+            requireAnyRole(anyRole, established);
             request.setAttribute(CURRENT_SESSION, session);
+            established.standing().ifPresent(standing -> request.setAttribute(CURRENT_STANDING, standing));
         } catch (RuntimeException refused) {
             // ...and closed HERE when the check throws - a denial, or a storage failure reading
             // the roles - because Spring runs afterCompletion only for an interceptor whose
@@ -417,6 +430,7 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
                 && (annotation(handlerMethod, RequiresSession.class) != null
                         || annotation(handlerMethod, RequiresAssurance.class) != null
                         || annotation(handlerMethod, RequiresPermission.class) != null
+                        || annotation(handlerMethod, RequiresAnyRole.class) != null
                         || annotation(handlerMethod, Unauthenticated.class) != null)) {
             log.error(
                     "Refusing {}: it declares @RequiresMerchantKey AND another rule. The"
@@ -429,12 +443,24 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
                     PlatformErrorCode.FORBIDDEN,
                     "A handler declared contradictory authorization rules");
         }
+        // Any role beside a permission (`X-TSK-019`): the permission already demands a role, so the pair is one rule written
+        // twice, and the two registers would each claim the route. Refused rather than resolved, as below.
+        if (annotation(handlerMethod, RequiresAnyRole.class) != null
+                && annotation(handlerMethod, RequiresPermission.class) != null) {
+            log.error(
+                    "Refusing {}: it declares @RequiresAnyRole AND @RequiresPermission. A handler declares one of them;"
+                        + " a permission already requires a role.",
+                    handlerMethod.getBeanType().getName() + "." + handlerMethod.getMethod().getName());
+            throw new ApiException(
+                    PlatformErrorCode.FORBIDDEN, "A handler declared contradictory authorization rules");
+        }
         if (annotation(handlerMethod, Unauthenticated.class) == null) {
             return;
         }
         if (annotation(handlerMethod, RequiresSession.class) == null
                 && annotation(handlerMethod, RequiresAssurance.class) == null
-                && annotation(handlerMethod, RequiresPermission.class) == null) {
+                && annotation(handlerMethod, RequiresPermission.class) == null
+                && annotation(handlerMethod, RequiresAnyRole.class) == null) {
             return;
         }
         log.error(
@@ -465,13 +491,14 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
         if (annotation(handlerMethod, com.finapp.app.merchant.RequiresMerchantKey.class) != null
                 || annotation(handlerMethod, RequiresSession.class) != null
                 || annotation(handlerMethod, RequiresAssurance.class) != null
-                || annotation(handlerMethod, RequiresPermission.class) != null) {
+                || annotation(handlerMethod, RequiresPermission.class) != null
+                || annotation(handlerMethod, RequiresAnyRole.class) != null) {
             return;
         }
         log.error(
                 "Refusing {}: it declares no authorization rule, and a rule's absence is never a"
                     + " grant (ADR-0031, INV-IDN-04). Annotate it with @Unauthenticated,"
-                    + " @RequiresSession, @RequiresAssurance or @RequiresPermission.",
+                    + " @RequiresSession, @RequiresAssurance, @RequiresPermission or @RequiresAnyRole.",
                 handlerMethod.getBeanType().getName() + "." + handlerMethod.getMethod().getName());
         throw new ApiException(
                 PlatformErrorCode.FORBIDDEN, "A handler declared no authorization rule");
@@ -524,6 +551,41 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
         throw new ApiException(
                 PlatformErrorCode.FORBIDDEN,
                 "A session without " + declared.value() + " was presented");
+    }
+
+    /**
+     * Refuses a session whose identity holds no live role where the handler declares {@link RequiresAnyRole} (`X-TSK-019`).
+     *
+     * <p>Decided from the standing read with the session, the one that typed the actor, so an admitted call is always
+     * {@code EMPLOYEE}. {@code 403 api.Forbidden}, the permission's refusal and for its reason: a customer cannot give
+     * itself a role, and a distinct code would tell them the route exists for someone. Recorded as a denial is
+     * ({@code identity.AuthorizationDenied}, {@code requirement=ANY_ROLE}), in a transaction of its own committed before
+     * the refusal is thrown: a customer's session probing the operator surface leaves its trace ({@code INV-AUD-03}).
+     */
+    private void requireAnyRole(RequiresAnyRole declared, Established established) {
+        if (declared == null) {
+            return;
+        }
+        Authorization.Standing standing =
+                established
+                        .standing()
+                        .orElseThrow(
+                                () ->
+                                        new IllegalStateException(
+                                                "an any-role handler's standing is read with its session"));
+        if (!standing.roles().isEmpty()) {
+            return;
+        }
+        transactions.executeWithoutResult(
+                status -> {
+                    Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
+                    try {
+                        authorization.recordRoleRequiredDenial(unitOfWork, established.session().identityId());
+                    } finally {
+                        DataSourceUtils.releaseConnection(unitOfWork, dataSource);
+                    }
+                });
+        throw new ApiException(PlatformErrorCode.FORBIDDEN, "A session holding no live role was presented");
     }
 
     /** Method first, then the declaring class - the {@code RequiresIdempotencyKey} idiom. */

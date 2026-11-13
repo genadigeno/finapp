@@ -347,6 +347,21 @@ class EdgeAllowListTest {
     }
 
     @Test
+    @DisplayName("a route any role reaches is the operator surface's even off the operator path, and the real one is on the"
+            + " operator list alone (X-TSK-019)")
+    void anAnyRoleRouteIsOperator() throws NoSuchMethodException {
+        Map<String, HandlerMethod> planted = new TreeMap<>();
+        planted.put("GET /v1/widgets/mine", new HandlerMethod(new Planted(), Planted.class.getMethod("anyRole")));
+        List<EdgeRoute> derived = EdgeRoutes.derive(planted);
+        assertThat(derived).singleElement().satisfies(route -> assertThat(route.surface()).isEqualTo(Surface.OPERATOR));
+        assertThat(EdgeRoutes.renderPublic(derived)).doesNotContain("/v1/widgets/mine");
+        assertThat(EdgeRoutes.renderOperator(derived)).contains("/v1/widgets/mine");
+
+        assertThat(rules(OPERATOR_FILE)).anyMatch(rule -> rule.admits("GET", "/v1/operator/me"));
+        assertThat(rules(PUBLIC_FILE)).noneMatch(rule -> rule.admits("GET", "/v1/operator/me"));
+    }
+
+    @Test
     @DisplayName("one path, a customer's GET and an operator's POST: the method decides, and each list holds its own alone")
     void aPathSharedByTwoSurfacesIsSplitByMethod() throws NoSuchMethodException {
         Map<String, HandlerMethod> planted = new TreeMap<>();
@@ -521,5 +536,8 @@ class EdgeAllowListTest {
 
         @RequiresPermission(PermissionName.LEDGER_ADJUST)
         public void guarded() {}
+
+        @com.finapp.app.session.RequiresAnyRole
+        public void anyRole() {}
     }
 }

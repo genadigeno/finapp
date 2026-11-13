@@ -170,6 +170,23 @@ public final class Authorization {
     }
 
     /**
+     * Records that a request was refused because its identity holds no live role at all (`X-TSK-019`): a handler any role
+     * holder may reach, asked by a customer. The same action as {@link #recordDenial}, the requirement named in place of a
+     * permission ({@code requirement=ANY_ROLE}); committed by the caller before the refusal is answered, as a denial is.
+     */
+    public void recordRoleRequiredDenial(Connection unitOfWork, IdentityId identityId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+
+        audit(
+                unitOfWork,
+                identityId,
+                IdentityAuditAction.AUTHORIZATION_DENIED,
+                AuditOutcome.FAILED,
+                "requirement=ANY_ROLE",
+                Optional.empty());
+    }
+
+    /**
      * Records that a request was refused because its session had not stepped up (`P15-TSK-021`;
      * {@link IdentityAuditAction#STEP_UP_REFUSED}).
      *

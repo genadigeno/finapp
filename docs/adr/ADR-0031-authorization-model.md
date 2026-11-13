@@ -189,3 +189,16 @@ does not: a compromised last administrator stays suspendable); the grant, the su
 (`RISK_CASE_APPROVE`), since risk's exempt suspension can take every administrator - needs an enrolled factor before it is
 granted. A permission's meaning,
 and its resolution per request, are unchanged.
+
+**Dated note (2026-11-13, `X-TSK-019`; finapp-admin-panel `P17-TSK-003`, owner decision D-12).** A sixth boundary
+declaration, `@RequiresAnyRole`, beside `@RequiresPermission`: the handler may be reached by an identity holding **any** live
+role and by nobody else. It exists for one route, `GET /v1/operator/me`, an operator's read of their own identity, roles,
+effective permissions and session, which every operator needs and no single permission fits - a permission every role carried
+would grant nothing, and exempting the route by name from the every-operator-route guard would be a list-of-one hole. It is
+this ADR's first check in a weaker form, not a third kind: the roles are read per request with the session, in its
+transaction, by the read a permission is decided from, so a revoked role stops admitting on the next request on any replica;
+the same read types the actor (`EMPLOYEE`); an identity with no live role is refused `403 api.Forbidden` and the refusal is
+recorded (`identity.AuthorizationDenied`, `requirement=ANY_ROLE`). Deny-by-default is unchanged. The declaration is refused
+beside `@Unauthenticated`, `@RequiresMerchantKey` or `@RequiresPermission` (a permission already requires a role), at run time
+and by the build, and the routes carrying it are pinned by `RoutePermissionRegisterTest#ANY_ROLE_REGISTER`. It never stands for
+an act on anything but oneself: such an act declares the permission it needs, and the ownership half of this ADR is untouched.

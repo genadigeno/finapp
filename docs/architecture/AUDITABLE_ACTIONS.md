@@ -165,6 +165,17 @@ Since the same task's item 42 (d) and (e), the suspension and reinstatement door
 (`MULTI_FACTOR`): an administrator's suspension refused because it would take the last identity able to grant roles writes no
 `identity.IdentitySuspended`, only that door's `door.ActRefused`; risk's automated suspension is not bound by the rule.
 
+**Not audited: an operator's read of themselves** (`X-TSK-019`; `GET /v1/operator/me`, the Operator Console's who-am-I,
+finapp-admin-panel `P17-TSK-003`). It answers the caller's own identity identifier, live roles, the permissions those roles
+grant, the session's assurance and bounds and whether a factor is enrolled - nothing about anybody else, and nothing the caller
+does not already hold. Reading it changes nothing, and every act those permissions allow is recorded where it happens, so a
+record per read would bury the acts under a navigation the console repeats on every sign-in and every `403`. **Its refusal is
+recorded**: a session whose identity holds no live role is answered `403 api.Forbidden` and written as
+`identity.AuthorizationDenied` with the summary `requirement=ANY_ROLE` in place of `permission=<NAME>` - the declaration
+`@RequiresAnyRole` names no permission - committed in a transaction of its own before the refusal, its actor the caller
+(`CUSTOMER`), its target their identity. No action was registered: the description above covers a refusal for want of what a
+route requires.
+
 **Why MFA enrolment is two actions rather than one** (`P1-TSK-017`). *Started* and *confirmed* are
 different facts about the account: the first says somebody was offered a secret, the second says
 somebody **proved they hold it**, and only the second changes what can authenticate. Recording only

@@ -180,6 +180,7 @@ http:
         || (Method(`GET`) && PathRegexp(`^/v1/operator/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/write-offs/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
         || (Method(`POST`) && PathRegexp(`^/v1/operator/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/write-offs/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/approval$`))
         || (Method(`POST`) && PathRegexp(`^/v1/operator/loans/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/write-offs/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/rejection$`))
+        || (Method(`GET`) && Path(`/v1/operator/me`))
         || (Method(`POST`) && Path(`/v1/operator/merchants`))
         || (Method(`GET`) && PathRegexp(`^/v1/operator/merchants/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
         || (Method(`GET`) && PathRegexp(`^/v1/operator/merchants/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/api-keys$`))
