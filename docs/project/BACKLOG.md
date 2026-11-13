@@ -29568,6 +29568,15 @@ on none:
   metric available on `kind` (built and contract-tested, run owed: E41, PI-025); an operator admitted at the measured peak (built and
   contract-tested, run owed: E41, PI-025). **Owed under PI-025**: E41 at ten replicas; the first cluster run of `fleet_patch` and of the
   load scope's new steps at any count. **Routed**: `P16-TSK-014`, `-015`, `-022` (notes on their entries).
+  **Gate** (2026-11-13): `COMPLETE`. **Tests**, one fresh `:app:test` run of named classes after the last change (14:20-14:33Z, every
+  XML read newer than its start): 42 named classes, 548 tests, and the 7 ArchUnit suites the filter pulls in, 20 tests; 0 failed. The
+  named: the guards reading each changed file (the manifests, the rehearsal and load harness, the pins, the controller render, the alert
+  rules and their runbook sections, the documents, the ADRs) and the four always run. An earlier run (13:17-13:42Z) found
+  `ConfigFingerprintAlertTest` red at `kind`'s ten, fixed above. **Owed** to PI-023's kind: none (no database case written).
+  **Probes**: five performed and caught in two hermetic rounds (`MUTATION_TESTING.md` §2), none owed. **Ten instances**: `PASS` on
+  design (the budget a declaration checked at start on every replica and by the policy against the overlay's maximum; fixed-size pools;
+  every arbiter's lock transaction-scoped, now guarded; the autoscaler's metric read per pod by the API server); the counted run at ten
+  is E41's and E26's, owed.
 
 **P16-TSK-010 — Audit archival and the session sweep (`THREAT_MODEL.md` §6 item 18)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: as decided 2026-11-09, scheduled into Phase 16's archival:
