@@ -630,3 +630,8 @@ commit and the date; do not delete the entry.
     `ProviderExperimentsContractTest`. E19 and E20 are not owed here: E19 cannot be driven until a production path runs a KYC case's
     checks (`THREAT_MODEL.md` section 6 item 60), and E20 rests on the recorded fail-safe by the owner's decision of 2026-11-13 on
     unresolved question 13.
+  - The coordinator's rules split (2026-11-13, branch `P16-chore-rules-split`; `docs/project/history/CHANGE_LOG.md`): kind's rules
+    in two ConfigMaps, `finapp-prometheus-rules` and `finapp-prometheus-rules-domain`, projected into `/etc/prometheus-rules`. Owed:
+    the observability overlay applied client-side on a `kind` cluster, both ConfigMaps admitted, and the scraper's
+    `/api/v1/rules` listing every group of all thirteen rule files (`OPERATIONS_RUNBOOK.md` §11.34's alerts on `kind`). Proven
+    without a cluster only: the stream rendered, `kubeconform -strict` and the pipeline's policies green.
