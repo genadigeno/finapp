@@ -988,6 +988,12 @@ load_saturation() {
         > "$LOAD_ART/written-events-by-type.tsv" 2>&1 || true
     psql_query -F "$(printf '\t')" -c "SELECT consumer, count(*) FROM platform.inbox_message GROUP BY 1 ORDER BY 2 DESC" \
         > "$LOAD_ART/consumed-by-consumer.tsv" 2>&1 || true
+    # The settlement files and the reconciliation batches since the load began: when each arrived, was attested and last changed state.
+    psql_query -F "$(printf '\t')" -c "SELECT 'file', id, status, extract(epoch FROM received_at)::bigint, extract(epoch FROM attested_at)::bigint,
+        extract(epoch FROM status_changed_at)::bigint FROM settlement.file WHERE received_at >= to_timestamp($LOAD_FROM)
+        UNION ALL SELECT 'batch', id, status, extract(epoch FROM created_at)::bigint, NULL, extract(epoch FROM status_changed_at)::bigint
+        FROM reconciliation.reconciliation_batch WHERE created_at >= to_timestamp($LOAD_FROM) ORDER BY 4" \
+        > "$LOAD_ART/written-settlement.tsv" 2>&1 || true
     pg_admin -c "SELECT s.queryid, s.calls, round(s.total_exec_time::numeric, 1), round(s.mean_exec_time::numeric, 3), s.rows,
         left(regexp_replace(s.query, '\s+', ' ', 'g'), 300) FROM pg_stat_statements s JOIN pg_database d ON d.oid = s.dbid
         WHERE d.datname = 'finapp' ORDER BY s.total_exec_time DESC LIMIT 50" > "$LOAD_ART/pg-statements-final.txt" 2>&1 || true
