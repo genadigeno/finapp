@@ -71,6 +71,12 @@ DIR="$ROOT/infra/scripts/kind-rehearsal"
 # The failure-injection toolkit (P16-TSK-019): functions only, called under REHEARSAL_SCOPE=experiments.
 # shellcheck source=infra/scripts/kind-rehearsal/experiments.sh
 . "$DIR/experiments.sh"
+# The test-only brokers, one or three (P16-TSK-013): functions and the count, resolved once the scope is read.
+# shellcheck source=infra/scripts/kind-rehearsal/brokers.sh
+. "$DIR/brokers.sh"
+# The event pipeline at load (P16-TSK-013): functions only, called by the load scope's run (E47, E48).
+# shellcheck source=infra/scripts/kind-rehearsal/pipeline.sh
+. "$DIR/pipeline.sh"
 
 CLUSTER=${REHEARSAL_CLUSTER:-finapp-rehearsal}
 NODE="$CLUSTER-control-plane"
@@ -99,6 +105,8 @@ case $SCOPE in rotations | signals | incidents | delivery) N_ONLY=1 ;; esac
 [ "$SCOPE" != load ] || N_ONLY=1
 # The experiments scope (P16-TSK-019) too.
 [ "$SCOPE" != experiments ] || N_ONLY=1
+# The brokers (P16-TSK-013): three in the experiments scope, one or three in the load scope, one elsewhere; refused before anything is built.
+brokers_resolve
 # The platform scopes' API audit log (Q12): only they write one.
 AUDITED=""
 case $SCOPE in signals | incidents) AUDITED=1 ;; esac
@@ -390,11 +398,12 @@ make_ca() {
         -keyout ca.key -out ca.crt) >/dev/null 2>&1 || cannot "the local CA could not be generated"
 }
 
-# issue <name> <SAN list, comma-separated DNS:...>: <name>.key and <name>.crt, signed by the local CA, one day.
+# issue <name> <SAN list, comma-separated DNS:...> [extended key usage]: <name>.key and <name>.crt, signed by the local CA, one day. The
+# usage is serverAuth unless named: the brokers' certificate is a client's too, on their mutual-TLS listeners (P16-TSK-013).
 issue() {
     (cd "$CA_DIR" && openssl req -new -newkey rsa:2048 -nodes -subj "/CN=$1" -keyout "$1.key" -out "$1.csr") >/dev/null 2>&1 \
         || cannot "a key for $1 could not be generated"
-    printf 'subjectAltName=%s\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n' "$2" > "$CA_DIR/$1.ext"
+    printf 'subjectAltName=%s\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=%s\n' "$2" "${3:-serverAuth}" > "$CA_DIR/$1.ext"
     (cd "$CA_DIR" && openssl x509 -req -in "$1.csr" -CA ca.crt -CAkey ca.key -CAcreateserial -days 1 -extfile "$1.ext" \
         -out "$1.crt") >/dev/null 2>&1 || cannot "a certificate for $1 could not be issued"
 }
@@ -636,7 +645,8 @@ PG_HOST=finapp-postgres.finapp.svc.cluster.local
 KAFKA_HOST=finapp-kafka.finapp.svc.cluster.local
 SIM_HOST=finapp-simulator.finapp-rehearsal.svc.cluster.local
 issue postgres "DNS:$PG_HOST,DNS:finapp-postgres,DNS:finapp-postgres.finapp,DNS:finapp-postgres.finapp.svc"
-issue kafka "DNS:$KAFKA_HOST,DNS:finapp-kafka,DNS:finapp-kafka.finapp,DNS:finapp-kafka.finapp.svc"
+# The Service's names and each broker's own (P16-TSK-013), and a client's usage for the brokers' mutual TLS to one another.
+issue kafka "$(brokers_sans)" serverAuth,clientAuth
 issue simulator "DNS:$SIM_HOST,DNS:finapp-simulator,DNS:finapp-simulator.finapp-rehearsal"
 cat "$CA_DIR/kafka.key" "$CA_DIR/kafka.crt" "$CA_DIR/ca.crt" > "$CA_DIR/kafka-keystore.pem"
 SIM_STORE_PHRASE=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
@@ -649,7 +659,7 @@ jdk keytool -importcert -noprompt -alias local-ca -file ca/ca.crt -keystore ca/t
     >> "$ART/tls.log" 2>&1 || cannot "the JVM trust store could not be made"
 secret_of finapp finapp-kind-local-ca "ca.crt=$CA_DIR/ca.crt" "truststore.jks=$CA_DIR/truststore.jks"
 secret_of finapp finapp-kind-postgres-tls "tls.crt=$CA_DIR/postgres.crt" "tls.key=$CA_DIR/postgres.key"
-secret_of finapp finapp-kind-kafka-tls "keystore.pem=$CA_DIR/kafka-keystore.pem"
+secret_of finapp finapp-kind-kafka-tls "keystore.pem=$CA_DIR/kafka-keystore.pem" "truststore.pem=$CA_DIR/ca.crt"
 secret_of finapp-rehearsal finapp-simulator-tls "keystore.p12=$CA_DIR/simulator.p12" "store-phrase=$CA_DIR/simulator.password"
 
 printf '#!/bin/sh\nMSYS_NO_PATHCONV=1 exec docker exec -i "%s" kubectl --kubeconfig=/etc/kubernetes/admin.conf "$@"\n' "$NODE" > "$WORK/bin/kubectl"
@@ -686,6 +696,8 @@ A="$WORK/render/app"
 sed -i "s#finapp-app@sha256:0\{64\}#$IMAGE_APP_NM1#; s#finapp-migrator@sha256:0\{64\}#$IMAGE_MIGRATOR_NM1#" "$A/all.yaml" "$A/Deployment.finapp-app.yaml" "$A/Job.finapp-migrator.yaml"
 # The load scope's fleet at REHEARSAL_LOAD_REPLICAS (P16-TSK-007): the run's own rendered copy, the budget's formula at that count.
 [ "$SCOPE" != load ] || load_replicas_patch "$A"
+# The brokers at the run's count (P16-TSK-013), after the fleet's patch, which reads the overlay's own quota.
+brokers_render "$A"
 # Only under kube-router, which programs a new pod asynchronously (see kube-router.yaml): a Job pod's first connection, a JVM's start after it is created, can be
 # refused before its policy exists, and the migrator is built to fail fast on that and leave retries to its Job. A wait in front of it keeps that failure out of this
 # run's record; the Job itself is the base's, unchanged, and kindnetd needs none of this.
@@ -727,32 +739,8 @@ for file in "$A"/*.yaml; do
 done
 {
     printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: finapp-kind-kafka-config\n  namespace: finapp\n  labels:\n    finapp/test-only: "true"\ndata:\n  server.properties: |\n'
-    {
-        # The posture, from the catalogued file, overriding only replication: one node.
-        sed -e '/^#/d' -e '/^$/d' \
-            -e 's/^default.replication.factor=.*/default.replication.factor=1/' \
-            -e 's/^min.insync.replicas=.*/min.insync.replicas=1/' \
-            -e 's/^offsets.topic.replication.factor=.*/offsets.topic.replication.factor=1/' \
-            "$ROOT/infra/kafka/broker.properties"
-        cat <<PROPERTIES
-process.roles=broker,controller
-node.id=1
-controller.quorum.voters=1@localhost:9093
-controller.listener.names=CONTROLLER
-listeners=SASL_SSL://:9092,CONTROLLER://localhost:9093,LOCAL://localhost:9094
-advertised.listeners=SASL_SSL://$KAFKA_HOST:9092,LOCAL://localhost:9094
-inter.broker.listener.name=LOCAL
-listener.security.protocol.map=CONTROLLER:PLAINTEXT,LOCAL:PLAINTEXT,SASL_SSL:SASL_SSL
-listener.name.sasl_ssl.scram-sha-512.sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required;
-ssl.keystore.type=PEM
-ssl.keystore.location=/etc/finapp-kind-kafka-tls/keystore.pem
-authorizer.class.name=org.apache.kafka.metadata.authorizer.StandardAuthorizer
-super.users=User:ANONYMOUS
-log.dirs=/var/lib/kafka/data
-transaction.state.log.replication.factor=1
-transaction.state.log.min.isr=1
-PROPERTIES
-    } | sed 's/^/    /'
+    # One broker's lines as before, or three's (P16-TSK-013, kind-rehearsal/brokers.sh).
+    brokers_config | sed 's/^/    /'
 } | kube apply -f - >> "$ART/apply.log" 2>&1 || cannot "could not apply the broker's configuration"
 kube -n finapp rollout status statefulset/finapp-postgres --timeout=240s >> "$ART/apply.log" 2>&1 || fail "the test-only PostgreSQL did not become ready"
 kube -n finapp rollout status statefulset/finapp-kafka --timeout=300s >> "$ART/apply.log" 2>&1 || fail "the test-only broker did not become ready"
@@ -765,7 +753,14 @@ psql_query() {
 kafka_admin() {
     tool=$1
     shift
-    kube -n finapp exec -i finapp-kafka-0 -c kafka -- "/opt/kafka/bin/$tool" --bootstrap-server localhost:9094 "$@"
+    if [ "$KAFKA_BROKERS" = 1 ]; then
+        kube -n finapp exec -i finapp-kafka-0 -c kafka -- "/opt/kafka/bin/$tool" --bootstrap-server localhost:9094 "$@"
+    else
+        # Three brokers (P16-TSK-013): each advertises its loopback listener as localhost, so a tool there reaches only its own broker.
+        # The mutual-TLS listener names every broker by its own name; start.sh wrote the tool's client configuration in the pod.
+        kube -n finapp exec -i "$KAFKA_ADMIN_POD" -c kafka -- "/opt/kafka/bin/$tool" --bootstrap-server "$(brokers_name "${KAFKA_ADMIN_POD##*-}"):9095" \
+            --command-config /tmp/admin.properties "$@"
+    fi
 }
 
 # The experiments scope (P16-TSK-019): the fault proxy on the application's three hops and the synchronous standby, before any replica starts.
@@ -779,7 +774,12 @@ catalogue="$ROOT/infra/kafka/topics.yaml"
 partitions=$(sed -n '/^  domain-events:$/,/^topics:/s/^ *partitions: *\([0-9]*\) *$/\1/p' "$catalogue")
 [ -n "$partitions" ] || cannot "no partition count read from topics.yaml"
 topic_config=""
-for entry in min.insync.replicas=1 \
+# One and one at one broker; the catalogue's replication and min.insync.replicas at three (P16-TSK-013).
+replication=$(brokers_replication)
+# Read inside $( ), where a refusal ends only the subshell: judged again here.
+case $replication in [0-9]*' '[0-9]*) ;; *) cannot "the topics' replication could not be read: '$replication'" ;; esac
+topic_replication=${replication% *}
+for entry in "min.insync.replicas=${replication#* }" \
     "$(sed -n 's/^ *cleanup.policy: *\([a-z]*\).*/cleanup.policy=\1/p' "$catalogue")" \
     "$(sed -n 's/^ *retention.ms: *"\([0-9]*\)".*/retention.ms=\1/p' "$catalogue")" \
     "$(sed -n 's/^ *segment.ms: *"\([0-9]*\)".*/segment.ms=\1/p' "$catalogue")" \
@@ -792,7 +792,7 @@ topics=$(sed -n 's/^  \(finapp\.[a-z]*\): domain-events$/\1/p' "$catalogue")
 application_user=finapp_app
 for topic in $topics; do
     # shellcheck disable=SC2086
-    kafka_admin kafka-topics.sh --create --if-not-exists --topic "$topic" --partitions "$partitions" --replication-factor 1 $topic_config >> "$ART/kafka.log" 2>&1 \
+    kafka_admin kafka-topics.sh --create --if-not-exists --topic "$topic" --partitions "$partitions" --replication-factor "$topic_replication" $topic_config >> "$ART/kafka.log" 2>&1 \
         || cannot "could not create topic $topic: see kafka.log"
 done
 set --
@@ -803,7 +803,9 @@ kafka_admin kafka-acls.sh --add --allow-principal "User:$application_user" --ope
     || cannot "could not grant the topics"
 kafka_admin kafka-acls.sh --add --allow-principal "User:$application_user" --operation Describe --operation Read --group finapp. --resource-pattern-type prefixed >> "$ART/kafka.log" 2>&1 \
     || cannot "could not grant the consumer groups"
-log "$(printf '%s\n' "$topics" | wc -l) topics created with $partitions partitions and the application's ACLs"
+log "$(printf '%s\n' "$topics" | wc -l) topics created with $partitions partitions, replication $topic_replication, and the application's ACLs"
+# Three brokers (P16-TSK-013): every one ready, the quorum whole, every topic at the catalogue's posture with its replicas in sync.
+brokers_check
 
 # The delivery scope (P15-TSK-032) deploys nothing of its own from here to the census: the bootstrap, the release and the edge are Argo CD's
 # and the pipeline role's, in kind-rehearsal/delivery.sh, which is sourced once the census and the client below are defined.

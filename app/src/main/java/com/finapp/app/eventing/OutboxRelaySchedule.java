@@ -15,7 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.SmartLifecycle;
 
 /**
- * Runs {@link OutboxRelay#pollOnce()} on a fixed delay, on every instance (`P2-TSK-001`).
+ * Runs {@link OutboxRelay#pollOnce()} on a fixed delay, on every instance (`P2-TSK-001`), and again at once while a cycle
+ * comes back with its batch full and nothing failed (`P16-TSK-013`, ADR-0136: {@code tick()}).
  *
  * <h2>Every instance polls, deliberately — there is no leader</h2>
  *
@@ -45,7 +46,7 @@ import org.springframework.context.SmartLifecycle;
 @Slf4j
 public final class OutboxRelaySchedule implements SmartLifecycle {
 
-    private final OutboxRelay relay;
+    private final Poll relay;
     private final Duration pollInterval;
     private final Counter published;
     private final Counter failed;
@@ -53,7 +54,17 @@ public final class OutboxRelaySchedule implements SmartLifecycle {
 
     private final ScheduleDrain drain = new ScheduleDrain("outbox-relay");
 
+    /** One relay cycle: {@link OutboxRelay#pollOnce()} in production, a scripted one in the schedule's own test. */
+    @FunctionalInterface
+    interface Poll {
+        RelayPollResult pollOnce();
+    }
+
     public OutboxRelaySchedule(OutboxRelay relay, Duration pollInterval, MeterRegistry registry) {
+        this(Objects.requireNonNull(relay, "relay must not be null")::pollOnce, pollInterval, registry);
+    }
+
+    OutboxRelaySchedule(Poll relay, Duration pollInterval, MeterRegistry registry) {
         this.relay = Objects.requireNonNull(relay, "relay must not be null");
         this.pollInterval = Objects.requireNonNull(pollInterval, "pollInterval must not be null");
         if (pollInterval.isNegative() || pollInterval.isZero()) {
@@ -86,16 +97,28 @@ public final class OutboxRelaySchedule implements SmartLifecycle {
                             return thread;
                         });
         executor.scheduleWithFixedDelay(
-                this::pollQuietly, pollInterval.toMillis(), pollInterval.toMillis(), TimeUnit.MILLISECONDS);
+                this::tick, pollInterval.toMillis(), pollInterval.toMillis(), TimeUnit.MILLISECONDS);
         drain.started(executor);
     }
 
-    private void pollQuietly() {
+    /**
+     * One tick: a relay cycle, and another at once for as long as each comes back with its batch full and nothing failed
+     * (`P16-TSK-013`, ADR-0136). A fixed delay after every cycle capped each instance at one batch an interval, behind the
+     * target's checkout peak with no resource near its limit ({@code CAPACITY_MODEL.md} §3.4). A short cycle, a failed attempt
+     * or a thrown cycle ends the tick, so an idle outbox is polled once an interval and a broker in trouble is not hammered:
+     * each row keeps its own backoff. Before each further cycle the tick asks whether its stop has begun or its hold come on,
+     * and ends there ({@link ScheduleDrain}); the cycle in flight finishes as any tick's does. Nothing here touches what makes
+     * ten instances safe - the per-aggregate lock, the read inside it, the order and the conditional mark are the relay's.
+     */
+    void tick() {
         try {
-            RelayPollResult result = relay.pollOnce();
-            published.increment(result.published());
-            failed.increment(result.failed());
-            deadLettered.increment(result.deadLettered());
+            RelayPollResult result;
+            do {
+                result = relay.pollOnce();
+                published.increment(result.published());
+                failed.increment(result.failed());
+                deadLettered.increment(result.deadLettered());
+            } while (result.batchFull() && !drain.stopping() && !drain.held());
         } catch (RuntimeException failure) {
             // The class only: a JDBC or broker message can name hosts and identifiers.
             log.warn("Outbox poll failed: {}", failure.getClass().getSimpleName());
