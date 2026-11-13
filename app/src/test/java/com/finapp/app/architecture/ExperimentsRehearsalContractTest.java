@@ -116,9 +116,11 @@ class ExperimentsRehearsalContractTest {
         assertThat(function(read("infra/scripts/kind-rehearsal/telemetry.sh"), "telemetry_image")).contains("for node in ${NODES:-$NODE}; do");
         assertThat(function("experiments_render")).as("the base's DoNotSchedule on the zone again, which the kind overlay relaxes for one node")
                 .contains("sub(/ScheduleAnyway/, \"DoNotSchedule\")").contains("cannot \"the application's zone constraint could not be restored");
-        assertThat(function("experiments_topology_check")).as("three replicas ready on three nodes in three zones, read")
-                .contains("[ \"$ready\" = 3 ] || fail").contains("the three replicas share nodes").contains("are not in three zones")
-                .contains("topology.kubernetes.io/zone=DoNotSchedule");
+        // P16-TSK-014: the run's count (three by default; ten for the experiments written for a count, E45) over the three workers'
+        // nodes in three zones. Read "[ \"$ready\" = 3 ] || fail" and "the three replicas share nodes" until then.
+        assertThat(function("experiments_topology_check")).as("the run's replicas ready over the three workers' nodes in three zones, read")
+                .contains("[ \"$ready\" = \"$FLEET_REPLICAS\" ] || fail").contains("they share nodes").contains("are not in three zones")
+                .contains("[ \"$(printf '%s\\n' \"$nodes\" | grep -c .)\" = 3 ] || fail").contains("topology.kubernetes.io/zone=DoNotSchedule");
         assertThat(function("experiments_edge_addresses")).as("each edge reached on a worker running one of its own controllers")
                 .contains("public) NODE_IP=$address ;; operator) OPERATOR_IP=$address ;;");
         assertThat(harness).contains("--add-host \"operator.finapp.test:$OPERATOR_IP\"").contains("OPERATOR_IP=$NODE_IP");

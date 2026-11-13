@@ -5,7 +5,8 @@
 #   gzip -dc series... | awk -v pass=count  -v stages=<stages.txt> -v t0=<start> -v out=<latencies>  > <counts>
 #   sort <latencies>   | awk -v pass=report -v stages=<stages.txt> -v counts=<counts> -v ops="<op ...>" > k6/stages.tsv
 #
-# stages.txt holds one "seconds factor operation" line per stage ("-": every operation), in k6's seconds; speed (load.sh reads it from
+# stages.txt holds one "seconds factor operation" line per stage ("-": every operation), in k6's seconds, and a fourth field when the named
+# operation runs at its own factor beside every other at the stage's (P16-TSK-014, model.js); speed (load.sh reads it from
 # load/clock.tsv) is how many of those pass in one of the host's. A sample belongs to the stage its timestamp falls
 # in, counted from t0, the earliest first sample of any instance (k6 writes its virtual users from its start); a sample after the last
 # stage, an iteration finishing in the graceful stop, falls in the stage "tail". An iteration is counted when it arrives (k6 records
@@ -25,7 +26,7 @@ BEGIN {
     while ((getline line < stages) > 0) {
         k = split(line, f, " ")
         n++
-        secs[n] = f[1]; factor[n] = f[2]; only[n] = (k > 2) ? f[3] : "-"
+        secs[n] = f[1]; factor[n] = f[2]; only[n] = (k > 2) ? f[3] : "-"; own[n] = (k > 3) ? f[4] : ""
         upto[n] = upto[n - 1] + f[1] / speed
     }
     close(stages)
@@ -95,7 +96,7 @@ END {
             if (s == "tail" && !(key in seen)) continue
             from = sprintf("%.0f", (i <= n) ? upto[i - 1] : upto[n])
             to = (i <= n) ? sprintf("%.0f", upto[i]) : "-"
-            fct = (i <= n) ? ((only[i] == "-" || only[i] == op) ? factor[i] : 0) : "-"
+            fct = (i > n) ? "-" : (own[i] != "") ? ((only[i] == op) ? own[i] : factor[i]) : (only[i] == "-" || only[i] == op) ? factor[i] : 0
             arrivals = c[key SUBSEP "iterations"] + 0
             rate = (i <= n && secs[i] > 0) ? sprintf("%.3f", arrivals * speed / secs[i]) : "-"
             printf "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%d\n", op, s, from, to, fct, arrivals,

@@ -400,7 +400,11 @@ of pools would only queue more work inside a CPU-bound database. So:
 
 The HPA's metric on `kind` is metrics-server, installed by the `load` scope (`OPERATIONS_RUNBOOK.md` §11.49). **Not measured**, owed
 under `POSTPONED_ISSUES.md` PI-025: each replica's pools at the engineering workload at ten replicas, the peak there, an operator
-admitted at it and with the fleet held at 104 (E41); the peak during a rollout at ten (E26, `P16-TSK-014`).
+admitted at it and with the fleet held at 104 (E41); the peak during a rollout at ten (E26, `P16-TSK-014`). *(2026-11-13,
+`P16-TSK-014`: E26 built, beside the autoscaler's own scale from three to ten and back under load (E70) and the sustained profile at
+ten (E69), every one owed under PI-025; `OPERATIONS_RUNBOOK.md` §11.58. The autoscaler's target of 70% would not act at the engineering
+workload (derived from §3.4: the replicas near a third of their request there), so E70 moves the metric with a surge of sign-ins; its calibration
+is `P16-TSK-015`'s.)*
 
 ---
 

@@ -36,6 +36,8 @@
 #                      cannot pass;
 #   unbalanced-entry   60 s into the load the test-only superuser inserts a journal entry with one debit line and no credit: the next
 #                      sample fails and stops the run.
+#   scale-down-unbounded  (P16-TSK-014, with the autoscale profile) the autoscaler's scale-down policy removed before the load: every
+#                      surplus pod goes at once, and the formula at the count the Deployment is asked for fails (assert_within_count).
 # and one that must move the run's first limit (P16-TSK-007's entry):
 #   slow-statement     before the load the test-only superuser drops the outbox relay's index on pending rows
 #                      (platform.outbox_event_pending, V006) on the run's own server, never by a migration, so every relay poll on every
@@ -86,6 +88,19 @@
 #                        index build on ledger.journal_line (load/index-build.sql, THREAT_MODEL.md section 6 item 42 (b)) measures the
 #                        write stop a migration's CREATE INDEX makes under the load, and the throwaway index is dropped.
 # The probe of E38 (the lock order removed from the transfer's two account locks) is a throwaway branch's, section 11.48.
+#
+# TEN INSTANCES, AND THE AUTOSCALER DECIDING (P16-TSK-014; OPERATIONS_RUNBOOK.md section 11.58). A profile with "autoscale": true
+# (autoscale.json, E70) leaves the run's autoscaler at the overlay's floor and the run's count (kind-rehearsal.sh's fleet_patch, FLEET_AUTOSCALE),
+# so its CPU metric, and nothing of the harness, moves the fleet: the load starts with the fleet at the floor; the money mix at a quarter of
+# the target's peak throughout, and in the middle stage a surge of sign-ins, which the credential hash makes CPU-bound, at nine times the
+# target's sign-in peak (a stage of four fields, [seconds, factor, operation, its factor]: model.js). The autoscaler's own reading every 10 s
+# (load/autoscale.tsv) and the Deployment's count in every two-second connection sample; after the census, load_autoscale_judge: the count
+# taken to the run's own and every replica ready there, after a reading above the autoscaler's target; back at the floor within the load,
+# after a reading below it; the census sampled at ten and again at the floor; and every sample's connections within the formula at the count
+# the Deployment was asked for then (assert_within_count). Its probe, scale-down-unbounded, removes the autoscaler's scale-down policy before
+# the load: Kubernetes' default lets every surplus pod go at once, and the pods of ten then hold their pools at a count of three.
+# A fleet that moves (E70's autoscaler, E48's scale) is read by set, not by count, in every sample: each replica ready and not terminating
+# for the scrape's settling time must be scraped, and none may stand unready past its start's bound (load_scraped).
 
 LOAD_PROFILE_NAME=${REHEARSAL_LOAD_PROFILE:-demonstration}
 LOAD_CUSTOMERS=${REHEARSAL_LOAD_CUSTOMERS:-20}
@@ -120,6 +135,10 @@ LOAD_WALLET_MINOR=0
 LOAD_CONTENTION_ON=""
 LOAD_SOAK=""
 PG_PLANS_SUMMARY=""
+# P16-TSK-014: the profile's "autoscale" flag, read by load_preflight; the autoscaler's floor and target, read from the run's copy before the load.
+LOAD_AUTOSCALE=""
+LOAD_FLOOR=""
+LOAD_HPA_TARGET=""
 
 load_paths() {
     LOAD_ART="$ART/load"
@@ -170,14 +189,15 @@ load_seconds() {
 }
 
 # load_stages: a staged profile's stages, one "seconds factor operation" line each ("-" when every operation runs), shortened in proportion
-# to REHEARSAL_LOAD_DURATION exactly as scenarios.js shortens them (at least two seconds each); nothing for a profile without stages.
+# to REHEARSAL_LOAD_DURATION exactly as scenarios.js shortens them (at least two seconds each); nothing for a profile without stages. A stage
+# of four fields (P16-TSK-014, model.js) adds that operation's own factor as a fourth: every operation at the factor, the one named at its own.
 load_stages() {
     line=$(sed -n 's/^  "stages": \[\[\(.*\)\]\],$/\1/p' "$LOAD_PROFILE_FILE" | head -1)
     [ -n "$line" ] || return 0
     printf '%s\n' "$line" | sed 's/\], \[/\n/g' | tr -d '"' | awk -F', *' -v want="$(load_seconds "${LOAD_DURATION:-0s}")" '
-        { s[NR] = $1; f[NR] = $2; o[NR] = (NF > 2) ? $3 : "-"; total += $1 }
+        { s[NR] = $1; f[NR] = $2; o[NR] = (NF > 2) ? $3 : "-"; x[NR] = (NF > 3) ? " " $4 : ""; total += $1 }
         END { scale = (want > 0) ? want / total : 1
-              for (i = 1; i <= NR; i++) { t = int(s[i] * scale + 0.5); if (t < 2) t = 2; print t, f[i], o[i] } }'
+              for (i = 1; i <= NR; i++) { t = int(s[i] * scale + 0.5); if (t < 2) t = 2; print t, f[i], o[i] x[i] } }'
 }
 
 # load_total_seconds: the load's length - its stages' sum for a staged profile, its duration otherwise.
@@ -196,6 +216,7 @@ load_expected() {
         rate=$(load_operation_value "$1" rate)
         unit=$(load_seconds "$(load_operation_value "$1" per)")
         load_stages | awk -v op="$1" -v rate="$rate" -v unit="$unit" '
+            NF > 3 { target = int(rate * (($3 == op) ? $4 : $2) + 0.5); n += target * $1 / unit; next }
             { target = ($3 == "-" || $3 == op) ? int(rate * $2 + 0.5) : 0; n += target * $1 / unit } END { printf "%.1f", n }'
     else
         awk -v r="$(load_operation_value "$1" perSecond)" -v s="$(load_seconds "$LOAD_DURATION")" 'BEGIN { printf "%.1f", r * s }'
@@ -229,6 +250,24 @@ load_preflight() {
     case $LOAD_REPLICAS in '' | *[!0-9]*) cannot "REHEARSAL_LOAD_REPLICAS is a whole number, not '$LOAD_REPLICAS'" ;; esac
     [ "$LOAD_REPLICAS" -ge 3 ] && [ "$LOAD_REPLICAS" -le "$ceiling" ] \
         || cannot "REHEARSAL_LOAD_REPLICAS is 3 to $ceiling (the minimum to the kind overlay's ceiling), not '$LOAD_REPLICAS'"
+    # P16-TSK-014: a profile that lets the autoscaler decide (autoscale.json, E70) - room above the floor, never beside a scale the harness
+    # holds (E48's), and its own count of generator addresses unless the run names one; its probe only with it.
+    LOAD_AUTOSCALE=$(load_profile_value autoscale)
+    if [ "$LOAD_AUTOSCALE" = true ]; then
+        floor=$(sed -n 's/^  minReplicas: \([0-9]*\)$/\1/p' "$ROOT/deploy/base/horizontalpodautoscaler.yaml")
+        case $floor in '' | *[!0-9]*) cannot "the autoscaler's minReplicas could not be read from its base" ;; esac
+        [ "$LOAD_REPLICAS" -gt "$floor" ] \
+            || cannot "the autoscale profile needs room above the autoscaler's floor of $floor: REHEARSAL_LOAD_REPLICAS=$LOAD_REPLICAS"
+        [ -z "$PIPELINE_SCALE" ] || cannot "the autoscale profile lets the metric decide the count, and REHEARSAL_LOAD_SCALE holds it: one or the other"
+        FLEET_AUTOSCALE=1
+    fi
+    [ "$PROBE" != scale-down-unbounded ] || [ "$LOAD_AUTOSCALE" = true ] \
+        || cannot "PROBE scale-down-unbounded runs with the autoscale profile, whose count the autoscaler decides"
+    generators=$(load_profile_value generators)
+    if [ -n "$generators" ] && [ -z "${REHEARSAL_LOAD_GENERATORS:-}" ]; then
+        case $generators in '' | *[!0-9]*) cannot "the profile's generators is a whole number, not '$generators'" ;; esac
+        LOAD_GENERATORS=$generators
+    fi
     if [ -n "$(load_stages)" ]; then
         load_stages > "$LOAD_ART/stages.txt"
         log "a staged profile: $(grep -c . "$LOAD_ART/stages.txt") stages, $(load_total_seconds) s"
@@ -296,7 +335,12 @@ load_sample() {
         || ! grep -q '"status":"success"' "$s_out.gauges.json"; then
         s_verdict=UNREADABLE
         s_detail="Prometheus did not answer"
-    elif [ -z "$s_up" ] || [ -z "$s_ready" ] || [ "$s_up" != "$s_ready" ]; then
+    elif load_fleet_moves && ! load_scraped "$s_out"; then
+        # A fleet that moves (P16-TSK-014: E70's autoscaler, E48's scale) is read by set: a pod coming or going is read by neither side for a
+        # scrape, and a count compared with a count would stop every such run at its first step.
+        s_verdict=UNREADABLE
+        s_detail="the moving fleet:$LOAD_UNSCRAPED"
+    elif ! load_fleet_moves && { [ -z "$s_up" ] || [ -z "$s_ready" ] || [ "$s_up" != "$s_ready" ]; }; then
         s_verdict=UNREADABLE
         s_detail="${s_up:-no} replicas scraped of ${s_ready:-no} ready"
     elif ! grep -q '"result":\[\]' "$s_out.gauges.json"; then
@@ -334,6 +378,152 @@ load_sampler() {
             sleep 1
         done
     done
+}
+
+# ---------------------------------------------------------------------------------------------------
+# A fleet that moves, and the autoscaler deciding (P16-TSK-014; OPERATIONS_RUNBOOK.md section 11.58).
+# ---------------------------------------------------------------------------------------------------
+
+# load_fleet_moves: whether this run's count moves during the load - E48's scale, held by the harness at each count, or an autoscaled run.
+load_fleet_moves() {
+    [ -n "$PIPELINE_SCALE" ] || [ "$LOAD_AUTOSCALE" = true ]
+}
+
+# load_moving_bounds: what load_scraped allows a pod coming or going, each read and never copied. LOAD_SETTLE: a replica ready this long is
+# scraped - twice the kind Prometheus's scrape interval and its DNS listing's refresh, from its own configuration (the scrape Service publishes
+# a pod before it is ready, so a ready pod is normally scraped already). LOAD_UNREADY_BOUND: no pod stands unready longer than its startup
+# probe's budget and its readiness probe's window, from the run's own Deployment; past that it is a pod the run cannot read.
+load_moving_bounds() {
+    config="$ROOT/deploy/observability/overlays/kind/prometheus.yml"
+    scrape=$(sed -n 's/^  scrape_interval: \([0-9]*\)s$/\1/p' "$config" | head -1)
+    refresh=$(awk '/^  - job_name: finapp$/ {j = 1; next} j && /^  - job_name:/ {exit} j && $1 == "refresh_interval:" {sub(/s$/, "", $2); print $2; exit}' "$config")
+    for value in "$scrape" "$refresh"; do
+        case $value in '' | *[!0-9]*) cannot "the kind Prometheus's scrape interval or the finapp job's refresh could not be read: '$scrape', '$refresh'" ;; esac
+    done
+    LOAD_SETTLE=$((2 * (scrape + refresh)))
+    starting=$(probe_budget "$A/Deployment.finapp-app.yaml" startupProbe)
+    readying=$(probe_budget "$A/Deployment.finapp-app.yaml" readinessProbe)
+    [ "${starting:-0}" -gt 0 ] && [ "${readying:-0}" -gt 0 ] || cannot "the run's Deployment states no startup or readiness probe to bound a pod's start by"
+    LOAD_UNREADY_BOUND=$((starting + readying))
+    log "a moving fleet: a replica ready $LOAD_SETTLE s must be scraped, and none may stand unready past $LOAD_UNREADY_BOUND s from its creation"
+}
+
+# load_scraped <sample's artefacts>: the moving fleet read by set. Every replica ready and not terminating for LOAD_SETTLE seconds is among the
+# targets Prometheus scraped up; a pod not terminating and not ready LOAD_UNREADY_BOUND seconds after its creation is one the run cannot read
+# (a pod the machine could not schedule or keep running among them). A pod terminating is read by neither side. LOAD_UNSCRAPED names each
+# that failed. Never calls fail: it runs in the background sampler too.
+load_scraped() {
+    LOAD_UNSCRAPED=""
+    load_prom 'up{job="finapp"} == 1' > "$1.targets.json" 2>&1 || true
+    grep -q '"status":"success"' "$1.targets.json" || { LOAD_UNSCRAPED=" Prometheus did not list its targets"; return 1; }
+    kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o jsonpath='{range .items[*]}{.metadata.name}|{.status.podIP}|{.metadata.deletionTimestamp}|{.status.conditions[?(@.type=="Ready")].status}|{.status.conditions[?(@.type=="Ready")].lastTransitionTime}|{.metadata.creationTimestamp}{"\n"}{end}' \
+        > "$1.fleet.txt" 2>/dev/null || { LOAD_UNSCRAPED=" the pods could not be listed"; return 1; }
+    grep -q . "$1.fleet.txt" || { LOAD_UNSCRAPED=" no pod was listed"; return 1; }
+    now=$(date +%s)
+    grep -o '"instance":"[^"]*"' "$1.targets.json" | sed 's/^"instance":"\(.*\):[0-9]*"$/\1/' | sort -u > "$1.scraped.txt"
+    while IFS='|' read -r name address gone ready since born; do
+        [ -n "$name" ] && [ -z "$gone" ] || continue
+        if [ "$ready" = True ]; then
+            at=$(date -u -d "$since" +%s 2>/dev/null || echo "$now")
+            [ $((now - at)) -ge "$LOAD_SETTLE" ] || continue
+            grep -qxF "$address" "$1.scraped.txt" || LOAD_UNSCRAPED="$LOAD_UNSCRAPED $name ready $((now - at)) s and not scraped;"
+        else
+            at=$(date -u -d "$born" +%s 2>/dev/null || echo "$now")
+            [ $((now - at)) -lt "$LOAD_UNREADY_BOUND" ] || LOAD_UNSCRAPED="$LOAD_UNSCRAPED $name unready $((now - at)) s after its creation;"
+        fi
+    done < "$1.fleet.txt"
+    [ -z "$LOAD_UNSCRAPED" ]
+}
+
+# load_autoscale_floor: before an autoscaled run's load - the run's autoscaler deciding between its floor and the run's count, read from the
+# cluster as the run's copy wrote it, its target read from that copy; the fleet settled at the floor, nothing terminating, every pod ready.
+load_autoscale_floor() {
+    LOAD_FLOOR=$(sed -n 's/^  minReplicas: \([0-9]*\)$/\1/p' "$A/HorizontalPodAutoscaler.finapp-app.yaml" | head -1)
+    LOAD_HPA_TARGET=$(sed -n 's/^ *averageUtilization: \([0-9]*\)$/\1/p' "$A/HorizontalPodAutoscaler.finapp-app.yaml" | head -1)
+    [ -n "$LOAD_FLOOR" ] && [ -n "$LOAD_HPA_TARGET" ] || cannot "the run's autoscaler states no minReplicas or no CPU target"
+    held=$(kube -n finapp get hpa finapp-app -o jsonpath='{.spec.minReplicas}/{.spec.maxReplicas}' 2>/dev/null || true)
+    [ "$held" = "$LOAD_FLOOR/$LOAD_REPLICAS" ] \
+        || fail "the autoscaler is not left to decide: it holds $held, where the run's copy gives it $LOAD_FLOOR to $LOAD_REPLICAS"
+    deadline=$(( $(date +%s) + 900 ))
+    until [ "$(kube -n finapp get deployment finapp-app -o jsonpath='{.spec.replicas}/{.status.readyReplicas}' 2>/dev/null)" = "$LOAD_FLOOR/$LOAD_FLOOR" ] \
+        && [ "$(sample_fleet | awk -F'|' 'NF >= 3 && ($2 != "" || $3 != "True") {n++} END {print n + 0}')" = 0 ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || { kube -n finapp get pods -o wide > "$LOAD_ART/pods-at-failure.txt" 2>&1; kube -n finapp describe hpa finapp-app > "$LOAD_ART/hpa.txt" 2>&1; fail "the fleet did not settle at the autoscaler's floor of $LOAD_FLOOR before the load: see load/hpa.txt"; }
+        sleep 5
+    done
+    kube -n finapp get hpa finapp-app -o yaml > "$LOAD_ART/autoscale-spec.yaml" 2>&1 || true
+    kube -n finapp get pods -o wide > "$LOAD_ART/pods.txt" 2>&1 || true
+    pass "the fleet is at the autoscaler's floor of $LOAD_FLOOR, the autoscaler left to decide between $LOAD_FLOOR and $LOAD_REPLICAS on $LOAD_HPA_TARGET% of the pods' CPU request"
+}
+
+# load_autoscale_start: the probe's plant, then the autoscaler's own reading every 10 s from the load's start.
+load_autoscale_start() {
+    [ "$LOAD_AUTOSCALE" = true ] || return 0
+    if [ "$PROBE" = scale-down-unbounded ]; then
+        # PROBE scale-down-unbounded: the policy that lets one pod go per period no shorter than the grace removed; Kubernetes' default stands
+        # in its place, every surplus pod at once once the window has passed.
+        kube -n finapp patch hpa finapp-app --type=json -p '[{"op":"remove","path":"/spec/behavior/scaleDown"}]' >> "$LOAD_ART/plants.log" 2>&1 \
+            || cannot "PROBE scale-down-unbounded: the autoscaler's scale-down policy could not be removed: see load/plants.log"
+        log "PROBE scale-down-unbounded: the autoscaler's scale-down policy removed ($(kube -n finapp get hpa finapp-app -o jsonpath='{.spec.behavior.scaleDown.policies}' 2>/dev/null) in its place)"
+    fi
+    kube -n finapp get hpa finapp-app -o jsonpath='{.spec.behavior.scaleDown.policies}' > "$LOAD_ART/autoscale-scale-down.json" 2>&1 || true
+    load_autoscale_sampler &
+    BACKGROUND="$BACKGROUND $!"
+}
+
+# Every 10 s until the load stops: the count the Deployment is asked for and its ready replicas, the autoscaler's desired and current counts,
+# its own CPU reading (a percentage of the pods' request) and why it is limited or able to scale. Never judged here.
+load_autoscale_sampler() {
+    set +e
+    printf 'epoch\tcount\tready\tdesired\tcurrent\tutilisation\tlimited\table\n' > "$LOAD_ART/autoscale.tsv"
+    while [ ! -f "$WORK/load-stop" ]; do
+        started=$(date +%s)
+        deployment=$(kube -n finapp get deployment finapp-app -o jsonpath='{.spec.replicas}|{.status.readyReplicas}' 2>/dev/null)
+        reading=$(kube -n finapp get hpa finapp-app -o jsonpath='{.status.desiredReplicas}|{.status.currentReplicas}|{.status.currentMetrics[?(@.type=="Resource")].resource.current.averageUtilization}|{.status.conditions[?(@.type=="ScalingLimited")].reason}|{.status.conditions[?(@.type=="AbleToScale")].reason}' 2>/dev/null)
+        [ -z "$deployment" ] || [ -z "$reading" ] \
+            || printf '%s\t%s\t%s\n' "$started" "$(printf '%s' "$deployment" | tr '|' '\t')" "$(printf '%s' "$reading" | tr '|' '\t')" >> "$LOAD_ART/autoscale.tsv"
+        while [ "$(date +%s)" -lt $((started + 10)) ] && [ ! -f "$WORK/load-stop" ]; do
+            sleep 1
+        done
+    done
+}
+
+# load_autoscale_judge: after the census, an autoscaled run's scaling judged on the autoscaler's own readings and the census's samples:
+#   - read every 10 s through the load;
+#   - the count taken to the run's own with every replica ready there, and a reading above the autoscaler's target before it first rose;
+#   - the count back at the floor with every replica ready, within the load, and a reading below the target before it first fell;
+#   - the census sampled PASS with the fleet at the run's count, and again after its return to the floor (every sample is PASS: load_judge);
+#   - every two-second sample's connections within the formula at the count the Deployment was asked for then (assert_within_count).
+# Recorded: each change of the count, the most pods terminating at once, the autoscaler's events. Under the probe, the last must go red.
+load_autoscale_judge() {
+    file="$LOAD_ART/autoscale.tsv"
+    samples=$(awk 'NR > 1' "$file" | grep -c . || true)
+    [ "$samples" -ge $(( (LOAD_ENDED - LOAD_STARTED) / 10 * 9 / 10 )) ] \
+        || fail "the autoscaler was read $samples times over a load of $((LOAD_ENDED - LOAD_STARTED)) s, not every 10 s: see load/autoscale.tsv"
+    most=$(awk -F'\t' 'NR > 1 && $2 + 0 > m {m = $2 + 0} END {print m + 0}' "$file")
+    hottest=$(awk -F'\t' 'NR > 1 && $6 + 0 > m {m = $6 + 0} END {print m + 0}' "$file")
+    up=$(awk -F'\t' -v n="$LOAD_REPLICAS" 'NR > 1 && $2 == n && $3 == n {print $1; exit}' "$file")
+    [ -n "$up" ] || fail "the autoscaler did not take the fleet to $LOAD_REPLICAS ready replicas: it asked at most $most, its reading at most $hottest% of the pods' request against its target of $LOAD_HPA_TARGET%: see load/autoscale.tsv"
+    rose=$(awk -F'\t' -v f="$LOAD_FLOOR" 'NR > 1 && $2 + 0 > f {print $1; exit}' "$file")
+    above=$(awk -F'\t' -v r="$rose" -v t="$LOAD_HPA_TARGET" 'NR > 1 && $1 <= r && $6 ~ /^[0-9]+$/ && $6 + 0 > t {n++} END {print n + 0}' "$file")
+    [ "$above" -ge 1 ] || fail "the fleet rose above $LOAD_FLOOR at $(iso "$rose") with no reading of the autoscaler's above its target of $LOAD_HPA_TARGET% before it: not the metric's decision"
+    down=$(awk -F'\t' -v u="$up" -v f="$LOAD_FLOOR" 'NR > 1 && $1 > u && $2 == f && $3 == f {print $1; exit}' "$file")
+    last=$(tail -1 "$file" | awk -F'\t' '{print $2 " asked, " $3 " ready, " $6 "%"}')
+    [ -n "$down" ] || fail "the autoscaler did not bring the fleet back to $LOAD_FLOOR within the load: at its end $last: see load/autoscale.tsv"
+    fell=$(awk -F'\t' -v u="$up" -v n="$LOAD_REPLICAS" 'NR > 1 && $1 > u && $2 + 0 < n {print $1; exit}' "$file")
+    below=$(awk -F'\t' -v u="$up" -v d="$fell" -v t="$LOAD_HPA_TARGET" 'NR > 1 && $1 >= u && $1 <= d && $6 ~ /^[0-9]+$/ && $6 + 0 < t {n++} END {print n + 0}' "$file")
+    [ "$below" -ge 1 ] || fail "the fleet fell below $LOAD_REPLICAS at $(iso "$fell") with no reading of the autoscaler's below its target of $LOAD_HPA_TARGET% before it: not the metric's decision"
+    at_count=$(awk -F'\t' -v n="$LOAD_REPLICAS" 'NR > 1 && $1 != 0 && $4 == "PASS" && $5 ~ ("/" n "$")' "$LOAD_ART/samples.tsv" | grep -c . || true)
+    at_floor=$(awk -F'\t' -v d="$down" -v f="$LOAD_FLOOR" 'NR > 1 && $1 != 0 && $2 >= d && $4 == "PASS" && $5 ~ ("/" f "$")' "$LOAD_ART/samples.tsv" | grep -c . || true)
+    [ "$at_count" -ge 1 ] || fail "no census sample read the fleet at its $LOAD_REPLICAS ready replicas: see load/samples.tsv"
+    [ "$at_floor" -ge 1 ] || fail "no census sample read the fleet after its return to $LOAD_FLOOR: see load/samples.tsv"
+    kube -n finapp get events --field-selector involvedObject.kind=HorizontalPodAutoscaler,involvedObject.name=finapp-app \
+        -o custom-columns=LAST:.lastTimestamp,COUNT:.count,REASON:.reason,MESSAGE:.message > "$LOAD_ART/autoscale-events.txt" 2>&1 || true
+    awk -F'\t' 'NR > 1 && $8 ~ /^[0-9]+$/ {if (last != "" && $8 != last) print $1 "\t" last "\t" $8 "\t" $3; last = $8}' "$ART/samples-load.tsv" \
+        > "$LOAD_ART/autoscale-steps.tsv"
+    log "recorded: the autoscaler rose from $LOAD_FLOOR at $(iso "$rose"), reached $LOAD_REPLICAS ready $((up - LOAD_STARTED)) s into the load, began to fall at $(iso "$fell") and was back at $LOAD_FLOOR $((down - up)) s after it reached $LOAD_REPLICAS; each step in load/autoscale-steps.tsv, its events in load/autoscale-events.txt"
+    pass "the autoscaler decided the fleet on its metric: $LOAD_FLOOR to $LOAD_REPLICAS after $above readings above its $LOAD_HPA_TARGET% target, back to $LOAD_FLOOR after $below below it; the census sampled $at_count times at $LOAD_REPLICAS and $at_floor after the return, every sample PASS"
+    assert_within_count load
+    [ "$PROBE" != scale-down-unbounded ] || fail "PROBE scale-down-unbounded: every sample stayed within the formula at its count, so the assertion cannot fail"
 }
 
 # PostgreSQL's statistics and the containers' CPU and memory, every 10 s, into the artefacts. Never judged here.
@@ -473,6 +663,11 @@ load_scope() {
     load_judge
     step load-census
     load_census
+    # The autoscaler's decisions (P16-TSK-014, E70), judged after the census has counted one effect per key at the floor it returned to.
+    if [ "$LOAD_AUTOSCALE" = true ]; then
+        step load-autoscale
+        load_autoscale_judge
+    fi
     # The connection budget at the run's count (P16-TSK-009; OPERATIONS_RUNBOOK.md section 11.49; at ten, E41).
     step load-budget
     load_budget
@@ -488,6 +683,11 @@ load_target() {
     [ -n "$address" ] && [ "$address" = "$NODE_IP" ] || fail "the load's target: the generator's address $NODE_IP is not the node's ($address)"
     kube config current-context > "$LOAD_ART/context.txt" 2>&1 || true
     pass "the load's target is $NODE, a node of the kind cluster $CLUSTER, at $NODE_IP; the generator is given that address and no kubeconfig"
+    # An autoscaled run (P16-TSK-014, E70) starts at the autoscaler's floor, and the metric takes it from there.
+    if [ "$LOAD_AUTOSCALE" = true ]; then
+        load_autoscale_floor
+        return 0
+    fi
     # The fleet at the run's count (REHEARSAL_LOAD_REPLICAS): the HorizontalPodAutoscaler holds it there; the release waited for three.
     deadline=$(( $(date +%s) + 900 ))
     until [ "$(kube -n finapp get deployment finapp-app -o jsonpath='{.status.readyReplicas}' 2>/dev/null)" = "$LOAD_REPLICAS" ]; do
@@ -583,6 +783,8 @@ load_setup() {
     chmod 0777 "$LOAD_ART/k6"
     printf 'n\tepoch\ttime\tverdict\tscraped/ready\tclauses\tdetail\n' > "$LOAD_ART/samples.tsv"
     : > "$WORK/load-sample-failed"
+    # A fleet that moves is read by set (P16-TSK-014): its bounds read before the first sample.
+    ! load_fleet_moves || load_moving_bounds
     # The platform before the load: a sample that must read clean, or the load would be judged on what was there before it.
     load_sample 0
     [ ! -s "$WORK/load-sample-failed" ] || fail "the platform was not clean before the load: $(cat "$WORK/load-sample-failed"): see load/samples"
@@ -881,6 +1083,8 @@ load_run() {
     [ "$LOAD_SOAK" != true ] || load_soak_start
     # The event pipeline's runs (P16-TSK-013, kind-rehearsal/pipeline.sh: E47, E48): a scale's first count, the offsets, the sampler.
     pipeline_start
+    # An autoscaled run (P16-TSK-014, E70): the probe's plant, and the autoscaler's own reading from the load's start.
+    load_autoscale_start
     LOAD_FROM=$(db_epoch)
     load_clock start
     LOAD_STARTED=$(date +%s)
@@ -1212,8 +1416,10 @@ EOF
         case $driven in *" ${pair%%|*} "*) ;; *) printf '%s\tnot driven\n' "$route" >> "$LOAD_ART/spread.tsv"; continue ;; esac
         load_prom "count(sum by (instance) (increase(http_server_requests_seconds_count{job=\"finapp\",$route}[$window])) != 0)" > "$LOAD_ART/spread.json" 2>&1 || true
         served=$(sed -n 's/.*"value":\[[^,]*,"\([0-9]*\)"\].*/\1/p' "$LOAD_ART/spread.json")
-        # A fleet scaled during the load (E48, P16-TSK-013) was served by every replica it had, more than are ready at its end.
-        [ -n "$served" ] && { [ "$served" = "$ready" ] || { [ -n "$PIPELINE_SCALE" ] && [ "$served" -ge "$ready" ]; }; } \
+        # A fleet scaled during the load (E48, P16-TSK-013) was served by every replica it had, more than are ready at its end; one the
+        # autoscaler took to the run's count (E70, P16-TSK-014) by at least that many.
+        [ -n "$served" ] && { [ "$served" = "$ready" ] || { [ -n "$PIPELINE_SCALE" ] && [ "$served" -ge "$ready" ]; } \
+            || { [ "$LOAD_AUTOSCALE" = true ] && [ "$served" -ge "$LOAD_REPLICAS" ]; }; } \
             || fail "spread: ${served:-no} of $ready ready replicas served $route during the load"
         printf '%s\t%s\n' "$route" "$served" >> "$LOAD_ART/spread.tsv"
     done
@@ -1399,6 +1605,9 @@ load_census() {
         printf 'not driven\t%s\n' "$(load_operations none | tr '\n' ' ')"
         # P16-TSK-007: the fleet asked for, the stages run and the machine's clocks.
         printf 'replicas asked\t%s\n' "$LOAD_REPLICAS"
+        # P16-TSK-014: an autoscaled run asks the autoscaler, not the fleet, for its count.
+        [ "$LOAD_AUTOSCALE" != true ] || printf 'autoscaled\tbetween %s and %s replicas on %s%% of the pods'"'"' CPU request (load/autoscale.tsv)\n' \
+            "$LOAD_FLOOR" "$LOAD_REPLICAS" "$LOAD_HPA_TARGET"
         printf 'stages\t%s\n' "$(tr '\n' ';' < "$WORK/stages.txt")"
         printf 'k6 seconds a host second\t%s (the VM'"'"'s monotonic clock against the host'"'"'s, load/clock.tsv: k6 schedules and times by the first)\n' "$LOAD_SPEED"
     } > "$LOAD_ART/workload.txt"
