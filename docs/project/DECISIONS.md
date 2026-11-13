@@ -1443,6 +1443,15 @@ generation on the reporting pool, that pool on the writer's address, the driver 
 only read ever eligible for a replica, under stated conditions. Each decision's overturning reading, E65, is built and owed under
 `POSTPONED_ISSUES.md` PI-025; report generation's from-inception fold is `THREAT_MODEL.md` §6 item 64. → [ADR-0142](../adr/ADR-0142-no-table-partitioned-and-no-read-replica-routed-at-the-target.md)
 
+**Capacity calibration: the autoscaler on CPU alone, a burst never scaled, the limits kept by derivation, no role split (proposed).**
+The autoscaler scales on the pods' CPU and nothing that rises when the single writer is the limit; its 70% target is derived from the
+measured per-operation costs at the target's peak (four replicas); its scale-up window is twice W2's burst (120 s), so a burst the
+standing fleet carries never adds a pod; its scale-down window at least a grace. The per-source limits and the edge's tiers keep their
+numbers, now derived against one person's need and a shared address of R6's 1,000 active customers, held by a guard; the front door is
+designed only. No `api`/`worker` split: the first limit is the writer, which a split does not relieve, and fewer relays would drain less;
+E77 would reopen it. The confirming runs (E75-E77) are owed under `POSTPONED_ISSUES.md` PI-025; the shared address's fate and the
+autoscaler's signals are `THREAT_MODEL.md` §6 item 67. → [ADR-0145](../adr/ADR-0145-capacity-calibration-and-no-role-split.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

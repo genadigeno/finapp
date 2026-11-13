@@ -3261,6 +3261,7 @@ latest; the run, as its record names it.
 | §11.56 | `ledger`, `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
 | §11.57 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.58 | `platform` | 0 | 6 | 6 | — | — | — | — | Phase 16 drill |
+| §11.60 | `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -3766,8 +3767,8 @@ When a carried finding stops occurring (compare the printed findings with the fi
   refuses any other sum). Never a smaller pool to
   make it fit, and never a transaction-mode pooler without its own ADR: ADR-0134 says why.
 - **A stop bound in the code**: `KubernetesManifestsTest` goes red until `manifest-policy/shutdown-budget.yaml` agrees. Then
-  raise `terminationGracePeriodSeconds`, `minReadySeconds` with it, and the autoscaler's scale-down `periodSeconds` if the
-  grace passes it.
+  raise `terminationGracePeriodSeconds`, `minReadySeconds` with it, and the autoscaler's scale-down `periodSeconds` and
+  `stabilizationWindowSeconds` if the grace passes either *(the window since 2026-11-13, the calibration, §11.60: the policy holds it at the grace)*.
 - **The pool's `connection-timeout`**: the readiness probe's `timeoutSeconds` must outlast it, or a lost database reads as a
   probe timeout rather than a `503`.
 - **`FINAPP_DB_SERVER_MAX_CONNECTIONS`**: on a managed database the same line of the same overlay sets the server, so it is
@@ -3897,8 +3898,7 @@ read it as one. Never edit the committed file by hand: the test fails on any dif
 **A client gets a `404` from the edge.** Either the method and path are not on the surface's list, or the path uses a refused encoded character. A path variable value must be letters, digits,
 `_` and `-`, with a dot only between other characters. The controller's JSON access log has the request; there is no application record, because the application was not reached.
 
-**A provider's or a merchant's traffic gets a `429`.** The limits in `public-edge.yaml` are coarse, one bucket per source across each tier's routes per controller replica, in rate (`source-*`) and in requests held in flight (`hold-*`), and are reference numbers until Phase 16 calibrates
-them. Raising one is a change to that file: read the tier's comment first. Raising a `hold-*` amount also moves the sum `EdgeAllowListTest` holds under the spool.
+**A provider's or a merchant's traffic gets a `429`.** The limits in `public-edge.yaml` are coarse, one bucket per source across each tier's routes per controller replica, in rate (`source-*`) and in requests held in flight (`hold-*`), calibrated 2026-11-13 and kept, each times the two controllers against its sources' need (`CAPACITY_MODEL.md` §4a.3, §11.60) *(read "reference numbers until Phase 16 calibrates them" until then)*. Raising one is a change to that file: read the tier's comment first. Raising a `hold-*` amount also moves the sum `EdgeAllowListTest` holds under the spool.
 
 **Large bodies answer `500` and small ones are fine.** The controller's spool is full. A body or response past 64 KiB spools to `/tmp`, a memory-backed volume of 256 MiB, before anything has authenticated. One source cannot fill it at the limits above; several can, and an abandoned upload's spool is held until the proxy's next garbage collection, under two minutes as measured. No pod is evicted or restarted, and a rollout clears it at once. While a request lasts, a KYC document or a settlement file past 64 KiB sits on that volume in plaintext: in RAM, never on the node's disk.
 
@@ -3933,11 +3933,11 @@ suspect issuer is no fix.
 
 *(Written by `P15-TSK-022`, 2026-11-09, from the code and its tests. The counted case across real instances is owed to `P15-TST-002`, postponed as `POSTPONED_ISSUES.md` PI-023; it has run on a scratch PostgreSQL by hand and on no cluster. On 2026-11-12 `P15-TSK-032`'s `incidents` scope gained the section's steps on `kind` (a source past a lowered limit, the limit raised, a store that cannot count) and never ran them, PI-024.)*
 
-**What is there.** The five routes that need no session and no signature (registration, sign-in, recovery, recovery completion, channel verification) are each counted per source and fixed window in the unlogged table `platform.window_counter`, across every replica. The numbers are `finapp.abuse.*` in `application.yaml`, reference values calibrated by Phase 16. The edge's limits (§11.26) are a first, coarse layer, per controller; these are the ones that count. A provider's callback is not counted: its signature is checked first and a forged one writes nothing.
+**What is there.** The five routes that need no session and no signature (registration, sign-in, recovery, recovery completion, channel verification) are each counted per source and fixed window in the unlogged table `platform.window_counter`, across every replica. The numbers are `finapp.abuse.*` in `application.yaml`, calibrated 2026-11-13 and kept (`CAPACITY_MODEL.md` §4a.2, §11.60). The edge's limits (§11.26) are a first, coarse layer, per controller; these are the ones that count. A provider's callback is not counted: its signature is checked first and a forged one writes nothing.
 
 **What a source is.** The connection's address as the edge set it (`FINAPP_EDGE_PROXIES`, §11.26): an IPv4 address whole, an IPv6 address by its /64, hashed under `FINAPP_ABUSE_BUCKET_KEY` to one of 65,536 buckets, and the table holds no address. Registration, sign-in and the recovery request are counted per IPv6 /48 as well, after the /64 (a /48 holds 65,536 /64s, and each of those doors does work a holder of many /64s would multiply). So a carrier's NAT is one source, a host's whole /64 is one source, and two unlucky sources can share a bucket.
 
-**`PublicDoorsRefusingMost` (ticket).** Over half of the last 15 minutes' requests at the doors refused, at least 50 of them. A real flood at a door looks like this, and so does a wrong address: if `FINAPP_EDGE_PROXIES` is wrong, or the load balancer's client-address preservation is off, the edge's own address becomes every client's source and the doors refuse almost everyone. Check those two first when `outcome="refused"` rises across every door at once. **A shared address is not a fault**: behind a carrier's NAT or an office, one device can spend sign-in's budget for everyone there, because a successful sign-in counts too, and the 11th new customer from an address in an hour waits for the window. `THREAT_MODEL.md` section 6 item 33 (b).
+**`PublicDoorsRefusingMost` (ticket).** Over half of the last 15 minutes' requests at the doors refused, at least 50 of them. A real flood at a door looks like this, and so does a wrong address: if `FINAPP_EDGE_PROXIES` is wrong, or the load balancer's client-address preservation is off, the edge's own address becomes every client's source and the doors refuse almost everyone. Check those two first when `outcome="refused"` rises across every door at once. **A shared address is not a fault**: behind a carrier's NAT or an office, one device can spend sign-in's budget for everyone there, because a successful sign-in counts too, and the 11th new customer from an address in an hour waits for the window. `THREAT_MODEL.md` section 6 item 33 (b). *(2026-11-13, the calibration, §11.60: the numbers are derived and kept. A shared address of a thousand active customers is not refused by volume at the busiest hour; one device spending the budget for everyone there is item 67 (a), the owner's.)*
 
 **Reading it.** `finapp.abuse.requests{type,outcome}`: `type` is the door, and `outcome` is `admitted`, `refused`, or one of the three reasons for a `503` below. **This meter is the whole record of a refused request**: a refusal writes no audit row and no log line per request, by design, because either would let a flood write the table or fill the log. A rise in `refused` on one door is somebody at that door; the rows (`SELECT scope, count(*), sum(admitted) FROM platform.window_counter GROUP BY 1`) say how many buckets are in use and how many requests were admitted, and never who.
 
@@ -6209,6 +6209,83 @@ autoscaled run at the floor refused; the step's bound read from the render; the 
 `pipeline_preflight`'s counts to ten), the pinned k6's `inspect` of the `autoscale` profile (sign-ins at 60,003 iterations per 1,000 s in
 the surge, every other operation at its quarter), and the harness's refusals of a count past the ceiling, a release probe at ten and an
 experiment written for three. `TenInstancesRehearsalContractTest` holds what the runs would assert.
+
+### 11.60 Capacity calibration: reading the autoscaler, changing a target, a window or a limit, and the runs that confirm them (`P16-TSK-015`, ADR-0145)
+
+**What is there.** Every number that sizes the fleet or guards a door now has its derivation in `CAPACITY_MODEL.md` §4a, each derived from the
+target's rates and the per-operation costs measured at three replicas, none measured at its own value. The autoscaler scales on the pods' CPU
+alone, at 70% of their 500m request (four replicas at the target's peak); its scale-up window is 120 s, twice W2's burst, so a burst the
+standing fleet carries never adds a pod; its scale-down window 300 s and one pod per 120 s, each at least the grace. The pods' resources, the
+quotas, the doors' per-source limits (§11.30) and the edge's tiers (§11.26) keep their numbers. No `api`/`worker` split: every replica runs
+every role (ADR-0145 decision 9). Nothing here is production capacity (ADR-0126 decision 1).
+
+**Reading the autoscaler.** `kubectl -n finapp describe hpa finapp-app` (the `finapp-read-only` role holds it): the count it wants and has, its CPU reading
+against 70%, and its conditions. `ScalingLimited` with `TooManyReplicas` means the fleet stands at its ceiling: seven in production, the
+owner's (`THREAT_MODEL.md` §6 item 56), never raised by an operator. Before asking for more replicas, read the database's CPU: the first limit
+measured is the single writer's (`CAPACITY_MODEL.md` §3.4), and replicas added there add load and connections to it; the shedding door
+(§11.52) is what protects the fleet meanwhile. `ScalingActive` false with `FailedGetResourceMetric` events means it cannot read its metric
+and holds its count: the metrics source is the environment's own. No alert says either yet: `THREAT_MODEL.md` §6 item 67 (b). A count that
+rises and falls within minutes of a short burst is the oscillation the scale-up window exists to stop: read the window in the live object
+against `deploy/base/horizontalpodautoscaler.yaml`.
+
+**Changing the autoscaler's target or a window.** A commit to `deploy/base/horizontalpodautoscaler.yaml` (or an overlay's patch), with its
+derivation written again in `CAPACITY_MODEL.md` §4a.1 first, then §11.14's check. The manifest policy refuses a scale-down window or period
+below the grace (`[hpa-scale-down]`); `KubernetesManifestsTest` refuses a second metric or any metric but CPU, and a scale-up window under
+twice W2's burst, which it reads from the capacity model. A different metric is a new ADR, never an edit (ADR-0145 decision 1). Changing the
+pods' CPU request changes what 70% means in cores: derive the target again with it.
+
+**Changing a per-source limit.** §11.30's procedure: the overlay's `FINAPP_ABUSE_<DOOR>_LIMIT` (and `_SITE_LIMIT`), then roll.
+`PerSourceLimitsAreCalibratedTest` refuses a limit, shipped or set by any overlay, below one person's need at its door (sign-in: the lockout's
+ten failures and a success; every other door three), and a sign-in limit below a shared address of R6's 1,000 active customers at the busiest
+hour's burst; it reads W2, W3 and R6 from the capacity model, so a changed assumption turns it red until the limit is derived again. A shared
+address refused at sign-in by one device's retries is not a number to raise: §11.30's paragraph, and `THREAT_MODEL.md` §6 item 67 (a). The edge's
+tiers (§11.26) are held by the same test against their sources, per controller times the public edge's two: a change to the controllers' count
+moves every tier's ceiling.
+
+**The burst run and its probe** (E75, E76; `RESILIENCE_EXPERIMENTS.md`):
+
+```
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=burst REHEARSAL_LOAD_REPLICAS=7 infra/scripts/kind-rehearsal.sh
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=burst REHEARSAL_LOAD_REPLICAS=7 REHEARSAL_PROBE=abuse-below-need infra/scripts/kind-rehearsal.sh
+```
+
+The `burst` profile (`load/burst.json`) is W2's shape at the scale `kind` carries: the mix at a third of E30's step 3 for nine minutes, then
+sixty seconds at that step with sign-ins at three times their target peak, six times. The run's copy leaves the autoscaler free between three
+and seven (`fleet_patch`'s autoscaled copy, as E70's). *Derived*: each burst takes three pods to about 114% of their request, above the target,
+and each gap leaves them near 12%. After the census, `load_burst_judge` reads `load/autoscale.tsv`: a reading above the target inside a burst
+or within 90 s after it (else the run could not measure, exit 2), then the count asked and the autoscaler's desired count never above three
+(a pod added for a burst fails the run), then no sign-in answered 429 by any per-source limit (`load/k6/statuses.tsv`). Each burst's readings
+are in `load/bursts.tsv`; latency, errors by status and shed answers per stage are recorded for `P16-TSK-029`'s judgement, never a verdict here.
+The probe, `abuse-below-need`, sets the run's own sign-in limit to the lockout's threshold, read from `LockoutPolicy.java`, in the run's
+ConfigMap before anything is applied (`load_render`): the doors refuse legitimate sign-ins, and the run must go red at the door assertion with
+the refusals counted.
+
+**The role split's reading** (E77):
+
+```
+REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=background infra/scripts/kind-rehearsal.sh
+```
+
+The `background` profile holds the engineering workload (E30's step 3) for ten, fifteen and ten minutes at three replicas. At the second stage's
+start the harness orders the run's own published events of every handled type replayed through the audited operator door, in windows of at
+most 900 (E49's form, §11.51), so every consumer group and the relay work while the generator holds its rate (`load_background_tick`).
+After the census, `load_background_judge`: every window requeued whole (else the run could not measure), the outbox drained and every group
+settled; then `load/role-split.tsv`, each stage's p50 and p99 per operation beside the replicas' CPU, throttled and limited periods, live
+threads and pool queue and the database's CPU and throttling. Read it against ADR-0145 decision 9: the split is reopened, by an ADR, only
+if the background stage's request latency rose with the replicas' own throttling or threads while the database's CPU stayed below its
+limit. A rise that follows the database's CPU is the writer's, which a split does not relieve.
+
+**The front door, designed only.** `CAPACITY_MODEL.md` §4a.3 sizes it for a real environment: per source, 120 requests a second sustained
+and 130 in flight in front of the edge, the merchants' and providers' paths at their tiers' ceilings. It is chosen and applied with that
+environment, its provider's documentation read then; nothing here applies one.
+
+**Failure and rollback.** The window and the policy's floor are manifest values: revert the commit and roll (§11.14). The runs are
+throwaway clusters of their own names; the probe's lowered limit exists only in its run's directory.
+
+**The record.** None. Not run, owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of 2026-11-13, "we dont need long running checks and
+tests"): E75, its probe E76, and E77. What ran instead, on 2026-11-13, without a cluster: `KubernetesManifestsTest`,
+`PerSourceLimitsAreCalibratedTest` and `CapacityCalibrationRehearsalContractTest`, and the manifest policy's scale-down rule over a planted
+window under the grace in a container (`MUTATION_TESTING.md` §2).
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

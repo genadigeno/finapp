@@ -143,9 +143,10 @@ server:
 # ---------------------------------------------------------------------------
 finapp:
   # The public doors' per-source limits (P15-TSK-022, OPERATIONS_RUNBOOK.md 11.30). One bucket per source per window across every
-  # replica, arbitrated in PostgreSQL: the edge's limits are a first, coarse layer. Reference numbers, calibrated by Phase 16 against
-  # real traffic. They are per address and not per person, so a shared address (a carrier's NAT, an office) shares one budget and
-  # one device there can spend it for everyone: THREAT_MODEL.md section 6 item 33.
+  # replica, arbitrated in PostgreSQL: the edge's limits are a first, coarse layer. Calibrated 2026-11-13 and kept: each is at least one
+  # person's need, and sign-in carries a shared address of a thousand active customers at the busiest hour's burst (docs/architecture/
+  # CAPACITY_MODEL.md section 4a, PerSourceLimitsAreCalibratedTest). They are per address and not per person, so a shared address (a
+  # carrier's NAT, an office) shares one budget and one device there can spend it for everyone: THREAT_MODEL.md section 6 item 67.
   abuse:
     registration:
       limit: ${FINAPP_ABUSE_REGISTRATION_LIMIT:10}

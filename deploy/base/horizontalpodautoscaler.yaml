@@ -1,4 +1,5 @@
-# The sole owner of the replica count. Targets are reference figures, calibrated in Phase 16.
+# The sole owner of the replica count. Calibrated 2026-11-13 (docs/architecture/CAPACITY_MODEL.md section 4a, ADR-0145): every number below
+# is derived there from the target's rates and the per-operation costs measured at three replicas, and names the run that confirms it.
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -12,6 +13,9 @@ spec:
   # Bounded by the budget: 7 + 2 x maxSurge + 1 = 10 = FINAPP_DB_INSTANCES. Ten takes a larger declared server first, 13 x 8 + 12 = 116
   # (ADR-0134, kind's overlay); production stays at seven until the ten-instance runs and the calibration (THREAT_MODEL.md section 6 item 56).
   maxReplicas: 7
+  # CPU, the one resource a replica adds. Never latency, the pool's queue or the request rate: they rise when the single writer is the limit
+  # (the first limit measured), where more replicas would add load and connections to it. 70% of the 500m request is 0.35 of a core a pod:
+  # four replicas at the target's peak (about 1.37 cores), each at about half its 2-core limit through W2's burst.
   metrics:
     - type: Resource
       resource:
@@ -22,6 +26,7 @@ spec:
   behavior:
     # One pod per period no shorter than the grace, so a step's pod is gone before the next is told to
     # stop: the budget's single extra terminating pod. Slow on purpose, every step is a consumer rebalance.
+    # The window is at least one grace too (the policy holds both), so each step is read after the last one's pod has gone.
     scaleDown:
       stabilizationWindowSeconds: 300
       selectPolicy: Max
@@ -29,8 +34,10 @@ spec:
         - type: Pods
           value: 1
           periodSeconds: 120
+    # Twice W2's 60 s burst: the autoscaler scales up to the lowest count it computed in the window, always one from outside a burst, so a
+    # burst the standing fleet carries never costs a pod that arrives after it, two rebalances and a pool opened and closed (E75).
     scaleUp:
-      stabilizationWindowSeconds: 60
+      stabilizationWindowSeconds: 120
       selectPolicy: Max
       policies:
         - type: Pods

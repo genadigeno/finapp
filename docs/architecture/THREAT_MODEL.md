@@ -399,7 +399,9 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T1 | The table cannot be grown without limit: one count's window holds at most 65,537 rows whatever arrives, ended windows are swept on the database's clock, and a set of windows one instance's sweep could not keep up with at the worst the key space allows stops the instance at start. The table holds no address | EXISTS | `platform/src/test/java/com/finapp/platform/abuse/SourceBucketTest.java#theKeySpaceIsBounded`; `app/src/test/java/com/finapp/app/abuse/SourceLimitBudgetTest.java#oneInstancesSweepOutrunsEveryDoor`; `app/src/test/java/com/finapp/app/abuse/SourceLimitInterceptorTest.java#aConfigurationTheSweepCannotHoldDoesNotStart`; `platform/src/test/java/com/finapp/platform/abuse/WindowCounterDatabaseTest.java#theSweepDeletesEndedWindowsOnly` |
 | T1 | A source cannot spend a named victim's budget by computing an address that shares its bucket: the bucket is HMAC-SHA-256 under one deployment-wide key from the secret store, and the marked local default is refused off loopback | EXISTS | `platform/src/test/java/com/finapp/platform/abuse/SourceBucketTest.java#theKeyDecidesTheBucket`; `platform/src/test/java/com/finapp/platform/abuse/SourceBucketTest.java#theKeyIsStable` |
 | T1 | The window is the database's: the statement binds no instant and the class holds no clock | EXISTS | `app/src/test/java/com/finapp/app/architecture/StoredBoundsAreTheDatabasesTest.java#theWindowCounterIsTheDatabases`; `platform/src/test/java/com/finapp/platform/abuse/WindowCounterDatabaseTest.java#theWindowIsTheDatabases` |
-| T1 | Behind a shared address, one device can spend the door's budget for everyone there: sign-in counts successes too, so its 100 per 15 minutes is seconds of one client's retries, and the 11th new customer from an address in an hour waits up to an hour. The limits are per address, and their numbers rest on no traffic yet | GAP | `owner item 33`; owner: the owner, since 2026-11-09 |
+| T1 | The per-source limits are calibrated against what they must carry, every input read: no door's limit, shipped or set by any overlay, is below one person's need in its window (sign-in's the identity lockout's ten failures and a success, read from the code; every other door an attempt and two retries), and sign-in's carries a shared address of the capacity model's R6 active customers in the busiest hour with W2's burst inside the window and every sign-in retried once, W2, W3 and R6 read from the model; the edge's door and session tiers carry such an address at W2's spike across the public controllers | EXISTS | `app/src/test/java/com/finapp/app/abuse/PerSourceLimitsAreCalibratedTest.java#noDoorRefusesOnePerson`; `app/src/test/java/com/finapp/app/abuse/PerSourceLimitsAreCalibratedTest.java#signInCarriesASharedAddressAtTheBusiestBurst`; `app/src/test/java/com/finapp/app/abuse/PerSourceLimitsAreCalibratedTest.java#theEdgeTiersCarryTheirSources` |
+| T1 | Behind a shared address, one device can still spend a door's budget for everyone there for the rest of its window (sign-in's 15 minutes, registration's hour): the calibrated numbers carry the address's volume, and no number answers its fate, which needs a different key (a device-bound bucket, or failures counted rather than attempts) | GAP | `owner item 67`; owner: the owner, since 2026-11-13 |
+| T1 | The calibrated limits seen on a cluster: W2's bursts of sign-ins through the edge refused by no per-source limit, and a limit below one person's need seen refusing them, counted by status (E75, E76). Built and contract-tested; their runs postponed by the owner with Phase 16's other cluster runs | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
 | T2 | The actuator is an allow-list: `env`, `beans`, `configprops`, `threaddump`, `loggers`, `mappings`, `metrics`, `conditions` and `scheduledtasks` answer `404` | EXISTS | `app/src/test/java/com/finapp/app/api/HealthEndpointTest.java#theEndpointAllowListHolds` |
 | T2 | `heapdump`, `shutdown` and `caches` answer `404` | EXISTS | `app/src/test/java/com/finapp/app/api/HealthEndpointTest.java#theEndpointsBehindASecondGateAreAlsoAbsent` |
 | T2 | A health response is a status and nothing else, and `info` carries build identity and nothing about the machine | EXISTS | `app/src/test/java/com/finapp/app/api/HealthEndpointTest.java#healthPublishesStatusAndNothingElse`; `app/src/test/java/com/finapp/app/api/HealthEndpointTest.java#infoCarriesBuildIdentityOnly` |
@@ -637,6 +639,9 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T14 | A database connection the network black-holes (after a failover, a hung or vanished server) is given up by the driver after the data source's socket timeout, five minutes, rather than holding its thread and one of the pool's seven until the pod is replaced; the reporting pool takes the same value; it stays above every statement bound the code arms on either pool (report generation's four minutes the longest), the bounds discovered from the arming sites and the register and moved by no overlay, and frees a connection with ten minutes of the in-region recovery objective left | EXISTS | `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#theDataSourceGivesUpABlackHoledConnection`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#itIsAboveEveryArmedBound`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#theBoundsAreDiscovered`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#theReportingPoolCarriesIt`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#itFreesABlackHoledConnectionInTime` |
 | T14 | On a real cluster, the black-holed database hop held for the whole fleet: every held connection given up within the socket timeout, and, as the control, still held without it; the longest statement under the sustained profile measured below half the timeout | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
 | T14 | Report generation bounded: its trial-balance definitions fold the journal from inception, so one statement's cost grows with the journal's lifetime and, at the target, passes the four-minute generation bound within the first year unless it folds more than about 2.1 million lines a second; it runs on the primary, one connection an instance; the bound on the read is not decided | GAP | `owner item 64`; owner: the owner, since 2026-11-13 |
+| T14 | The autoscaler calibrated: it scales on the pods' CPU alone, never on what rises when the single writer is the limit; its scale-up window is at least twice W2's burst, read from the capacity model, so a burst the standing fleet carries never adds a pod that arrives after it; its scale-down window, like its period, at least the grace, refused below it by the manifest policy over a planted window | EXISTS | `app/src/test/java/com/finapp/app/architecture/KubernetesManifestsTest.java#aBurstTheFleetCarriesNeverScalesIt`; `app/src/test/java/com/finapp/app/architecture/KubernetesManifestsTest.java#scaleDownCannotStackTerminatingPods`; `infra/scripts/manifest-policy/finapp.rego` `contains: is under one grace (%d s)`; `infra/scripts/manifest-check.sh` `contains: refused_saying hpa-stabilisation-grace` |
+| T14 | On a real cluster: W2's bursts carried by the standing fleet with the autoscaler not moving (E75), and the background roles read as neighbours of the request path under the engineering workload, each stage's latency beside the replicas' throttling and threads and the database's CPU, the reading that would reopen a role split (E77). Built and contract-tested; their runs postponed by the owner with Phase 16's other cluster runs | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
+| T14 | The autoscaler standing at its ceiling, or unable to read its metric, tells nobody: the cluster watcher publishes its replica counts and not its conditions, and no rule reads either; the signal is decided and not built, since the platform's rules read only series captured from the pinned images | GAP | `owner item 67`; owner: the owner, since 2026-11-13 |
 | T15 | An unbalanced journal entry is refused at commit, whoever writes it, raw SQL included (`INV-LED-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#aDirectUnbalancedInsertIsRefusedAtCommit` |
 | T15 | The application role holds no `UPDATE`, `DELETE` or `TRUNCATE` on the journal | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theColumnSweep` |
 | T15 | The journal's append-only trigger binds even the migrator (`INV-HIST-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theAppendOnlyTriggerBindsTheMigrator` |
@@ -1121,7 +1126,7 @@ day under the owner's standing word for waves G and H ("start H after G, accept 
 **Item 42 was added on 2026-11-12 by the runbooks' rehearsal and decided the same day under the same standing word, each part as
 recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.** **Item 55 was added on 2026-11-13 by the
 contention measurement and awaits the owner.** **Item 63 was added on 2026-11-13 by the idempotency records' sweep and awaits the
-owner.**
+owner.** **Item 67 was added on 2026-11-13 by the capacity calibration and awaits the owner.**
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -1443,7 +1448,10 @@ owner.**
     measured on the pinned image). While the spool is full, a body past 64 KiB answers `500` and everything smaller is served; no pod is
     evicted or restarted. *Recommendation*: accept it for Phase 15 as a bounded degradation, and give a real environment a connection
     limit or WAF in front of the edge, sized by Phase 16's load model. **Decided 2026-11-09**: accepted for Phase 15, as
-    recommended; T1's row stays a `GAP` held by this item.
+    recommended; T1's row stays a `GAP` held by this item. *(2026-11-13: sized, designed only, by the capacity calibration
+    (`CAPACITY_MODEL.md` §4a.3, ADR-0145): per source, 120 requests a second and 130 in flight in front of the edge, the merchants' and
+    providers' paths at their tiers' ceilings. A rule per source does not stop several sources filling the spool, so the acceptance and
+    T1's row stand.)*
 
 33. **Two residuals of the abuse limits** *(added 2026-11-09 by the abuse limits)*.
 
@@ -1466,7 +1474,10 @@ owner.**
     where carrier NAT is the norm, the change to make is to count sign-in's *failures* per source rather than its attempts. That has a real
     cost, because the count would then come after the derivation it exists to bound, so it needs its own decision.
     **Decided 2026-11-11**: as recommended: (a) stays a `GAP` until the first real merchant gives the number; (b) is accepted for
-    Phase 15, Phase 16 calibrating the limits from a load model.
+    Phase 15, Phase 16 calibrating the limits from a load model. *(2026-11-13: (b)'s calibration done, `CAPACITY_MODEL.md` §4a.2, ADR-0145:
+    every number derived and kept, each door at least one person's need and sign-in carrying a shared address of a thousand active
+    customers at the busiest hour's burst, held by a test. What no number answers, one device spending a shared address's budget, is
+    item 67 (a).)*
 31. **T6's and T29's residual: what a plan of the security modules cannot settle** *(added 2026-11-09 by the task that built them)*. Five
     things, none needing a decision before an account exists:
     (a) **Who installs a cluster's first controllers.** People hold two groups and no access policy, deliberately, so nobody can
@@ -2614,6 +2625,39 @@ owner.**
     posting cutoff already enforces. (ii) is never the remedy for the fold.
 
     *Awaiting the owner* (2026-11-13). Until decided: §4's T14 `GAP` row naming this item.
+
+67. **T1's and T14's residuals: a shared address's fate at the doors, and an autoscaler that tells nobody** *(added 2026-11-13 by the
+    capacity calibration, ADR-0145)*. Two things.
+
+    *(a) One device behind a shared address spends a door's budget for everyone there.* The calibration derived the per-source limits
+    against one person's need and a shared address of R6's 1,000 active customers in the busiest hour (`CAPACITY_MODEL.md` §2 and §4a.2;
+    R6 is a reading of the model, the owner's to change), and they hold: a carrier's NAT is not refused for its volume. What no number
+    answers is fate-sharing: one device retrying, or one attacker, at that address spends sign-in's 100 for everyone there for up to 15
+    minutes, and registration's 10 for up to an hour. A lower limit refuses the address sooner; a higher one gives every single source
+    more guesses. The options:
+    - **(i) Accept it**, with `PublicDoorsRefusingMost` ticketing and the window as the bound.
+    - **(ii) Count sign-in's failures per source, not its attempts.** A client looping valid sign-ins then spends nothing; an attacker's
+      guesses still spend everyone's. The count would follow the credential derivation, so what bounds the derivations one source can
+      force becomes the edge's door tier: 20 a second across the two controllers, about 1.4 cores of the replicas' hash (derived from
+      §3.4's 68 ms a sign-in).
+    - **(iii) A device-bound bucket.** A signed token issued at a successful sign-in and presented at the next, counted per device
+      rather than per address, so a known device behind a NAT is never refused for a stranger's flood. New behaviour on the
+      authentication path, with its own key, audit and negative tests.
+
+    *Recommendation*: **(i)** until the first real launch names its market, then **(iii)** before a launch where carrier NAT is the
+    norm. (ii) answers the looping client and not the attacker.
+
+    *(b) The autoscaler at its ceiling, or blind, tells nobody* (routed with the connection budget's decision, ADR-0134). The cluster
+    watcher publishes the autoscaler's replica counts and not its conditions, and no rule reads either. The calibration decided the
+    signals (`CAPACITY_MODEL.md` §4a.5): a ticket when the count has stood at the ceiling for 30 minutes, from
+    `k8s_hpa_current_replicas` and `k8s_hpa_max_replicas`; and the autoscaler's failed reads of its metric (`FailedGetResourceMetric`),
+    kept by the watcher's event stream as it keeps the migrator's today, ticketing. Neither is built: the platform's rules read only
+    series captured from the pinned images (`infra/prometheus/platform-components-series.txt`), and these were never captured, which
+    takes a cluster. The options: **(i)** capture both during `PI-025`'s first autoscaled run, then build the two rules with their promtool
+    cases and runbook lines; **(ii)** leave it to the availability burn alerts, which see the customers' harm and not its cause.
+    *Recommendation*: **(i)**, in a task the owner places once that run has been made.
+
+    *Awaiting the owner* (2026-11-13). Until decided: §4's T1 and T14 `GAP` rows naming this item.
 
 ## 7. Decided against
 

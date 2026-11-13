@@ -741,3 +741,13 @@ commit and the date; do not delete the entry.
     above, runs with. Nothing ran on a cluster. What ran instead, on 2026-11-13: the new shell functions under `dash` against a real
     `kustomize` render of the `kind` overlay and stubbed cluster answers, the pinned k6's `inspect` of the `autoscale` profile, and the
     harness's refusals before any build (§11.58's record).
+  - **`P16-TSK-015`** (the capacity calibration, `OPERATIONS_RUNBOOK.md` §11.60, whose record is empty; `CAPACITY_MODEL.md` §4a; ADR-0145):
+    **E75**, the burst profile with the calibrated autoscaler left free between three and seven (`REHEARSAL_SCOPE=load
+    REHEARSAL_LOAD_PROFILE=burst REHEARSAL_LOAD_REPLICAS=7`): the bursts read above the autoscaler's target, the count never moving, no
+    sign-in answered 429, each stage's latency and errors recorded for `P16-TSK-029`'s judgement; **E76**, the entry's probe on it
+    (`REHEARSAL_PROBE=abuse-below-need`), which must go red at the door assertion with the refusals counted, its `MUTATION_TESTING.md` §2
+    row with it; **E77**, the role split's reading at three replicas (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=background`),
+    `load/role-split.tsv` read against ADR-0145 decision 9. Also owed by the same change: the cluster watcher's `k8s_hpa_*` series and the
+    autoscaler's events captured during the first autoscaled run (E70 or E75), which `THREAT_MODEL.md` §6 item 67 (b)'s signal waits on.
+    Nothing ran on a cluster. What ran instead, on 2026-11-13: the named test classes, and the manifest policy's scale-down rule over a
+    planted window under the grace in a container (§11.60's record).
