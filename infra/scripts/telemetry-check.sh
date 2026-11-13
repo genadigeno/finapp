@@ -239,6 +239,8 @@ in_container() {
             grep -q '^  namespace: finapp-observability$' /scratch/rendered/kind.yaml || { echo "the kind stream renders no finapp-observability" >&2; exit 1; }
             # The alerts on kind (P15-TSK-032): every rule file in the scraper's ConfigMap and Alertmanager beside it, or a rehearsal reads no alert.
             grep -q '^  name: finapp-prometheus-rules-' /scratch/rendered/kind.yaml || { echo "the kind stream renders no rules ConfigMap" >&2; exit 1; }
+            # The domains' rule files in a ConfigMap of their own (2026-11-13), projected beside the platform's into the one directory.
+            grep -q '^  name: finapp-prometheus-rules-domain-' /scratch/rendered/kind.yaml || { echo "the kind stream renders no domains' rules ConfigMap" >&2; exit 1; }
             grep -q '^  name: finapp-alertmanager$' /scratch/rendered/kind.yaml || { echo "the kind stream renders no Alertmanager" >&2; exit 1; }
             # Staging's and production's application overlays, alone: held to the endpoint rule, the pipeline having no overlay there.
             for overlay in staging production; do

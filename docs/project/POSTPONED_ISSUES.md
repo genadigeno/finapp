@@ -629,3 +629,8 @@ commit and the date; do not delete the entry.
     measures ADR-0136's relay drain, and **E48**, the fleet scaled 3 → 7 → 3 under it (`REHEARSAL_LOAD_SCALE="3 7 3"`). Not one of
     them ran; the three-broker configuration, the probe's premise and E23's lock key ran only in containers (§11.51's record). §11.6's broker outage,
     the part of PI-024 that owner decision C11 gives to these experiments, closes only with E09.
+  - The coordinator's rules split (2026-11-13, branch `P16-chore-rules-split`; `docs/project/history/CHANGE_LOG.md`): kind's rules
+    in two ConfigMaps, `finapp-prometheus-rules` and `finapp-prometheus-rules-domain`, projected into `/etc/prometheus-rules`. Owed:
+    the observability overlay applied client-side on a `kind` cluster, both ConfigMaps admitted, and the scraper's
+    `/api/v1/rules` listing every group of all thirteen rule files (`OPERATIONS_RUNBOOK.md` §11.34's alerts on `kind`). Proven
+    without a cluster only: the stream rendered, `kubeconform -strict` and the pipeline's policies green.
