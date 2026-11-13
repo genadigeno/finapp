@@ -3369,7 +3369,7 @@ counts it as a pending rematch, so it stays a break, aged and alerted as any (§
 **The last record.** (a) on `kind`: the `incidents` scope's `platform-poisoned-rows` step plants a captured card attempt copied
 under a v4 id into `CAPTURE_DISPATCHED` an hour old, waits for `PaymentSweepRowUnreadable` to reach `placeholder-page`, asserts
 the record, the row unjudged, no `Payment sweep failed` line on any replica and `PaymentSweepFailing` silent, and removes the row
-and its record as the plant's teardown. Not yet run: its record is entered here when it is (`RESILIENCE_EXPERIMENTS.md` E27). (b)
+and its record as the plant's teardown. Not yet run: its record is entered here when it is (`RESILIENCE_EXPERIMENTS.md` E28). (b)
 and (c) hold no step: their behaviour is proven hermetically (`WithdrawalSweepPoisonedRowTest`, `PaymentSweeperScheduleTest`,
 `RematchFaultTest`) and their PostgreSQL cases are written and owed (PI-023). §11.38 counts the three read.
 
