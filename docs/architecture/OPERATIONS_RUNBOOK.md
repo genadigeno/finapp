@@ -3243,6 +3243,7 @@ latest; the run, as its record names it.
 | §11.43 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `7231d298` | `§11.43's tenth run and its probes` | — |
 | §11.45 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `89b8fc60`, `f021383f` | `§11.45's record: E30 at three replicas and the isolation run` | — |
 | §11.46 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `a6fee3a1` | `§11.46's record: E01's run and the probes` | — |
+| §11.47 | `platform` | 0 | 8 | 8 | — | — | — | — | Phase 16 drill |
 | §11.48 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
@@ -4975,6 +4976,11 @@ proxy disabled, a simulator hold, a partition (a NetworkPolicy), a paused node, 
 is instant and logged. A harness killed with `SIGKILL`, or a machine that stops, runs no trap: its kept cluster may hold a fault still.
 A reusing run deletes the namespaces that hold all but a paused node and a Deployment scaled outside them, and its steady state refuses
 to start an experiment while any fault reads on - unpause the node (`docker unpause`) or scale the Deployment back by hand.
+*(2026-11-13, `P16-TSK-021`: a partition here is not a NetworkPolicy's to make - policies only add what a pod may reach, and an
+established connection is admitted before any policy - so the network faults are a DROP in one replica's own namespace and the proxy's
+`timeout` toxic; §11.47 has them and their four new kinds. Of those, only a ballast lives outside a namespace: one a killed run left on
+a node is removed by hand, `docker exec <node> rm -f /mnt/finapp-experiments-pgdata/finapp-experiment-ballast`, or by naming E24, whose
+run makes the filesystem again.)*
 
 **Running it.** One full cluster at a time on the machine, under its lock. From the repository root, with the rehearsal's own
 prerequisites (§11.28):
@@ -5090,6 +5096,130 @@ words that discoverer reads as credentials, and the boundary's cadence is worded
 on the same pinned image (a base backup at `verify-full` through the slot, streaming, `FIRST 1` synchronous, a commit held while the
 standby was stopped); on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks and tests"), it is owed under
 `POSTPONED_ISSUES.md` PI-025 with E01's run on the final bytes.
+
+### 11.47 Network, DNS, connection and disk faults: each fault's signature, and running them (`P16-TSK-021`, ADR-0127)
+
+*(Written by `P16-TSK-021`, 2026-11-13, from the experiments' steps in `kind-rehearsal/experiments.sh`, the platform's configuration and
+its alert rules. **None of these experiments has run on a cluster**: the owner postponed Phase 16's cluster runs on 2026-11-13 ("we dont
+need long running checks and tests"), and every run below is owed under `POSTPONED_ISSUES.md` PI-025. What each signature says is read
+against the code, not seen: a first run may show otherwise, and its record then corrects this section.)*
+
+**What it is.** Eight experiments of `RESILIENCE_EXPERIMENTS.md` in §11.46's `experiments` scope, each in ADR-0127's step shape and each
+ending in the census: E07 (the database's connections exhausted), E11 (object storage away), E12 (latency on the database hop), E13
+(resets on it, then the entry's probe: a cut on a commit), E14 (one replica black-holed from the database), E15 (the broker's hop, then the
+provider's, black-holed), E16 (the cluster's resolver lost) and E24 (the database's volume full). Run them as §11.46 says, naming them:
+
+```
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E07 E12 E13 E14 E15 E16 E24" infra/scripts/kind-rehearsal.sh
+```
+
+E24 must be named when the run makes its data tier: only then does the primary get a filesystem of its own size (below). E11 needs
+`REHEARSAL_E11_STORE=<namespace>/<deployment>` naming the store the WAL archive writes to; without it E11 reads could-not-run (exit 2).
+
+**What the faults are, and why not a NetworkPolicy.** A NetworkPolicy only adds what a pod may reach, and the application's own policies
+already admit every hop; the policy engine also admits an established connection before any policy. So a policy can neither cut a
+replica the others' rules admit nor black-hole a connection already held, which is the case item 42 (h) is about. The faults are:
+- **one replica black-holed** (`blackhole`): a DROP rule each way in that replica's own network namespace, set from its node with the
+  node's `nsenter` and `iptables`, marked `finapp-experiment-fault`. Nothing is refused or reset: what it sends is never answered;
+- **a hop black-holed for every replica**: Toxiproxy's `timeout` toxic at 0, both ways. Removing it closes every link it held, and the
+  bytes it dropped are gone;
+- **the database's slots held** (`held`): sessions of a role with no superuser attribute on the server's own socket;
+- **a table locked** (`locked`): a session of the run's superuser holding an `EXCLUSIVE` lock;
+- **the volume filled** (`filled`): a ballast beside the data directory, from the node.
+Each passes the safety boundary and is registered first, and comes off at the stop and on every way out (§11.46).
+A fault whose own control does not show is a run that could not measure (exit 2), never a pass. Examples: nothing held by the black hole,
+nothing refused by the full volume, no connection reset.
+
+**E07 - the database's connections exhausted.** *Signature*: every replica's pool refused new connections (`remaining connection slots are
+reserved` in the server's lines), borrows timing out at the pool's 5 s, readiness `503` on every replica, `ConnectionPoolStarved`
+paging after two minutes of waiting threads. An ordinary role is refused too: the reporting role, the migrator, an operator's personal
+role. What still gets in is a superuser on PostgreSQL's reserved slots. *Do*: connect as the server's superuser (a reserved slot; the
+managed database's master user in a real environment), find the holder in `pg_stat_activity` by role and application name, and end its
+sessions (`pg_terminate_backend`). Leave the fleet alone: once the slots free, the pools refill and readiness returns. No replica
+restarts, because liveness never reads the database. The run takes the pools' share by closing the fleet's sessions with the database's
+proxy down while the holder fills the slots, then brings the proxy back.
+
+**E11 - object storage away.** *Signature*: nothing in the application; the application names no object store. The WAL archive's
+store away makes the primary's archiver fail (`pg_stat_archiver.failed_count` rising, `archive command failed` in the server's lines)
+while `pg_wal` grows. *Do*: bring the store back; the archiver retries by itself and catches up. Watch the database's free space
+meanwhile (E24). The store is the WAL archive's (`P16-TSK-024`); until it exists the experiment has no subject.
+
+**E12 - latency on the database hop.** *Signature*: every request slower by about its round trips times the latency; the pools' active
+connections and waiting threads rise; at the higher steps `ConnectionPoolSaturated` (5 minutes) and `ConnectionPoolStarved` (2 minutes)
+may follow. Nothing is partial: a statement that is slow is not a statement half done. *Do*: find where the latency is (the network, the
+database's own waits) before touching the fleet; more replicas add more connections to a slow server. The run steps 50, 200 and 1000 ms
+after a baseline and stops at a step whose p99 passes 30 s.
+
+**E13 - resets on the database hop, and a cut on a commit.** *Signature*: requests failing at once on a reset connection, the pools
+making connections anew, the client retrying by its key. A connection reset inside a transaction leaves nothing: the server rolls it
+back. A connection lost between a commit and its answer leaves the commit whole, and the client sees an error. The retry by the same
+key answers the stored result, because a transfer commits its claim, its row and its posting in one transaction. *Do*: nothing to repair
+from the failure alone. A client that retried without its key has made a new request; the census and `TransferKeyConflict` read that.
+The run's probe holds a transfer's answers 1500 ms (under the pool's 2 s validation), reads its row committed on the server's own socket,
+and disables the database's proxy at that moment. A reset toxic added then lets the held answer through first, so the run disables the
+proxy instead. The transfer must be whole and its retry must answer the committed transfer. A second transfer is cut while it waits on
+a table lock the run holds, after its transaction has written; it must leave nothing.
+
+**E14 - one replica black-holed from the database (item 42 (h)).** *Signature*: that replica alone: its pool's validations failing at
+2 s, new connections failing at the 5 s connect timeout, readiness `503`, its endpoint leaving the Service; the others serving and
+taking its leases as they lapse. The threads that held a connection at the cut stay blocked, because the data source sets no socket
+timeout. The kernel retransmits their unanswered sends until it gives up: `net.ipv4.tcp_retries2`, by default about fifteen minutes.
+Until then `GaugesStale` may ticket for that instance if its gauge thread was one of them. *Do*: §11.40 step 3: once the others serve,
+replace that one pod by eviction under break-glass (§11.25). It does not restart by itself: liveness never reads the database. The run
+measures, per held connection (the namespace's sockets to the hop with a retransmission timer running, read every 5 s), how long the
+kernel took to free it, or that it outlived the cut. That is the measurement `P16-TSK-022` decides the socket timeout from (§11.40).
+
+**E15 - the broker's hop, then the provider's, black-holed.** *Broker*: money still moves (Kafka is not in readiness). Events wait in the
+outbox, the oldest publishable growing, `OutboxPublicationStalled` paging after ten minutes and `event_freshness` burning. On the
+hop's return the outbox drains, each event published once, the inbox deduplicating any redelivery. *Do*: §11.6 and §11.21. Nothing
+financial is lost: the outbox is the source. *Provider*: calls time out at the adapter's own bounds. A call that never reached the
+provider answers `503`; one sent and unanswered is recorded unknown, never sent again. The sweeps ask the provider once it answers;
+a card payment caught mid-call waits the sweep's ten-minute dispatched age. *Do*: §11.22: watch `PaymentUnknownAged` and
+`MerchantPayoutUnknownAged` clear; never resend an ambiguous call by hand.
+
+**E16 - the cluster's resolver lost.** *Signature*: established connections carry on; only a new connection needs a name. In a
+deployment the client resolves the database's, the broker's and the provider's names itself, and a new connection fails with an unknown
+host. In the experiments' topology the proxy resolves them (`Unable to open connection to upstream` with a failed lookup in its lines).
+The Java runtime caches a resolved address for 30 s by default, so a deployment's first failures may come later. *Do*: restore the
+resolver (`kubectl -n kube-system get deployment coredns`, its replicas and its pods' events); the platform recovers on its own as new
+connections resolve again. Do not restart replicas: their held connections are the ones still working.
+
+**E24 - the database's volume full.** *Signature*: `No space left on device` in the server's lines. A table or index that must grow
+fails its statement, and its transaction rolls back whole. A WAL segment that cannot be written makes PostgreSQL stop (`PANIC`), and
+until space returns it cannot recover either. Readiness `503` on every replica while the server is down; requests failing; no partial
+effect. *Do*: free space on the database's volume first (in a real environment, grow the managed volume). Never delete anything under
+the data directory: WAL files there are the database's own. The server's crash recovery replays to the last commit once it can write,
+and the fleet returns by itself. Then run §11.40 step 4's checks. On `kind` a claim has no size of its own, so when E24 is named the run
+makes, on each worker, a 2 GiB filesystem in a file loop-mounted in the node (`/mnt/finapp-experiments-pgdata`), offered as a local
+volume of the test-only class `finapp-experiments-limited` (`kind-rehearsal/experiments/limited-volume.yaml`). The primary's claim names
+that class in the run's own copy, and the ballast fills that filesystem alone, from the node.
+
+**Reading the record** (under `$REHEARSAL_ARTEFACTS/experiments`, beside §11.46's files):
+
+| File | What it holds |
+|---|---|
+| `<id>/record.tsv` | The experiment's own record: steady state, each fault with its time, each observation, stop, verdict |
+| `<id>/pages.tsv` | Every 15 s: the correctness pages (none) and every alert firing |
+| `E07/fleet.tsv`, `holder.log` | The fleet every 2 s; the holder's sessions and the role made and dropped |
+| `E11/archiver.tsv`, `E11/edge-answers.tsv` | The archiver's counts every 5 s; the edge's answers while the store was away |
+| `E12/steps.tsv`, `E12/pool.tsv`, `E12/edge-answers.tsv` | Each step's window; the pools every 30 s; the edge's answers, from which each step's p50 and p99 come |
+| `E13/transfer-*.txt`, `E13/commit-*.watch`, `E13/retries.tsv`, `lock.log` | Each cut transfer's answer, the watcher's reading of its commit, its retries by key; the lock's session |
+| `E14/sockets.tsv`, `E14/sockets-read.tsv`, `E14/held.tsv`, `E14/endpoint.tsv` | The cut replica's sockets to the hop every 5 s; per held connection, seconds to held and to freed; its endpoint every second |
+| `E15/outbox.tsv`, `E15/unknown.tsv`, `E15/edge-broker.tsv`, `E15/edge-provider.tsv` | The outbox's backlog and oldest age; the unknown ages; the edge's answers on each hop |
+| `E16/toxiproxy.log`, `E16/edge-outage.tsv`, `E16/payout-recovery-*.txt` | The proxy's lines from the stimulus; the edge's answers during the outage; the recovery's payout |
+| `E24/server-lines.txt`, `E24/fleet.tsv` | The server's refusals and stops; the fleet every 2 s |
+
+**The last record**: not run. Every experiment above, and the crash probes' new kinds (§11.46's `crash-with-faults` and
+`term-with-faults` now also put on a black hole, the holder, a lock and, where E24's volume exists, a ballast), is owed under
+`POSTPONED_ISSUES.md` PI-025. What was proven without a cluster, in short container checks of 2026-11-13 on the pinned images (no
+`kind`, no application stack): the node image carries `nsenter`, `iptables`, `ss`, `losetup`, `mkfs.ext4` and `crictl`; Toxiproxy
+2.13.0's CLI takes `--tox` and `-u`. With PostgreSQL 18.6 behind it, a reset toxic added while a commit's answer was held let the answer
+through, and the proxy disabled instead lost it with the row committed. A reset between an insert and its commit left nothing. A
+removed `timeout` toxic closed the link it held. An unresolvable upstream is logged as `Unable to open connection to upstream`.
+
+**What this does not cover.** A real network's loss: Toxiproxy passes TCP and cannot drop a packet, so E13's loss is the resets a lossy
+link ends in. A managed database's volume or connection limits, or its failover (§11.40, E05). The loop device and the local volume on a
+cluster, which no run has exercised. A real resolver's own failure modes (answering errors, slow answers): E16 takes it away whole.
 
 ### 11.48 Hot rows, locks, deadlocks and plans under load: the contention run, the soak and the sweeps' storm (`P16-TSK-008`, ADR-0133)
 
