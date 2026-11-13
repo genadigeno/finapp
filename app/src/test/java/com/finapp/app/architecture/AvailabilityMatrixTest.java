@@ -305,12 +305,12 @@ class AvailabilityMatrixTest {
         Map<String, String> problems = new TreeMap<>();
         register.forEach((component, row) -> {
             if (row.get(3).isBlank() || row.get(4).isBlank()) {
-                note(problems,component, "says whether it is a single point and what answers it");
+                note(problems, component, "says whether it is a single point and what answers it");
             }
             String check = row.get(5);
             if (check.startsWith("N/A")) {
                 if (!check.matches("^N/A: \\S.{9,}$")) {
-                    note(problems,component, "an N/A names its reason");
+                    note(problems, component, "an N/A names its reason");
                 }
                 return;
             }
@@ -319,11 +319,11 @@ class AvailabilityMatrixTest {
             while (id.find()) {
                 any = true;
                 if (!registered.contains(id.group(1))) {
-                    note(problems,component, id.group(1) + " is not in " + REGISTER);
+                    note(problems, component, id.group(1) + " is not in " + REGISTER);
                 }
             }
             if (!any) {
-                note(problems,component, "names no experiment and no designed-only row");
+                note(problems, component, "names no experiment and no designed-only row");
             }
         });
         assertThat(problems).as("the components' checks in %s", DOCUMENT).isEmpty();
@@ -384,10 +384,10 @@ class AvailabilityMatrixTest {
                 missing.removeAll(failure.verdicts().keySet());
                 Set<String> unknown = new TreeSet<>(failure.verdicts().keySet());
                 unknown.removeAll(all);
-                note(problems,id, "missing " + missing + ", unknown " + unknown);
+                note(problems, id, "missing " + missing + ", unknown " + unknown);
             }
             if (!FAILURE_KINDS.contains(failure.kind())) {
-                note(problems,id, "its kind `" + failure.kind() + "` is none of " + FAILURE_KINDS);
+                note(problems, id, "its kind `" + failure.kind() + "` is none of " + FAILURE_KINDS);
             }
         });
         assertThat(problems).as("the rows of %s", DOCUMENT).isEmpty();
@@ -406,17 +406,17 @@ class AvailabilityMatrixTest {
                 checks.add(id.group(1));
             }
             if (checks.isEmpty()) {
-                note(problems,failure.id(), "names no experiment and no designed-only row");
+                note(problems, failure.id(), "names no experiment and no designed-only row");
             }
             for (String check : checks) {
                 if (!registered.contains(check)) {
-                    note(problems,failure.id(), check + " is not in " + REGISTER);
+                    note(problems, failure.id(), check + " is not in " + REGISTER);
                 }
             }
             if (!failure.walkedBy().equals("—")) {
                 for (String walker : failure.walkedBy().split(",")) {
                     if (!checks.contains(walker.trim())) {
-                        note(problems,failure.id(), walker.trim() + " walks the row and is not among its checks");
+                        note(problems, failure.id(), walker.trim() + " walks the row and is not among its checks");
                     }
                 }
             }
@@ -435,7 +435,7 @@ class AvailabilityMatrixTest {
             while (id.find()) {
                 Set<String> must = KIND_OF_CHECK.get(id.group(1));
                 if (must != null && !must.contains(failure.kind())) {
-                    note(problems,failure.id() + " " + id.group(1), id.group(1) + " checks it, so it is " + must + ", not " + failure.kind());
+                    note(problems, failure.id() + " " + id.group(1), id.group(1) + " checks it, so it is " + must + ", not " + failure.kind());
                 }
             }
             failure.verdicts().forEach((operation, verdict) -> {
@@ -445,26 +445,26 @@ class AvailabilityMatrixTest {
                 switch (failure.kind()) {
                     case "record" -> {
                         if (request && !verdict.equals("REFUSED")) {
-                            note(problems,where, "the record is away, so a request is REFUSED, not " + verdict);
+                            note(problems, where, "the record is away, so a request is REFUSED, not " + verdict);
                         }
                         if (!request && !(verdict.equals("QUEUED") || verdict.equals("REFUSED"))) {
-                            note(problems,where, "the record is away, so its work waits (QUEUED) or is refused, not " + verdict);
+                            note(problems, where, "the record is away, so its work waits (QUEUED) or is refused, not " + verdict);
                         }
                     }
                     case "record-write" -> {
                         if (request && !read && !verdict.equals("REFUSED")) {
-                            note(problems,where, "no write commits, so a command or a callback is REFUSED, not " + verdict);
+                            note(problems, where, "no write commits, so a command or a callback is REFUSED, not " + verdict);
                         }
                         if (read && (verdict.equals("AVAILABLE") || verdict.equals("QUEUED"))) {
-                            note(problems,where, "no write commits, so a read is never served as normal: " + verdict);
+                            note(problems, where, "no write commits, so a read is never served as normal: " + verdict);
                         }
                         if (!request && !(verdict.equals("QUEUED") || verdict.equals("REFUSED"))) {
-                            note(problems,where, "no write commits, so its work waits or is refused, not " + verdict);
+                            note(problems, where, "no write commits, so its work waits or is refused, not " + verdict);
                         }
                     }
                     case "transport" -> {
                         if (verdict.equals("REFUSED")) {
-                            note(problems,where, "only the outbox relay publishes, so the broker's loss refuses nothing");
+                            note(problems, where, "only the outbox relay publishes, so the broker's loss refuses nothing");
                         }
                     }
                     default -> {}
