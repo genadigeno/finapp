@@ -5116,8 +5116,8 @@ this rule. So a callback's outcome now waits on one inquiry, bounded by that pro
 
 *Written by `P16-TSK-013` (2026-11-13) from what it built. **Nothing here has run on a cluster**: the owner postponed Phase 16's `kind`
 runs until after the project's phases ("we dont need long running checks and tests"), and every run below is owed under
-`POSTPONED_ISSUES.md` PI-025. `PipelineRehearsalContractTest` holds the harness's text, not a run. The three-broker configuration and the
-probe's premise alone were proven in containers (the record at the end).*
+`POSTPONED_ISSUES.md` PI-025. `PipelineRehearsalContractTest` holds the harness's text, not a run. The three-broker configuration, the
+probe's premise and E23's lock key alone were proven in containers (the record at the end).*
 
 **The cluster.** `infra/scripts/kind-rehearsal/brokers.sh`. The `kind` overlay's broker StatefulSet is committed at one replica and is
 three-capable: its start script gives a pod a node id (its ordinal + 1) and its own advertised names whenever the rendered configuration
@@ -5245,5 +5245,9 @@ Whether the door should take a day in one order is `THREAT_MODEL.md` §6 item 58
   probe topic deleted and the topics back at 2. Two attempts before it saw nothing, and changed the probe: with the victim started again
   after 20 s (as a kubelet would), its copy was back in sync between two samples, with or without a replication throttle on it, so the
   probe now holds its victim down for its window (the StatefulSet one short).
+- **2026-11-13, containers, no `kind`: E23's lock key and its hold.** The hold's key expression, as `experiments_relay_hold` writes it,
+  evaluated by the overlay's `postgres:18.6` for five UUIDs (the two ends of the range among them) equalled Java's `UUID.hashCode()` for
+  each, read from `jshell` in the build's JDK image. The hold's whole script, taken out of `experiments.sh`, ran for 3 s against a
+  stand-in outbox of two aggregates with waiting rows: both held and printed, and no advisory lock left after its `pg_advisory_unlock_all()`.
 - **Owed under PI-025**: every cluster run of this section - E08 (with the probe), E09, E22, E23 and E49 in the `experiments` scope at
   three replicas; E47 at three and at seven; E48.

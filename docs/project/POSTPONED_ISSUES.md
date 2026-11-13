@@ -627,5 +627,5 @@ commit and the date; do not delete the entry.
     checks over the six proxies on the same run; in the `load` scope on three brokers (`REHEARSAL_KAFKA_BROKERS=3`), **E47**, the
     pipeline profile, at three and at seven replicas (`REHEARSAL_LOAD_PROFILE=pipeline`, `REHEARSAL_LOAD_REPLICAS` 3 and 7), which
     measures ADR-0136's relay drain, and **E48**, the fleet scaled 3 → 7 → 3 under it (`REHEARSAL_LOAD_SCALE="3 7 3"`). Not one of
-    them ran; the three-broker configuration and the probe's premise ran only in containers (§11.51's record). §11.6's broker outage,
+    them ran; the three-broker configuration, the probe's premise and E23's lock key ran only in containers (§11.51's record). §11.6's broker outage,
     the part of PI-024 that owner decision C11 gives to these experiments, closes only with E09.
