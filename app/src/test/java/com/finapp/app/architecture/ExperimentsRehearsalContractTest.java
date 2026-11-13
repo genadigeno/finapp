@@ -371,7 +371,12 @@ class ExperimentsRehearsalContractTest {
                 .contains("experiments_fault_on hold hold-payouts").contains("e01_payout \"$E01_VICTIM_IP\" first &")
                 .contains("[ \"$claim\" = IN_PROGRESS ] || cannot").contains("experiments_context_check || fail");
         assertThat(fault.indexOf("[ \"$claim\" = IN_PROGRESS ]")).isLessThan(fault.indexOf("experiments_kill_jvm"));
+        assertThat(fault.indexOf("experiments_endpoint_sampler \"$EXP_DIR\" \"$E01_VICTIM_IP\" &")).as("the endpoint read every second from before the kill")
+                .isPositive().isLessThan(fault.indexOf("experiments_kill_jvm"));
         String observe = function("E01_observe");
+        assertThat(observe).as("its times the sampler's, the sampler shown to have read it ready before the kill")
+                .contains("\"$EXP_DIR/endpoint.tsv\"").contains("[ \"$before\" -ge 1 ] || fail")
+                .contains("the sampler did not see the killed replica leave and return");
         assertThat(observe).as("the stop condition: a second replica unready while the killed one is replaced")
                 .contains("$3 != v && $4 != \"True\"").contains("EXP_STOPPED=\"a second replica unready while the killed one was replaced");
         assertThat(observe).as("a SIGKILL seen as one, the replica back, its claim taken over and completed once by another")
@@ -379,9 +384,10 @@ class ExperimentsRehearsalContractTest {
                 .contains("[ \"$(e01_claim)\" = COMPLETED ] || fail").contains("EXPERIMENTS_PAYOUTS=$((EXPERIMENTS_PAYOUTS + 1))");
         assertThat(observe).as("a correctness page during the experiment stops it").contains("EXP_STOPPED=\"a correctness page during the experiment");
         String recover = function("E01_recover");
-        assertThat(recover).as("every failed answer the edge gave the killed replica's, the others serving, none unresolved")
-                .contains("\"DownstreamStatus\"").contains("\"ServiceAddr\"").contains("[ \"$failed_other\" = 0 ] || fail")
-                .contains("[ \"$served_other\" -ge 1 ] || fail").contains("[ \"$(workload_unresolved e01)\" = 0 ] || fail").contains("assert_flows_ran e01");
+        assertThat(recover).as("every failed answer at the edge ended in the window the killed replica could be picked in, the lines shown read, none unresolved")
+                .contains("\"DownstreamStatus\"").contains("\"Duration\"").contains("\"StartUTC\"").contains("awk -F'\\t' '$2 >= 500'")
+                .contains("window_end=$((E01_KILLED_AT + E01_ROUTED + 5))").contains("[ \"$failed_outside\" = 0 ] || fail")
+                .contains("[ \"$served\" -ge 10 ] || fail").contains("[ \"$(workload_unresolved e01)\" = 0 ] || fail").contains("assert_flows_ran e01");
         assertThat(function(harness, "census")).as("the census counts E01's payout").contains("+ ${EXPERIMENTS_PAYOUTS:-0} ))");
         assertThat(function("e01_payout")).as("the merchant's key on stdin, never a command line").contains("IFS= read -r bearer")
                 .contains("printf '%s\\n' \"$E01_MERCHANT\" | kube -n finapp-edge exec -i np-edge");

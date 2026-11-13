@@ -655,6 +655,20 @@ experiments_prometheus() {
     kube -n finapp-observability exec deploy/finapp-prometheus -c prometheus -- wget -q -T 20 -O - "http://127.0.0.1:9090$1"
 }
 
+# experiments_endpoint_sampler <dir> <address>: that address's readiness in the application's EndpointSlices every second, into
+# <dir>/endpoint.tsv, until <dir>/endpoint-stop exists. Started just before a fault, so its first change is the fault's.
+experiments_endpoint_sampler() {
+    set +e
+    printf 'epoch\tready\n' > "$1/endpoint.tsv"
+    while [ ! -f "$1/endpoint-stop" ]; do
+        epoch=$(date +%s)
+        state=$(kube -n finapp get endpointslices -l kubernetes.io/service-name=finapp-app \
+            -o jsonpath='{range .items[*].endpoints[*]}{.addresses[0]}|{.conditions.ready}{"\n"}{end}' 2>/dev/null | awk -F'|' -v a="$2" '$1 == a {print $2}')
+        printf '%s\t%s\n' "$epoch" "${state:-absent}" >> "$1/endpoint.tsv"
+        sleep 1
+    done
+}
+
 # The correctness pages of SLOS.md section 3, every one a rule the cluster's Prometheus loaded, read once: prints the firing ones, or
 # UNREADABLE when Prometheus did not answer. Nothing printed is nothing firing.
 experiments_pages_firing() {
@@ -910,6 +924,10 @@ E01_fault() {
     if [ "$PROBE" != guard-off ]; then
         experiments_context_check || fail "the safety boundary refused before the kill: $EXP_REASON"
     fi
+    experiments_endpoint_sampler "$EXP_DIR" "$E01_VICTIM_IP" &
+    E01_ENDPOINTS=$!
+    BACKGROUND="$BACKGROUND $E01_ENDPOINTS"
+    sleep 1
     E01_KILLED_AT=$(date +%s)
     experiments_kill_jvm "$E01_VICTIM"
     experiments_record fault "kill -9 of $E01_VICTIM's JVM ($KILLED) at $(date -u -d "@$E01_KILLED_AT" +%H:%M:%SZ), its payout's claim IN_PROGRESS and held at the provider"
@@ -924,18 +942,13 @@ E01_observe() {
         fail "E01: the payout in flight on the killed replica was answered, so it was not in flight when the process died"
     fi
     experiments_record "in flight" "the payout sent to the killed replica: $(grep -h '^curl=\|^status=' "$EXP_DIR/payout-first.txt" | tr '\n' ' ')"
-    # Until the killed replica is ready again: its endpoint's removal, its restart, and the stop condition (a second replica unready).
-    removed=""
+    # Until the killed replica is ready again: the stop condition (a second replica unready) and the pages watched meanwhile. Its endpoint's
+    # times are the sampler's, read every second from just before the kill.
     returned=""
     pages_at=0
     deadline=$((E01_KILLED_AT + 600))
     while [ "$(date +%s)" -lt "$deadline" ]; do
         now=$(date +%s)
-        if [ -z "$removed" ]; then
-            ready_endpoint=$(kube -n finapp get endpointslices -l kubernetes.io/service-name=finapp-app \
-                -o jsonpath='{range .items[*].endpoints[*]}{.addresses[0]}|{.conditions.ready}{"\n"}{end}' 2>/dev/null | grep -c "^$E01_VICTIM_IP|true$" || true)
-            [ "$ready_endpoint" = 0 ] && removed=$((now - E01_KILLED_AT))
-        fi
         unready=$(awk -F'\t' -v v="$E01_VICTIM" -v at="$E01_KILLED_AT" 'NR > 1 && $1 >= at && $3 != v && $4 != "True" {print $3 "@" $2}' "$EXP_DIR/fleet.tsv" | head -1)
         if [ -n "$unready" ] && [ -z "$EXP_STOPPED" ]; then
             EXP_STOPPED="a second replica unready while the killed one was replaced: $unready"
@@ -963,8 +976,19 @@ E01_observe() {
     [ -n "$returned" ] || { EXP_STOPPED="the killed replica was not ready again within 600 s"; return 0; }
     exit_code=$(kube -n finapp get pod "$E01_VICTIM" -o jsonpath='{.status.containerStatuses[0].lastState.terminated.exitCode}')
     [ "$exit_code" = 137 ] || fail "E01: the killed container ended with $exit_code, not 137: it was not a SIGKILL"
-    experiments_record "routed around" "the killed replica's endpoint not ready ${removed:-never seen ready after the kill, so at once} s after the kill"
-    experiments_record "replaced" "the container restarted in its pod (exit 137) and the replica ready again $returned s after the kill"
+    sleep 3
+    touch "$EXP_DIR/endpoint-stop"
+    wait "$E01_ENDPOINTS" 2>/dev/null || true
+    # The sampler's first reading after the kill that is not ready, and the first ready one after it; each to the second it was read.
+    read -r E01_ROUTED E01_BACK <<EOF
+$(awk -F'\t' -v k="$E01_KILLED_AT" 'NR > 1 && $1 >= k && out == "" && $2 != "true" {out = $1 - k}
+    NR > 1 && out != "" && back == "" && $2 == "true" {back = $1 - k} END {print (out == "" ? "-" : out), (back == "" ? "-" : back)}' "$EXP_DIR/endpoint.tsv")
+EOF
+    before=$(awk -F'\t' -v k="$E01_KILLED_AT" 'NR > 1 && $1 < k && $2 == "true"' "$EXP_DIR/endpoint.tsv" | grep -c . || true)
+    [ "$before" -ge 1 ] || fail "E01: the endpoint sampler never read the killed replica ready before the kill, so its times mean nothing: see experiments/E01/endpoint.tsv"
+    [ "$E01_ROUTED" != - ] && [ "$E01_BACK" != - ] || fail "E01: the sampler did not see the killed replica leave and return: see experiments/E01/endpoint.tsv"
+    experiments_record "routed around" "the killed replica's endpoint read not ready $E01_ROUTED s after the kill (read every second; ready at each reading before it)"
+    experiments_record "replaced" "the container restarted in its pod (exit 137), its endpoint ready again $E01_BACK s after the kill"
     # Its claim taken over: the same key sent to another replica until it is answered.
     deadline=$(( $(date +%s) + 600 ))
     answered=""
@@ -981,7 +1005,7 @@ E01_observe() {
     [ "$(e01_claim)" = COMPLETED ] || fail "E01: the dead replica's claim is $(e01_claim), not COMPLETED, after its key was answered"
     EXPERIMENTS_PAYOUTS=$((EXPERIMENTS_PAYOUTS + 1))
     experiments_record "claim" "the dead replica's claim taken over and completed by another replica, answered on try $answered ($(cut -f3 "$EXP_DIR/retries.tsv" | tr '\n' ' '))"
-    pass "E01: the killed replica's claim was taken over and completed once by another, the replica restarted (exit 137) and ready again $returned s after the kill"
+    pass "E01: the killed replica's claim was taken over and completed once by another, the replica restarted (exit 137), its endpoint out ${E01_ROUTED} s and back $E01_BACK s after the kill"
 }
 
 E01_recover() {
@@ -993,24 +1017,32 @@ E01_recover() {
     [ "$(workload_unresolved e01)" = 0 ] || fail "E01: $(workload_unresolved e01) requests stayed unresolved: see workload-e01.tsv"
     assert_flows_ran e01
     experiments_record workload "$(cat "$CLIENT/workload-e01.summary")"
-    # Every answer the edge gave that was not the application's - a 5xx or no answer from the backend - and the backend it was meant for.
+    # Every answer the edge gave from the minute before the kill: when it started, the status it answered, the status the application gave
+    # (0: none) and how long it took. The edge reaches the application through its Service, which picks the replica, so a failed answer is
+    # told apart by when it ended: one in flight on the killed replica ends at the kill, one sent to it after ends at once, until its endpoint
+    # leaves the Service and kube-proxy follows. Ending from a second before the kill to five seconds after its endpoint was read not ready (a
+    # second for the read, kube-proxy's sync after it) it is the killed replica's; ending anywhere else, another's.
     since=$(date -u -d "@$((E01_KILLED_AT - 60))" +%Y-%m-%dT%H:%M:%SZ)
     : > "$EXP_DIR/edge-answers.tsv"
     for pod in $(kube -n finapp-edge get pods -l app.kubernetes.io/name=finapp-edge-public -o jsonpath='{range .items[*]}{.metadata.name}|{.spec.containers[0].name}{"\n"}{end}' | awk -F'|' '$2 == "edge" {print $1}'); do
         kube -n finapp-edge logs "$pod" -c edge --since-time="$since" 2>/dev/null \
-            | sed -n 's/.*"DownstreamStatus":\([0-9]*\).*"OriginStatus":\([0-9]*\).*/\1 \2 &/p' \
-            | sed -n 's/^\([0-9]*\) \([0-9]*\) .*"ServiceAddr":"\([0-9.]*\):[0-9]*".*"StartUTC":"\([^"]*\)".*/\4\t\3\t\1\t\2/p' >> "$EXP_DIR/edge-answers.tsv"
+            | sed -n 's/.*"DownstreamStatus":\([0-9]*\).*"Duration":\([0-9]*\).*"OriginStatus":\([0-9]*\).*"StartUTC":"\([^"]*\)".*/\4\t\1\t\3\t\2/p' >> "$EXP_DIR/edge-answers.tsv"
     done
     answers=$(grep -c . "$EXP_DIR/edge-answers.tsv" || true)
-    [ "$answers" -ge 10 ] || fail "E01: the edge's lines held $answers answers since the minute before the kill, too few to judge: see experiments/E01/edge-answers.tsv"
-    failed_victim=$(awk -F'\t' -v v="$E01_VICTIM_IP" '$2 == v && ($3 >= 500 || $4 == 0)' "$EXP_DIR/edge-answers.tsv" | grep -c . || true)
-    failed_other=$(awk -F'\t' -v v="$E01_VICTIM_IP" '$2 != v && ($3 >= 500 || $4 == 0)' "$EXP_DIR/edge-answers.tsv" | grep -c . || true)
-    served_other=$(awk -F'\t' -v v="$E01_VICTIM_IP" '$2 != v && $3 < 500 && $4 != 0' "$EXP_DIR/edge-answers.tsv" | grep -c . || true)
-    served_victim=$(awk -F'\t' -v v="$E01_VICTIM_IP" '$2 == v && $3 < 500 && $4 != 0' "$EXP_DIR/edge-answers.tsv" | grep -c . || true)
-    experiments_record "failed at the edge" "$failed_victim answers the edge could not get from the killed replica, which served $served_victim; $failed_other from the others, which served $served_other; of $answers since the minute before the kill"
-    # The control: the killed replica's own address read in the lines, so a failure meant for it would have been seen.
-    [ "$served_victim" -ge 1 ] || fail "E01: no answer of the killed replica was read in the edge's lines, so its failures could not have been: see experiments/E01/edge-answers.tsv"
-    [ "$failed_other" = 0 ] || fail "E01: the edge answered $failed_other requests with a failure from a replica that was not killed"
-    [ "$served_other" -ge 1 ] || fail "E01: the other replicas served nothing through the edge, so the others serving was not shown"
-    pass "E01: every failed answer at the edge ($failed_victim) was the killed replica's; the others served $served_other; $(workload_failed e01) workload attempts failed and were retried by key, none unresolved"
+    window_end=$((E01_KILLED_AT + E01_ROUTED + 5))
+    : > "$EXP_DIR/edge-failed.tsv"
+    # A failure is the edge's 5xx, the application's own or the edge's for a backend that did not answer; an unrouted path's 404 is neither.
+    awk -F'\t' '$2 >= 500' "$EXP_DIR/edge-answers.tsv" | while IFS="$(printf '\t')" read -r started answered origin took; do
+        ended=$(( $(date -u -d "$started" +%s) + (took + 999999999) / 1000000000 ))
+        printf '%s\t%s\t%s\t%s\n' "$ended" "$started" "$answered" "$origin" >> "$EXP_DIR/edge-failed.tsv"
+    done
+    failed_inside=$(awk -F'\t' -v k="$((E01_KILLED_AT - 1))" -v e="$window_end" '$1 >= k && $1 <= e' "$EXP_DIR/edge-failed.tsv" | grep -c . || true)
+    failed_outside=$(awk -F'\t' -v k="$((E01_KILLED_AT - 1))" -v e="$window_end" '$1 < k || $1 > e' "$EXP_DIR/edge-failed.tsv" | grep -c . || true)
+    served=$(awk -F'\t' '$2 < 500 && $3 != 0' "$EXP_DIR/edge-answers.tsv" | grep -c . || true)
+    experiments_record "failed at the edge" "$failed_inside failed answers ending in the window the killed replica could still be picked in (a second before the kill to $((E01_ROUTED + 5)) s after it), $failed_outside outside it; $served served, of $answers answers since the minute before the kill"
+    experiments_record "in flight and failed" "the payout held on the killed replica ($(grep -h '^curl=' "$EXP_DIR/payout-first.txt")), and $failed_inside at the edge; the workload's attempts failed $(workload_failed e01), none unresolved"
+    # The control: the lines read, answers served in them, so a failed one would have been seen.
+    [ "$served" -ge 10 ] || fail "E01: the edge's lines held $served served answers since the minute before the kill, too few to show the lines were read: see experiments/E01/edge-answers.tsv"
+    [ "$failed_outside" = 0 ] || fail "E01: the edge answered $failed_outside requests with a failure outside the window the killed replica could be picked in: another replica failed them"
+    pass "E01: the failed requests were those on the killed replica - its held payout and $failed_inside at the edge in its window, none outside it; $served answers served; $(workload_failed e01) workload attempts failed, none unresolved"
 }
