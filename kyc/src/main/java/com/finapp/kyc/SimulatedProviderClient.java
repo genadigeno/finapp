@@ -1,5 +1,6 @@
 package com.finapp.kyc;
 
+import com.finapp.platform.outbound.OutboundExchange;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -74,7 +75,7 @@ final class SimulatedProviderClient {
 
         HttpResponse<byte[]> response;
         try {
-            response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            response = OutboundExchange.send(http, request, HttpResponse.BodyHandlers.ofByteArray(), timeout);
         } catch (IOException nothingArrived) {
             // Timeout, refused connection, bytes that were not HTTP, a response that never came:
             // no answer exists, so there is no evidence to retain and nothing to guess from.
@@ -125,7 +126,7 @@ final class SimulatedProviderClient {
                         .build();
         HttpResponse<byte[]> response;
         try {
-            response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            response = OutboundExchange.send(http, request, HttpResponse.BodyHandlers.ofByteArray(), timeout);
         } catch (IOException nothingArrived) {
             return CounterpartyScreeningProvider.Answer.withoutEvidence(CounterpartyScreeningVocabulary.Verdict.UNAVAILABLE);
         } catch (InterruptedException interrupted) {

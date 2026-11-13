@@ -30,8 +30,9 @@
 # NetworkPolicy labelled finapp/experiment-fault), node-paused (`docker pause` of a node of this cluster) and scaled (a Deployment scaled,
 # its count to restore recorded). A kill, a deletion or an eviction is instant and is logged, not registered. finish() calls
 # experiments_clear_faults on every way out, the INT and TERM traps and an unguarded failure included: every registered fault undone,
-# newest first, then a blanket reset that needs no record (every proxy enabled with no toxic, both hold flags removed, every labelled
-# policy deleted, every paused node of this cluster unpaused), then a read that nothing is left (experiments/faults-cleared.txt).
+# newest first, then a blanket reset that needs no record (every proxy enabled with no toxic, both hold flags and every degradation flag
+# removed, every labelled policy deleted, every paused node of this cluster unpaused), then a read that nothing is left
+# (experiments/faults-cleared.txt).
 #
 # THE STEP SHAPE (ADR-0127 decision 1): experiment_run <id> runs <id>-steady, -fault, -observe, -stop, -recover and -census in that order.
 # The steady state is read before the fault (the fleet ready on three nodes in three zones, the standby streaming and synchronous, every
@@ -50,8 +51,12 @@
 #   crash-with-faults  every kind of fault put on, then an unguarded failure: the exit trap must leave none on (read on a kept cluster);
 #   term-with-faults   the same, then SIGTERM to the harness itself, the signal path of the same trap.
 # REHEARSAL_EXPERIMENTS names the experiments to run (E01 by default; the catalogue is P16-TSK-020...-023's and P16-TSK-027's).
+# The provider experiments E17, E18 and E21 (P16-TSK-018) degrade the simulator one rail at a time (its flags degrade-<rail>-unavailable and
+# -silent, put on and taken off by the hold kind) or slow its hop (a latency toxic); E19 and E20 refuse to run, each naming why.
 
 EXPERIMENTS=${REHEARSAL_EXPERIMENTS:-E01}
+# Every degradation flag the simulator reads (Simulator.java): the clearing removes each, whatever was registered.
+EXPERIMENTS_DEGRADATIONS="degrade-card-unavailable degrade-card-silent degrade-tokenisation-unavailable degrade-tokenisation-silent degrade-payout-unavailable degrade-payout-silent degrade-fx-unavailable degrade-fx-silent degrade-reference-unavailable degrade-reference-silent"
 TOXIPROXY_IMAGE="$TOXIPROXY_REPOSITORY@$TOXIPROXY_DIGEST"
 EXPERIMENTS_MARKER=finapp-experiments-marker
 EXPERIMENTS_CONFIG="$DIR/experiments/kind-cluster.yaml"
@@ -557,6 +562,7 @@ experiments_faults_left() {
     [ "$(printf '%s\n' "$proxies" | awk -F'\t' 'NF >= 5' | grep -c . || true)" = 3 ] || echo "the proxy lists $(printf '%s\n' "$proxies" | grep -c . || true) proxies, not its three"
     files=$(experiments_simulator ls -a /tmp 2>/dev/null) || echo "the simulator could not be read"
     printf '%s\n' "$files" | grep -x 'hold-payouts\|hold-inquiries' | sed "s/^/the simulator's flag /"
+    printf '%s\n' "$files" | grep -x 'degrade-[a-z]*-unavailable\|degrade-[a-z]*-silent' | sed "s/^/the simulator's flag /"
     for namespace in finapp finapp-experiments finapp-rehearsal; do
         kube -n "$namespace" get networkpolicy -l finapp/experiment-fault=true -o name 2>/dev/null | sed "s#^#$namespace #"
     done
@@ -593,6 +599,10 @@ experiments_clear_faults() {
         experiments_undo proxy-down "$proxy" >> "$EXP_ART/faults.log" 2>&1
     done
     for flag in hold-payouts hold-inquiries; do
+        experiments_simulator rm -f "/tmp/$flag" >> "$EXP_ART/faults.log" 2>&1
+    done
+    # The provider experiments' degradation flags (P16-TSK-018), each a rail and a mode.
+    for flag in $EXPERIMENTS_DEGRADATIONS; do
         experiments_simulator rm -f "/tmp/$flag" >> "$EXP_ART/faults.log" 2>&1
     done
     for namespace in finapp finapp-experiments finapp-rehearsal; do
@@ -1055,3 +1065,427 @@ E01_recover() {
         || fail "E01: $failed_requests of the workload's requests failed where the edge failed $failed_inside in the killed replica's window: a request failed that was not on it"
     pass "E01: the failed requests were those on the killed replica - its held payout and $failed_requests of the workload's, each a failure at the edge in its window, none outside it; $served answers served; none unresolved"
 }
+
+# ---------------------------------------------------------------------------------------------------
+# The provider experiments (P16-TSK-018): E17 the card PSP out, E18 the FX provider and the reference out, E21 every provider slow;
+# E19 and E20 refused with their reasons. docs/architecture/TIMEOUTS_AND_RETRIES.md section 5; OPERATIONS_RUNBOOK.md section 11.53.
+# Each degrades the simulator through the fault registry (the hold kind puts a flag file on and takes it off, Simulator.java reads
+# it) or the proxy (a latency toxic on the simulator's hop), so the boundary passes before every fault and the exit trap clears it.
+# Each reads the platform's side (the database, Prometheus) and the provider's side (the simulator's requests.tsv) and judges both.
+# ---------------------------------------------------------------------------------------------------
+
+# How long each phase of a provider fault holds: long enough for several sweep ticks, short of the unknown-age page's 15 minutes.
+PROVIDER_PHASE_SECONDS=${REHEARSAL_PROVIDER_PHASE_SECONDS:-240}
+
+# The bound a card movement is resolved within once its provider answers again, read from the code's default as the load scope reads
+# it (never copied): twice the payment sweep's dispatched age, and five minutes for the sweep's poll, the claim's lease and the client.
+provider_resolve_seconds() {
+    age=$(sed -n 's/.*finapp\.payments\.sweeper\.dispatched-age:PT\([0-9]*\)M}.*/\1/p' \
+        "$ROOT/app/src/main/java/com/finapp/app/payments/PaymentSweeperSchedule.java" | head -1)
+    case $age in '' | *[!0-9]*) cannot "the payment sweep's dispatched age could not be read from PaymentSweeperSchedule.java" ;; esac
+    ! grep -Eqr 'SWEEPER_DISPATCHED_?AGE|sweeper\.dispatched-age' "$ROOT/deploy" \
+        || cannot "a deployed overlay sets the payment sweep's dispatched age, which this bound reads from the code's default"
+    PROVIDER_RESOLVE_SECONDS=$((2 * age * 60 + 300))
+}
+
+# provider_requests: the simulator's own record of every request, degraded or not (Simulator.java's requests.tsv), into the
+# experiment's directory: millis, method, path, our key or the inquired reference, what became of it.
+provider_requests() {
+    sleep 3
+    experiments_simulator cat /tmp/requests.tsv > "$EXP_DIR/requests.tsv" 2>/dev/null || cannot "$EXP_ID: the simulator's requests could not be read"
+    [ -s "$EXP_DIR/requests.tsv" ] || cannot "$EXP_ID: the simulator recorded no request at all, so nothing could be judged"
+}
+
+# provider_blind_resends <since millis>: every dispatch key the provider received again with no answered inquiry of it in between - a blind resend
+# of an ambiguous call, which the platform must never make (PHASE_16_PLAN.md section 8). A resend after an inquiry is class (c), the
+# provider having said it never saw the first. Prints one line per blind resend; nothing printed is none.
+provider_blind_resends() {
+    awk -F'\t' -v since="$1" '$1 >= since && $4 != "-" {
+        if ($2 == "POST") { key = $3 "|" $4; if ((key in sent) && !asked[$4]) print; sent[key] = 1; asked[$4] = 0 }
+        else if ($5 == "inquiry") asked[$4] = 1
+    }' "$EXP_DIR/requests.tsv"
+}
+
+# provider_rail_outcomes <label>: the acting judgements so far, by rail and outcome (finapp.payments.rail.outcome, counted after commit).
+provider_rail_outcomes() {
+    answer=$(experiments_prometheus "/api/v1/query?query=$(urlencode 'sum by (rail, outcome) (finapp_payments_rail_outcome_total)')" 2>/dev/null || true)
+    case $answer in *'"status":"success"'*) ;; *) cannot "$EXP_ID: Prometheus did not answer the rail outcomes ($1)" ;; esac
+    printf '%s' "$answer" | grep -o '"metric":{[^}]*},"value":\[[^]]*\]' \
+        | sed -n 's/.*"outcome":"\([^"]*\)".*"rail":"\([^"]*\)".*"\([0-9.e+]*\)"\]$/\2\t\1\t\3/p' | sort > "$EXP_DIR/rail-outcomes-$1.tsv"
+}
+
+# provider_failure_rates <from label> <to label>: per rail, the share of the acting judgements between two readings that failed or were left
+# unknown - the measurement owner decision C12 waits on (TIMEOUTS_AND_RETRIES.md section 5). Recorded, never judged.
+provider_failure_rates() {
+    rates=$(awk -F'\t' -v from="$EXP_DIR/rail-outcomes-$1.tsv" '
+        BEGIN { while ((getline line < from) > 0) { split(line, f, "\t"); before[f[1] "\t" f[2]] = f[3] } }
+        { delta = $3 - before[$1 "\t" $2]; all[$1] += delta; if ($2 == "FAILED" || $2 == "UNKNOWN") bad[$1] += delta }
+        END { for (rail in all) printf "%s %d of %d (%s); ", rail, bad[rail], all[rail], (all[rail] > 0 ? sprintf("%.4f", bad[rail] / all[rail]) : "none judged") }' \
+        "$EXP_DIR/rail-outcomes-$2.tsv")
+    experiments_record "failure rate per rail, $1 to $2" "${rates:-no judgement}"
+}
+
+# provider_page <name>: whether a page fires now, by name, for the record ("firing", "silent" or "unreadable").
+provider_page() {
+    answer=$(experiments_prometheus "/api/v1/query?query=$(urlencode "ALERTS{alertstate=\"firing\",alertname=\"$1\"}")" 2>/dev/null || true)
+    case $answer in *'"status":"success"'*) ;; *) echo unreadable; return 0 ;; esac
+    case $answer in *"\"alertname\":\"$1\""*) echo firing ;; *) echo silent ;; esac
+}
+
+# provider_watch <seconds> <what>: the experiment held for a phase, its correctness pages watched every 15 s (ADR-0127 decision 6), and the
+# experiment's own stop condition (provider_stop_condition, set by each experiment) read on each pass. Returns early on a stop.
+provider_watch() {
+    until_epoch=$(( $(date +%s) + $1 ))
+    while [ "$(date +%s)" -lt "$until_epoch" ]; do
+        firing=$(experiments_pages_firing)
+        if [ -n "$firing" ]; then
+            EXP_STOPPED="a correctness page during $2: $firing"
+            log "$EXP_ID STOP: $EXP_STOPPED"
+            return 0
+        fi
+        # Called in this shell, never inside $( ): the stop condition keeps its count across passes, and a refusal ends the run.
+        provider_stop_condition
+        if [ -n "$PROVIDER_STOP" ]; then
+            EXP_STOPPED="$PROVIDER_STOP, during $2"
+            log "$EXP_ID STOP: $EXP_STOPPED"
+            return 0
+        fi
+        printf '%s\t%s\tnone\n' "$(date -u +%H:%M:%S)" "$2" >> "$EXP_DIR/pages.tsv"
+        sleep 15
+    done
+}
+
+# Card attempts born since the experiment's start: captured ones whose authorization and capture the provider never took, and ones still
+# waiting on an answer.
+provider_card_unanswered() {
+    # Called inside $( ): it never ends the run itself, and an unreadable side is printed as a problem.
+    psql_query -c "SELECT a.status || ' ' || a.auth_reference || ' ' || coalesce(a.capture_reference, '-') FROM payments.payment_attempt a
+        WHERE a.rail = 'card' AND a.created_at >= to_timestamp($PROVIDER_START) AND a.status IN ('AUTHORIZED', 'CAPTURED')" \
+        > "$EXP_DIR/card-concluded.raw" 2>/dev/null || { echo "the concluded card attempts could not be read"; return 0; }
+    tr -d '\r' < "$EXP_DIR/card-concluded.raw" > "$EXP_DIR/card-concluded.txt"
+    [ -s "$EXP_DIR/requests.tsv" ] || { echo "the provider's requests could not be read"; return 0; }
+    awk -F'\t' '$5 == "effect" && ($3 == "/authorizations" || $3 == "/captures") {print $3 " " $4}' "$EXP_DIR/requests.tsv" | sort -u > "$EXP_DIR/card-effects.txt"
+    awk 'NR == FNR {taken[$0] = 1; next}
+        NF >= 2 && !(("/authorizations " $2) in taken) {print "authorized with no authorization the provider took: " $0}
+        NF >= 3 && $1 == "CAPTURED" && !(("/captures " $3) in taken) {print "captured with no capture the provider took: " $0}' \
+        "$EXP_DIR/card-effects.txt" "$EXP_DIR/card-concluded.txt"
+}
+
+provider_card_waiting() {
+    psql_query -c "SELECT count(*) FROM payments.payment_attempt WHERE rail = 'card' AND created_at >= to_timestamp($PROVIDER_START)
+        AND status IN ('AUTH_DISPATCHED', 'AUTH_UNKNOWN', 'CAPTURE_DISPATCHED', 'CAPTURE_UNKNOWN', 'VOID_DISPATCHED', 'VOID_UNKNOWN')" | tr -d '[:space:]'
+}
+
+# Card attempts that left one unknown state more than once: an unknown is resolved once.
+provider_card_resolved_twice() {
+    psql_query -c "SELECT count(*) FROM (SELECT e.attempt_id, e.from_status FROM payments.payment_attempt_event e
+        JOIN payments.payment_attempt a ON a.id = e.attempt_id
+        WHERE a.rail = 'card' AND a.created_at >= to_timestamp($PROVIDER_START) AND e.from_status LIKE '%\_UNKNOWN'
+        GROUP BY e.attempt_id, e.from_status HAVING count(*) > 1) twice" | tr -d '[:space:]'
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E17: the card PSP unavailable (503), then silent past the timeout, under the workload, at three replicas.
+# ---------------------------------------------------------------------------------------------------
+
+E17_steady() {
+    provider_resolve_seconds
+    PROVIDER_START=$(db_epoch)
+    PROVIDER_START_MILLIS=$((PROVIDER_START * 1000))
+    # The client keeps asking under each key until its movement ends, past the outage and the sweep's resolution: what it was told is
+    # then what the platform concluded, so the census's client counts and the provider's keys can agree.
+    WORKLOAD_RETRY_SECONDS=$((2 * PROVIDER_PHASE_SECONDS + PROVIDER_RESOLVE_SECONDS))
+    start_workload e17 retry
+    unset WORKLOAD_RETRY_SECONDS
+    sleep 60
+    provider_rail_outcomes steady-start
+    sleep 60
+    provider_rail_outcomes steady
+    experiments_record "steady state" "the workload running with retries under its keys for $((2 * PROVIDER_PHASE_SECONDS + PROVIDER_RESOLVE_SECONDS)) s; the card rail answering"
+}
+
+# Each experiment's own stop condition (its register row's), read on every pass of provider_watch; sets PROVIDER_STOP. A reading that
+# cannot be made is a stop too: a count nobody could read is not a zero.
+provider_stop_condition() {
+    PROVIDER_STOP=""
+    case $EXP_ID in
+        E17)
+            experiments_simulator cat /tmp/requests.tsv > "$EXP_DIR/requests.tsv" 2>/dev/null || true
+            unanswered=$(provider_card_unanswered)
+            [ -z "$unanswered" ] || PROVIDER_STOP="a payment posted without a provider answer: $(printf '%s' "$unanswered" | head -1)" ;;
+        E18)
+            stale=$(provider_fx_stale)
+            [ "$stale" = 0 ] || PROVIDER_STOP="a conversion on a stale rate, or the count unreadable ('$stale')" ;;
+        E21)
+            provider_unaffected_breach ;;
+    esac
+}
+
+E17_fault() {
+    experiments_fault_on hold degrade-card-unavailable
+    experiments_record fault "the card rail answered 503 for every request (degrade-card-unavailable) from $(date -u +%H:%M:%SZ)"
+    provider_watch "$PROVIDER_PHASE_SECONDS" "the card rail unavailable"
+    provider_rail_outcomes unavailable
+    [ -n "$EXP_STOPPED" ] && return 0
+    experiments_fault_off hold degrade-card-unavailable
+    experiments_fault_on hold degrade-card-silent
+    experiments_record fault "the card rail silent past the timeout for every request (degrade-card-silent) from $(date -u +%H:%M:%SZ)"
+}
+
+E17_observe() {
+    [ -n "$EXP_STOPPED" ] && return 0
+    provider_watch "$PROVIDER_PHASE_SECONDS" "the card rail silent"
+    provider_rail_outcomes silent
+    experiments_record "unknown-age page during the fault" "PaymentUnknownAged $(provider_page PaymentUnknownAged)"
+}
+
+E17_recover() {
+    # The fault is off (the stop removed it). Every card movement born since the start resolves within the bound, each unknown once.
+    deadline=$(( $(date +%s) + PROVIDER_RESOLVE_SECONDS ))
+    waiting=1
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        waiting=$(provider_card_waiting)
+        [ "$waiting" = 0 ] && break
+        sleep 15
+    done
+    [ "$waiting" = 0 ] || fail "E17: $waiting card attempts born since the start still wait on an answer $PROVIDER_RESOLVE_SECONDS s after the provider returned"
+    stop_workload e17
+    assert_flows_ran e17
+    experiments_record workload "$(cat "$CLIENT/workload-e17.summary")"
+    provider_rail_outcomes returned
+    provider_failure_rates steady-start steady
+    provider_failure_rates steady unavailable
+    provider_failure_rates unavailable silent
+    provider_failure_rates silent returned
+    provider_requests
+    unanswered=$(provider_card_unanswered)
+    [ -z "$unanswered" ] || fail "E17: a payment concluded without its provider's answer: $(printf '%s' "$unanswered" | head -3 | tr '\n' ';')"
+    twice=$(provider_card_resolved_twice)
+    [ "$twice" = 0 ] || fail "E17: $twice card attempts left one unknown state more than once"
+    blind=$(provider_blind_resends "$PROVIDER_START_MILLIS")
+    [ -z "$blind" ] || fail "E17: a dispatch sent to the provider again with no inquiry of it in between: $(printf '%s' "$blind" | head -3 | tr '\n' ';')"
+    degraded=$(awk -F'\t' -v since="$PROVIDER_START_MILLIS" '$1 >= since && ($5 == "unavailable" || $5 == "silent")' "$EXP_DIR/requests.tsv" | grep -c . || true)
+    [ "$degraded" -ge 1 ] || fail "E17: the provider degraded no request, so nothing was shown: the control"
+    concluded=$(grep -c . "$EXP_DIR/card-concluded.txt" || true)
+    experiments_record "provider's side" "$degraded requests degraded; no blind resend; $concluded card attempts concluded since the start, each on an answer the provider took"
+    experiments_record "unknowns" "none left waiting; none resolved twice"
+    experiments_record "unknown-age page after" "PaymentUnknownAged $(provider_page PaymentUnknownAged)"
+    pass "E17: 0 card payments concluded without the provider's answer, every unknown resolved once within $PROVIDER_RESOLVE_SECONDS s of the provider's return, no blind resend ($degraded degraded requests)"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E18: the FX provider unavailable, then the reference rate source unavailable past its staleness, at three replicas.
+# ---------------------------------------------------------------------------------------------------
+
+# Conversions booked since the start on a stale rate: a quote priced from a reference older than its pair's maximum age when issued, or a
+# trade booked after its quote expired.
+provider_fx_stale() {
+    psql_query -c "SELECT count(*) FROM fx.trade t JOIN fx.quote q ON q.id = t.quote_id JOIN fx.rate_snapshot s ON s.id = q.reference_snapshot_id
+        JOIN fx.pricing_pair p ON p.policy_id = q.pricing_policy_version_id AND p.source_currency = q.source_currency
+         AND p.destination_currency = q.destination_currency AND p.purpose = q.purpose
+        WHERE t.booked_at >= to_timestamp($PROVIDER_START)
+          AND (q.issued_at - s.received_at > p.reference_max_age_seconds * interval '1 second' OR t.booked_at > q.expires_at)" 2>/dev/null \
+        | tr -d '[:space:]'
+}
+
+# e18_conversion <label>: one customer conversion through the doors (a quote, then the conversion); its line in platform-client.log.
+e18_conversion() {
+    client fx-conversion "$1" >> "$ART/platform-client.log" 2>&1 || true
+    grep "^platform fx-conversion $1 " "$ART/platform-client.log" | tail -1
+}
+
+E18_steady() {
+    case " $EXTRA_PROVIDER_NAMES " in *" FINAPP_FX_PROVIDER_URL "*) ;; *) cannot "E18: the run names no FX provider to the application" ;; esac
+    PROVIDER_START=$(db_epoch)
+    # Section 2's pricing policy, by two persons, as the platform scopes do (OPERATIONS_RUNBOOK.md section 2): no quote without it.
+    client platform-prepare >> "$ART/platform-client.log" 2>&1 || fail "E18: the platform's persons could not be registered: see platform-client.log"
+    psql_query -f - < "$CLIENT/seed-platform.sql" >> "$ART/seed.log" 2>&1 || fail "E18: the platform seed failed: see seed.log"
+    psql_query -f - < "$CLIENT/ids.sql" > "$CLIENT/ids.properties" 2>> "$ART/seed.log" || fail "E18: the identities could not be read"
+    client platform-staff >> "$ART/platform-client.log" 2>&1 || fail "E18: the staff's roles could not be granted: see platform-client.log"
+    client activate-pricing >> "$ART/platform-client.log" 2>&1 || fail "E18: the pricing policy could not be activated: see platform-client.log"
+    grep -q '^platform activate-pricing .*approved status=20[01]' "$ART/platform-client.log" || fail "E18: the pricing policy was not activated by a second person"
+    PROVIDER_MAX_AGE=$(psql_query -c "SELECT max(p.reference_max_age_seconds) FROM fx.pricing_pair p JOIN fx.pricing_policy_version v ON v.id = p.policy_id
+        WHERE v.status = 'ACTIVE'" | tr -d '[:space:]')
+    case $PROVIDER_MAX_AGE in '' | *[!0-9]*) cannot "E18: the active pricing policy's reference maximum age could not be read" ;; esac
+    control=$(e18_conversion e18-steady)
+    case $control in *" status=20"[01]" trade="[!-]*) ;; *) fail "E18: the control conversion before the fault was not booked: $control" ;; esac
+    start_workload e18 retry
+    experiments_record "steady state" "a conversion booked before the fault ($control); the reference's maximum age $PROVIDER_MAX_AGE s"
+}
+
+E18_fault() {
+    experiments_fault_on hold degrade-fx-unavailable
+    experiments_record fault "the FX provider answered 503 for every quote and execution (degrade-fx-unavailable) from $(date -u +%H:%M:%SZ)"
+    refused=0
+    for try in 1 2 3; do
+        answer=$(e18_conversion "e18-provider-out-$try")
+        printf '%s\n' "$answer" >> "$EXP_DIR/conversions.txt"
+        case $answer in *" status=20"[01]" trade="[!-]*) ;; *) refused=$((refused + 1)) ;; esac
+        sleep 20
+    done
+    experiments_record "provider out" "$refused of 3 conversions refused while no firm quote could be had"
+    [ "$refused" = 3 ] || fail "E18: a conversion was booked while the FX provider gave no quote: see experiments/E18/conversions.txt"
+    provider_watch 60 "the FX provider unavailable"
+    [ -n "$EXP_STOPPED" ] && return 0
+    experiments_fault_off hold degrade-fx-unavailable
+    experiments_fault_on hold degrade-reference-unavailable
+    experiments_record fault "the reference rate source answered 503 (degrade-reference-unavailable) from $(date -u +%H:%M:%SZ), the FX provider answering"
+}
+
+E18_observe() {
+    [ -n "$EXP_STOPPED" ] && return 0
+    # Past the reference's maximum age, and a fetch interval more: every quote must now be refused on its stale reference.
+    provider_watch $((PROVIDER_MAX_AGE + 60)) "the reference unavailable, ageing past its maximum"
+    [ -n "$EXP_STOPPED" ] && return 0
+    before=$(provider_quote_outcome refused_reference_stale)
+    stale_refused=0
+    for try in 1 2 3; do
+        answer=$(e18_conversion "e18-reference-stale-$try")
+        printf '%s\n' "$answer" >> "$EXP_DIR/conversions.txt"
+        case $answer in *" status=503 "*"code=fx.RateUnavailable"*) stale_refused=$((stale_refused + 1)) ;; esac
+        sleep 10
+    done
+    # Refused for the stale reference itself, not for another rate trouble that answers the same code: the quote's own outcome, counted.
+    sleep 30
+    after=$(provider_quote_outcome refused_reference_stale)
+    case "$before$after" in *[!0-9]* | '') fail "E18: the quotes' outcomes could not be read from Prometheus ('$before', '$after')" ;; esac
+    experiments_record "reference stale" "$stale_refused of 3 conversions refused fx.RateUnavailable past the reference's maximum age; refused_reference_stale counted $((after - before)) times"
+    [ "$stale_refused" = 3 ] || fail "E18: a quote was not refused on a stale reference: see experiments/E18/conversions.txt"
+    [ $((after - before)) -ge 3 ] || fail "E18: the refusals were not counted as the reference's staleness (refused_reference_stale rose by $((after - before)))"
+}
+
+# provider_quote_outcome <outcome>: the quotes refused or issued with that outcome so far (finapp.fx.quote), a whole number.
+provider_quote_outcome() {
+    experiments_prometheus "/api/v1/query?query=$(urlencode "sum(finapp_fx_quote_total{outcome=\"$1\"}) or vector(0)")" 2>/dev/null \
+        | sed -n 's/.*"value":\[[^,]*,"\([0-9]*\)\(\.[0-9]*\)\{0,1\}"\].*/\1/p'
+}
+
+E18_recover() {
+    deadline=$(( $(date +%s) + 300 ))
+    answer=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        answer=$(e18_conversion e18-returned)
+        case $answer in *" status=20"[01]" trade="[!-]*) break ;; esac
+        sleep 20
+    done
+    case $answer in *" status=20"[01]" trade="[!-]*) ;; *) fail "E18: no conversion was booked within 300 s of the providers' return: $answer" ;; esac
+    stop_workload e18
+    assert_flows_ran e18
+    stale=$(provider_fx_stale)
+    [ "$stale" = 0 ] || fail "E18: $stale conversions booked on a stale rate"
+    booked=$(psql_query -c "SELECT count(*) FROM fx.trade WHERE booked_at >= to_timestamp($PROVIDER_START)" | tr -d '[:space:]')
+    [ "${booked:-0}" -ge 2 ] || fail "E18: only ${booked:-0} conversions were booked, so the stale-rate count read almost nothing: the control"
+    provider_requests
+    blind=$(provider_blind_resends "$((PROVIDER_START * 1000))")
+    [ -z "$blind" ] || fail "E18: an FX dispatch sent again with no inquiry of it in between: $(printf '%s' "$blind" | head -3 | tr '\n' ';')"
+    experiments_record conversions "$booked booked since the start, none on a stale rate; the conversion after the return: $answer"
+    pass "E18: 0 conversions on a stale rate ($booked booked and judged), quotes refused while the provider gave none and once the reference aged past $PROVIDER_MAX_AGE s"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E21: every provider slowed to two, then ten, times its steady latency (a latency toxic on the simulator's hop), at three replicas.
+# ---------------------------------------------------------------------------------------------------
+
+# provider_latency_ms <window>: the card provider calls' mean latency over the window, in whole milliseconds (finapp.payments.provider.latency
+# publishes _sum and _count, no buckets).
+provider_latency_ms() {
+    query="1000 * sum(increase(finapp_payments_provider_latency_seconds_sum[$1])) / sum(increase(finapp_payments_provider_latency_seconds_count[$1]))"
+    experiments_prometheus "/api/v1/query?query=$(urlencode "$query")" 2>/dev/null | sed -n 's/.*"value":\[[^,]*,"\([0-9.]*\)"\].*/\1/p' | cut -d. -f1
+}
+
+# The routes that call no provider, within their objectives (SLOS.md section 2): their 5-minute error ratios, read now.
+provider_unaffected_ratios() {
+    for objective in transfer_latency:0.01 authentication_latency:0.05 transfer_availability:0.001; do
+        name=${objective%%:*}
+        budget=${objective##*:}
+        value=$(experiments_prometheus "/api/v1/query?query=$(urlencode "max(finapp:slo_${name}:error_ratio_rate5m)")" 2>/dev/null \
+            | sed -n 's/.*"value":\[[^,]*,"\([0-9.eE+-]*\)"\].*/\1/p')
+        printf '%s %s %s\n' "$name" "${value:-unread}" "$budget"
+    done
+}
+
+# The stop condition: an unaffected route past its objective for five minutes running (twenty passes of provider_watch's 15 s).
+# Run in this shell (provider_stop_condition), so its count of passes over the objective survives from one pass to the next.
+provider_unaffected_breach() {
+    over=$(provider_unaffected_ratios | awk '$2 != "unread" && $2 + 0 > $3 + 0 {print $1}' | tr '\n' ' ')
+    if [ -n "$over" ]; then
+        E21_OVER=$((${E21_OVER:-0} + 1))
+    else
+        E21_OVER=0
+    fi
+    [ "${E21_OVER:-0}" -lt 20 ] || PROVIDER_STOP="an unaffected route past its objective for 5 minutes: $over"
+}
+
+# The hinted inquiries the bulkhead refused, from every replica's lines (no meter counts them: TIMEOUTS_AND_RETRIES.md section 6).
+provider_bulkhead_refusals() {
+    total=0
+    for pod in $(kube -n finapp get pods -l app.kubernetes.io/name=finapp-app -o name 2>/dev/null); do
+        count=$(kube -n finapp logs "$pod" --since-time="$1" 2>/dev/null | grep -c 'Too many hinted inquiries are running on this instance' || true)
+        total=$((total + ${count:-0}))
+    done
+    echo "$total"
+}
+
+E21_steady() {
+    start_workload e21 retry
+    sleep 180
+    E21_NORMAL=$(provider_latency_ms 2m)
+    case $E21_NORMAL in '' | *[!0-9]*) cannot "E21: the card provider's steady latency could not be read from Prometheus" ;; esac
+    [ "$E21_NORMAL" -ge 1 ] || E21_NORMAL=1
+    E21_SINCE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    provider_rail_outcomes steady
+    experiments_record "steady state" "the card provider's mean latency ${E21_NORMAL} ms over two minutes; unaffected routes: $(provider_unaffected_ratios | tr '\n' ';')"
+}
+
+E21_fault() {
+    E21_OVER=0
+    experiments_fault_on toxic simulator e21-twice latency "latency=$E21_NORMAL"
+    experiments_record fault "every provider call delayed by ${E21_NORMAL} ms more (two times its steady latency) from $(date -u +%H:%M:%SZ)"
+    provider_watch "$PROVIDER_PHASE_SECONDS" "the providers at two times their latency"
+    experiments_record "at two times" "card provider latency $(provider_latency_ms 2m) ms; unaffected routes: $(provider_unaffected_ratios | tr '\n' ';'); bulkhead refusals so far $(provider_bulkhead_refusals "$E21_SINCE")"
+    provider_rail_outcomes twice
+    [ -n "$EXP_STOPPED" ] && return 0
+    experiments_fault_off toxic simulator e21-twice latency "latency=$E21_NORMAL"
+    experiments_fault_on toxic simulator e21-tenfold latency "latency=$((9 * E21_NORMAL))"
+    experiments_record fault "every provider call delayed by $((9 * E21_NORMAL)) ms more (ten times its steady latency) from $(date -u +%H:%M:%SZ)"
+}
+
+E21_observe() {
+    [ -n "$EXP_STOPPED" ] && return 0
+    provider_watch "$PROVIDER_PHASE_SECONDS" "the providers at ten times their latency"
+    experiments_record "at ten times" "card provider latency $(provider_latency_ms 2m) ms; unaffected routes: $(provider_unaffected_ratios | tr '\n' ';'); bulkhead refusals so far $(provider_bulkhead_refusals "$E21_SINCE")"
+    provider_rail_outcomes tenfold
+}
+
+E21_recover() {
+    sleep 120
+    stop_workload e21
+    assert_flows_ran e21
+    [ "$(workload_unresolved e21)" = 0 ] || fail "E21: $(workload_unresolved e21) requests stayed unresolved under slow providers: see workload-e21.tsv"
+    provider_rail_outcomes returned
+    provider_failure_rates steady twice
+    provider_failure_rates twice tenfold
+    provider_failure_rates tenfold returned
+    unread=$(provider_unaffected_ratios | awk '$2 == "unread" {print $1}' | tr '\n' ' ')
+    [ -z "$unread" ] || fail "E21: the unaffected routes' objectives could not be read ($unread), so nothing was shown"
+    experiments_record "bulkhead refusals" "$(provider_bulkhead_refusals "$E21_SINCE") hinted inquiries left to the sweep by the bulkhead"
+    pass "E21: the routes that call no provider stayed within their objectives at two and ten times the providers' latency, every request resolved"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E19 and E20: refused, each with its reason, before any fault.
+# ---------------------------------------------------------------------------------------------------
+
+E19_steady() {
+    cannot "E19 cannot be driven: no production path runs a KYC case's checks (VerificationRunService.runChecks has callers only in tests) and the kind overlay configures no KYC provider (THREAT_MODEL.md section 6 item 60)"
+}
+E19_fault() { :; }
+E19_observe() { :; }
+E19_recover() { :; }
+
+E20_steady() {
+    cannot "E20 rests on the recorded fail-safe: no deployment can configure a bureau, and the owner decided on 2026-11-13 that none is built for kind in Phase 16 (unresolved question 13), so there is no bureau here to take away"
+}
+E20_fault() { :; }
+E20_observe() { :; }
+E20_recover() { :; }
