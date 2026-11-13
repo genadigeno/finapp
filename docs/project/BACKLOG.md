@@ -29978,6 +29978,15 @@ on none:
   `finapp/experiment-fault`, `scaled <namespace> <deployment> <replicas> <replicas to restore>` (E16's CoreDNS would be its first use
   outside the simulator). Each passes the boundary first and is removed at the experiment's stop and on every
   way out. On several nodes, read Prometheus through its pod (`experiments_prometheus`), not the API server's proxy.
+- *Routed from `P16-TSK-022` (2026-11-13):* E14's "decided bound" is the data source's socket timeout, five minutes
+  (ADR-0139, `application.yaml`; `DatabaseSocketTimeoutTest`): a cut replica's black-holed connections are given up within it, and
+  E14 reads it from `application.yaml` as E57 does (`experiments_socket_timeout`). The with-and-without comparison the failover drill
+  owed is its own experiment, E57, over the whole database hop: the fault proxy's toxics act on a hop, not on one client, so E57
+  black-holes every replica's connections, as a failover does. Its step is written against the toolkit's `toxic` primitive (a latency
+  toxic, then Toxiproxy's `timeout` toxic with `timeout=0`) in `e57_hole`; where this task builds its own black-holed-connection step,
+  the two meet at merge and one can serve both. E57 also adds the `setting` fault (a variable on the application's Deployment,
+  removed on every way out). A fleet-wide hole longer than five minutes pages `GaugesStaleAcrossTheFleet`, its expected signal there
+  (`EXP_PAGES_EXPECTED`); E14's one replica should not.
 
 **P16-TSK-022 — The database failover drill and the socket timeout (`THREAT_MODEL.md` §6 items 43 (g) and 42 (h))** — `IN_PROGRESS` (2026-11-13; branch `P16-TSK-022` from master `1fbdf71c`, designed) *(read "`READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; `P16-TSK-007` and `P16-TSK-019`, both `COMPLETE`)" until the design)*
 - **Objective**: as decided:
@@ -30056,6 +30065,12 @@ on none:
 - **Definition of done**: `DOD-ARCH`, `DOD-TEST`.
 - **Operational documentation**: the matrix referenced from the runbook's incident section (§11.12).
 - **Risk**: Low. **Cx**: M.
+- *Routed from `P16-TSK-022` (2026-11-13):* the failover drill's rules (ADR-0139) for the matrix: no money-moving command is answered
+  with a success while no primary serves (E05 and E06 assert it from the edge's answers); after a promotion the new primary runs
+  alone (`synchronous_standby_names` none) until a standby is rebuilt, a window in which losing its volume loses what it committed;
+  the old primary is fenced for good. The answer a client gets while the database is away is `500` today, put to the owner as
+  `THREAT_MODEL.md` §6 item 61 (recommended `503` with `Retry-After`). None of E05, E06, E56 or E57 has run (PI-025), so the
+  matrix's database rows rest on runs owed.
 
 **P16-TSK-024 — Restore and point-in-time recovery with the post-recovery verification (`THREAT_MODEL.md` §6 item 44 (a); ADR-0128)** — `READY` (2026-11-13; marked by the coordinator at `P16-TSK-007`'s merge, under the owner's word to start wave D as each task's dependencies merge, "go next step"; its one dependency, `P16-TSK-007`, `COMPLETE`)
 - **Objective**: as decided:
@@ -30280,6 +30295,12 @@ on none:
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`.
 - **Operational documentation**: the soak's record in the register.
 - **Risk**: High (machine endurance). **Cx**: L.
+- *Routed from `P16-TSK-022` (2026-11-13):* the failover drill (E05, `OPERATIONS_RUNBOOK.md` §11.54) runs under the experiments
+  scope's retrying workload, not a k6 profile: the load harness's sampler stops the load at any unreadable sample, and a database
+  failover makes every sample unreadable. A database failover in this soak needs the sampler to hold a declared fault window (the
+  samples inside it recorded as the outage's, the load not stopped, a sample after it required to pass) and E05's steps
+  (fence, check, promote alone, move the Service, the journal compared) called from the soak's schedule. E05 leaves one server and
+  no standby, so in a soak it is the last database fault, or the standby is rebuilt after it.
 
 **P16-TST-002 — The exit pass: the mandatory experiments' quick forms on the final tree** — `PLANNED`
 - **Objective**: once, on the final tree, re-run the quick forms of the mandatory experiments, and run the named guard classes. Then

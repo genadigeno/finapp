@@ -1518,7 +1518,8 @@ The proofs write nothing and decide nothing: each reading takes one read-only sn
 - **The proofs unread** - `RiskProofReadingsFailing` (one instance's `finapp.risk.proof.reading{outcome="failed"}` at
   two floors in a row - `by (instance)`, each reading its own: a statement past its bound, a lost connection, a refused start - the `Could not read the risk proofs` warn lines
   name the class) and `RiskProofReadingsStalled` (no `completed` reading on an instance in two floors: a reading stuck on a
-  connection the network black-holed - the data source sets no socket timeout - or killed by an `Error`; restart that
+  connection the network black-holed - given up after the data source's socket timeout, five minutes since 2026-11-13 (ADR-0139; until then
+  never) - or killed by an `Error`; restart that
   instance, that one pod, evicted under break-glass (section 11.25; section 11's fleet rule), nothing is lost). While either stands, the velocity proof and the censuses are not watched: read the four
   reports by hand for today until the readings complete. The rules' figures are floors of the default
   `finapp.risk.proofs.refresh` (15 min, `RiskObjectives.proofReadingFloors`): the failing rule's window and wait two
@@ -1843,7 +1844,7 @@ refusing a role that can write: section 11.37, `P15-TSK-043`.)*
 
 **`AccountingGaugesUnreadable`, `RegulatoryAttentionUnreadable`, and the two stall rules' unreadable sections.** A gauge publishing NaN for 15 minutes **in scrapes that complete**: an accounting read is failing while the rest of the scrape is not, such as one statement past its bound or a grant gone. While a gauge is NaN **its threshold alert cannot fire**: whether a close has stalled is unknown, not fine. Every instance runs every read, so `pg_stat_activity` shows them by their statement. Raising the timeout is a choice to wait longer on that one thread, so on every other accounting gauge behind it.
 
-**A read that never returns: restart that instance.** The data source sets no `socketTimeout`, so a socket the network black-holed never returns and no statement timeout reaches it. It holds the one thread, so **every gauge on that instance, every module's, goes to no value**: it stands on its last reading until its ask has gone unanswered for `finapp.gauges.stale-after` (2 minutes), and then says so, and `GaugesStale` tickets on that instance (section 11.8). That is the right signal: nothing is being read. Tell it from a thread merely behind by what an operator can read, since nobody can take a thread dump in a deployed environment (no role may exec into a pod, and the management port exposes health, info and the scrape alone): that instance's gauge canary holds at no value without a break, where a thread behind alternates between a number and none; its pool is not starved, its threads waiting for a connection at nought; and the other instances, on the same database, keep reading. *(Read "A thread dump shows `gauge-refresher` inside a read" until 2026-11-12.)* Nothing else frees it; nothing is lost by the restart, since a gauge decides nothing. The restart is of that one pod, evicted under break-glass (section 11.25), never of the fleet (section 11's fleet rule). *(Until `P15-TSK-024`: "every accounting gauge", standing "for four floors, a minute for most and four for the two with the 60 s floor".)*
+**A read that never returns: restart that instance.** A socket the network black-holed answers nothing, and no statement timeout reaches it: since 2026-11-13 the data source gives it up after its `socketTimeout`, five minutes (ADR-0139), so the read fails and the thread goes on; restart the instance only if it is still held past that. *(Read "The data source sets no `socketTimeout`, so a socket the network black-holed never returns" until then.)* It holds the one thread, so **every gauge on that instance, every module's, goes to no value**: it stands on its last reading until its ask has gone unanswered for `finapp.gauges.stale-after` (2 minutes), and then says so, and `GaugesStale` tickets on that instance (section 11.8). That is the right signal: nothing is being read. Tell it from a thread merely behind by what an operator can read, since nobody can take a thread dump in a deployed environment (no role may exec into a pod, and the management port exposes health, info and the scrape alone): that instance's gauge canary holds at no value without a break, where a thread behind alternates between a number and none; its pool is not starved, its threads waiting for a connection at nought; and the other instances, on the same database, keep reading. *(Read "A thread dump shows `gauge-refresher` inside a read" until 2026-11-12.)* Before the socket timeout nothing else frees it; nothing is lost by the restart, since a gauge decides nothing. The restart is of that one pod, evicted under break-glass (section 11.25), never of the fleet (section 11's fleet rule). *(Until `P15-TSK-024`: "every accounting gauge", standing "for four floors, a minute for most and four for the two with the 60 s floor".)*
 
 **The whole scrape holds.** Since `P15-TSK-024` no gauge reads on the scrape thread, so with the pool exhausted or the database gone a scrape still completes at once: `up` stays 1, each read gauge publishes NaN once its read fails, and the unreadable rules above hold their 15 minutes. A database in trouble makes every read wait the pool's 5 s (`spring.datasource.hikari.connection-timeout`) and fail, about sixty classes in turn, so the one thread falls behind: each failed read is NaN at every scrape, so the unreadable rules hold, and the canary, a constant read between them, is NaN for most of each pass, which `GaugesStale` counts (section 11.8). A database that answers slowly but answers is the harder case: every gauge alternates between a number and NaN, no `for` above holds, and only `GaugesStale` sees it *(the fix round of 2026-11-08; until then this paragraph said every gauge of the instance went NaN past `finapp.gauges.stale-after`, and `GaugesStale` waited for its canary to hold NaN for 5 minutes, which a thread behind by less than about seven minutes never gives)*. *(Until `P15-TSK-024` about sixty other modules' classes read on the scrape thread: measured with the database gone, one scrape took 96.7 s against the local 5 s timeout, `up` went to 0, no NaN was stored, and none of these rules could hold its `for`.)*
 
@@ -2473,7 +2474,7 @@ instance stopped and the database cut off from every replica, and never ran (`PO
 
 **`GaugesStale` (ticket).** The instance answers its scrapes, but its canary, `finapp.gauges.refreshed` (a constant 1 read through the same thread), was no value at more than 6 of the last 30 minutes' 120 evaluations, over 90 s: the gauge thread left asks unanswered past `finapp.gauges.stale-after`, and every `finapp` gauge of that instance was stale with it. **It counts; it does not wait for NaN to hold.** A thread behind but not stuck answers each ask about one pass of its queue (C) after it, so the canary, and every gauge whose read succeeds, is a number for about two minutes after each answer and NaN for the rest, about C - 120 s of every C. A rule that needs NaN to hold for its `for` fires only once C - 120 s outlasts that `for` (for 5 minutes, a pass over seven), and every threshold rule's `for` on that instance restarts at each NaN. So while this fires, **that instance's threshold rules cannot be trusted**: they are not merely late. A fleet-wide `max()` still reads the instances whose thread answers, so one instance behind blinds only its own per-instance rules (the `…SweeperOff` switches among them); every instance behind at once, a database in trouble, blinds the fleet's. The count fires five minutes after the seventh stale evaluation, about eight and a half minutes after a read hangs. A start whose first reads take a minute, or one short burst, stays under it. Two causes:
 
-- **A read that never returns** holds the one thread. The data source sets no `socketTimeout`, so a socket the network black-holed never returns and no statement timeout reaches it. Nobody can take a thread dump in a deployed environment (no role may exec into a pod; the management port exposes `health`, `info` and `prometheus` alone), so read it from outside: that instance's canary, `finapp_gauges_refreshed`, holds at no value without a break, where a thread behind alternates; `hikaricp_connections_pending` on that instance stays at nought, so its pool is not starved; and the other instances, on the same database, keep reading. *(Read "A thread dump shows `gauge-refresher` inside a read" until 2026-11-12.)* **Restart that instance**, that one pod, evicted under break-glass (section 11.25; section 11's fleet rule): nothing else frees it.
+- **A read that never returns** holds the one thread. A socket the network black-holed answers nothing and no statement timeout reaches it; since 2026-11-13 the data source gives it up after its `socketTimeout`, five minutes (ADR-0139), and the thread goes on *(until then it never returned)*. Nobody can take a thread dump in a deployed environment (no role may exec into a pod; the management port exposes `health`, `info` and `prometheus` alone), so read it from outside: that instance's canary, `finapp_gauges_refreshed`, holds at no value without a break, where a thread behind alternates; `hikaricp_connections_pending` on that instance stays at nought, so its pool is not starved; and the other instances, on the same database, keep reading. *(Read "A thread dump shows `gauge-refresher` inside a read" until 2026-11-12.)* **Restart that instance**, that one pod, evicted under break-glass (section 11.25; section 11's fleet rule), if it is still held past the socket timeout: before it nothing else frees it.
 - **The thread behind its asks.** Either the reads wait on a database in trouble (each up to the pool's 5 s, `spring.datasource.hikari.connection-timeout`, then fails; about sixty classes in turn make a pass near 300 s), or they are simply slow (the proofs at volume, `CURRENT_STATE.md`'s owner item (a) of `P15-TSK-024`). A read that fails is NaN at every scrape, so its module's unreadable rule holds its `for` and fires beside this. A read that succeeds slowly alternates as above, and only this alert sees it. The instance's requests fail the same way: read the database and `hikaricp_connections_pending` directly. When the reads are fast again, the thread catches up and the count leaves its 30-minute window with no restart.
 
 One gauge NaN while the canary is 1 is not this alert: that gauge's read is failing (a statement past its bound, a grant gone), and its module's unreadable rule answers it. **Every gauge an alert reads has one**, and `PlatformAlertRulesTest#everyGaugeAnAlertReadsCanBeSeenUnreadable` holds that over every rule file: accounting's, BNPL's, credit's, lending's and risk's `…GaugesUnreadable` and their stall and attention rules, `MustBeZeroGaugeUnreadable`, `ReferenceRateNeverFetched`, `SettlementSourceNeverAccepted`, and, since `P15-TSK-024`'s fix round (2026-11-08), **`FxGaugesUnreadable`** (`infra/prometheus/rules/fx.yml`: the cover ages, the FX books proof and plan verdict, the outbound credits' ages, the in-transit age, the counterparty review age, the missing rule sets) and **`ReconciliationGaugesUnreadable`** (`settlement-reconciliation.yml`: the run, file, suspense and break ages and the overdue expectations), with `BnplGaugesUnreadable` now reading the negative merchant payables too. Each of those two names the series in its `gauge` label and the instance; for either, check that instance's database connectivity and its log, where the gauge's class names its failed read, and if `GaugesStale` fires on the same instance start there. Only the sweeps' switches (`…sweeper.enabled`) have no unreadable rule: they are configuration constants, read from no database, so their only NaN is the canary's, which this alert counts. *(Until the fix round this paragraph claimed the domain rules covered every gauge; fifteen gauges had none, six of them read by seven paging rules.)*
@@ -3243,6 +3244,7 @@ latest; the run, as its record names it.
 | §11.43 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `7231d298` | `§11.43's tenth run and its probes` | — |
 | §11.45 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `89b8fc60`, `f021383f` | `§11.45's record: E30 at three replicas and the isolation run` | — |
 | §11.46 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `a6fee3a1` | `§11.46's record: E01's run and the probes` | — |
+| §11.54 | `platform` | 0 | 2 | 2 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -3397,7 +3399,10 @@ rehearsed and two read.
 *(Written by `P15-TSK-032`, 2026-11-12, from the application's configuration, its probes and `infra/terraform/modules/postgres`
 (Multi-AZ with a synchronous standby, never applied). **Procedure only: the failover drill is Phase 16's**, and no managed database
 exists to fail over. What RDS does is read from its documentation and the module's plan, and is unverified here. The `kind`
-rehearsal restarts one database and never fails one over; what that does and does not show is below.)*
+rehearsal restarts one database and never fails one over; what that does and does not show is below.)* *(2026-11-13, `P16-TSK-022`:
+the failover drill is built - E05, the failover on the test-only synchronous pair, and E06, this section's unclean restart, in the
+experiments scope, §11.54 says how to run and read them - and the data source's socket timeout set, five minutes (ADR-0139). Neither
+drill has run: both are owed under `POSTPONED_ISSUES.md` PI-025, so this section's numbers stay unmeasured.)*
 
 **What a failover is here.** RDS moves the instance's endpoint to its standby in another zone. The standby is synchronous, so
 every transaction the primary acknowledged is on it; nothing committed is lost, and nothing is restored. How long the endpoint is
@@ -3409,7 +3414,9 @@ promoted) is not this section: it is §11.35's restore, decided as §11.12 says.
 - **Readiness goes down, liveness does not.** The pool's connections to the old primary fail, and readiness's `db` contributor
   answers `503` on every replica once its check fails (the pool's 5 s wait, `spring.datasource.hikari.connection-timeout`, inside
   the probe's 7 s), so the Service routes nothing to them. Liveness never reads the database (ADR-0016), so **no replica
-  restarts**, which is right: a restart adds a cold start and a rebalance of every group to the outage.
+  restarts**, which is right: a restart adds a cold start and a rebalance of every group to the outage. *(2026-11-13: the probe
+  marks a replica unready after three failed checks ten seconds apart (`deploy/base/deployment.yaml`), so an outage shorter than about
+  thirty seconds may leave every replica ready throughout, its requests failing meanwhile.)*
 - **Requests in flight fail, and a retry with the same key is safe.** A money-moving command whose client retries with the same
   `Idempotency-Key` takes one effect: one that committed before the failover answers its stored result, one that did not runs
   once (`INV-IDEM-*`). "The database committed and the answer was lost" is that case.
@@ -3418,10 +3425,12 @@ promoted) is not this section: it is §11.35's restore, decided as §11.12 says.
   inbox transaction, so a record whose transaction died is redelivered into the dedupe.
 - **New connections reach the new primary** as the endpoint's name resolves to it, and readiness returns at the next probe that
   borrows one; the schema guard's verdict stands across the outage (a failed read moves no verdict, §11.1c).
-- **A connection the network black-holed never returns**, because the data source sets no socket timeout
-  (`application.yaml`). On the gauge thread it leaves that replica's gauges stale (`GaugesStale`, §11.8); the abuse doors' counts
-  give their place back after 2 s (§11.30); a request or a tick holding one waits until the operating system gives the connection
-  up. Only replacing that pod frees it.
+- **A connection the network black-holed is given up after the data source's socket timeout, five minutes** (`application.yaml`,
+  ADR-0139): the request or tick holding it fails, as any lost connection fails it, and is retried by its key or at the next tick.
+  Meanwhile it holds its thread and one of the pool's seven: on the gauge thread it leaves that replica's gauges stale (`GaugesStale`,
+  §11.8); the abuse doors' counts give their place back after 2 s (§11.30). The five minutes stay above the longest statement bound
+  the code arms, report generation's four. *(Read "never returns, because the data source sets no socket timeout ... Only replacing
+  that pod frees it" until 2026-11-13.)*
 - **The abuse counters start again**: `platform.window_counter` is unlogged, so a failover empties it, every source with a fresh
   window (§11.30).
 
@@ -3431,16 +3440,18 @@ promoted) is not this section: it is §11.35's restore, decided as §11.12 says.
 2. **Leave the fleet alone.** Do not restart or scale it. Watch readiness come back on every replica (`kubectl get pods -n finapp`
    with the read-only role) and the database alerts clear.
 3. **A replica still unready, or still failing requests, once the others serve**: replace that one pod by eviction under
-   break-glass (§11.25), one at a time (§11's fleet rule).
+   break-glass (§11.25), one at a time (§11's fleet rule). Since 2026-11-13 a replica held only by black-holed connections frees
+   itself within the socket timeout (five minutes after the failover); evict sooner only if the incident cannot wait for it.
 4. **Verify after**: the trial balance silent (`LedgerTrialBalanceNonZero`), the outbox draining (`OutboxPublicationStalled`
    clears), the unknown-outcome alerts clearing as the sweeps resume (§11.22), nothing dead-lettered or parked that the outage
    explains (§11.6). Nothing is repaired: a synchronous standby holds every acknowledged commit.
 5. **Record** the provider's event time, each replica's unready and ready times (the kubelet's events), the requests failed
    (`http_server_requests_seconds_count` with a `5xx` status) and any pod replaced.
 
-**What this does not cover.** The drill: a real failover under load, its measured interruption and how long the application takes
-to see the new primary (Phase 16). A socket timeout, which would bound the black-holed connection above and is unset by an
-earlier decision (`application.yaml`'s note). A read replica or another region (Phase 16).
+**What this does not cover.** A managed failover's own interruption, which needs a real environment (designed-only, the resilience
+register's D01). The local drill's measured interruption and how long the application takes to see the new primary are E05's,
+built and owed (§11.54, PI-025). A read replica or another region (Phase 16). *(Read "The drill: a real failover under load ... A
+socket timeout, which would bound the black-holed connection above and is unset by an earlier decision" until 2026-11-13.)*
 
 **The `kind` restart, and what it shows.** On `kind` the database is one PostgreSQL pod whose data lives on a volume claim
 (`deploy/overlays/kind/postgres.yaml`; in an `emptyDir` until 2026-11-12, when deleting the pod deleted the database). The rehearsal
@@ -3450,7 +3461,9 @@ shows readiness down and back on every replica with none restarted, claims lapsi
 taken, and the abuse table empty after. It does not show a standby taking over, an endpoint moving, a connection black-holed (a
 stopped server resets its connections), or anything of the managed service's own. **The last record**: not run. The
 `incidents` scope's database-restart step holds the `kind` half above and never ran (`POSTPONED_ISSUES.md` PI-024); the failover itself is a Phase
-16 drill.
+16 drill. *(2026-11-13: both are now built in the experiments scope, on its cluster of three zones with the synchronous standby - E06 the
+unclean stop in place, E05 the failover, E57 the black-holed connections with and without the socket timeout (§11.54) - and none has
+run: owed under PI-025. This record fills from their first runs.)*
 
 ### 11.41 The migrator Job watched: `MigratorJobFailed`, `MigratorJobOverdue`, `ClusterWatchBlind`; a run's lines in Loki (`P16-TSK-003`)
 
@@ -5089,6 +5102,93 @@ words that discoverer reads as credentials, and the boundary's cadence is worded
 on the same pinned image (a base backup at `verify-full` through the slot, streaming, `FIRST 1` synchronous, a commit held while the
 standby was stopped); on a cluster, by the owner's word of 2026-11-13 ("we dont need long running checks and tests"), it is owed under
 `POSTPONED_ISSUES.md` PI-025 with E01's run on the final bytes.
+
+### 11.54 Running the database failover drill and reading its record (`P16-TSK-022`, ADR-0139)
+
+**What it is.** Three experiments of the experiments scope (§11.46), on its cluster of three zones with the test-only primary and its
+synchronous standby (owner decision C7), and the drill's probe. Each runs in the scope's step shape under the rehearsal's workload, which
+retries every request by its key for longer than a payment caught mid-call takes to conclude (twice the longest dispatched age the code
+declares, five minutes, and the socket timeout). Each reads the journal in one consistent snapshot before its fault, every entry with a
+digest of its row and its lines, and compares it after. Each reads the public edge's answers for the interruption: the first
+money-moving command answered with a success after the fault, and none while the database was away.
+
+- **E06, the unclean stop in place** (§11.40's `kind` half, the step PI-024 left, run under owner decision C11): `pg_ctl stop -m immediate`
+  inside the primary's pod; the container restarts in its pod on its volume. Not a failover.
+- **E57, the black-holed connection with and without the socket timeout** (`THREAT_MODEL.md` §6 item 42 (h)): every answer of the
+  database hop held by the fault proxy - a latency toxic first, so that statements are in flight, then its timeout toxic with no timeout -
+  for the whole fleet, as a failover's black-holed connections are. First with the socket timeout, as deployed; then with the fleet rolled
+  without it (the registered `setting` fault, removed at stop and on every way out). Each replica's writer pool is read from Prometheus
+  every 5 s. `GaugesStaleAcrossTheFleet` pages once the fleet's gauges are blind for five minutes: here it is the fault's expected
+  signal, recorded beside the pages watched, and any other correctness page stops the experiment.
+- **E05, the failover**: the primary's server killed with `SIGKILL` from its node while a payout is held at the provider with its claim
+  `IN_PROGRESS`; then the drill's own steps, which are a person's in a real environment:
+  1. **Fence** the old primary: its StatefulSet to zero, and wait for its pod to be gone. Never two primaries: a primary brought back beside
+     a promoted standby would split the record.
+  2. **Check** before promoting: the primary named the standby synchronous at the last read before its loss, and the standby holds the
+     last commit the drill saw acknowledged. Otherwise **refuse** (the experiment's stop condition): bring the old primary back on its
+     volume and the standby streams from it again. A standby behind is never promoted; data that is gone is §11.35's restore.
+  3. **Promote** the standby (`pg_promote`), and run it **alone**: `synchronous_standby_names` reset to none, or every commit would wait
+     for a standby it does not have. Until a standby is built again, losing its volume loses what it committed since the promotion.
+  4. **Move the Service** `finapp-postgres` to the promoted pod. The fault proxy resolves its upstream per connection, so new connections
+     reach the new primary at `verify-full` (the standby presents the primary's certificate); every read of the harness after this is of
+     the promoted server.
+  E05 leaves one server and no standby, so it runs last.
+
+**Running it.** One full cluster at a time, under the machine's lock, as §11.46:
+
+```
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E06 E57 E05" infra/scripts/kind-rehearsal.sh
+REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E05 REHEARSAL_PROBE=async-standby infra/scripts/kind-rehearsal.sh
+```
+
+The second is the drill's probe (the resilience register's E56): the primary made asynchronous and the standby cut from its WAL before
+the fault, each by the server's own setting, until the standby has missed journal entries. The promotion is then refused as it must be,
+the probe promotes anyway, and the journal's comparison must name the entries lost. The run is red for that reason, or red because the
+comparison read nothing. Its cluster's data is then diverged by design: delete it.
+
+**What a green run says** (each a line of `assertions.tsv` and the experiment's `record.tsv`):
+- E06: the server started again after the stop (its start time read), accepting connections within 10 minutes (its stop condition),
+  the standby synchronous again, every replica ready, the unlogged window counters empty after holding rows before, the journal whole,
+  no replica restarted, no money-moving success while the server was down; the timeline and the interruption recorded.
+- E57: with the socket timeout, every replica holding a connection 20 s after the hole reads none in use by the timeout and 45 s, and
+  none before the timeout less 30 s; without it, every one still holds at the timeout and 65 s. A leg with nothing in flight cannot run.
+- E05: the promotion's check passed; the standby promoted alone and the Service moved; every replica ready on it; the payout's key
+  answered once and its claim `COMPLETED`; every journal entry read before the fault present and unchanged, no counted table shrunk; no
+  money-moving success between the fault and the move; no replica restarted; the timeline - the kill, the first replica unready, none
+  ready, the old pod gone, promoted, moved, every replica ready, the first money-moving success (the interruption) - and the card payments
+  caught mid-call, and when the payment sweep concluded them, recorded.
+- Then each experiment's census, after which no page fires.
+
+**Reading the record** (under `$REHEARSAL_ARTEFACTS/experiments/<id>`):
+
+| File | What it holds |
+|---|---|
+| `record.tsv` | The experiment's record: the pair, the fault, the promotion and its check, the counters, the claim, the journal, the timeline, the payments caught mid-call, the edge, the verdict |
+| `journal-before.tsv`, `journal-after.tsv` | Each journal entry and its digest, and the counted tables, before the fault and after the recovery |
+| `edge-answers.tsv` | Every answer of the public edge from the minute before the fault: ended, started, the edge's and the application's status, the method and the path |
+| `fleet.tsv`, `readiness.tsv` | The fleet every 2 s, and per second the ready replicas against the replicas |
+| `processing.tsv` (E05) | The card payments `PROCESSING` every 5 s, read from whichever server is the primary |
+| `with.tsv`, `without.tsv` (E57) | Each replica's writer connections in use every 5 s after the hole |
+| `payout-*.txt`, `retries.tsv` (E05) | The held payout's tries under its key and each answer |
+| `plant.log` (the probe), `promotion.log` (E05) | The probe's settings; the new primary's settings |
+
+**When it is red.** A refused promotion is the drill doing its job: read why in `record.tsv`, and find why the standby was behind before
+anything else. A journal entry missing or changed after E05 or E06 is a lost acknowledged commit: an incident in a real environment
+(§11.12), never a number to retry into a pass. E57 freeing a connection before the timeout, or without it, says something else freed it
+and the leg measured nothing; a connection still held past the timeout with it says the timeout did not take.
+
+**The socket timeout's evidence.** ADR-0139 decided five minutes from the bounds the code arms (report generation's four the longest)
+and the in-region recovery objective, which `DatabaseSocketTimeoutTest` holds. Its measurements are owed: E57's two legs, and the
+longest statement under the sustained profile, which the load scope now records every 10 s (`pg-statements_longest.tsv`, each
+statement's longest execution) and E29's owed run reads. If a statement that arms no bound of its own measures past half the timeout,
+or E57's leg with the timeout does not free within it, the ADR is revisited, never the value alone.
+
+**Failure and rollback.** The run's own cluster only. A fenced or promoted pair is not put back by the exit trap: after E05 or the probe,
+delete the kept cluster (`kind delete cluster`) rather than reuse it.
+
+**The last record.** Not run. The owner postponed Phase 16's `kind` runs on 2026-11-13 ("we dont need long running checks and tests"):
+E05, E06, E57 and the probe, each at three replicas, are owed under `POSTPONED_ISSUES.md` PI-025, with E29's longest statement. Their
+text is held by `ExperimentsRehearsalContractTest`; nothing here has run on a cluster, and no number above is a measurement.
 
 ## Provider callbacks are hints (`P15-TSK-036`, ADR-0083)
 

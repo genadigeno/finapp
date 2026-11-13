@@ -621,3 +621,11 @@ commit and the date; do not delete the entry.
     ran on commit `a6fee3a1`: E01 `PASSED` there, and the plants and the probes were seen there (`MUTATION_TESTING.md` §2). The later
     commits - the standby's phrase delivered by `secretKeyRef`, the replication role's SQL by placeholder, the names the secret
     discoverer reads - ran only in containers and through `ExperimentsRehearsalContractTest`.
+  - **`P16-TSK-022`** (the database failover drill and the socket timeout; `OPERATIONS_RUNBOOK.md` §11.54, whose last record is empty,
+    and §11.40's record; ADR-0139): **E06**, the primary's unclean stop in place (PI-024's step, under owner decision C11), at three
+    replicas; **E57**, the database hop black-holed for the whole fleet with and without the socket timeout, at three replicas; **E05**,
+    the failover on the synchronous pair, run last, at three replicas (`REHEARSAL_EXPERIMENTS="E06 E57 E05"`); **E56**, the entry's probe,
+    an asynchronous standby promoted (`REHEARSAL_PROBE=async-standby` with `REHEARSAL_EXPERIMENTS=E05`), with its `MUTATION_TESTING.md` §2
+    row; and the longest statement under the sustained profile, which the load scope now records (`pg-statements_longest.tsv`) and
+    `P16-TSK-007`'s owed E29 run reads, the measurement ADR-0139's revision rule needs for the socket timeout. Nothing of the task ran on
+    a cluster; its hermetic probes are in `MUTATION_TESTING.md` §2.

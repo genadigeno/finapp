@@ -617,6 +617,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T14 | A pod stating no requests refused by a real API server, in admission's two orders: no resources at all by the LimitRange, a second container stating nothing by the quota, with a complete pod admitted beside them | EXISTS | `infra/scripts/kind-rehearsal.sh` `contains: a pod stating no resources is refused by the LimitRange` `contains: a container stating nothing beside one that does is refused by the quota` `contains: 3 control: the same pod with every container's requests and limits is admitted` |
 | T14 | The budget on one `kind` cluster at three replicas, each replica's reporting pool opened by a report so that all eight of its connections are counted: `pg_stat_activity` for the fleet read every two seconds through a rollout, a pod kill and a rollback with an eviction mid-way, the peak asserted at most `instances x pool`, every sample at most eight for each pod it had, an operator asserted admitted at each peak, and an operator admitted with the fleet held at the budget itself. What keeps the fleet to six pods there is the overlay's quota and not the rollout: with the quota raised by one pod, the same rollout went past the budget | EXISTS | `infra/scripts/kind-rehearsal.sh` `contains: the peak of $peak connections exceeds instances x pool` `contains: an operator was admitted at the peak` `contains: evicted $victim mid-rollout, through the Eviction API` `contains: assert_within_pods "$label"` `contains: assert_reporting_open "$label"` `contains: an operator is admitted with the fleet held at its budget` `contains: operator_at_peak kill` |
 | T14 | Every gauge read off the scrape thread: one scrape of every meter of the real context, each meter's measurements read again on the same thread, asks the database for nothing there (a planted gauge reading it on the scrape is caught), and the reads run on the instance's one gauge thread, where ten concurrent looks at a blocked read start one read. A scrape, still unauthenticated, therefore holds no connection of its own, and a slow database never loses the whole scrape | EXISTS | `app/src/test/java/com/finapp/app/telemetry/NoGaugeReadsOnTheScrapeTest.java#noGaugeReadsTheDatabaseOnTheScrapeThread`; `app/src/test/java/com/finapp/app/telemetry/NoGaugeReadsOnTheScrapeTest.java#aPlantedReadOnTheScrapeIsCaught`; `platform/src/test/java/com/finapp/platform/metrics/GaugeRefresherTest.java#aBlockedReadNeverBlocksALookAndFliesOnce` |
+| T14 | A database connection the network black-holes (after a failover, a hung or vanished server) is given up by the driver after the data source's socket timeout, five minutes, rather than holding its thread and one of the pool's seven until the pod is replaced; the reporting pool takes the same value; it stays above every statement bound the code arms on either pool (report generation's four minutes the longest), the bounds discovered from the arming sites and the register and moved by no overlay, and frees a connection with ten minutes of the in-region recovery objective left | EXISTS | `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#theDataSourceGivesUpABlackHoledConnection`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#itIsAboveEveryArmedBound`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#theBoundsAreDiscovered`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#theReportingPoolCarriesIt`; `app/src/test/java/com/finapp/app/database/DatabaseSocketTimeoutTest.java#itFreesABlackHoledConnectionInTime` |
+| T14 | On a real cluster, the black-holed database hop held for the whole fleet: every held connection given up within the socket timeout, and, as the control, still held without it; the longest statement under the sustained profile measured below half the timeout | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
 | T15 | An unbalanced journal entry is refused at commit, whoever writes it, raw SQL included (`INV-LED-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#aDirectUnbalancedInsertIsRefusedAtCommit` |
 | T15 | The application role holds no `UPDATE`, `DELETE` or `TRUNCATE` on the journal | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theColumnSweep` |
 | T15 | The journal's append-only trigger binds even the migrator (`INV-HIST-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theAppendOnlyTriggerBindsTheMigrator` |
@@ -639,6 +641,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T16 | A merchant's payout key is that merchant's own: two merchants, one key value, two payouts | EXISTS | `app/src/test/java/com/finapp/app/merchant/MerchantPayoutEndpointDatabaseTest.java#aClientKeyIsEachMerchantsOwn` |
 | T16 | Every idempotency claim scoped to its principal, each money-moving scope moved behind a tested transition path | REMEDIATION | `X-TSK-003` |
 | T16 | No production statement deletes an idempotency record: posting once-ness's second rank (debt row #61) was ruled not settled on 2026-11-08, so no compiled class holds a delete beside the table's name and no migration deletes from it, the retention sweeps' among them, until a uniqueness on the posting scope exists. The application role keeps the `DELETE` an earlier migration granted, and nothing uses it | EXISTS | `app/src/test/java/com/finapp/app/architecture/NoIdempotencyRecordIsSweptTest.java#noProductionClassDeletesAnIdempotencyRecord`; `app/src/test/java/com/finapp/app/architecture/NoIdempotencyRecordIsSweptTest.java#noMigrationDeletesAnIdempotencyRecord` |
+| T16 | On a real cluster, a database failover under the workload: the old primary fenced before the synchronous standby is promoted and a standby behind refused; every journal entry acknowledged before the loss present and unchanged after it; a command in flight retried by its key to one effect; no money-moving command answered a success while no primary served; the census green (the resilience register's E05, with E06's unclean restart and the probe of an asynchronous standby promoted) | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
 | T17 | A redelivered message produces no second effect, and its dedupe record commits with its effect (`INV-IDEM-04`) | EXISTS | `platform/src/test/java/com/finapp/platform/inbox/InboxConsumerTest.java#redeliveryProducesNoSecondEffect`; `platform/src/test/java/com/finapp/platform/inbox/InboxConsumerTest.java#theRecordAndTheEffectCommitTogether` |
 | T17 | Reordering and duplication together leave the right answer under an ordering key (`INV-EVT-04`) | EXISTS | `platform/src/test/java/com/finapp/platform/inbox/InboxDeliveryOrderTest.java#reorderingAndDuplicationTogether` |
 | T17 | Every catalogued topic's retention, plus one segment and the broker's retention check, is below the inbox's dedupe window read from the code, and every topic deletes rather than compacts, on the broker's clock | EXISTS | `app/src/test/java/com/finapp/app/architecture/TopicCatalogueTest.java#everyRetentionIsBelowTheDedupeWindow`; `app/src/test/java/com/finapp/app/architecture/TopicCatalogueTest.java#retentionIsTimeBasedOnTheBrokersClock` |
@@ -1966,6 +1969,15 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     platform blind to its own correctness. The number is a measurement under load, which Phase 16 owns. **Decided 2026-11-12** under
     the owner's standing word ("accept all recommendations", waves G and H): as recommended.
 
+    *(Dated note, 2026-11-13: **this part is closed.** Phase 16's failover drill set the socket timeout: five minutes on the data
+    source, which the reporting pool takes too (ADR-0139). Reading the code for it found the longest bound read short above: the shared
+    report snapshots arm report generation's four-minute budget on the writer's pool, as generation does on the reporting pool, so (i)'s
+    "the accounting checks' 30 s" would have failed those reads every time they ran long. Five minutes is every armed bound and a minute
+    for the server's answer, and frees a black-holed connection with ten minutes of the in-region recovery objective left; §4's T14 row
+    holds it. The measurement this part asked for - the longest statement under load, and a black-holed connection with and without the
+    timeout - is built (the resilience register's E57, and the load scope's longest statement for E29) and owed under
+    `POSTPONED_ISSUES.md` PI-025, with §4's T14 `GAP` row; ADR-0139's revision rule reads it.)*
+
     **(i) A corrupt card attempt stalls the whole sweep, and nothing pages** (T15, T23). The card sweep rehydrates its candidates'
     typed ids while listing them, before its per-row containment, so one `payments.payment_attempt.id` that is not a UUIDv7, on a row
     the sweep would take (dispatched, or unknown past its bound), fails every tick on every instance, and no candidate is reached
@@ -2152,11 +2164,13 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     the data tier's availability and ten instances at load as Phase 16 tasks.
 
     *(Dated note, 2026-11-12: **this part is closed.** The Phase 15 → 16 transition wrote the three drills as Phase 16 tasks:
-    the database failover drill, with item 42 (h)'s socket timeout, is `P16-TSK-022`; the data tier's availability is
-    `P16-TSK-023`; ten instances at load is `P16-TSK-014`. The readiness cells this part held now name `P16-TSK-022` and
-    `P16-TSK-023` as their owners in place of this item (`PRODUCTION_READINESS.md` §3.1 Failure handling and Runbooks, §3.3
-    Failure handling, Runbooks and Multi-instance, §4.2 Runbooks), each with its own dated note. Until this note, those
-    cells read "a Phase 16 drill no backlog entry holds".)*
+    the database failover drill, with item 42 (h)'s socket timeout; the data tier's availability, `P16-TSK-023`; ten instances at
+    load, `P16-TSK-014`. The readiness cells this part held named the drill's task and `P16-TSK-023` as their owners in place of this
+    item (`PRODUCTION_READINESS.md` §3.1 Failure handling and Runbooks, §3.3 Failure handling, Runbooks and Multi-instance, §4.2
+    Runbooks), each with its own dated note. Until this note, those cells read "a Phase 16 drill no backlog entry holds".)*
+    *(2026-11-13: the failover drill is built - E05 and E06 on the test-only synchronous pair, the socket timeout set (item 42 (h)'s
+    dated note) - and its runs are owed under `POSTPONED_ISSUES.md` PI-025, which the drill's readiness cells now name in place of its
+    finished task; until then this note named that task by its id.)*
 
     **(h) A test named for more than it reads.** `KubernetesManifestsTest#requestsAndLimitsAreSet` says "every container states
     requests and limits" and reads the application's container alone. Nothing is unheld: the manifest policy's
@@ -2293,6 +2307,23 @@ recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.**
     plants such an id at each of the three and sees it stop and page.
 
     *(Read "*Awaiting the owner* (2026-11-13). Until decided: §4's T15 `GAP` row." until the owner's decision of 2026-11-13.)*
+
+61. **T14's and T16's residual: the answer a client gets while the database is away** *(added 2026-11-13 by Phase 16's database
+    failover drill, from the rolls scope's database roll of 2026-11-12)*. While the database is lost or failing over, a money-moving
+    command that cannot reach it answers `500 api.InternalError` ("Something went wrong on our side"), not a `503`: the rolls scope saw
+    it on transfers, payouts and a top-up's confirmation (`OPERATIONS_RUNBOOK.md` §11.28's rolls record). Each was retried by its key
+    and took one effect, so nothing is misstated; but a `500` does not tell a client the refusal is temporary or when to try again, and a
+    client that does not retry a `500` leaves the movement undecided until someone asks. The platform already answers a temporary
+    refusal one way (`api.TemporarilyUnavailable`, `503`, the abuse door's) and a rail's unavailability another (`payments.ProviderUnavailable`).
+    The options:
+    - **(i)** answer a lost database - the driver's connection failure, and the pool's wait ending because no connection could be made -
+      with `503 api.TemporarilyUnavailable` and a `Retry-After`, the same `Idempotency-Key` safe to send again, in one mapping the error
+      contract states; built beside the load-shedding answer for an exhausted pool, which touches the same mapping, so the two tell an
+      outage from an overload by what the pool saw;
+    - **(ii)** keep `500` and state in the error contract that a `500` on a keyed command is safe to retry by its key, as it already is.
+    *Recommendation*: **(i)**, in a task of its own after the load-shedding answer is built, its `DOD-API` profile the change's: the
+    answer is a contract every client reads, and a temporary refusal that says so is retried, where an internal error may not be.
+    *Awaiting the owner* (2026-11-13). Until decided: §4's T16 failover row stands as a `GAP` on `PI-025`, and the answer stays `500`.
 
 ## 7. Decided against
 

@@ -1385,6 +1385,12 @@ window, and a person releases money movement. → [ADR-0128](../adr/ADR-0128-rec
 financial-operation availability stated apart from service availability; a read replica, if any, serves the reporting pool
 alone. → [ADR-0129](../adr/ADR-0129-availability-and-the-multi-region-stance.md)
 
+**The database's socket timeout, and the failover drill's rules** *(added 2026-11-13, `P16-TSK-022`)*. Five minutes on the data
+source and the reporting pool: above every statement bound the code arms (the report generation budget, four minutes, armed on both
+pools) and inside the in-region recovery objective; a statement it cuts is the existing "committed, answer lost" case. The drill
+fences the old primary before it promotes, refuses a standby behind, runs the promoted server alone and moves the Service; every run
+owed (PI-025). → [ADR-0139](../adr/ADR-0139-the-database-socket-timeout-and-the-failover-drill.md)
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

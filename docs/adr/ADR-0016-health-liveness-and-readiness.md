@@ -80,7 +80,8 @@ Connection acquisition, validation and TCP connect all have explicit timeouts sh
 typical probe interval. A readiness check that hangs reports nothing, and what an orchestrator
 concludes from a timed-out probe is its own business. `socketTimeout` is deliberately *not* set:
 it bounds how long a query may run, and choosing that number before any real query exists would be
-a guess that aborts legitimate work later.
+a guess that aborts legitimate work later. *(2026-11-13: decided by ADR-0139 - five minutes, above every statement
+bound the code arms, so a black-holed connection is given up; the readiness path keeps its own shorter bounds.)*
 
 **7. Status is published; detail is not.**
 
@@ -189,7 +190,7 @@ Financial impact:
 - **Kafka and Redis health**, if and only if some capability is made to require them
   synchronously — which needs its own decision, not a default.
 - **A liveness signal with substance** once there is a workload that can wedge.
-- **`socketTimeout`** with Phase 3, when there are real queries to measure.
+- **`socketTimeout`** with Phase 3, when there are real queries to measure. *(Set 2026-11-13: ADR-0139.)*
 - *(Noted by `P15-TSK-005`, 2026-11-09: readiness gains `schemaVersion`, `OUT_OF_SERVICE` while any schema is older than the build
   expects; this ADR kept: liveness reads nothing of it. Decision 3 is kept too: it reads through the pool the application uses. It
   does so on a thread of its own, never the probe's, because `db` already spends the probe's time waiting on the pool when the
