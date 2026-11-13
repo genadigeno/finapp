@@ -1,0 +1,27 @@
+{
+  "name": "concurrent",
+  "workload": "PHASE_16_PLAN.md section 5.1's concurrent-financial profile (P16-TSK-008, E38): many clients on few accounts - every transfer between one pair of customers, one way and back by turns, every checkout from every customer to the one merchant, every top-up through the one card clearing - at the engineering workload (E30's step 3, 0.3906 of the target's peak) for 15 minutes, then the target's burst (W2: three times its peak for 60 s) twice, each followed by the engineering workload; the burst is past kind's break (E30), so this profile runs past the break by design and records the iterations it drops",
+  "duration": "30m",
+  "stages": [[900, 0.3906], [60, 3.0], [540, 0.3906], [60, 3.0], [240, 0.3906]],
+  "stress": true,
+  "contention": true,
+  "transferPair": true,
+  "retryShare": 0.05,
+  "transferAmount": "0.01",
+  "topUpAmount": "5.00",
+  "topUpMinor": 500,
+  "checkoutMinor": 200,
+  "operations": [
+    {"name": "transfer", "generator": "k6", "exec": "transfer", "rate": 2778, "per": "1000s", "perSecond": 2.778, "preAllocatedVUs": 250, "maxVUs": 250, "money": true, "errorTarget": 0.001, "from": "the target's peak: 100,000 transfers a day over 36,000 s (W1 x W3), every one between the same two customers (transferPair)"},
+    {"name": "checkout", "generator": "k6", "exec": "checkout", "rate": 5556, "per": "1000s", "perSecond": 5.556, "preAllocatedVUs": 500, "maxVUs": 500, "money": true, "errorTarget": 0.001, "from": "the target's peak: 200,000 card or checkout payments a day over 36,000 s (W1 x W3), every one to the fixture's one merchant"},
+    {"name": "topup", "generator": "k6", "exec": "topup", "rate": 1111, "per": "1000s", "perSecond": 1.111, "preAllocatedVUs": 100, "maxVUs": 100, "money": true, "errorTarget": 0.001, "from": "the target's peak: 40,000 top-ups and withdrawals a day over 36,000 s, the withdrawals folded into card top-ups (R2), all through the one card clearing"},
+    {"name": "read", "generator": "none", "money": false, "reason": "the concurrent-financial profile drives the money movements on few accounts alone, so each row's waits are the movements' own; a balance read takes no row lock (it reads the projection, ADR-0041) and belongs to the mix, which E29 and E30 drive"},
+    {"name": "signin", "generator": "none", "money": false, "reason": "the concurrent-financial profile drives the money movements on few accounts alone; a sign-in moves no money and locks no financial row, and belongs to the mix, which E29 and E30 drive"},
+    {"name": "merchant", "generator": "none", "money": false, "reason": "the concurrent-financial profile drives the money movements on few accounts alone; the merchant API's payable read folds the merchant's whole history and saturates the database's CPU by itself (E30, ADR-0133), which would hide the rows' waits behind it"},
+    {"name": "callbacks", "generator": "callbacks", "money": false, "errorTarget": 0.0005, "from": "two per captured card payment (W4), sent by Rehearsal.java load-callbacks, provider-driven"},
+    {"name": "settlement", "generator": "harness", "money": false, "from": "one PSP settlement file of the run's captures at mid-run, uploaded and attested through the operator edge, reconciled during the load (W5 at this scale)"},
+    {"name": "bnpl", "generator": "none", "money": true, "reason": "a BNPL purchase rests on a credit approval, and on kind none is possible, automatic or by a person: every credit policy's exposure rule reads the bureau's total balance, no kind deployment can configure a bureau (the application refuses one until CURRENT_STATE's unresolved question 13 is answered), so the exposure is unassessed and the policy's fallback declines or refers (INV-CRD-10), and a person's approval of a referral is refused while it is (credit.ExposureUnassessable, INV-CRD-09); no test-only bureau is built for kind in Phase 16 (the owner, 2026-11-13), so it waits on question 13; its instalments need its agreements; so the capital row (LENDING_CAPITAL, L6) and BNPL_MERCHANT_FEE_INCOME are not driven here"},
+    {"name": "lending", "generator": "none", "money": true, "reason": "a repayment needs a disbursed loan, and a loan rests on a credit approval, and on kind none is possible, automatic or by a person: every credit policy's exposure rule reads the bureau's total balance, no kind deployment can configure a bureau (the application refuses one until CURRENT_STATE's unresolved question 13 is answered), so the exposure is unassessed and the policy's fallback declines or refers (INV-CRD-10), and a person's approval of a referral is refused while it is (credit.ExposureUnassessable, INV-CRD-09); no test-only bureau is built for kind in Phase 16 (the owner, 2026-11-13), so it waits on question 13; so many repayments of one loan are not driven here"},
+    {"name": "credit", "generator": "none", "money": false, "reason": "a decision reads the bureau and financial data, neither configurable on kind (the application refuses either until CURRENT_STATE's unresolved questions 13 and 14 are answered), so every decision there is the fail-safe path, waiting its 30-minute collection window and referring (INV-CRD-10), which is E20's subject and not the target's decision; a decision with data waits on question 13, no test-only bureau being built for kind in Phase 16 (the owner, 2026-11-13)"}
+  ]
+}
