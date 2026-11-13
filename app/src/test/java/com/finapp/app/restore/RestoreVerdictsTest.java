@@ -12,10 +12,12 @@ import com.finapp.ledger.TrialBalance;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -127,7 +129,68 @@ class RestoreVerdictsTest {
         assertThat(Verdict.pass("c", "x").line()).isEqualTo("PASS|c|x");
         assertThat(RestoreVerdicts.unreadable("c", new IllegalStateException("a row's value")).detail())
                 .as("the class, never the message").isEqualTo("could not be read: java.lang.IllegalStateException");
-        assertThat(RestoreVerdicts.CHECKS).hasSize(5).doesNotHaveDuplicates();
+        assertThat(RestoreVerdicts.CHECKS).hasSize(6).doesNotHaveDuplicates();
+        assertThat(RestoreVerdicts.DRILL_CHECKS).as("a drill's checks are every check and its positive control, last")
+                .startsWith(RestoreVerdicts.CHECKS.toArray(String[]::new)).endsWith(RestoreVerdicts.SUBJECTS).hasSize(7);
+    }
+
+    @Test
+    @DisplayName("the key rings (P16-TSK-024): a row under a version its ring does not hold fails, naming the column and the version;"
+            + " an unreadable column fails; no row anywhere fails as a check over nothing; rows under held versions pass")
+    void evidenceUnderAVersionTheRingDoesNotHoldFails() {
+        RestoreVerdicts.RingReading credit = new RestoreVerdicts.RingReading("creditEvidenceKeyRing", "credit.credit_evidence.key_version",
+                Map.of(2, 4L), Set.of(1, 2), Optional.empty());
+        RestoreVerdicts.RingReading files = new RestoreVerdicts.RingReading("settlementFileKeyRing", "settlement.file.key_version",
+                Map.of(1, 2L), Set.of(1), Optional.empty());
+        RestoreVerdicts.RingReading empty = new RestoreVerdicts.RingReading("mfaKeyRing", "identity.mfa_enrolment.key_version", Map.of(),
+                Set.of(1), Optional.empty());
+        Verdict held = RestoreVerdicts.evidenceHeld(List.of(credit, files, empty));
+        assertThat(held.passed()).isTrue();
+        assertThat(held.detail()).contains("6 rows in 3 stamped columns").contains("creditEvidenceKeyRing={2=4}");
+
+        RestoreVerdicts.RingReading lost = new RestoreVerdicts.RingReading("creditEvidenceKeyRing", "credit.credit_evidence.key_version",
+                Map.of(2, 4L), Set.of(1), Optional.empty());
+        Verdict refused = RestoreVerdicts.evidenceHeld(List.of(lost, files, empty));
+        assertThat(refused.passed()).as("version 2 lost from the ring").isFalse();
+        assertThat(refused.detail()).contains("credit.credit_evidence.key_version: 4 rows under version 2")
+                .contains("does not hold [1]");
+
+        Verdict unreadable = RestoreVerdicts.evidenceHeld(List.of(credit,
+                RestoreVerdicts.RingReading.unreadable("fxEvidenceKeyRing", "fx.fx_provider_evidence.key_version", "no ring of that name")));
+        assertThat(unreadable.passed()).isFalse();
+        assertThat(unreadable.detail()).contains("fx.fx_provider_evidence.key_version unreadable");
+
+        assertThat(RestoreVerdicts.evidenceHeld(List.of(empty)).passed()).as("no row under any version").isFalse();
+        assertThat(RestoreVerdicts.evidenceHeld(List.of()).passed()).as("no column read").isFalse();
+    }
+
+    @Test
+    @DisplayName("the drill's positive control (P16-TSK-024, item 44 (a)): a proof over no subject fails by name, an unread count fails,"
+            + " a proof missing from the counts fails, every proof over one or more passes")
+    void aProofOverNoSubjectFailsTheDrill() {
+        Map<SourceProofs.Proof, OptionalLong> every = new EnumMap<>(SourceProofs.Proof.class);
+        for (SourceProofs.Proof proof : SourceProofs.Proof.values()) {
+            every.put(proof, OptionalLong.of(1));
+        }
+        assertThat(RestoreVerdicts.subjects(every).passed()).isTrue();
+        assertThat(RestoreVerdicts.subjects(every).detail()).contains("LOAN_SUBLEDGER 1").contains("BNPL_THREE_WAY 1");
+
+        Map<SourceProofs.Proof, OptionalLong> noLoan = new EnumMap<>(every);
+        noLoan.put(SourceProofs.Proof.LOAN_SUBLEDGER, OptionalLong.of(0));
+        noLoan.put(SourceProofs.Proof.LOAN_REPLAY, OptionalLong.of(0));
+        Verdict seededNoLoan = RestoreVerdicts.subjects(noLoan);
+        assertThat(seededNoLoan.passed()).as("a source seeded with no loan").isFalse();
+        assertThat(seededNoLoan.detail()).contains("2 of " + SourceProofs.Proof.values().length).contains("LOAN_SUBLEDGER over 0")
+                .contains("LOAN_REPLAY over 0");
+
+        Map<SourceProofs.Proof, OptionalLong> unread = new EnumMap<>(every);
+        unread.put(SourceProofs.Proof.BNPL_SUBLEDGER, OptionalLong.empty());
+        assertThat(RestoreVerdicts.subjects(unread).detail()).contains("BNPL_SUBLEDGER unread");
+
+        Map<SourceProofs.Proof, OptionalLong> missing = new EnumMap<>(every);
+        missing.remove(SourceProofs.Proof.MERCHANT_PAYABLE);
+        assertThat(RestoreVerdicts.subjects(missing).passed()).isFalse();
+        assertThat(RestoreVerdicts.subjects(missing).detail()).contains("MERCHANT_PAYABLE unread");
     }
 
     private static List<SourceReading> whole() {

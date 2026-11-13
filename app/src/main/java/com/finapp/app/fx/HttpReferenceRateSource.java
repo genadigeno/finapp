@@ -4,10 +4,10 @@ import com.finapp.fx.RateObservation;
 import com.finapp.fx.RateSource;
 import com.finapp.fx.ReferencePair;
 import com.finapp.fx.ReferenceSourceDeclaration;
+import com.finapp.platform.outbound.OutboundExchange;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.ExchangeRate;
 import java.io.IOException;
-import java.io.InputStream;
 import java.math.BigDecimal;
 import java.net.ConnectException;
 import java.net.URI;
@@ -92,18 +92,18 @@ public final class HttpReferenceRateSource implements RateSource {
                         .GET()
                         .build();
         try {
-            HttpResponse<InputStream> answer =
-                    http.send(get, HttpResponse.BodyHandlers.ofInputStream());
-            try (InputStream body = answer.body()) {
-                if (answer.statusCode() != 200) {
-                    return new Fetched.Failed(FetchFailure.REFUSED_ANSWER);
-                }
-                byte[] bytes = body.readNBytes(BODY_BOUND_BYTES + 1);
-                if (bytes.length > BODY_BOUND_BYTES) {
-                    return new Fetched.Failed(FetchFailure.REFUSED_ANSWER);
-                }
-                return parse(new String(bytes, StandardCharsets.UTF_8));
+            // The body read inside the exchange's bound on the body (`P16-TSK-018`): a stream returned at the headers was read
+            // by readNBytes with no bound at all, so a source that stopped after its headers held the fetch's thread.
+            HttpResponse<byte[]> answer =
+                    OutboundExchange.send(http, get, OutboundExchange.limitedBytes(BODY_BOUND_BYTES + 1), timeout);
+            if (answer.statusCode() != 200) {
+                return new Fetched.Failed(FetchFailure.REFUSED_ANSWER);
             }
+            byte[] bytes = answer.body();
+            if (bytes.length > BODY_BOUND_BYTES) {
+                return new Fetched.Failed(FetchFailure.REFUSED_ANSWER);
+            }
+            return parse(new String(bytes, StandardCharsets.UTF_8));
         } catch (HttpTimeoutException slow) {
             return new Fetched.Failed(FetchFailure.TIMEOUT);
         } catch (ConnectException unreachable) {

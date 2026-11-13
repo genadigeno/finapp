@@ -760,3 +760,29 @@ a consequence of the design in `V007`, not an oversight. A later state would liv
 the predicate cannot see, so the sweep's function lists the columns it was reviewed against and stops
 when it finds another: a column added to this table needs a migration that says which of its values
 are terminal, and `RetentionSweepMigrationTest` goes red until one does.
+
+---
+
+## 10. Retention and Expiry — `identity.session`, and the audit trail's archive
+
+*(Added by `P16-TSK-010`, 2026-11-13; `DATA_RETENTION.md` is the policy.)*
+
+**Sessions.** A session row is operational state (ADR-0030), and a dead one is kept only for diagnosis:
+`finapp.identity.session.sweep.grace`, default 30 days past the row's idle bound, refused under a minute
+by the application at start and by the function. Identity `V027`'s `SECURITY DEFINER` function is the one
+path to deleting a session: it selects only `ACTIVE` or `REVOKED` rows whose `idle_expires_at` passed
+more than the grace ago on the database's clock, so a live session, whose idle bound is still ahead, is
+never selected, and a state a later migration adds is never selected either. A column of the table it was
+not reviewed against stops it (`55000`), as the inbox's does. `FOR UPDATE SKIP LOCKED` in a materialised
+CTE; an index on `idle_expires_at`, built in the migration's transaction while no production data exists.
+`SessionSweepMigrationTest` reads the predicate and the reviewed columns from the file.
+
+**The audit trail is never swept** (`INV-HIST-03`). Platform `V015` adds its archive: a queue every audit
+row joins by trigger in the transaction that writes it, segments cut from that queue with each row in one
+segment by a primary key, and the functions that claim, render and mark a segment. Nothing in it deletes an
+audit row or grants a delete to anyone. Its trigger is a contract on an old table, waived by its marker
+because it refuses no write: it only adds the row's id to the queue. Its backfill queues the rows written
+before it while the trigger's lock holds new writes back; on a large table a deployment adds the trigger
+first and backfills in batches (§4.4). A column added to `platform.audit_record` stops the archive
+(`55000`) until a migration reviews the column and replaces format 1's line and decoder;
+`AuditArchiveMigrationTest` holds the reviewed list equal to the table's columns.

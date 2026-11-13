@@ -62,15 +62,20 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 cd "$ROOT"
 
 ART=${RESTORE_ARTEFACTS:-$ROOT/build/restore-rehearsal}
-PLANTS=${RESTORE_PLANTS:-unbalanced-entry balance-disagrees missing-row grant-dropped role-altered trigger-dropped sequence-behind history-checksum gl-rule-repointed counter-not-moved journal-line-removed}
+PLANTS=${RESTORE_PLANTS:-unbalanced-entry balance-disagrees missing-row grant-dropped role-altered trigger-dropped sequence-behind history-checksum gl-rule-repointed counter-not-moved journal-line-removed key-version-missing}
+PITR_PLANTS=${RESTORE_PITR_PLANTS:-wal-gap wal-damaged}
 CHART="$ROOT/infra/scripts/kind-rehearsal/gl-mapping.json"
 SOURCE_MODE=${RESTORE_SOURCE:-seeded}
+# A seeded source is built to hold every product, so its verifications are a drill's: each proof must also judge a subject (item 44 (a)).
+DRILL_ARG=--drill
 KIND_NODE=""
 case $SOURCE_MODE in
     seeded) ;;
     kind:?*)
         KIND_NODE=${SOURCE_MODE#kind:}
         PLANTS=${RESTORE_PLANTS:-journal-line-removed}
+        PITR_PLANTS=""
+        DRILL_ARG=""
         ;;
     *) echo "?? RESTORE_SOURCE is seeded or kind:<node>, not $SOURCE_MODE" >&2; exit 2 ;;
 esac
@@ -144,6 +149,10 @@ cleanup() {
     dock ps -aq --filter "name=$NAME" 2>/dev/null | while read -r container; do
         dock rm -f -v "$container" >/dev/null 2>&1 || true
     done
+    # The WAL archive and its planted copies: volumes of the run's own, holding ciphertext only.
+    dock volume ls -q --filter "name=$NAME" 2>/dev/null | while read -r volume; do
+        dock volume rm -f "$volume" >/dev/null 2>&1 || true
+    done
     rm -rf "$WORK"
     if [ -e "$WORK" ]; then
         log "?? the work directory holding the encrypted backup could not be removed: $WORK"
@@ -164,6 +173,10 @@ generated_for_reporting=$(secret)
 openssl rand -hex 32 > "$WORK/backup.key"
 printf '%s' "${generated_for_admin}" > "$WORK/admin"
 chmod 644 "$WORK/admin"
+# The WAL archive's own key (point-in-time recovery, OPERATIONS_RUNBOOK.md section 11.55): read by the source's archive_command and by
+# a recovering server's restore_command, mounted read-only into each, and removed with the work directory.
+openssl rand -hex 32 > "$WORK/archive.key"
+chmod 644 "$WORK/archive.key"
 
 step() {
     log "== $1"
@@ -202,14 +215,37 @@ ready() {
     done
 }
 
-# server <container>: a throwaway PostgreSQL on a random loopback port, its database `finapp`, its superuser the administrator, whose
-# password the image reads from the mounted file.
+# server <container> [archiving]: a throwaway PostgreSQL on a random loopback port, its database `finapp`, its superuser the
+# administrator, whose password the image reads from the mounted file. `archiving` is the point-in-time source: every finished WAL
+# segment encrypted into the archive volume by ARCHIVE_COMMAND.
 server() {
-    dock run --detach --name "$1" --publish 127.0.0.1::5432 \
-        --mount "type=bind,source=$(dpath "$WORK/admin"),target=/run/finapp-admin,readonly" --env POSTGRES_PASSWORD_FILE=/run/finapp-admin \
-        --env POSTGRES_USER="$ADMIN" --env POSTGRES_DB=finapp "$IMAGE" -c max_connections=100 >/dev/null || cannot "PostgreSQL $1 did not start"
+    if [ "${2:-}" = archiving ]; then
+        dock run --detach --name "$1" --publish 127.0.0.1::5432 \
+            --mount "type=bind,source=$(dpath "$WORK/admin"),target=/run/finapp-admin,readonly" --env POSTGRES_PASSWORD_FILE=/run/finapp-admin \
+            --mount "type=volume,source=$ARCHIVE_VOLUME,target=/archive" \
+            --mount "type=bind,source=$(dpath "$WORK/archive.key"),target=/run/finapp-archive-key,readonly" \
+            --env POSTGRES_USER="$ADMIN" --env POSTGRES_DB=finapp "$IMAGE" -c max_connections=100 \
+            -c wal_level=replica -c archive_mode=on -c "archive_command=$ARCHIVE_COMMAND" >/dev/null || cannot "PostgreSQL $1 did not start"
+    else
+        dock run --detach --name "$1" --publish 127.0.0.1::5432 \
+            --mount "type=bind,source=$(dpath "$WORK/admin"),target=/run/finapp-admin,readonly" --env POSTGRES_PASSWORD_FILE=/run/finapp-admin \
+            --env POSTGRES_USER="$ADMIN" --env POSTGRES_DB=finapp "$IMAGE" -c max_connections=100 >/dev/null || cannot "PostgreSQL $1 did not start"
+    fi
     ready "$1"
 }
+
+# ---------------------------------------------------------------------------------------------------
+# Point-in-time recovery (OPERATIONS_RUNBOOK.md section 11.55; ADR-0128 decision 4, ADR-0140): the seeded source archives every WAL
+# segment it finishes into a volume of the run's own, the local store, each segment encrypted as it is written (AES-256 under the
+# archive's key, never plaintext at rest) with the SHA-256 of its ciphertext beside it; a recovering server reads a segment back only
+# when that digest holds, so a damaged segment is refused like a missing one. Neither command overwrites: an archive keeps what it was
+# given. Both run as the image's postgres user inside the server's container, where the key is mounted read-only.
+# ---------------------------------------------------------------------------------------------------
+ARCHIVE_VOLUME="$NAME-archive"
+ARCHIVE_COMMAND='test ! -f /archive/%f.enc && openssl enc -e -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass file:/run/finapp-archive-key -in %p -out /archive/%f.part && sha256sum /archive/%f.part | cut -d" " -f1 > /archive/%f.sha256 && mv /archive/%f.part /archive/%f.enc'
+RESTORE_COMMAND='test -f /archive/%f.enc && test "$(sha256sum /archive/%f.enc | cut -d" " -f1)" = "$(cat /archive/%f.sha256)" && openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass file:/run/finapp-archive-key -in /archive/%f.enc -out %p'
+# The words PostgreSQL ends a recovery with when the archive cannot carry it to its target: a gap, or a segment refused by its digest.
+NOT_REACHED='recovery ended before configured recovery target was reached'
 
 # epoch <container> <epoch>: the cluster stopped cleanly, its transaction counter's epoch set, started again. pg_resetwal on a
 # cleanly stopped cluster with -e alone moves no transaction id's low 32 bits, so nothing about visibility or wraparound changes:
@@ -315,6 +351,39 @@ command_run() {
     "$JAVA" -Xmx1g "@$ARGS" "com.finapp.app.restore.$class" "$@" > "$out" 2>&1
 }
 
+# The credit evidence key ring the source is seeded under (ADR-0128 decision 5; OPERATIONS_RUNBOOK.md section 11.29): two versions
+# generated for the run, version 2 active, each with its published check value, so the credit evidence the seed writes stands under a
+# version every restore must still hold. Each key reaches a command through its environment, never as an argument, and its check
+# value is computed from a pipe, as section 11.29 says.
+generated_credit_evidence_v1=$(openssl rand -base64 32)
+generated_credit_evidence_v2=$(openssl rand -base64 32)
+check_value() {
+    printf '%s' "$1" | "$JAVA" --source 21 "$(dpath "$ROOT/infra/scripts/KeyCheckValue.java")"
+}
+CREDIT_EVIDENCE_CHECKS="1:$(check_value "${generated_credit_evidence_v1}"),2:$(check_value "${generated_credit_evidence_v2}")"
+case $CREDIT_EVIDENCE_CHECKS in
+    1:????????????????,2:????????????????) ;;
+    *) cannot "the credit evidence ring's check values could not be computed" ;;
+esac
+
+# ringed <whole|without-v2> <command...>: a command with the credit evidence ring in its environment. `whole` is the ring the source
+# was seeded under; `without-v2` is a restore whose key store lost version 2, as a revert of a rotation's listing leaves it (section
+# 11.29): it starts, and every row written under version 2 can no longer be read.
+ringed() {
+    (
+        export FINAPP_CREDIT_EVIDENCE_KEY="${generated_credit_evidence_v1}"
+        if [ "$1" = whole ]; then
+            export FINAPP_CREDIT_EVIDENCE_V2_KEY="${generated_credit_evidence_v2}" FINAPP_CREDIT_EVIDENCE_RING_VERSIONS=1,2 \
+                FINAPP_CREDIT_EVIDENCE_RING_ACTIVEVERSION=2 FINAPP_CREDIT_EVIDENCE_RING_CHECKVALUES="$CREDIT_EVIDENCE_CHECKS"
+        else
+            export FINAPP_CREDIT_EVIDENCE_RING_VERSIONS=1 FINAPP_CREDIT_EVIDENCE_RING_ACTIVEVERSION=1 \
+                FINAPP_CREDIT_EVIDENCE_RING_CHECKVALUES="${CREDIT_EVIDENCE_CHECKS%%,*}"
+        fi
+        shift
+        "$@"
+    )
+}
+
 # ---------------------------------------------------------------------------------------------------
 # The source. Seeded: an aged cluster, migrated, seeded through the platform's own services, and whole by its own checks. Kind: the
 # rehearsal cluster's database, read from inside its pod.
@@ -332,7 +401,8 @@ verify() {
     FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$port/finapp?options=-c%20default_transaction_read_only%3Don" \
         FINAPP_DB_APP_USER="$ADMIN" FINAPP_DB_APP_PASSWORD="${generated_for_admin}" \
         FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_REPORTING_PASSWORD="${generated_for_reporting}" \
-        command_run RestoreVerification "$ART/verification-$2.log" "$(dpath "$ART/verification-$2.txt")" || code=$?
+        ringed "${VERIFY_RING:-whole}" command_run RestoreVerification "$ART/verification-$2.log" "$(dpath "$ART/verification-$2.txt")" \
+        $DRILL_ARG || code=$?
     tr -d '\r' < "$ART/verification-$2.txt" 2>/dev/null | tail -1 | grep -q "^EXIT|$code\$" \
         || { tail -60 "$ART/verification-$2.log" >&2; cannot "the verification of $2 ended without its report (exit $code): see verification-$2.log"; }
     [ "$code" != 2 ] || { tail -60 "$ART/verification-$2.log" >&2; cannot "the verification of $2 could not run: see verification-$2.log"; }
@@ -358,9 +428,35 @@ source_exec() {
     fi
 }
 
+# millis: the shell's clock in milliseconds, for the durations a rate is computed from (GNU date's nanoseconds).
+millis() {
+    echo $(($(date +%s%N) / 1000000))
+}
+
+# switched <container>: the WAL segment in progress finished, and waited for until the archive holds every segment before the one now
+# in use; the last of them named. pg_switch_wal() does nothing when nothing was written since the last switch (a backup's stop makes
+# one), and then answers a position inside the segment in use, which is never archived until it too is finished: so the segment
+# waited for is read from where the insert position now stands, the one before its own (a position one byte on, never on a boundary).
+switched() {
+    sql "$1" 'SELECT pg_switch_wal()' > /dev/null
+    segment=$(sql "$1" "SELECT pg_walfile_name(position - f.file_offset - 1) FROM (SELECT pg_current_wal_insert_lsn() + 1 AS position) p,
+        LATERAL pg_walfile_name_offset(p.position) f")
+    [ -n "$segment" ] || cannot "the segment before the one in use could not be named"
+    waited=0
+    until [ "$(sql "$1" "SELECT coalesce(last_archived_wal >= '$segment', false) FROM pg_stat_archiver")" = t ]; do
+        waited=$((waited + 1))
+        [ "$waited" -le 120 ] || cannot "the WAL segment $segment was not archived; the archiver: $(sql "$1" 'SELECT failed_count, last_failed_wal FROM pg_stat_archiver')"
+        sleep 1
+    done
+    printf '%s' "$segment"
+}
+
 if [ -z "$KIND_NODE" ]; then
     step source
-    server "$SOURCE"
+    dock volume create "$ARCHIVE_VOLUME" >/dev/null || cannot "the WAL archive's volume could not be made"
+    dock run --rm --mount "type=volume,source=$ARCHIVE_VOLUME,target=/archive" --entrypoint chown "$IMAGE" postgres:postgres /archive \
+        || cannot "the WAL archive's volume could not be given to the server's user"
+    server "$SOURCE" archiving
     # A cluster that has run for a while has an epoch past zero; this one is given epoch 1, so its rows' xid8 values stand where a
     # fresh cluster's counter cannot reach without the restore's own counter step.
     epoch "$SOURCE" 1
@@ -371,10 +467,25 @@ if [ -z "$KIND_NODE" ]; then
         || { tail -40 "$ART/gradle-migrate.log" >&2; cannot "the source's migrations failed: see gradle-migrate.log"; }
     log "source migrated; its counter $(sql "$SOURCE" 'SELECT pg_current_xact_id()')"
 
+    # The base backup a point-in-time recovery starts from, taken before the seed so that the recovery replays the seed's whole WAL
+    # from the archive: pg_basebackup's one tar, the WAL it needs to be consistent inside it, written into openssl and never to a disk
+    # unencrypted. The segment in progress is then finished, so the first segment a recovery must fetch from the archive is a whole
+    # one of its own, the one the plants withhold and damage.
+    step base-backup
+    source_exec pg_basebackup --format=tar --wal-method=fetch --checkpoint=fast --no-manifest -D - 2> "$ART/basebackup.err" \
+        | MSYS_NO_PATHCONV=1 openssl enc -e -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass "file:$(dpath "$WORK/backup.key")" -out "$(dpath "$WORK/base.enc")" \
+        || { cat "$ART/basebackup.err" >&2; cannot "the base backup could not be written: see basebackup.err"; }
+    [ -s "$WORK/base.enc" ] || cannot "the base backup is empty"
+    MSYS_NO_PATHCONV=1 openssl dgst -sha256 -r "$(dpath "$WORK/base.enc")" | cut -d' ' -f1 > "$WORK/base.sha256"
+    switched "$SOURCE" > /dev/null
+    # The segment the insert position now stands in (one byte on, since a position exactly on a boundary is named by the segment before).
+    FIRST_AFTER_BASE=$(sql "$SOURCE" 'SELECT pg_walfile_name(pg_current_wal_insert_lsn() + 1)')
+    pass "base backup taken before the seed: $(wc -c < "$WORK/base.enc" | tr -d ' ') encrypted bytes; the first segment a recovery fetches from the archive is $FIRST_AFTER_BASE"
+
     step seed
     if ! FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$SOURCE_PORT/finapp" FINAPP_DB_APP_USER=finapp_app FINAPP_DB_APP_PASSWORD="${generated_for_app}" \
         FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_REPORTING_PASSWORD="${generated_for_reporting}" \
-        command_run RestoreRehearsalSeed "$ART/seed.log" "$(dpath "$CHART")"; then
+        ringed whole command_run RestoreRehearsalSeed "$ART/seed.log" "$(dpath "$CHART")"; then
         tail -60 "$ART/seed.log" >&2
         cannot "the seed failed: see seed.log"
     fi
@@ -387,6 +498,11 @@ if [ -z "$KIND_NODE" ]; then
         fail "the source is not whole, so no restore of it can prove anything: $(grep '^FAIL|' "$ART/verdicts-source.txt" | tr '\n' ';' | cut -c1-600)"
     fi
     pass "the source is whole by the platform's own checks: $(cut -d'|' -f2 "$ART/verdicts-source.txt" | paste -sd, -)"
+    # RESTORE_STOP_AFTER=source: the seed and the source's verification alone, a check of the seed that restores nothing.
+    if [ "${RESTORE_STOP_AFTER:-}" = source ]; then
+        log "stopped after the source, as RESTORE_STOP_AFTER asked: nothing was backed up or restored"
+        exit 0
+    fi
 else
     step source
     # The rehearsal's census was green at every step it ran; nothing here reaches the pod's database from the host, so the source is not
@@ -460,24 +576,93 @@ rm -rf "$WORK/manifest"
 for part in backup manifest; do
     MSYS_NO_PATHCONV=1 openssl dgst -sha256 -r "$(dpath "$WORK/$part.enc")" | cut -d' ' -f1 > "$WORK/$part.sha256"
 done
-# The bytes at rest are not a dump: pg_dump's custom format begins PGDMP, and nothing in the work directory may.
-for file in "$WORK"/*; do
-    if [ "$(head -c 5 "$file")" = PGDMP ]; then
-        fail "a plaintext dump is at rest: $(basename "$file")"
-    fi
-done
+# The bytes at rest are not a dump and not a base backup: pg_dump's custom format begins PGDMP and a tar names itself ustar at byte 257,
+# and nothing in the work directory may do either. Asserted after every step that writes there.
+no_plaintext_at_rest() {
+    for file in "$WORK"/*; do
+        [ -f "$file" ] || continue
+        if [ "$(head -c 5 "$file")" = PGDMP ]; then
+            fail "a plaintext dump is at rest: $(basename "$file")"
+        fi
+        if [ "$(head -c 262 "$file" | tail -c 5)" = ustar ]; then
+            fail "a plaintext base backup is at rest: $(basename "$file")"
+        fi
+    done
+}
+no_plaintext_at_rest
 TABLES=$(MSYS_NO_PATHCONV=1 openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass "file:$(dpath "$WORK/backup.key")" -in "$(dpath "$WORK/manifest.enc")" \
     | tar -xOf - manifest/counts | grep -c .)
 pass "backed up in one snapshot at $INSTANT: $(wc -c < "$WORK/backup.enc" | tr -d ' ') encrypted bytes, a manifest of $TABLES tables and $HISTORIES schema histories' heads, no plaintext dump at rest"
-# The source is gone from here on: everything a restore is compared with is the backup's.
+# ---------------------------------------------------------------------------------------------------
+# After the backup, on the seeded source (section 11.55): the restore point T; then a provider's file that no restore to T or to the
+# backup holds; then the bad write a point-in-time recovery must stop before. Nothing writes to the source between the backup's
+# snapshot and T, so a recovery to T is compared with the backup's own manifest.
+# ---------------------------------------------------------------------------------------------------
+if [ -z "$KIND_NODE" ]; then
+    step after-the-backup
+    T=$(sql "$SOURCE" 'SELECT clock_timestamp()')
+    [ -n "$T" ] || cannot "the restore point could not be read"
+    sleep 1
+    # The second capital contribution's bank statement, sent through intake on the source after T. The bank keeps its copy, which the
+    # post-recovery gate delivers again; the copy is encrypted at once, its plaintext removed, and its digest kept.
+    if ! FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$SOURCE_PORT/finapp" FINAPP_DB_APP_USER=finapp_app FINAPP_DB_APP_PASSWORD="${generated_for_app}" \
+        FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_REPORTING_PASSWORD="${generated_for_reporting}" \
+        ringed whole command_run RestoreRehearsalSeed "$ART/statement.log" --statement "$(dpath "$WORK/statement.txt")"; then
+        tail -60 "$ART/statement.log" >&2
+        cannot "the statement mode failed: see statement.log"
+    fi
+    tr -d '\r' < "$ART/statement.log" | grep '^statement:' | while read -r line; do log "$line"; done
+    [ -s "$WORK/statement.txt" ] || cannot "the bank's copy of the statement was not written"
+    MSYS_NO_PATHCONV=1 openssl enc -e -aes-256-cbc -pbkdf2 -iter 600000 -salt -pass "file:$(dpath "$WORK/backup.key")" \
+        -in "$(dpath "$WORK/statement.txt")" -out "$(dpath "$WORK/statement.enc")" || cannot "the bank's copy could not be encrypted"
+    rm -f "$WORK/statement.txt"
+    MSYS_NO_PATHCONV=1 openssl dgst -sha256 -r "$(dpath "$WORK/statement.enc")" | cut -d' ' -f1 > "$WORK/statement.sha256"
+    # The bad write: a raw writer, with the triggers suspended, removes one wallet line of a transfer's entry. Its id is kept, so a
+    # recovery to T can be shown to hold the line again.
+    BAD_LINE=$(sql "$SOURCE" "SET session_replication_role = replica;
+        WITH gone AS (DELETE FROM ledger.journal_line WHERE id = (SELECT l.id FROM ledger.journal_line l
+                          JOIN ledger.journal_entry e ON e.id = l.entry_id JOIN ledger.ledger_account a ON a.id = l.ledger_account_id
+                         WHERE e.entry_type = 'POSTING' AND e.reference IN (SELECT t.id::text FROM transfers.transfer t)
+                           AND a.purpose = 'CUSTOMER_WALLET'
+                         ORDER BY l.id DESC LIMIT 1)
+                      RETURNING id)
+        SELECT id FROM gone" | tail -1)
+    [ -n "$BAD_LINE" ] || cannot "the bad write did not land"
+    LAST_SEGMENT=$(switched "$SOURCE")
+    # The archive holds ciphertext and digests only: every name a segment's, a backup label's or a history file's, then .enc or .sha256.
+    dock run --rm --mount "type=volume,source=$ARCHIVE_VOLUME,target=/archive,readonly" --entrypoint ls "$IMAGE" -1 /archive \
+        | tr -d '\r' > "$WORK/archive.list" || cannot "the WAL archive could not be listed"
+    ARCHIVED=$(grep -c '\.enc$' "$WORK/archive.list" || true)
+    [ "$ARCHIVED" -gt 0 ] || cannot "the WAL archive holds no segment"
+    if grep -Ev '^[0-9A-F]{24}(\.[0-9A-F]{8}\.backup|\.history)?\.(enc|sha256)$' "$WORK/archive.list" | grep -q .; then
+        fail "the WAL archive holds a file that is not ciphertext or its digest: $(grep -Ev '\.(enc|sha256)$' "$WORK/archive.list" | head -3 | tr '\n' ' ')"
+    fi
+    no_plaintext_at_rest
+    pass "after the backup: the restore point $T; the bank statement accepted after it; one journal line removed by a raw writer after that; $ARCHIVED WAL files archived through $LAST_SEGMENT, each encrypted with its digest beside it"
+fi
+# The source is gone from here on: everything a restore is compared with is the backup's, and a recovery's the archive's.
 [ -n "$KIND_NODE" ] || dock rm -f -v "$SOURCE" >/dev/null 2>&1 || true
+
+# A damaged backup is refused by its digest before it is decrypted: a copy with one byte changed, judged as every restore judges the
+# backup, and no restore is ever made from it.
+step damaged-backup
+cp "$WORK/backup.enc" "$WORK/damaged.enc"
+size=$(wc -c < "$WORK/damaged.enc" | tr -d ' ')
+printf '\377' | dd of="$WORK/damaged.enc" bs=1 seek=$((size / 2)) conv=notrunc 2>/dev/null
+cmp -s "$WORK/backup.enc" "$WORK/damaged.enc" && printf '\000' | dd of="$WORK/damaged.enc" bs=1 seek=$((size / 2)) conv=notrunc 2>/dev/null
+if [ "$(MSYS_NO_PATHCONV=1 openssl dgst -sha256 -r "$(dpath "$WORK/damaged.enc")" | cut -d' ' -f1)" = "$(cat "$WORK/backup.sha256")" ]; then
+    fail "a backup with one byte changed still matches the backup's digest"
+fi
+rm -f "$WORK/damaged.enc"
+pass "a backup with one byte changed is refused by its digest before it is decrypted"
 
 # ---------------------------------------------------------------------------------------------------
 # A restore: held, restored, its counter moved, compared and verified. restore <label> [counter|no-counter]
 # ---------------------------------------------------------------------------------------------------
 # Checked in this shell, never inside a pipeline, so a damaged file stops the run here rather than feeding a restore nothing.
+# digests_hold [parts...]: each ciphertext's digest checked, the backup and its manifest by default.
 digests_hold() {
-    for part in backup manifest; do
+    for part in ${*:-backup manifest}; do
         [ "$(MSYS_NO_PATHCONV=1 openssl dgst -sha256 -r "$(dpath "$WORK/$part.enc")" | cut -d' ' -f1)" = "$(cat "$WORK/$part.sha256")" ] \
             || fail "the $part's ciphertext does not match its digest: refused before decrypting"
     done
@@ -485,6 +670,16 @@ digests_hold() {
 
 decrypt() {
     MSYS_NO_PATHCONV=1 openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -pass "file:$(dpath "$WORK/backup.key")" -in "$(dpath "$WORK/$1.enc")"
+}
+
+# rate <container> <label> <logical|point-in-time> <milliseconds>: what one restore took against the size of what it restored, one line of
+# rates.tsv (label, kind, the restored database's bytes, milliseconds), the figures a restore rate per GiB is computed from (section 11.55).
+# Measured on this machine at this size, which is all it says.
+: > "$ART/rates.tsv"
+rate() {
+    bytes=$(sql "$1" "SELECT pg_database_size('finapp')")
+    printf '%s\t%s\t%s\t%s\n' "$2" "$3" "$bytes" "$4" >> "$ART/rates.tsv"
+    log "restore $2: $3, $bytes bytes in $4 ms"
 }
 
 restore() {
@@ -503,9 +698,11 @@ restore() {
     digests_hold
     # pg_restore's output stays in the work directory: a failed COPY quotes the row it failed on, and the artefacts are kept by CI.
     # What leaves it is the error's first clause, which names the object and never a value.
+    started=$(millis)
     decrypt backup | admin_dock exec -i --env PGPASSWORD "$target" \
         pg_restore -h 127.0.0.1 -U "$ADMIN" -d finapp --single-transaction --exit-on-error > "$WORK/restore-$label.log" 2>&1 \
         || cannot "restore $label: pg_restore failed: $(sed -n 's/^\(pg_restore: error: [^:]*\).*/\1/p' "$WORK/restore-$label.log" | head -3 | tr '\n' ' ')"
+    rate "$target" "$label" logical $(($(millis) - started))
     highest=$(sql "$target" "$XID8_SQL")
     counter=$(sql "$target" 'SELECT pg_current_xact_id()')
     if [ "$2" = counter ]; then
@@ -571,6 +768,7 @@ plant() {
                        RETURNING r.version_id)
             SELECT (SELECT count(*) FROM moved) || ' 1 1'" ;;
         counter-not-moved) echo '1 1 1' ;;
+        key-version-missing) echo '1 1 1' ;;
         journal-line-removed) sql "$1" "SET session_replication_role = replica;
             WITH gone AS (DELETE FROM ledger.journal_line WHERE id = (SELECT l.id FROM ledger.journal_line l
                               JOIN ledger.journal_entry e ON e.id = l.entry_id JOIN ledger.ledger_account a ON a.id = l.ledger_account_id
@@ -647,7 +845,152 @@ compare() {
 }
 
 # ---------------------------------------------------------------------------------------------------
-# The restore, released only if every verdict is a pass.
+# The post-recovery gate (ADR-0128 decision 3, ADR-0140; sections 11.35 and 11.55), on a restore whose verification passed with the
+# roles still held. Money moves only after all three.
+#   1. The window: every file a provider delivered after the restore's point delivered again through the platform's own intake, and
+#      reconciliation run over it, by RestoreReconciliation acting as finapp_app while the three roles still cannot log in. Here the
+#      provider is the simulated bank, and the window holds the statement sent after the backup. Its contribution was approved before
+#      the point, so a clean window raises no break; any break is a finding a person explains before the release.
+#   2. The books again: RestoreVerification over the database the window changed.
+#   3. The release: a person's, recorded (released by, reason, the database's instant, and the digest of every report it rests on), and
+#      only then each role able to log in. RESTORE_RELEASED_BY names the person; a run with nobody named is released by the rehearsal's
+#      second operator, as its record says.
+# gate <container> <label> <window start>
+# ---------------------------------------------------------------------------------------------------
+gate() {
+    port=$(port_of "$1")
+    if [ -n "$KIND_NODE" ]; then
+        # The kind rehearsal's provider files are its simulator's, which this harness does not hold: the window is a person's step there.
+        log "restore $2: the window since $3 is not delivered here: a kind source's provider files are its simulator's (section 11.55)"
+    else
+        code=0
+        rm -f "$ART/window-$2.txt"
+        digests_hold statement
+        decrypt statement | FINAPP_DB_URL="jdbc:postgresql://127.0.0.1:$port/finapp?options=-c%20role%3Dfinapp_app" \
+            FINAPP_DB_APP_USER="$ADMIN" FINAPP_DB_APP_PASSWORD="${generated_for_admin}" \
+            FINAPP_DB_REPORTING_USER=finapp_reporting FINAPP_DB_REPORTING_PASSWORD="${generated_for_reporting}" \
+            ringed whole command_run RestoreReconciliation "$ART/window-$2.log" "$(dpath "$ART/window-$2.txt")" "$3" simulated-bank.statement \
+            || code=$?
+        tr -d '\r' < "$ART/window-$2.txt" 2>/dev/null | tail -1 | grep -q "^EXIT|$code\$" \
+            || { tail -60 "$ART/window-$2.log" >&2; cannot "the window of $2 ended without its report (exit $code): see window-$2.log"; }
+        [ "$code" != 2 ] || { tail -60 "$ART/window-$2.log" >&2; cannot "the window of $2 could not run: see window-$2.log"; }
+        tr -d '\r' < "$ART/window-$2.txt" | grep -q '^HOLD|acting as finapp_app' || fail "restore $2: the window ran without the hold"
+        tr -d '\r' < "$ART/window-$2.txt" | grep -q '^FILE|ACCEPTED|' \
+            || fail "restore $2: the bank's statement was not accepted in the window: $(grep '^FILE|' "$ART/window-$2.txt" | cut -c1-200)"
+        tr -d '\r' < "$ART/window-$2.txt" | grep -q '^BREAKS|0|' \
+            || fail "restore $2: the window raised breaks no clean window raises: $(grep '^BREAKS|' "$ART/window-$2.txt" | cut -c1-200)"
+        pass "restore $2: the window since $3 reconciled with money held: the bank's statement delivered again and accepted, no break raised"
+        : > "$ART/verdicts-$2-window.txt"
+        verify "$1" "$2-window"
+        if grep -q '^FAIL|' "$ART/verdicts-$2-window.txt"; then
+            fail "restore $2: after the window the books are not whole, so it stays held: $(grep '^FAIL|' "$ART/verdicts-$2-window.txt" | tr '\n' ';' | cut -c1-600)"
+        fi
+        pass "restore $2: whole again after the window: $(cut -d'|' -f2 "$ART/verdicts-$2-window.txt" | paste -sd, -)"
+    fi
+    # The release. Nothing before this line lets a platform role log in to the restore.
+    released_by=${RESTORE_RELEASED_BY:-restore-rehearsal-operator-b}
+    rests_on=""
+    for report in "verdicts-$2.txt" "window-$2.txt" "verdicts-$2-window.txt"; do
+        [ -f "$ART/$report" ] || continue
+        rests_on="$rests_on $report=$(MSYS_NO_PATHCONV=1 openssl dgst -sha256 -r "$(dpath "$ART/$report")" | cut -d' ' -f1)"
+    done
+    # One transaction: the three roles released and the database's instant read together.
+    released=$(sql "$1" "BEGIN; ALTER ROLE finapp_app LOGIN; ALTER ROLE finapp_migrator LOGIN; ALTER ROLE finapp_reporting LOGIN;
+        SELECT now(); COMMIT;") || cannot "the release of $2 failed"
+    released_at=$(printf '%s\n' "$released" | grep -v '^\(BEGIN\|COMMIT\|ALTER ROLE\)$' | tail -1)
+    [ -n "$released_at" ] || cannot "the release of $2 read no instant"
+    printf 'restore\t%s\nreleased_by\t%s\nreason\t%s\nreleased_at\t%s\nrests_on\t%s\n' "$2" "$released_by" \
+        "every check passed on the restore, the window since $3 reconciled, the books whole after it" "$released_at" "${rests_on# }" \
+        > "$ART/release-$2.tsv"
+    for role in finapp_app finapp_migrator finapp_reporting; do
+        login "$1" "$role" "$(generated_for_role "$role")" || fail "after the release, $role still cannot log in: $(tr '\n' ' ' < "$WORK/login.out" | cut -c1-200)"
+    done
+    pass "restore $2 released by $released_by at $released_at, recorded with the reports it rests on: finapp_app, finapp_migrator and finapp_reporting log in"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# A point-in-time recovery (section 11.55): a new server whose data directory is the base backup, before it first starts, recovering
+# from the archive volume named to the instant given, then promoted. The physical restore brings the roles back as the source had them,
+# able to log in, so the hold is placed before the server first starts: pg_hba.conf refuses the three platform roles from every address
+# and the socket; once promoted they are made NOLOGIN as the logical restore's are, the refusal lines removed, and each role's refusal is
+# asserted with the words a NOLOGIN role gets. Ten replicas pointed at it are refused exactly as one is, at every moment.
+# pitr <label> <archive volume> <target instant>: 0 promoted and held; 1 the server refused to reach the target (its log kept).
+# ---------------------------------------------------------------------------------------------------
+HBA_HOLD='host all finapp_app,finapp_migrator,finapp_reporting all reject
+local all finapp_app,finapp_migrator,finapp_reporting reject'
+pitr() {
+    label=$1
+    target="$NAME-$label"
+    dock create --name "$target" --publish 127.0.0.1::5432 \
+        --mount "type=bind,source=$(dpath "$WORK/admin"),target=/run/finapp-admin,readonly" --env POSTGRES_PASSWORD_FILE=/run/finapp-admin \
+        --mount "type=volume,source=$2,target=/archive,readonly" \
+        --mount "type=bind,source=$(dpath "$WORK/archive.key"),target=/run/finapp-archive-key,readonly" \
+        --env POSTGRES_USER="$ADMIN" --env POSTGRES_DB=finapp "$IMAGE" -c max_connections=100 >/dev/null \
+        || cannot "recovery $label: its server could not be made"
+    digests_hold base
+    decrypt base | dock run --rm -i --volumes-from "$target" --user postgres --env RESTORE_COMMAND="$RESTORE_COMMAND" \
+        --env TARGET_TIME="$3" --env HBA_HOLD="$HBA_HOLD" --entrypoint sh "$IMAGE" -c '
+            set -eu
+            mkdir -p "$PGDATA"
+            chmod 700 "$PGDATA"
+            cd "$PGDATA"
+            tar -xf -
+            { printf "%s\n" "$HBA_HOLD"; cat pg_hba.conf; } > pg_hba.held
+            mv pg_hba.held pg_hba.conf
+            printf "restore_command = '"'"'%s'"'"'\nrecovery_target_time = '"'"'%s'"'"'\nrecovery_target_inclusive = off\nrecovery_target_action = '"'"'promote'"'"'\n" \
+                "$RESTORE_COMMAND" "$TARGET_TIME" >> postgresql.auto.conf
+            touch recovery.signal' > "$WORK/recover-$label.log" 2>&1 \
+        || cannot "recovery $label: the base backup could not be laid down: $(head -3 "$WORK/recover-$label.log" | tr '\n' ' ')"
+    started=$(millis)
+    dock start "$target" >/dev/null || cannot "recovery $label: its server did not start"
+    waited=0
+    until [ "$(sql "$target" 'SELECT NOT pg_is_in_recovery()' 2>/dev/null)" = t ]; do
+        if [ "$(dock inspect -f '{{.State.Running}}' "$target" | tr -d '\r')" != true ]; then
+            dock logs "$target" > "$ART/recovery-$label.log" 2>&1 || true
+            return 1
+        fi
+        waited=$((waited + 1))
+        [ "$waited" -le 600 ] || cannot "recovery $label: not promoted within ten minutes"
+        sleep 1
+    done
+    rate "$target" "$label" point-in-time $(($(millis) - started))
+    dock logs "$target" > "$ART/recovery-$label.log" 2>&1 || true
+    sql "$target" "ALTER ROLE finapp_app NOLOGIN; ALTER ROLE finapp_migrator NOLOGIN; ALTER ROLE finapp_reporting NOLOGIN" >/dev/null \
+        || cannot "recovery $label: the roles could not be held"
+    dock exec --user postgres "$target" sh -c 'grep -vxF -e "host all finapp_app,finapp_migrator,finapp_reporting all reject" \
+        -e "local all finapp_app,finapp_migrator,finapp_reporting reject" "$PGDATA/pg_hba.conf" > "$PGDATA/pg_hba.open" \
+        && mv "$PGDATA/pg_hba.open" "$PGDATA/pg_hba.conf"' || cannot "recovery $label: the refusal lines could not be removed"
+    [ "$(sql "$target" 'SELECT pg_reload_conf()')" = t ] || cannot "recovery $label: the server did not reload its configuration"
+    for role in finapp_app finapp_migrator finapp_reporting; do
+        if login "$target" "$role" "$(generated_for_role "$role")"; then
+            fail "recovery $label: $role logged in to a recovery that has not been verified"
+        fi
+        grep -q 'not permitted to log in' "$WORK/login.out" || cannot "recovery $label: $role was refused for another reason: $(tr '\n' ' ' < "$WORK/login.out" | cut -c1-200)"
+    done
+    pass "recovery $label: promoted at its target; finapp_app, finapp_migrator and finapp_reporting refused from its first start, and NOLOGIN before any check"
+    return 0
+}
+
+# archive_copy <volume> <plant>: the run's archive copied into a volume of its own, and the plant made in the copy alone: the first
+# segment a recovery fetches after the base backup withheld (wal-gap), or one byte of its ciphertext changed with its digest kept
+# (wal-damaged).
+archive_copy() {
+    dock volume create "$1" >/dev/null || cannot "the archive's copy $1 could not be made"
+    dock run --rm --mount "type=volume,source=$ARCHIVE_VOLUME,target=/from,readonly" --mount "type=volume,source=$1,target=/to" \
+        --env SEGMENT="$FIRST_AFTER_BASE" --env PLANT="$2" --entrypoint sh "$IMAGE" -c '
+            set -eu
+            cp -a /from/. /to/
+            test -f "/to/$SEGMENT.enc"
+            case $PLANT in
+                wal-gap) rm "/to/$SEGMENT.enc" ;;
+                wal-damaged) printf "\377" | dd of="/to/$SEGMENT.enc" bs=1 seek=4096 conv=notrunc 2>/dev/null ;;
+            esac
+            chown -R postgres:postgres /to' >/dev/null 2>&1 \
+        || cannot "plant $2: the archive's copy could not be planted"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# The restore: verified with the roles held, then the gate, then released.
 # ---------------------------------------------------------------------------------------------------
 step restore
 : > "$ART/verdicts-restore.txt"
@@ -661,20 +1004,37 @@ fi
 [ "$(grep -c '^PASS|' "$ART/verdicts-restore.txt")" = "$((VERIFIED_CHECKS + COMPARED))" ] \
     || cannot "the restore has $(grep -c '^PASS|' "$ART/verdicts-restore.txt") passes, not $((VERIFIED_CHECKS + COMPARED))"
 pass "the restore is financially whole: $(cut -d'|' -f2 "$ART/verdicts-restore.txt" | paste -sd, -)"
-# The release, only now: each role logs in again.
-sql "$NAME-restore" "ALTER ROLE finapp_app LOGIN; ALTER ROLE finapp_migrator LOGIN; ALTER ROLE finapp_reporting LOGIN" >/dev/null \
-    || cannot "the release failed"
-for role in finapp_app finapp_migrator finapp_reporting; do
-    login "$NAME-restore" "$role" "$(generated_for_role "$role")" || fail "after the release, $role still cannot log in: $(tr '\n' ' ' < "$WORK/login.out" | cut -c1-200)"
-done
-pass "released after the verification: finapp_app, finapp_migrator and finapp_reporting log in"
+gate "$NAME-restore" restore "$INSTANT"
 dock rm -f -v "$NAME-restore" >/dev/null 2>&1 || true
 
 # ---------------------------------------------------------------------------------------------------
-# The plants: each kind of corruption in a restore of its own, refused by exactly the checks named, and never released. Nine are
+# The point-in-time recovery to T, the instant before the statement and the bad write (seeded source): the bad write is not in it,
+# every count is the backup's at T, every check passes with the roles held, and then the gate.
+# ---------------------------------------------------------------------------------------------------
+if [ -z "$KIND_NODE" ]; then
+    step point-in-time
+    : > "$ART/verdicts-pitr.txt"
+    pitr pitr "$ARCHIVE_VOLUME" "$T" || { tail -20 "$ART/recovery-pitr.log" >&2; fail "the recovery to $T did not reach it: see recovery-pitr.log"; }
+    [ "$(sql "$NAME-pitr" "SELECT count(*) FROM ledger.journal_line WHERE id = '$BAD_LINE'")" = 1 ] \
+        || fail "the recovery to $T does not hold the journal line the bad write after it removed"
+    compare "$NAME-pitr" pitr
+    verify "$NAME-pitr" pitr
+    if grep -q '^FAIL|' "$ART/verdicts-pitr.txt"; then
+        fail "the recovery to $T is not financially whole, so it stays held: $(grep '^FAIL|' "$ART/verdicts-pitr.txt" | tr '\n' ';' | cut -c1-600)"
+    fi
+    [ "$(grep -c '^PASS|' "$ART/verdicts-pitr.txt")" = "$((VERIFIED_CHECKS + COMPARED))" ] \
+        || cannot "the recovery has $(grep -c '^PASS|' "$ART/verdicts-pitr.txt") passes, not $((VERIFIED_CHECKS + COMPARED))"
+    pass "the recovery to $T holds the line the bad write removed and is financially whole: $(cut -d'|' -f2 "$ART/verdicts-pitr.txt" | paste -sd, -)"
+    gate "$NAME-pitr" pitr "$T"
+    dock rm -f -v "$NAME-pitr" >/dev/null 2>&1 || true
+fi
+
+# ---------------------------------------------------------------------------------------------------
+# The plants: each kind of corruption in a restore of its own, refused by exactly the checks named, and never released. Ten are
 # built so that one check alone can see them, which shows each of those checks working on its own; a dropped grant is seen by the
 # catalogue and the schema each; the phase gate's, a line gone from the journal, must be seen by every check that reads the lines.
-# The names are in the order the verdicts are written.
+# key-version-missing changes nothing in the restore: it is verified with a key ring that lost version 2, as a restore whose key store
+# lost a version would be. The names are in the order the verdicts are written.
 # ---------------------------------------------------------------------------------------------------
 expected_check() {
     case $1 in
@@ -689,6 +1049,7 @@ expected_check() {
         gl-rule-repointed) echo "GL = ledger per period" ;;
         counter-not-moved) echo "source-join census" ;;
         journal-line-removed) echo "row counts equal to the source's,trial balance per currency,projection check,source-join census" ;;
+        key-version-missing) echo "evidence held by the key rings" ;;
     esac
 }
 
@@ -703,7 +1064,13 @@ for name in $PLANTS; do
     planted=$(plant "$NAME-$name" "$name" | tail -1)
     [ "$planted" = '1 1 1' ] || cannot "plant $name did not land whole: $planted"
     compare "$NAME-$name" "$name"
-    verify "$NAME-$name" "$name"
+    if [ "$name" = key-version-missing ]; then
+        VERIFY_RING=without-v2
+        verify "$NAME-$name" "$name"
+        VERIFY_RING=whole
+    else
+        verify "$NAME-$name" "$name"
+    fi
     expected=$(expected_check "$name")
     failing=$(grep '^FAIL|' "$ART/verdicts-$name.txt" | cut -d'|' -f2 | paste -sd, -)
     if [ "$failing" != "$expected" ]; then
@@ -716,5 +1083,21 @@ for name in $PLANTS; do
     dock rm -f -v "$NAME-$name" >/dev/null 2>&1 || true
 done
 
-log "every assertion held: $(grep -c '^PASS' "$ART/assertions.tsv") passed"
+# The recovery's plants: the archive's first segment after the base backup withheld, or damaged under its kept digest. PostgreSQL
+# refuses to end a recovery short of its target, so the server stops, no platform role ever reaches it, and nothing is compared.
+for name in $PITR_PLANTS; do
+    step "plant $name"
+    archive_copy "$NAME-$name-archive" "$name"
+    if pitr "$name" "$NAME-$name-archive" "$T"; then
+        fail "plant $name: the recovery passed the archive's $name and was promoted"
+    fi
+    grep -q "$NOT_REACHED" "$ART/recovery-$name.log" \
+        || { tail -20 "$ART/recovery-$name.log" >&2; cannot "plant $name: the recovery stopped for another reason: see recovery-$name.log"; }
+    pass "plant $name: the recovery refused to pass it ($NOT_REACHED, at $FIRST_AFTER_BASE); its server stopped and no platform role reached it"
+    dock rm -f -v "$NAME-$name" >/dev/null 2>&1 || true
+    dock volume rm -f "$NAME-$name-archive" >/dev/null 2>&1 || true
+done
+
+no_plaintext_at_rest
+log "every assertion held: $(grep -c '^PASS' "$ART/assertions.tsv") passed; rates in rates.tsv: $(paste -sd';' "$ART/rates.tsv")"
 exit 0

@@ -621,6 +621,15 @@ commit and the date; do not delete the entry.
     ran on commit `a6fee3a1`: E01 `PASSED` there, and the plants and the probes were seen there (`MUTATION_TESTING.md` §2). The later
     commits - the standby's phrase delivered by `secretKeyRef`, the replication role's SQL by placeholder, the names the secret
     discoverer reads - ran only in containers and through `ExperimentsRehearsalContractTest`.
+  - **`P16-TSK-018`** (the provider experiments, `OPERATIONS_RUNBOOK.md` section 11.53, whose record is empty; `RESILIENCE_EXPERIMENTS.md`
+    E17, E18 and E21; `docs/architecture/TIMEOUTS_AND_RETRIES.md` section 5): **E17**, the card rail unavailable and then silent past
+    the timeout, at three replicas (`REHEARSAL_EXPERIMENTS=E17`); **E18**, the FX provider and then the reference rates taken away, at
+    three replicas; **E21**, every provider slowed to two and then ten times its steady latency, at three replicas; and with them the
+    **failure rates per rail** each run records, which owner decision C12 waits on before automatic rail availability can be decided.
+    Nothing ran before the word; the simulator's degradation controls and the three experiments ran only through
+    `ProviderExperimentsContractTest`. E19 and E20 are not owed here: E19 cannot be driven until a production path runs a KYC case's
+    checks (`THREAT_MODEL.md` section 6 item 60), and E20 rests on the recorded fail-safe by the owner's decision of 2026-11-13 on
+    unresolved question 13.
   - `P16-TSK-008` (hot rows, locks, deadlocks and plans; `OPERATIONS_RUNBOOK.md` §11.48, whose record is empty; `CAPACITY_MODEL.md`
     §3.5, its measured cells `—`): **E38**, the concurrent-financial profile (`REHEARSAL_LOAD_PROFILE=concurrent`) at seven replicas and
     at three, with its control wait, its per-row waits, the server's lock log and every deadlock explained in the record; **E38's
@@ -635,6 +644,44 @@ commit and the date; do not delete the entry.
     the observability overlay applied client-side on a `kind` cluster, both ConfigMaps admitted, and the scraper's
     `/api/v1/rules` listing every group of all thirteen rule files (`OPERATIONS_RUNBOOK.md` §11.34's alerts on `kind`). Proven
     without a cluster only: the stream rendered, `kubeconform -strict` and the pipeline's policies green.
+  - `P16-TSK-021` (network, DNS, connection and disk faults, `OPERATIONS_RUNBOOK.md` §11.47, every record there empty): at three
+    replicas in the `experiments` scope, **none ever run** - E07 (the database's slots held, the operator admitted), E11 (the WAL
+    archive's object store stopped; it also needs that store, which `P16-TSK-024` brings, named by `REHEARSAL_E11_STORE`), E12 (the
+    database hop's latency at 50, 200 and 1000 ms), E13 (resets at 1% and 10% of the links, then **the entry's probe**: a transfer cut
+    inside its transaction left absent, one cut on its commit left whole, each retried by key to one effect), E14 (one replica
+    black-holed from the database: **the black-holed connection's measurement**, without a socket timeout, that `P16-TSK-022` decides
+    the timeout from), E15 (the broker's hop, then the provider's, black-holed), E16 (CoreDNS scaled to zero) and E24 (the primary's
+    own 2 GiB filesystem filled; E24 must be named when the run makes its data tier). Also owed: the `crash-with-faults` and
+    `term-with-faults` probes over the four new kinds of fault (a black hole, the holder, a lock, a ballast), and a first run of the
+    loop-mounted volume and the local PersistentVolume on a cluster. What ran instead: `NetworkFaultExperimentsContractTest`, and short
+    container checks of the node image's tools and of Toxiproxy 2.13.0 with PostgreSQL 18.6 (§11.47's last record).
+  - **`P16-TSK-009`** (the connection budget at ten, `OPERATIONS_RUNBOOK.md` §11.49; `CAPACITY_MODEL.md` §4; ADR-0134): **E41**, the `load`
+    scope at ten replicas with the normal profile (`REHEARSAL_LOAD_PROFILE=normal REHEARSAL_LOAD_REPLICAS=10`): the autoscaler reading
+    metrics-server's CPU metric, each replica's pools at the engineering workload (`load/pools-per-replica.tsv`), the fleet's peak
+    within 13 x 8 with an operator admitted at it and with the fleet held at 104; §11.49's record. Also owed by the same change, since it
+    touches every scope's rendered copy: the first cluster run of `kind-rehearsal.sh`'s `fleet_patch` and of the `load` scope's new steps
+    at any count (the release scope at three on these bytes is already PI-024's). The peak during a rollout at ten is E26's
+    (`P16-TSK-014`). Nothing ran on a cluster: `fleet_patch` ran once by itself over a real render, and the manifest policies and the
+    budget's plants in containers (§11.49's record).
+  - `P16-TSK-024` (restore and point-in-time recovery, `OPERATIONS_RUNBOOK.md` §11.35 and §11.55; ADR-0140): **E59**, the whole
+    seeded restore rehearsal on the task's tree (`infra/scripts/restore-rehearsal.sh` with its defaults: the widened seed, the
+    logical restore and its gate, every plant, `key-version-missing` among them), then the logical restore of a `kind` database after
+    the soak (`RESTORE_SOURCE=kind:<node>` after `P16-TST-001`'s run with `REHEARSAL_KEEP=1`), its record in §11.35 and the two sizes'
+    lines of `rates.tsv` in §11.55; **E60**, the point-in-time recovery to T and its `wal-gap` and `wal-damaged` plants (the same
+    seeded run), its record in §11.55; **E61**, the post-recovery gate on both restores (the same run), and on `kind` the broker step
+    of §11.35 step 6 for a restored database at three replicas, with **F15**, its record in §11.55. Ran instead, 2026-11-13, in
+    containers: the seed's check (`RESTORE_STOP_AFTER=source`) and the recovery's mechanics over a bare server (§11.55's record).
+  - **`P16-TSK-010`** (the audit archival and the session sweep, `OPERATIONS_RUNBOOK.md` §11.50 and §11.15; `RESILIENCE_EXPERIMENTS.md`):
+    **E44**, the archive's store stopped mid-run, at three replicas (`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS=E44`); **E45**,
+    a holder killed between its copy and its mark, at three replicas and, once the experiments scope runs at ten (`kind`'s overlay admits ten, ADR-0134), at ten (the entry's
+    acceptance: archival and the sweep at ten instances, each row once); **E46**, the session table bounded over a 45-minute soak at
+    three replicas (the entry's acceptance: the sessions table bounded over the soak); and the crash probes (`crash-with-faults`,
+    `term-with-faults`) once more on these bytes, which now put the store's read hold on as well. Their records go in §11.50's last
+    record and the register's rows; the alerts `AuditArchiveCopyDiffers` and `AuditArchiveBehind` seen on a cluster with them. Nothing
+    of the task ran on a cluster; what ran outside one: a short container check of platform `V015` and identity `V027` on PostgreSQL
+    18.6 (the functions by hand: the claim, a lease taken over, both refusals at the mark, the chain, the decoder, the grants, the
+    sweep keeping a live session) and of the test-only store on the JDK image (write once, `412`, `405`, a bad checksum `400`). Its
+    database cases (`AuditArchivalDatabaseTest`, `SessionSweepDatabaseTest`) are owed to the database pass, PI-023's kind.
   - `P16-TSK-012` (partitioning and read replicas, ADR-0142; `OPERATIONS_RUNBOOK.md` §11.57, whose record is empty; `CAPACITY_MODEL.md`
     §3.6, its measured cells `—`): **E65**, the decisions' readings, riding E39's eight-hour soak at three replicas in one run
     (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=soak REHEARSAL_LOAD_DECISIONS=1`): seven `TRIAL_BALANCE` runs over the growing journal,

@@ -10,11 +10,11 @@
 #                     restricted to nothing (deploy/delivery/controller/default-project.yaml).
 #   external-secrets  the External Secrets chart at ESO_VERSION, fetched and refused unless its archive is ESO_CHART_SHA256, rendered with
 #                     deploy/operators/external-secrets/values.yaml.
-#   metrics-server    for the kind delivery rehearsal alone: metrics-server's release manifest at METRICS_SERVER_VERSION, refused unless
+#   metrics-server    for the kind rehearsal's delivery and load scopes: metrics-server's release manifest at METRICS_SERVER_VERSION, refused unless
 #                     its bytes are METRICS_SERVER_MANIFEST_SHA256, its image by digest, its aggregated reader role deleted, and told not to
 #                     verify the kubelets' serving certificates, which kind signs with nothing it can trust. A real environment brings its
 #                     own metrics source (OPERATIONS_RUNBOOK.md section 11.36); kind has none, and without one the release's autoscaler is
-#                     Degraded under Argo CD's own check and the root's last wave never comes.
+#                     Degraded under Argo CD's own check and the root's last wave never comes, and has no metric to act on.
 # Each is held to infra/scripts/manifest-policy/controllers.rego: a ClusterRole only from the controller's named list, its
 # ClusterRoleBinding only to that role and that controller's own ServiceAccount, a RoleBinding only to a role the stream holds, a binding
 # to a role of the cluster's own only where the list names it, Secrets only in the namespaces listed for it, no aggregation, every image a
@@ -26,7 +26,7 @@
 # ControllerRenderContractTest requires the plants to cover every rule id in controllers.rego.
 #
 # `render <directory>` writes the three streams, each having passed its policy, as argocd.yaml, external-secrets.yaml and
-# metrics-server.yaml, and runs no plant: the kind rehearsal's delivery scope installs exactly what this script checked.
+# metrics-server.yaml, and runs no plant: the kind rehearsal's delivery scope (and its load scope, metrics-server alone) installs exactly what this script checked.
 #
 # WHAT IT NEVER DOES. It talks to no cluster and holds no credential: no container is given a variable from the host, the repository is
 # mounted read-only, and its working directory is a temporary one removed at exit. The network is used for the pinned images and for the

@@ -51,7 +51,7 @@ import org.springframework.core.Ordered;
 
 /**
  * The order a stopping instance lets go in, on a real context (`P15-TSK-008`, ADR-0120 decision 4): the production
- * configuration's own beans - all forty of the platform's lifecycle components running - stopped by Spring's own
+ * configuration's own beans - all forty-one of the platform's lifecycle components running - stopped by Spring's own
  * lifecycle processor, never a list of phase numbers.
  *
  * <p><strong>How the order is observed.</strong> Each step is caught at the moment it happens, on the thread doing it: the
@@ -73,10 +73,10 @@ class ShutdownOrderTest {
 
     private static final String PROBE_PATH = "/__drain-probe";
 
-    /** The platform's lifecycle components: thirty-seven schedules (`P15-TSK-022`'s window-counter sweep the latest), the inbox consumers, the gauge refresher's lifecycle (`P15-TSK-024`), the telemetry SDK's bounded flush (`P15-TSK-023`). */
-    private static final int COMPONENTS = 40;
+    /** The platform's lifecycle components: thirty-eight schedules (`P16-TSK-010`'s session sweep the latest; its audit archive schedule exists only where a store is named, which production's configuration does not), the inbox consumers, the gauge refresher's lifecycle (`P15-TSK-024`), the telemetry SDK's bounded flush (`P15-TSK-023`). */
+    private static final int COMPONENTS = 41;
 
-    private static final int SCHEDULES = 37;
+    private static final int SCHEDULES = 38;
 
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
 

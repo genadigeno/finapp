@@ -64,7 +64,7 @@ standby. So a deployment's URL alone could put either pool on a copy.
    - The idempotency claims and the inbox are never partitioned by a time: their primary keys are the once-ness arbiters.
    - The outbox, the audit trail and the payment attempts and their history are not partitioned. The outbox's sweep keeps pace at the
      minimum fleet and keeps evidence a drop would lose; the audit trail and the attempts are kept, so a partition buys no retention
-     until a jurisdiction's period is decided (`THREAT_MODEL.md` §6 item 21 (b)).
+     until a jurisdiction's period is decided (`THREAT_MODEL.md` §6 item 23 (b)).
    - The balance projection, the window counter and the other tables bounded by their population, not by time, need nothing.
    - **What would overturn it**, each read by E65 from the soak's own samples (E39's run, PI-025):
      - for a swept table, its rows written a day at the target (inserted a money movement × the target's 377,000 movements a day) above
@@ -155,5 +155,5 @@ answers a decision.
 - Run E65 with E39 (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=soak REHEARSAL_LOAD_DECISIONS=1`, PI-025), and record its readings in
   `OPERATIONS_RUNBOOK.md` §11.57 against this ADR's thresholds.
 - The owner decides item 64, the report folds' bound.
-- Revisit decision 1 for the audit trail when a jurisdiction's retention period is decided (item 21 (b)), and for the idempotency records
+- Revisit decision 1 for the audit trail when a jurisdiction's retention period is decided (item 23 (b)), and for the idempotency records
   once their sweep exists.

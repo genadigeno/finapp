@@ -8,24 +8,25 @@ rule_files:
 evaluation_interval: 1m
 
 tests:
-  # A rollout at its longest: A leaves as B arrives, the whole taking 70 minutes. The bound is 77 minutes, this window included. Nothing pages.
+  # A rollout at its longest, ten replicas (kind's ceiling, ADR-0134): A leaves as B arrives, the whole taking 100 minutes. The bound is 107 minutes, this window
+  # included (seven replicas' is 77). Nothing pages.
   - interval: 1m
     input_series:
       - series: 'finapp_config_fingerprint{env="production", instance="old-0:8081", fingerprint="a1"}'
-        values: '1x70'
+        values: '1x100'
       - series: 'finapp_config_fingerprint{env="production", instance="new-0:8081", fingerprint="b2"}'
-        values: '_x1 1x118'
+        values: '_x1 1x148'
     alert_rule_test:
       - eval_time: 40m
         alertname: ConfigFingerprintDisagrees
         exp_alerts: []
-      - eval_time: 70m
+      - eval_time: 100m
         alertname: ConfigFingerprintDisagrees
         exp_alerts: []
-      - eval_time: 79m
+      - eval_time: 109m
         alertname: ConfigFingerprintDisagrees
         exp_alerts: []
-      - eval_time: 110m
+      - eval_time: 150m
         alertname: ConfigFingerprintDisagrees
         exp_alerts: []
 
@@ -37,10 +38,10 @@ tests:
       - series: 'finapp_config_fingerprint{env="production", instance="b:8081", fingerprint="b2"}'
         values: '1x120'
     alert_rule_test:
-      - eval_time: 75m
+      - eval_time: 105m
         alertname: ConfigFingerprintDisagrees
         exp_alerts: []
-      - eval_time: 90m
+      - eval_time: 115m
         alertname: ConfigFingerprintDisagrees
         exp_alerts:
           - exp_labels:
@@ -61,7 +62,7 @@ tests:
       - series: 'finapp_config_fingerprint{env="staging", instance="c:8081", fingerprint="c3"}'
         values: '1x120'
     alert_rule_test:
-      - eval_time: 90m
+      - eval_time: 115m
         alertname: ConfigFingerprintDisagrees
         exp_alerts:
           - exp_labels:
@@ -79,9 +80,9 @@ tests:
       - series: 'finapp_config_fingerprint{env="production", instance="a:8081", fingerprint="a1"}'
         values: '1x120'
       - series: 'finapp_config_fingerprint{env="production", instance="b:8081", fingerprint="b2"}'
-        values: '1x17 stale 1x17 stale 1x17 stale 1x17 stale 1x17 stale 1x20'
+        values: '1x17 stale 1x17 stale 1x17 stale 1x17 stale 1x17 stale 1x40'
     alert_rule_test:
-      - eval_time: 90m
+      - eval_time: 115m
         alertname: ConfigFingerprintDisagrees
         exp_alerts:
           - exp_labels:
@@ -101,7 +102,7 @@ tests:
         # promtool's expanding notation takes no NaN, so the samples are written out.
         values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
     alert_rule_test:
-      - eval_time: 90m
+      - eval_time: 115m
         alertname: ConfigFingerprintDisagrees
         exp_alerts:
           - exp_labels:
@@ -122,7 +123,7 @@ tests:
       - series: 'finapp_config_fingerprint{env="production", instance="c:8081", fingerprint="a1"}'
         values: '1x120'
     alert_rule_test:
-      - eval_time: 90m
+      - eval_time: 115m
         alertname: ConfigFingerprintDisagrees
         exp_alerts: []
       - eval_time: 110m
@@ -137,7 +138,7 @@ tests:
       - series: 'finapp_config_fingerprint{env="production", instance="b:8081", fingerprint="p1"}'
         values: '1x120'
     alert_rule_test:
-      - eval_time: 90m
+      - eval_time: 115m
         alertname: ConfigFingerprintDisagrees
         exp_alerts: []
 

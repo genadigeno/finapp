@@ -24,7 +24,7 @@ import lombok.extern.slf4j.Slf4j;
  *
  * <h2>Live, not {@code ACTIVE} — and that distinction is the sharpest point of this class</h2>
  *
- * <p>ADR-0030 and {@code P1-TSK-013} decided there is no {@code EXPIRED} status and no sweep:
+ * <p>ADR-0030 and {@code P1-TSK-013} decided there is no {@code EXPIRED} status and no sweep that marks one (the session sweep deletes a dead row only a grace later):
  * expiry is <em>derived</em> in the {@code WHERE} clause. So a gauge counting {@code status =
  * 'ACTIVE'} would count sessions <strong>nobody can use</strong> — and it would be wrong in the
  * reassuring direction, reporting live customers indefinitely while everyone had long since been

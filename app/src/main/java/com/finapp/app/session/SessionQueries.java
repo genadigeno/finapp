@@ -40,7 +40,7 @@ public class SessionQueries {
      * <h2>It measures one population, and that is stated rather than left to be discovered</h2>
      *
      * <p><strong>Expired sessions cannot appear in this sample, by construction.</strong> ADR-0030
-     * and {@code P1-TSK-013} decided there is no {@code EXPIRED} status and no sweep — liveness is
+     * and {@code P1-TSK-013} decided there is no {@code EXPIRED} status and no sweep that marks one — liveness is
      * derived in the {@code WHERE} clause — so nothing in this platform is ever notified that a
      * session expired. Expiry is the commonest way a session ends and it is unobservable.
      *

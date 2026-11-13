@@ -1,6 +1,7 @@
 package com.finapp.app.credit;
 
 import com.finapp.app.lifecycle.ScheduleDrain;
+import com.finapp.app.lifecycle.TickPhase;
 import com.finapp.app.lifecycle.ShutdownOrder;
 import com.finapp.credit.DecisionProgress;
 import com.finapp.credit.DecisionRequestId;
@@ -81,7 +82,7 @@ public final class CreditDecisionProgressSchedule implements SmartLifecycle {
             thread.setDaemon(true);
             return thread;
         });
-        executor.scheduleWithFixedDelay(this::sweepQuietly, pollInterval.toMillis(), pollInterval.toMillis(),
+        executor.scheduleWithFixedDelay(this::sweepQuietly, TickPhase.firstDelayMillis(pollInterval), pollInterval.toMillis(),
                 TimeUnit.MILLISECONDS);
         drain.started(executor);
     }

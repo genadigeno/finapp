@@ -768,3 +768,108 @@ tests:
       - eval_time: 20m
         alertname: PlatformGaugesUnreadable
         exp_alerts: []
+
+  # ------------------------------------------------------------ the audit archive (P16-TSK-010)
+
+  # AuditArchiveCopyDiffers: instance a reads a copy back that is not its rows at minute 3; it pages once its minute holds.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_audit_archive_segments_total{job="finapp", instance="a:8081", outcome="mismatch"}'
+        values: '0x3 1x20'
+      - series: 'finapp_audit_archive_segments_total{job="finapp", instance="b:8081", outcome="mismatch"}'
+        values: '0x23'
+      - series: 'finapp_audit_archive_segments_total{job="finapp", instance="b:8081", outcome="archived"}'
+        values: '0+1x23'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: AuditArchiveCopyDiffers
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: AuditArchiveCopyDiffers
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: page
+            exp_annotations:
+              summary: "An audit archive copy is not its rows"
+              description: "A segment's copy read back from the archive store is missing or differs from its audit rows, so it was not marked and the archive has stopped behind it. No audit record is lost: every row is still in the database. See OPERATIONS_RUNBOOK.md section 11.50."
+
+  # AuditArchiveCopyDiffers: segments archived on both instances and none refused or differing: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_audit_archive_segments_total{job="finapp", instance="a:8081", outcome="archived"}'
+        values: '0+2x20'
+      - series: 'finapp_audit_archive_segments_total{job="finapp", instance="a:8081", outcome="mismatch"}'
+        values: '0x20'
+      - series: 'finapp_audit_archive_segments_total{job="finapp", instance="b:8081", outcome="refused"}'
+        values: '0x20'
+      - series: 'finapp_audit_archive_segments_total{job="finapp", instance="b:8081", outcome="store_unavailable"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: AuditArchiveCopyDiffers
+        exp_alerts: []
+
+  # AuditArchiveBehind: the oldest queued row two hours old, instance b NaN, and instance a archiving: it tickets once 15 minutes hold.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_audit_archive_pending_oldest_seconds{job="finapp", instance="a:8081"}'
+        values: '7200+60x30'
+      - series: 'finapp_audit_archive_pending_oldest_seconds{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+      - series: 'finapp_audit_archive_enabled{job="finapp", instance="a:8081"}'
+        values: '1x30'
+      - series: 'finapp_audit_archive_enabled{job="finapp", instance="b:8081"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: AuditArchiveBehind
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: AuditArchiveBehind
+        exp_alerts:
+          - exp_labels:
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "The audit archive is behind"
+              description: "An audit row has waited over an hour for the archive while an instance archives. Nothing is lost: the rows wait in the database. See OPERATIONS_RUNBOOK.md section 11.50."
+
+  # AuditArchiveBehind: the same backlog where no instance archives (no store named, as every committed environment today): silent, by
+  # design; and a backlog of a minute where one archives: silent.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_audit_archive_pending_oldest_seconds{job="finapp", instance="a:8081"}'
+        values: '7200+60x30'
+      - series: 'finapp_audit_archive_enabled{job="finapp", instance="a:8081"}'
+        values: '0x30'
+      - series: 'finapp_audit_archive_pending_oldest_seconds{job="finapp", instance="c:8081", env="other"}'
+        values: '60x30'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: AuditArchiveBehind
+        exp_alerts: []
+
+  # PlatformGaugesUnreadable: the archive's backlog gauge NaN on instance b alone: one alert, naming it, on b.
+  - interval: 1m
+    input_series:
+      - series: 'finapp_audit_archive_pending_oldest_seconds{job="finapp", instance="a:8081"}'
+        values: '0x20'
+      - series: 'finapp_audit_archive_pending_oldest_seconds{job="finapp", instance="b:8081"}'
+        values: 'NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PlatformGaugesUnreadable
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: PlatformGaugesUnreadable
+        exp_alerts:
+          - exp_labels:
+              gauge: finapp_audit_archive_pending_oldest_seconds
+              instance: b:8081
+              job: finapp
+              owner: platform
+              severity: ticket
+            exp_annotations:
+              summary: "A platform gauge cannot be read on b:8081"
+              description: "finapp_audit_archive_pending_oldest_seconds is NaN on b:8081 for 15 minutes. See OPERATIONS_RUNBOOK.md section 11.21."

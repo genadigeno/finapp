@@ -9,6 +9,7 @@ import com.finapp.ledger.SupportedCurrencies;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.ExchangeRate;
 import com.finapp.sharedkernel.money.Money;
+import com.finapp.platform.outbound.OutboundExchange;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.ConnectException;
@@ -394,7 +395,7 @@ public final class SimulatedFxProviderAdapter implements FxProvider {
     private Exchange send(HttpRequest request) {
         HttpResponse<byte[]> response;
         try {
-            response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            response = OutboundExchange.send(http, request, HttpResponse.BodyHandlers.ofByteArray(), timeout);
         } catch (ConnectException refused) {
             return new Exchange(true, Optional.empty(), Optional.empty(), "");
         } catch (HttpTimeoutException slow) {

@@ -37,8 +37,12 @@ import org.springframework.stereotype.Component;
 @Component
 public class KeyRingRetirementGuard {
 
-    /** Bean name of each ring, and every column its versions are stamped in, by {@code schema.table.column}. */
-    static final Map<String, List<String>> STAMPED_COLUMNS = Map.of(
+    /**
+     * Bean name of each ring, and every column its versions are stamped in, by {@code schema.table.column}. Public for the restore
+     * verification (`P16-TSK-024`), which reads every one of these columns on a restored database to prove its rows stand under versions
+     * the ring holds; held to the schema and to the ring beans by {@code KeyRingRetirementGuardCoversEveryColumnTest}.
+     */
+    public static final Map<String, List<String>> STAMPED_COLUMNS = Map.of(
             "mfaKeyRing", List.of("identity.mfa_enrolment.key_version"),
             "documentKeyRing", List.of(
                     "kyc.kyc_document.key_version",

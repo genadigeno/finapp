@@ -226,7 +226,7 @@ the statements and commits it took.
 | Merchant API | 4.69 a second (11.05, peak 11.1) | 47 (6) | 474 (13) | 753 (21) | 0 of 1,298 (0 of 2,639) | replicas 6, database 0.9, edge 4.6 (alone, while the merchant's payable history was short) | 1,496 MiB; heap 444 MB | under 0.1 ms | not exported | 2.1 (3), wait ≤ 2 ms, none pending | 0.2 ms alone; the payable read's mean 20 ms at E30's step 1, 74 ms at step 2, 255 ms at step 3 (below) | E30 step 3; isolation stage 2 |
 | Settlement ingestion | one PSP file of 4 captures (8 lines with their fees), accepted 5 s after it arrived | — | — | — | the file taken whole, every line an item | not separable (inside the top-up stage) | — | — | — | — | — | isolation, `load/written-settlement.tsv`, `load/settlement.log` |
 | Reconciliation | that file's batch completed 6 s after the file arrived, every capture allocated to its expectation | — | — | — | none abandoned | not separable | — | — | — | — | — | isolation, as above |
-| Credit decision | — | — | — | — | — | — | — | — | — | — | — | not driven: no `kind` deployment can configure a bureau (unresolved question 13), so no decision there is the target's (`INV-CRD-10`); a simulated bureau is routed to `P16-TSK-018` |
+| Credit decision | — | — | — | — | — | — | — | — | — | — | — | not driven: no `kind` deployment can configure a bureau (unresolved question 13), so no decision there is the target's (`INV-CRD-10`); no simulated bureau is built for `kind` in Phase 16 (the owner's decision of 2026-11-13 on that question) |
 | Lending repayment | — | — | — | — | — | — | — | — | — | — | — | not driven: no loan can be approved on `kind` (`INV-CRD-09`, `INV-CRD-10`), as above |
 | BNPL purchase or instalment | — | — | — | — | — | — | — | — | — | — | — | not driven: no BNPL agreement can be approved on `kind`, as above |
 | Events written and consumed | 27.3 written a second, published 0.6 to 1.0 s after their write on average, 4.0 s at most; 44.4 a second alone in the checkout stage, published 6 s after their write in its first minute and 59 s in its last (the relay behind, below) | — | — | — | no dead letter | — | — | — | — | — | — | E30 step 3 and isolation stage 7, `load/written-events-per-minute.tsv` |
@@ -357,7 +357,9 @@ gives the measured counterpart of each row's growth.
 | `platform.outbox_event` | ≈ 3,213,000 | §3.2 | 30 days after publication (`finapp.outbox.retention`), its dead-lettered, discarded and parked-referenced rows kept as evidence | ≈ 96 million | at most 20 batches of 500 a 5-minute tick on each instance (`RetentionSweepSchedule.MAX_BATCHES`, `finapp.retention.sweep.batch-size`, `.interval`): 2.88 million a day an instance, 8.64 million at the three-replica minimum, 2.7 times the target's writes |
 | `platform.inbox_message` | at most ≈ 2,324,000 | §3.3: one row a record a group's handler applies, of the records the three groups read | 14 days (`finapp.inbox.retention`) | at most ≈ 32.5 million | the same capacity, its own schedule |
 | `platform.idempotency_record` | at least 377,000 | one claim a keyed money movement, operator commands beside | until its sweep exists (`P16-TSK-011`) | ≈ 138 million a year until then | none yet |
-| `platform.audit_record` | ≈ 0.6 to 1.4 million | read from the happy paths' writers: a sign-in 1 (240,000), a transfer 1 (100,000), a top-up or withdrawal 1 (40,000), a card payment 1 to 5 (creation, confirmation, capture and each concluded outcome; 200,000) | kept; archived and kept (`P16-TSK-010`) until a jurisdiction's period (`THREAT_MODEL.md` §6 item 21 (b)) | ≈ 0.2 to 0.5 billion a year | none (archival keeps the rows) |
+| `platform.audit_record` | ≈ 0.6 to 1.4 million | read from the happy paths' writers: a sign-in 1 (240,000), a transfer 1 (100,000), a top-up or withdrawal 1 (40,000), a card payment 1 to 5 (creation, confirmation, capture and each concluded outcome; 200,000) | kept; archived and kept (`P16-TSK-010`) until a jurisdiction's period (`THREAT_MODEL.md` §6 item 23 (b)) | ≈ 0.2 to 0.5 billion a year | none (archival keeps the rows) |
+| `platform.audit_archive_pending` (ADR-0135) | as many as the audit trail | one queue row a new audit row, by trigger (`V015`); routed by `P16-TSK-010` | until its row's segment is archived; while no environment names a store, for ever | grows with the audit trail until a store is named, then a segment's worth | the archive's own claim, by segment |
+| `identity.session` | ≈ 240,000 | one session a sign-in (W3) | its idle bound plus the sweep's grace (`finapp.identity.session.sweep.grace`, 30 days) | ≈ 7 million | the session sweep, a fourth `RetentionSweepSchedule` (`P16-TSK-010`) |
 | `payments.payment_attempt` and its history | ≈ 220,000 attempts | 200,000 card or checkout payments and 20,000 card top-ups (R2); a history row a transition | kept | ≈ 80 million attempts a year | none |
 | `ledger.account_balance`, `platform.window_counter` | bounded by accounts, and by sources × windows | — | in place; the counter unlogged and swept each minute | by population, not by time | the counter's own |
 
@@ -403,8 +405,8 @@ fleet refuses to start when the arithmetic stops holding.
 |---|---|---|---|---|---|---|---|
 | Base and production | 7 | 7 + 2 + 1 = 10 | 10 | 80 | 100 | 88 | yes, 8 spare |
 | Staging | 4 | 4 + 2 + 1 = 7 | 7 | 56 | 100 | 88 | yes, 32 spare |
-| `kind` (test-only) | 3 | 3 + 2 + 1 = 6 | 6 | 48 | 60 | 48 | yes, exactly: the rehearsal measures the rule, not a margin |
-| **Ten replicas** | 10 | 10 + 2 + 1 = 13 | would be 13 | **104** | 100 | 88 | **no: 16 short** |
+| `kind` (test-only) | 10 | 10 + 2 + 1 = 13 | 13 | 104 | 116 | 104 | yes, exactly: owner decision C3's larger test-only server; a rehearsal run at three sets its own copy to 6, 48 and 60 *(read "3, 6, 6, 48, 60, 48" until 2026-11-13)* |
+| **Ten replicas on production's server** | 10 | 10 + 2 + 1 = 13 | would be 13 | **104** | 100 | 88 | **no: 16 short** |
 
 **Ten replicas do not fit today's numbers.** The decision is owner decision C3's, and it is measured first by `P16-TSK-009`. For the
 `kind` drill, the test-only server's `max_connections` is raised to at least 104 + 12 = **116** and the overlay's
@@ -414,6 +416,26 @@ pool, or a transaction-mode pooler. The pooler first needs the server-side prepa
 `maxReplicas` stays 7 until then. The HPA has never been seen scaling, because `kind` has no metrics source (`P15-REM-007`):
 `P16-TSK-009` installs one, test-only. The peak `pg_stat_activity` count for `application_name = 'finapp'` is measured at ten
 during a rollout, as `P15-TSK-012` measured it at three.
+
+*(2026-11-13, `P16-TSK-009`, ADR-0134: **decided** from §3.4's measurement at three replicas.)* At the engineering workload the
+fleet's 21 writer connections were 5.0 active on average and 9 at most, with no request pending; at the break every connection was
+held because the database's CPU was held back in every period. The pool's size is therefore not the binding limit, and a larger fleet
+of pools would only queue more work inside a CPU-bound database. So:
+- **`kind`**: a larger test-only server, the table's row above, which admits ten replicas within an exact budget. Each rehearsal
+  run holds its fleet at its own count in its own copy of the overlay with the formula at that count (`kind-rehearsal.sh`'s
+  `fleet_patch`).
+- **Staging**: unchanged.
+- **Production**: `maxReplicas` stays 7. Ten replicas would take a larger declared server, `max_connections` 116 in the overlay's
+  one literal that Terraform reads, once the ten-instance runs are made and the HPA calibrated (`THREAT_MODEL.md` §6 item 56).
+  *Derived, not measured*: at the target's peak (about 2.4 times the engineering workload, §3.4) the replicas would use about
+  0.52 × 2.4 ≈ 1.25 cores, which the HPA's target of 70% of 500m a pod answers with about four replicas. Seven is not the limit the
+  target meets first; the single writer's CPU is.
+- **No smaller pool**: the correctness monitors already starved of the pool at the break (routed to `P16-TSK-016`).
+- **No transaction-mode pooler yet**: the driver sets isolation per session, outside the transaction (ADR-0134's context).
+
+The HPA's metric on `kind` is metrics-server, installed by the `load` scope (`OPERATIONS_RUNBOOK.md` §11.49). **Not measured**, owed
+under `POSTPONED_ISSUES.md` PI-025: each replica's pools at the engineering workload at ten replicas, the peak there, an operator
+admitted at it and with the fleet held at 104 (E41); the peak during a rollout at ten (E26, `P16-TSK-014`).
 
 ---
 

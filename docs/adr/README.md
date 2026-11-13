@@ -172,6 +172,9 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0128](ADR-0128-recovery-objectives-and-the-post-recovery-gate.md) | Recovery objectives and the post-recovery financial gate: RTO and RPO by tier, no money moves until the books are proven | Proposed | 16 | Platform · Ledger · Reconciliation |
 | [0129](ADR-0129-availability-and-the-multi-region-stance.md) | Availability and the multi-region stance: one writer, multi-AZ active-passive, no active-active writes | Proposed | 16 | Platform · Ledger · every module (availability) |
 | [0133](ADR-0133-contention-measured-before-any-mechanism-and-the-whole-history-folds.md) | Contention measured before any mechanism, and the whole-history folds bounded by a commit-order checkpoint (the checkpoint proposed, its build the owner's to place) | Proposed | 16 | Ledger · Merchant · Platform (operated under load) |
+| [0134](ADR-0134-the-connection-budget-at-ten-replicas.md) | The connection budget at ten replicas: a larger server, no smaller pool, no transaction-mode pooler yet | Proposed | 16 | Platform · every module (operated at scale) |
+| [0135](ADR-0135-audit-archival-by-verified-segment.md) | Audit archival by verified segment, and the session sweep: a database-written queue, one segment in flight, write once, read back, then mark | Proposed | 16 | Platform · Identity · Security |
+| [0140](ADR-0140-the-post-recovery-hold-and-point-in-time-recovery.md) | The post-recovery hold and point-in-time recovery: the role lock held through the window, the window acting as the application's role, a person's recorded release | Proposed | 16 | Platform · Settlement · Reconciliation |
 | [0142](ADR-0142-no-table-partitioned-and-no-read-replica-routed-at-the-target.md) | No table partitioned and no read replica routed at the target: each decision derived, its overturning measurement built (E65), criterion 6 held by a guard | Proposed | 16 | Platform · Ledger · Accounting (report generation) · every module (the data tier) |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
@@ -253,6 +256,8 @@ ADR-0124 (observability, SLOs and error budgets) and ADR-0125 (configuration and
 task whose measurement justifies it (`PHASE_16_PLAN.md` §6.5, §24; `P16-TSK-012`, `P16-TSK-030`). The Phase 15 → 16 transition
 (2026-11-12) wrote ADR-0126 (the workload model and load testing), ADR-0127 (the failure-injection method), ADR-0128 (recovery
 objectives and the post-recovery gate) and ADR-0129 (availability and the multi-region stance), all `Proposed`, from
-`PHASE_16_PLAN.md`; the next free number is ADR-0130.)* *(2026-11-13: the partitioning half of the Phase 16 row is decided by
+`PHASE_16_PLAN.md`; the next free number is ADR-0130.)*
+*(`P16-TSK-009`, 2026-11-13, wrote ADR-0134 (the connection budget at ten replicas), `Proposed`, the number the coordinator reserved for it in wave D.)*
+*(2026-11-13: the partitioning half of the Phase 16 row is decided by
 ADR-0142, no table partitioned, the decision derived and its overturning measurement built and owed under `POSTPONED_ISSUES.md`
 PI-025. The row stays for the service-extraction decision.)*

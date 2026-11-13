@@ -1,6 +1,7 @@
 package com.finapp.app.eventing;
 
 import com.finapp.app.lifecycle.ScheduleDrain;
+import com.finapp.app.lifecycle.TickPhase;
 import com.finapp.app.lifecycle.ShutdownOrder;
 import com.finapp.platform.outbox.OutboxRelay;
 import com.finapp.platform.outbox.RelayPollResult;
@@ -86,7 +87,7 @@ public final class OutboxRelaySchedule implements SmartLifecycle {
                             return thread;
                         });
         executor.scheduleWithFixedDelay(
-                this::pollQuietly, pollInterval.toMillis(), pollInterval.toMillis(), TimeUnit.MILLISECONDS);
+                this::pollQuietly, TickPhase.firstDelayMillis(pollInterval), pollInterval.toMillis(), TimeUnit.MILLISECONDS);
         drain.started(executor);
     }
 
