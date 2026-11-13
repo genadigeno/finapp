@@ -1388,8 +1388,9 @@ public class PaymentBeans {
      */
     @Bean
     CallbackInquiryBulkhead callbackInquiryBulkhead(
-            @Value("${finapp.payments.callback-hint.inquiry-permits:16}") int permits) {
-        return new CallbackInquiryBulkhead(permits);
+            @Value("${finapp.payments.callback-hint.inquiry-permits:16}") int permits,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return new CallbackInquiryBulkhead(permits, meterRegistry);
     }
 
     @Bean

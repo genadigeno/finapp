@@ -241,6 +241,10 @@ class PaymentWebhookHintsTest {
         assertThat(world.applied).isEmpty();
         assertThat(world.retained(EvidenceKind.WEBHOOK)).isEqualTo(1);
         assertThat(world.webhookCount("processed")).isEqualTo(1);
+        // P16-TSK-016, routed by P16-TSK-018: the refusal is counted, not only logged; the test's own permit was the one admitted.
+        assertThat(world.registry.get(CallbackInquiryBulkhead.METER).tag("outcome", "refused").counter().count())
+                .as("the skipped inquiry counted as refused").isEqualTo(1);
+        assertThat(world.registry.get(CallbackInquiryBulkhead.METER).tag("outcome", "admitted").counter().count()).isEqualTo(1);
     }
 
     @Test

@@ -93,7 +93,7 @@ final class CallbackDoors {
         return new PaymentWebhookService(
                 signature, evidence, attempts, refunds, meters, inbox, json, clock, runner, inquiry, hints, resolution,
                 SimulatedCardPspAdapter.RAIL.id(),
-                new CallbackInquiryBulkhead(32));
+                new CallbackInquiryBulkhead(32, new io.micrometer.core.instrument.simple.SimpleMeterRegistry()));
     }
 
     private record TemplateRunner(TransactionTemplate template, DataSource dataSource) implements TransactionRunner {

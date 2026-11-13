@@ -29947,7 +29947,8 @@ on none:
   {type,outcome}` is the record; a shed is a `5xx` on its route, so the availability objectives' burn alerts cover sustained shedding
   and no alert was added. **The classes** the plan names: money-moving commands (the permits, the deadline), operator reports (the
   operational report door's two permits and report generation's own pool, unchanged), provider inquiries (`CallbackInquiryBulkhead`,
-  unchanged); reads are bounded by the pool's queue. **Routed (1)**: `CheckoutService.create` opens and reads back the session in one
+  its refusals now counted, `finapp.payments.callback.inquiries{outcome}`, answering `P16-TSK-018`'s routed note above; the
+  operational report door's refusals stay counted only as its `503`s); reads are bounded by the pool's queue. **Routed (1)**: `CheckoutService.create` opens and reads back the session in one
   transaction, so it can no longer answer `500` after its session committed. **Routed (2)**: the census and every schedule now wait
   behind a request queue the door holds near its threshold rather than behind every request thread; whether that keeps the census
   reading through the stress profile's break is E52's run. **Contract**: `ERROR_CONTRACT.md` §3 and §3a, `API_CONVENTIONS.md` §5a,

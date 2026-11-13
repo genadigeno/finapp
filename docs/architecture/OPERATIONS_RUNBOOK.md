@@ -5625,6 +5625,10 @@ shed, so this section's steps work on a shedding platform.
   (`SLOS.md` §2, §11.8): no alert of its own.
 - `hikaricp_connections_pending` and `hikaricp_connections_active` (the queue the door reads), `tomcat_threads_busy_threads`, and the
   edge's access lines (`DownstreamStatus` 503 with `OriginStatus` 503: the replica's answer, not the edge's).
+- The other classes' own bounds: `finapp_payments_callback_inquiries_total{outcome}` (`admitted`, `refused`) for the hinted
+  provider inquiries' bulkhead - a refused one is left to the sweep, so a rising refused share is a slow provider holding the
+  permits, not a lost delivery; and the operational report door's two permits, whose refusal is `503 accounting.ReadTimedOut`
+  (§10.2) and is counted only as a `5xx` on the operator surface.
 
 **Reading a shedding platform** (the first procedure). Take the outcome that dominates, per replica, over the last 15 minutes:
 
