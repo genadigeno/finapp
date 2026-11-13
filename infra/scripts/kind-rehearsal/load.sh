@@ -14,7 +14,8 @@
 #     gap over 45 s, and a sample that fails or cannot read stops the load and fails the run - it never passes blind;
 #   - every money movement was resolved by its key, the same-key retries (one iteration in twenty, half before and half after the first
 #     answer) answered alike, every operation's errors were within its objective, and every ready replica served each money-moving route;
-#   - the provider's callbacks (two per captured card payment) and one settlement file at mid-run were delivered and taken;
+#   - the provider's callbacks (two per captured card payment) and one settlement file (at mid-run, or at the first capture after it) were
+#     delivered and taken;
 #   - after the load, the full census held with the generator's counts, and a last sample passed;
 #   - the platform's own signals (telemetry.sh's platform_signals_plant and platform_signals, THREAT_MODEL.md section 6 item 47 (c)): a
 #     migrator Job planted to fail before the load raised MigratorJobFailed and, its seventeen minutes passing under the load,
@@ -35,11 +36,48 @@
 #                      cannot pass;
 #   unbalanced-entry   60 s into the load the test-only superuser inserts a journal entry with one debit line and no credit: the next
 #                      sample fails and stops the run.
+# and one that must move the run's first limit (P16-TSK-007's entry):
+#   slow-statement     before the load the test-only superuser drops the outbox relay's index on pending rows
+#                      (platform.outbox_event_pending, V006) on the run's own server, never by a migration, so every relay poll on every
+#                      replica scans the whole outbox; recreated with V006's own definition after the load and before the census. Run with
+#                      the stress profile, the database's CPU is the first limit (OPERATIONS_RUNBOOK.md section 11.45).
 # REHEARSAL_LOAD_DURATION shortens a run (for a probe); such a run is not the profile's workload and load/workload.txt says so.
+#
+# THE WORKLOAD BASELINE (P16-TSK-007; OPERATIONS_RUNBOOK.md section 11.45). A profile with "stages" (normal, peak, sustained, stress,
+# isolation: model.js) names every operation at the proposed production target's peak and scales it per stage; REHEARSAL_LOAD_DURATION
+# shortens every stage in proportion. The judge holds each operation's arrivals to the sum over the stages of its rate times its factor
+# times the stage's seconds; the stress profile, which runs past the platform's break by design, records the iterations it dropped per
+# stage instead of failing on them, and is judged on everything else. The run writes, per operation and stage, the arrivals, outcomes,
+# errors by class and the latency percentiles (k6/stages.tsv), and per stage the fleet's and each pod's CPU, throttling and memory, the
+# JVMs' heap, GC, threads, request threads, the pools' hold and wait, and the database's time (stages-resources.tsv), so every number
+# the capacity model takes is read from the run's own artefacts. REHEARSAL_LOAD_REPLICAS (3, today's minimum; up to 7, today's ceiling)
+# runs the fleet at that count: the rendered kind overlay is patched in the run's own directory, never in the repository, with the
+# connection budget's formula at that count (N + 2 x 1 + 1 instances, each 7 + 1 connections, 12 reserved: FINAPP_DB_INSTANCES, the
+# server's figure the guard reads, and the test-only server's max_connections), the HorizontalPodAutoscaler held at N and the quota to
+# match. BNPL purchases and instalments, lending repayments and loan credit decisions stay undriven on kind, their reason in each profile:
+# every one rests on a credit approval, and on kind none is possible, automatic or by a person (no bureau can be configured there, and
+# without the bureau's total balance the exposure is unassessed: INV-CRD-09, INV-CRD-10; OPERATIONS_RUNBOOK.md section 11.43).
 
 LOAD_PROFILE_NAME=${REHEARSAL_LOAD_PROFILE:-demonstration}
 LOAD_CUSTOMERS=${REHEARSAL_LOAD_CUSTOMERS:-20}
 LOAD_DURATION=${REHEARSAL_LOAD_DURATION:-}
+# The fleet's size for the run: today's minimum by default, today's ceiling at most (ten is P16-TSK-014's, on C3's larger server).
+LOAD_REPLICAS=${REHEARSAL_LOAD_REPLICAS:-3}
+# Run inside the node every 10 s: one line per pod - its uid as systemd spells it, its CPU in nanoseconds, how many of its containers'
+# 100 ms periods hit their CPU limit and the task-time throttled there, its memory in bytes, and the periods its limited containers ran,
+# each cumulative. The reference machine's kind node runs cgroup v1 under the systemd driver (kubelet.slice); a pod's limits sit on its
+# containers' scopes beneath its slice. Throttled periods over periods is the share of the time a pod's CPU limit held it back.
+LOAD_CGROUPS='cd /sys/fs/cgroup || exit 0
+for p in cpu/kubelet.slice/kubelet-kubepods.slice/*-pod*.slice cpu/kubelet.slice/kubelet-kubepods.slice/*/*-pod*.slice; do
+    [ -d "$p" ] || continue
+    r=${p#cpu/}; u=${p##*-pod}; u=${u%.slice}; n=0; t=0; q=0
+    for c in "$p"/*/cpu.stat; do
+        [ -f "$c" ] || continue
+        n=$((n + $(sed -n "s/^nr_throttled //p" "$c"))); t=$((t + $(sed -n "s/^throttled_time //p" "$c")))
+        q=$((q + $(sed -n "s/^nr_periods //p" "$c")))
+    done
+    printf "%s\t%s\t%s\t%s\t%s\t%s\n" "$u" "$(cat "cpuacct/$r/cpuacct.usage")" "$n" "$t" "$(cat "memory/$r/memory.usage_in_bytes")" "$q"
+done'
 # How many addresses the generator arrives from: each instance its own container, running its share of every rate.
 LOAD_GENERATORS=${REHEARSAL_LOAD_GENERATORS:-4}
 K6_IMAGE="$K6_REPOSITORY@$K6_DIGEST"
@@ -98,6 +136,67 @@ load_seconds() {
     esac
 }
 
+# load_stages: a staged profile's stages, one "seconds factor operation" line each ("-" when every operation runs), shortened in proportion
+# to REHEARSAL_LOAD_DURATION exactly as scenarios.js shortens them (at least two seconds each); nothing for a profile without stages.
+load_stages() {
+    line=$(sed -n 's/^  "stages": \[\[\(.*\)\]\],$/\1/p' "$LOAD_PROFILE_FILE" | head -1)
+    [ -n "$line" ] || return 0
+    printf '%s\n' "$line" | sed 's/\], \[/\n/g' | tr -d '"' | awk -F', *' -v want="$(load_seconds "${LOAD_DURATION:-0s}")" '
+        { s[NR] = $1; f[NR] = $2; o[NR] = (NF > 2) ? $3 : "-"; total += $1 }
+        END { scale = (want > 0) ? want / total : 1
+              for (i = 1; i <= NR; i++) { t = int(s[i] * scale + 0.5); if (t < 2) t = 2; print t, f[i], o[i] } }'
+}
+
+# load_total_seconds: the load's length - its stages' sum for a staged profile, its duration otherwise.
+load_total_seconds() {
+    if [ -n "$(load_stages)" ]; then
+        load_stages | awk '{ t += $1 } END { print t + 0 }'
+    else
+        load_seconds "$LOAD_DURATION"
+    fi
+}
+
+# load_expected <operation>: the arrivals the profile asks of it - k6's whole iterations per time unit (model.js rounds rate x factor),
+# times the stage's seconds over the time unit, summed over the stages; its rate times the duration for a profile without stages.
+load_expected() {
+    if [ -n "$(load_stages)" ]; then
+        rate=$(load_operation_value "$1" rate)
+        unit=$(load_seconds "$(load_operation_value "$1" per)")
+        load_stages | awk -v op="$1" -v rate="$rate" -v unit="$unit" '
+            { target = ($3 == "-" || $3 == op) ? int(rate * $2 + 0.5) : 0; n += target * $1 / unit } END { printf "%.1f", n }'
+    else
+        awk -v r="$(load_operation_value "$1" perSecond)" -v s="$(load_seconds "$LOAD_DURATION")" 'BEGIN { printf "%.1f", r * s }'
+    fi
+}
+
+# load_replicas_patch <rendered overlay directory>: the fleet at LOAD_REPLICAS, in the run's own rendered copy (kind-rehearsal.sh calls it
+# for the load scope before anything is applied). The connection budget's formula at that count (DISTRIBUTED_EXECUTION.md section 4a): N +
+# 2 x maxSurge + 1 instances, each its pool of 7 and its reporting connection, and the 12 reserved; the quota sized as the kind overlay
+# sizes it for three. Three changes nothing: the committed overlay is the three-replica rehearsal.
+load_replicas_patch() {
+    [ "$LOAD_REPLICAS" != 3 ] || return 0
+    instances=$((LOAD_REPLICAS + 3))
+    connections=$((instances * 8 + 12))
+    # The split files the run applies, and all.yaml beside them, which the harness reads the budget from.
+    sed -i "s/^\(  \)minReplicas: 3$/\1minReplicas: $LOAD_REPLICAS/; s/^\(  \)maxReplicas: 3$/\1maxReplicas: $LOAD_REPLICAS/" \
+        "$1/HorizontalPodAutoscaler.finapp-app.yaml" "$1/all.yaml"
+    for file in "$1"/ConfigMap.finapp-app-config*.yaml "$1/all.yaml"; do
+        sed -i "s/^\(  FINAPP_DB_INSTANCES: \)\"6\"$/\1\"$instances\"/; s/^\(  FINAPP_DB_SERVER_MAX_CONNECTIONS: \)\"60\"$/\1\"$connections\"/" "$file"
+    done
+    sed -i "s/^\( *- \)max_connections=60$/\1max_connections=$connections/" "$1/StatefulSet.finapp-postgres.yaml" "$1/all.yaml"
+    sed -i "s/^\(    pods: \)\"9\"$/\1\"$((instances + 3))\"/; s/^\(    requests.cpu: \)3750m$/\1$((instances * 500 + 750))m/;
+        s/^\(    requests.memory: \)8704Mi$/\1$((instances * 1024 + 2560))Mi/; s/^\(    limits.cpu: \)\"15\"$/\1\"$((instances * 2 + 3))\"/;
+        s/^\(    limits.memory: \)8704Mi$/\1$((instances * 1024 + 2560))Mi/" "$1/ResourceQuota.finapp.yaml" "$1/all.yaml"
+    grep -q "minReplicas: $LOAD_REPLICAS\$" "$1/HorizontalPodAutoscaler.finapp-app.yaml" \
+        && grep -q "maxReplicas: $LOAD_REPLICAS\$" "$1/HorizontalPodAutoscaler.finapp-app.yaml" \
+        && grep -q "FINAPP_DB_INSTANCES: \"$instances\"" "$1"/ConfigMap.finapp-app-config*.yaml \
+        && grep -q "FINAPP_DB_SERVER_MAX_CONNECTIONS: \"$connections\"" "$1"/ConfigMap.finapp-app-config*.yaml \
+        && grep -q "max_connections=$connections\$" "$1/StatefulSet.finapp-postgres.yaml" \
+        && grep -q "pods: \"$((instances + 3))\"" "$1/ResourceQuota.finapp.yaml" \
+        || cannot "the rendered kind overlay could not be set to $LOAD_REPLICAS replicas: a value it patches has moved"
+    log "the fleet at $LOAD_REPLICAS replicas: $instances instances in the budget, the test-only server at $connections connections (the run's own copy)"
+}
+
 pg_admin() {
     # The superuser in the server's maintenance database, where pg_stat_statements lives: the finapp database gains no object.
     kube -n finapp exec -i finapp-postgres-0 -c postgres -- psql -q -X -A -t -U finapp -d postgres "$@"
@@ -112,10 +211,15 @@ load_prom() {
 # ---------------------------------------------------------------------------------------------------
 load_preflight() {
     load_paths
-    cp "$DIR/load/"*.js "$DIR/load/"*.json "$DIR/load/"*.sql "$LOAD_SRC/" || cannot "the load's scenarios could not be copied"
+    cp "$DIR/load/"*.js "$DIR/load/"*.json "$DIR/load/"*.sql "$DIR/load/"*.awk "$LOAD_SRC/" || cannot "the load's scenarios could not be copied"
     [ -f "$LOAD_PROFILE_FILE" ] || cannot "no load profile $LOAD_PROFILE_NAME.json under kind-rehearsal/load"
     [ -n "$LOAD_DURATION" ] || LOAD_DURATION=$(load_profile_value duration)
     [ "$(load_seconds "$LOAD_DURATION")" -gt 0 ] || cannot "the load's duration '$LOAD_DURATION' is not a number of seconds, minutes or hours"
+    case $LOAD_REPLICAS in 3 | 4 | 5 | 6 | 7) ;; *) cannot "REHEARSAL_LOAD_REPLICAS is 3 to 7 (today's minimum to its ceiling), not '$LOAD_REPLICAS'" ;; esac
+    if [ -n "$(load_stages)" ]; then
+        load_stages > "$LOAD_ART/stages.txt"
+        log "a staged profile: $(grep -c . "$LOAD_ART/stages.txt") stages, $(load_total_seconds) s"
+    fi
     # The bound each movement is resolved within, as a client that lost its answer keeps asking: a provider call whose answer was lost
     # leaves its payment PROCESSING until the platform's sweep asks the provider, once the dispatch is past its dispatched age, and an
     # authorization concluded that way is captured by the stranded-authorization leg one age later. Twice the age, read from the code's
@@ -224,15 +328,19 @@ load_statistics() {
     set +e
     while [ ! -f "$WORK/load-stop" ]; do
         started=$(date +%s)
-        at=$(date -u +%H:%M:%S)
+        # The host's time of day, and (P16-TSK-007) its epoch second beside it, so a sample can be cut by stage.
+        at=$(date -u -d "@$started" +%H:%M:%S)
         {
             psql_query -f - < "$LOAD_SRC/statistics.sql"
             pg_admin -f - < "$LOAD_SRC/statements.sql"
-        } 2>> "$LOAD_ART/statistics-errors.log" | awk -F'|' -v at="$at" -v dir="$LOAD_ART" \
-            'NF > 1 {name = $1; line = at; for (f = 2; f <= NF; f++) line = line "\t" $f; print line >> (dir "/pg-" name ".tsv")}'
+        } 2>> "$LOAD_ART/statistics-errors.log" | awk -F'|' -v at="$at" -v epoch="$started" -v dir="$LOAD_ART" \
+            'NF > 1 {name = $1; line = at "\t" epoch; for (f = 2; f <= NF; f++) line = line "\t" $f; print line >> (dir "/pg-" name ".tsv")}'
         # One call for every container: a call each took a second or two apiece, and stretched the 10 s to 18 under the load.
         dock stats --no-stream --format "$at\t{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" \
             "$NODE" $(dock ps --format '{{.Names}}' --filter "name=$CLUSTER-load-") >> "$LOAD_ART/containers.tsv" 2>/dev/null
+        # Every pod's own cgroup, read inside the node in one call (P16-TSK-007): CPU used and throttled against its limit (the saturation
+        # a CPU limit shows) and memory, cumulative; the pod's uid names it, and load_census maps the uids to names.
+        dock exec "$NODE" sh -c "$LOAD_CGROUPS" 2>/dev/null | sed "s/^/$at	$started	/" >> "$LOAD_ART/pods.tsv"
         while [ "$(date +%s)" -lt $((started + 10)) ] && [ ! -f "$WORK/load-stop" ]; do
             sleep 1
         done
@@ -287,6 +395,12 @@ SQL
     log "PROBE unbalanced-entry: a journal entry of one debit line, one cent on a customer wallet, planted by the test-only superuser"
 }
 
+# Whether the load has captured a card payment yet.
+load_captured() {
+    [ "$(psql_query -c "SELECT count(*) > 0 FROM payments.payment_attempt WHERE status = 'CAPTURED' AND rail = 'card'
+        AND created_at >= to_timestamp($LOAD_FROM)" 2>/dev/null | tr -d '[:space:]')" = t ]
+}
+
 # One PSP settlement file of the load's captures so far, uploaded and attested through the operator edge by the two persons the door
 # needs, as telemetry_trace delivers one: gross the captured amount, the PSP's fee of rule set v1 (round_half_up(1.5%) + 0.25), net the rest.
 load_settlement() {
@@ -322,7 +436,7 @@ SQL
     client settle-file "$day" load-settlement.csv >> "$LOAD_ART/settlement.log" 2>&1 || fail "settlement: the file could not be delivered: see load/settlement.log"
     LOAD_SETTLEMENT_FILE=$(sed -n 's/^settlement file=\([^ ]*\) .*/\1/p' "$LOAD_ART/settlement.log" | tail -1)
     [ -n "$LOAD_SETTLEMENT_FILE" ] || fail "settlement: no file id came back: see load/settlement.log"
-    log "settlement: $LOAD_SETTLEMENT_LINES captures in one PSP file, uploaded and attested at mid-run ($LOAD_SETTLEMENT_LEFT_OUT left out, their references shaped like a card number)"
+    log "settlement: $LOAD_SETTLEMENT_LINES captures in one PSP file, uploaded and attested during the load ($LOAD_SETTLEMENT_LEFT_OUT left out, their references shaped like a card number)"
 }
 
 # ---------------------------------------------------------------------------------------------------
@@ -355,6 +469,14 @@ load_target() {
     [ -n "$address" ] && [ "$address" = "$NODE_IP" ] || fail "the load's target: the generator's address $NODE_IP is not the node's ($address)"
     kube config current-context > "$LOAD_ART/context.txt" 2>&1 || true
     pass "the load's target is $NODE, a node of the kind cluster $CLUSTER, at $NODE_IP; the generator is given that address and no kubeconfig"
+    # The fleet at the run's count (REHEARSAL_LOAD_REPLICAS): the HorizontalPodAutoscaler holds it there; the release waited for three.
+    deadline=$(( $(date +%s) + 900 ))
+    until [ "$(kube -n finapp get deployment finapp-app -o jsonpath='{.status.readyReplicas}' 2>/dev/null)" = "$LOAD_REPLICAS" ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || { kube -n finapp get pods -o wide > "$LOAD_ART/pods-at-failure.txt" 2>&1; fail "the fleet did not reach $LOAD_REPLICAS ready replicas: see load/pods-at-failure.txt"; }
+        sleep 5
+    done
+    kube -n finapp get pods -o wide > "$LOAD_ART/pods.txt" 2>&1 || true
+    pass "the fleet is $LOAD_REPLICAS ready replicas"
 }
 
 load_setup() {
@@ -411,13 +533,29 @@ load_setup() {
     pass "the sampler reads: $pages correctness pages, every one a loaded rule, none firing; every gauge readable; $LOAD_CLAUSES census clauses in one snapshot, all PASS"
 }
 
+# PROBE slow-statement: the outbox relay's index on pending rows dropped on the run's own server, so every poll scans the outbox; and put
+# back, with V006's own definition, after the load.
+load_plant_slow_statement() {
+    psql_query -c "DROP INDEX platform.outbox_event_pending" >> "$LOAD_ART/plants.log" 2>&1 \
+        || cannot "PROBE slow-statement: the relay's index could not be dropped: see load/plants.log"
+    log "PROBE slow-statement: platform.outbox_event_pending dropped on the run's own server; every relay poll scans the outbox"
+}
+
+load_restore_slow_statement() {
+    psql_query -c "CREATE INDEX IF NOT EXISTS outbox_event_pending ON platform.outbox_event (aggregate_id, event_id) WHERE published_at IS NULL" \
+        >> "$LOAD_ART/plants.log" 2>&1 || cannot "PROBE slow-statement: the relay's index could not be recreated: see load/plants.log"
+    log "PROBE slow-statement: platform.outbox_event_pending recreated as V006 defines it"
+}
+
 load_run() {
     LOAD_RUN_TAG=$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
     pg_admin -c "SELECT pg_stat_statements_reset()" >> "$LOAD_ART/postgres.log" 2>&1 || true
     : > "$CLIENT/callbacks-feed-load.txt"
+    [ "$PROBE" != slow-statement ] || load_plant_slow_statement
     LOAD_FROM=$(db_epoch)
+    load_clock start
     LOAD_STARTED=$(date +%s)
-    secs=$(load_seconds "$LOAD_DURATION")
+    secs=$(load_total_seconds)
     load_statistics &
     BACKGROUND="$BACKGROUND $!"
     if [ "$PROBE" = sampler-disabled ]; then
@@ -464,6 +602,7 @@ load_run() {
         if [ -s "$WORK/load-sample-failed" ]; then
             touch "$WORK/load-stop" "$WORK/load-feed-stop" "$CLIENT/stop-callbacks-load"
             load_generators stop
+            load_stopped
             fail "a sample failed during the load, which stopped it: $(cat "$WORK/load-sample-failed" | tr '\n' ' ' | cut -c1-600)see load/samples.tsv"
         fi
         elapsed=$(( $(date +%s) - LOAD_STARTED ))
@@ -471,29 +610,22 @@ load_run() {
             load_plant_unbalanced
             planted=1
         fi
-        if [ -z "$settled" ] && [ "$elapsed" -ge $((secs / 2)) ]; then
+        # At mid-run, or at the load's first card capture after it: the isolation profile captures nothing before its fifth stage.
+        if [ -z "$settled" ] && [ "$elapsed" -ge $((secs / 2)) ] && load_captured; then
             load_settlement
             settled=1
         fi
         sleep 5
     done
     LOAD_ENDED=$(date +%s)
+    [ -n "$settled" ] || fail "settlement: the load captured no card payment to settle"
+    load_clock end
+    [ "$PROBE" != slow-statement ] || load_restore_slow_statement
     k6_status=$(load_generators status)
     load_generators logs
     # The last captures fed, then the sender drained: everything fed before its stop is delivered and answered.
     sleep 15
-    touch "$WORK/load-feed-stop"
-    wait "$LOAD_FEEDER" 2>/dev/null || true
-    touch "$CLIENT/stop-callbacks-load"
-    : > "$LOAD_ART/callbacks.log"
-    s=0
-    while [ "$s" -lt "$LOAD_GENERATORS" ]; do
-        dock wait "$CLUSTER-load-callbacks-$s" >/dev/null 2>&1 || true
-        dock logs "$CLUSTER-load-callbacks-$s" >> "$LOAD_ART/callbacks.log" 2>&1 || true
-        cp "$CLIENT/callbacks-load-$s.tsv" "$CLIENT/callbacks-load-$s.summary" "$LOAD_ART/" 2>/dev/null || true
-        s=$((s + 1))
-    done
-    cp "$CLIENT/callbacks-feed-load.txt" "$LOAD_ART/" 2>/dev/null || true
+    load_keep_senders
     # One sample after the load's end, so the samples cover all of it; then the samplers stop.
     if [ "$PROBE" != sampler-disabled ]; then
         deadline=$((LOAD_ENDED + 60))
@@ -567,11 +699,80 @@ load_report() {
     head -1 "$LOAD_ART/k6/0/generator.tsv" > "$LOAD_ART/k6/generator.tsv"
     awk -F'\t' 'FNR == 2 {d += $1; if ($2 + 0 > p) p = $2 + 0; m += $3; r += $4; if ($5 + 0 > t) t = $5 + 0} END {print d + 0 "\t" p + 0 "\t" m + 0 "\t" r + 0 "\t" t + 0}' \
         "$LOAD_ART"/k6/*/generator.tsv >> "$LOAD_ART/k6/generator.tsv"
+    load_stage_tables || cannot "the per-stage report could not be written from the series"
+}
+
+# load_stage_tables: per operation and stage (P16-TSK-007, load/stages.awk), from every instance's series; a profile without stages is one
+# stage, its duration. The load's start is the earliest sample any instance wrote. Returns non-zero, never stops the run: a run stopped by
+# a sample writes its tables too, before it fails.
+load_stage_tables() {
+    if [ -s "$LOAD_ART/stages.txt" ]; then
+        cp "$LOAD_ART/stages.txt" "$WORK/stages.txt"
+    else
+        printf '%s 1 -\n' "$(load_seconds "$LOAD_DURATION")" > "$WORK/stages.txt"
+    fi
+    LOAD_T0=$(for series in "$LOAD_ART"/k6/*/k6-series.csv.gz; do gzip -dc "$series"; done | awk -F, 'NR > 1 && $2 ~ /^[0-9]+$/ && (m == "" || $2 < m) {m = $2} END {print m}')
+    [ -n "$LOAD_T0" ] || return 1
+    # How many of k6's seconds passed in one of the host's over the load (load_clock's samples): 1 where the clocks agree.
+    LOAD_SPEED=$(awk -F'\t' '$1 == "start" {h0 = $2; m0 = $3} $1 == "end" {h1 = $2; m1 = $3}
+        END {if (h1 > h0 && m1 > m0) printf "%.4f", (m1 - m0) / (h1 - h0); else print 1}' "$LOAD_ART/clock.tsv" 2>/dev/null || echo 1)
+    printf 't0\t%s\nk6 seconds a host second\t%s\n' "$LOAD_T0" "$LOAD_SPEED" > "$LOAD_ART/k6/t0.txt"
+    for series in "$LOAD_ART"/k6/*/k6-series.csv.gz; do gzip -dc "$series"; done \
+        | awk -v pass=count -v stages="$WORK/stages.txt" -v t0="$LOAD_T0" -v speed="$LOAD_SPEED" -v out="$WORK/latencies.tsv" \
+            -f "$LOAD_SRC/stages.awk" > "$WORK/stage-counts.tsv" || return 1
+    sort -t"$(printf '\t')" -k1,1 -k2,2 -k3,3g "$WORK/latencies.tsv" \
+        | awk -v pass=report -v stages="$WORK/stages.txt" -v speed="$LOAD_SPEED" -v counts="$WORK/stage-counts.tsv" \
+            -v ops="$(load_operations k6 | tr '\n' ' ')" -f "$LOAD_SRC/stages.awk" > "$LOAD_ART/k6/stages.tsv" || return 1
+    rm -f "$WORK/latencies.tsv"
+}
+
+# load_keep_senders: the callback senders stopped and drained, and their records kept.
+load_keep_senders() {
+    touch "$WORK/load-feed-stop"
+    [ -z "${LOAD_FEEDER:-}" ] || wait "$LOAD_FEEDER" 2>/dev/null || true
+    touch "$CLIENT/stop-callbacks-load"
+    : > "$LOAD_ART/callbacks.log"
+    s=0
+    while [ "$s" -lt "$LOAD_GENERATORS" ]; do
+        dock wait "$CLUSTER-load-callbacks-$s" >/dev/null 2>&1 || true
+        dock logs "$CLUSTER-load-callbacks-$s" >> "$LOAD_ART/callbacks.log" 2>&1 || true
+        cp "$CLIENT/callbacks-load-$s.tsv" "$CLIENT/callbacks-load-$s.summary" "$LOAD_ART/" 2>/dev/null || true
+        s=$((s + 1))
+    done
+    cp "$CLIENT/callbacks-feed-load.txt" "$LOAD_ART/" 2>/dev/null || true
+}
+
+# load_stopped: what a run a sample stopped had measured until then (P16-TSK-007) - the senders' records, the generators' logs, the
+# per-stage tables, the saturation signals and the counts - kept before it fails, so a run that ends at its first limit still says where.
+# Nothing here judges, and nothing here can turn the run's red into anything else.
+load_stopped() {
+    LOAD_ENDED=$(date +%s)
+    load_clock end
+    [ "$PROBE" != slow-statement ] || load_restore_slow_statement
+    load_generators logs
+    load_keep_senders
+    touch "$WORK/load-stop"
+    {
+        load_stage_tables || echo "the per-stage tables could not be written"
+        load_saturation || echo "saturation signals absent from Prometheus:$LOAD_MISSING"
+        load_resources || echo "the per-stage resources could not be written"
+    } >> "$LOAD_ART/stopped.log" 2>&1
+    log "the load ran $((LOAD_ENDED - LOAD_STARTED)) s before a sample stopped it; what it measured is in load/k6/stages.tsv and load/stages-resources.tsv"
+}
+
+# load_clock <label>: the host's clock, the node's monotonic clock and the node's own wall clock, side by side (P16-TSK-007). k6 schedules
+# arrivals and times requests on the monotonic clock of the machine's Linux VM, which on the reference machine runs faster than the
+# host's clock (Docker Desktop on WSL2); the samples around the load say by how much, so a rate or a latency can be read in the host's
+# seconds as well as in k6's.
+load_clock() {
+    printf '%s\t%s\t%s\n' "$1" "$(date +%s.%N)" "$(dock exec "$NODE" sh -c 'cut -d" " -f1 /proc/uptime; date +%s.%N' | tr '\n' '\t')" \
+        >> "$LOAD_ART/clock.tsv"
 }
 
 load_judge() {
     report="$LOAD_ART/k6/report.tsv"
-    secs=$(load_seconds "$LOAD_DURATION")
+    secs=$(load_total_seconds)
+    stress=$(load_profile_value stress)
     # The samples: the run's invariants read throughout, or the run is not a run.
     coverage=$(awk -F'\t' -v start="$LOAD_STARTED" -v end="$LOAD_ENDED" '
         NR > 1 && $1 != 0 { n++; if ($4 != "PASS") bad++; if (first == "" ) first = $2; if (last != "" && $2 - last > gap) gap = $2 - last; last = $2 }
@@ -589,13 +790,30 @@ load_judge() {
     read -r dropped peak maxvus requests runms <<EOF
 $(tail -1 "$LOAD_ART/k6/generator.tsv")
 EOF
-    [ "$dropped" = 0 ] || fail "the generator dropped $dropped iterations: it could not hold the arrival rate, so this run under-reports latency and is invalid"
+    # The stress profile runs past the platform's break by design (P16-TSK-007): an iteration dropped there is the queue outgrowing the
+    # generator's bound of in-flight iterations, recorded per stage (k6/stages.tsv) and read with the break, never a pass of anything.
+    if [ "$stress" = true ]; then
+        [ "$dropped" = 0 ] || log "recorded stress: the generator dropped $dropped iterations, past the break: see load/k6/stages.tsv"
+    else
+        [ "$dropped" = 0 ] || fail "the generator dropped $dropped iterations: it could not hold the arrival rate, so this run under-reports latency and is invalid"
+    fi
     cpu=$(awk -F'\t' -v c="$CLUSTER-load-k6-" 'index($2, c) == 1 {v = $3; sub(/%/, "", v); if (v + 0 > m) m = v + 0} END {print m + 0}' "$LOAD_ART/containers.tsv")
     [ "$(awk -v c="$cpu" 'BEGIN {print (c < 90) ? "ok" : "saturated"}')" = ok ] \
         || fail "the generator saturated: an instance's CPU reached $cpu% of its one-core limit, so the run is invalid"
-    bad=$(awk -F'\t' -v secs="$secs" 'NR > 1 { want = $2 * secs; if ($3 < want * 0.98 || $3 > want * 1.02 + 1) printf "%s %d of %.0f; ", $1, $3, want }' "$report")
+    # Each operation's arrivals against the profile's: its rate times the duration, or, staged, the sum over the stages (load_expected);
+    # under stress the dropped iterations are arrivals the generator could not start, so they count.
+    bad=""
+    for op in $(load_operations k6); do
+        want=$(load_expected "$op")
+        got=$(awk -F'\t' -v op="$op" '$1 == op {print $3}' "$report")
+        lost=0
+        [ "$stress" != true ] || lost=$(awk -F'\t' -v op="$op" '$1 == op {n += $17} END {print n + 0}' "$LOAD_ART/k6/stages.tsv")
+        bad="$bad$(awk -v op="$op" -v got="${got:-0}" -v lost="$lost" -v want="$want" 'BEGIN {
+            n = got + lost; if (n < want * 0.98 || n > want * 1.02 + 1) printf "%s %d of %.0f; ", op, n, want }')"
+    done
     [ -z "$bad" ] || fail "arrivals off the profile's rates: $bad: see load/k6/report.tsv"
-    pass "the generator held its open model: no iteration dropped, every operation's arrivals within 2% of its rate, each instance's CPU at most $cpu% of its one core"
+    if [ "$stress" = true ]; then held="$dropped iterations dropped past the break (recorded)"; else held="no iteration dropped"; fi
+    pass "the generator held its open model: $held, every operation's arrivals within 2% of its rate, each instance's CPU at most $cpu% of its one core"
     # Money: every movement resolved by its key, every retried key answered alike, and nothing refused.
     for op in $(load_operations k6); do
         line=$(awk -F'\t' -v op="$op" '$1 == op' "$report")
@@ -610,6 +828,10 @@ EOF
             [ "$retried" -ge 1 ] || fail "$op: no key was retried, so one effect per key was not tried"
             [ "$agreed" = "$retried" ] || fail "$op: $agreed of $retried retried keys answered alike"
             pass "$op: $iterations movements, every one resolved by its key and none refused, $agreed of $retried retried keys answered alike"
+            # A checkout whose creating answer was lost (scenarios.js ABANDONED): known to have moved nothing, recorded with the platform's
+            # answer that lost it, never a verdict; the census counts no payment for it.
+            abandoned=$(awk -F'\t' -v op="$op" 'NR > 1 && $1 == op {n += $22} END {print n + 0}' "$LOAD_ART/k6/stages.tsv")
+            [ "$abandoned" = 0 ] || log "recorded $op: $abandoned sessions abandoned, every answer under their keys a replay without the session token: see load/k6/stages.tsv"
         fi
         [ "$attempts" -gt 0 ] || fail "$op: no attempt was made"
         # The errors, recorded by status and never a verdict here (load_errors_chance says why); latency likewise.
@@ -679,21 +901,58 @@ EOF
     fi
 }
 
-load_census() {
-    report="$LOAD_ART/k6/report.tsv"
-    ok_of() { awk -F'\t' -v op="$1" '$1 == op {print $4}' "$report"; }
-    topup_minor=$(load_profile_value topUpMinor)
-    LOAD_TRANSFERS=$(ok_of transfer)
-    LOAD_CHECKOUTS=$(ok_of checkout)
-    LOAD_TOPUPS=$((LOAD_FUNDED + $(ok_of topup)))
-    LOAD_WALLET_MINOR=$((LOAD_FUNDED_MINOR + $(ok_of topup) * topup_minor))
-    census load
-    # A last sample, after the census: nothing the load left behind pages afterwards.
-    : > "$WORK/load-sample-failed"
-    load_sample final
-    [ ! -s "$WORK/load-sample-failed" ] || fail "the sample after the load failed: $(cat "$WORK/load-sample-failed")"
-    pass "the sample after the load and its census passed"
-    # The saturation signals, as Prometheus holds them over the run, and the statements with their text.
+# The platform's side per stage (P16-TSK-007, load/resources.awk): every sampled signal as "kind name epoch value" - the pods' cgroups by
+# group (the replicas, PostgreSQL, the broker, the edge, the telemetry stack, the provider simulator, the rest), the fleet's JVM and pool sums from Prometheus, the
+# database's own counters - cut by the generator's stages in the host's seconds.
+load_resources() {
+    kube get pods -A -o jsonpath='{range .items[*]}{.metadata.uid}{"\t"}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' 2>/dev/null \
+        | awk -F'\t' '{gsub(/-/, "_", $1); print $1 "\t" $2}' > "$LOAD_ART/pods-names.tsv"
+    {
+        awk -F'\t' 'FNR == NR {name[$1] = $2; next}
+            NF >= 7 {
+                n = name[$3]; g = "other"
+                if (n ~ /^finapp\/finapp-app-/) g = "app"; else if (n ~ /^finapp\/finapp-postgres-/) g = "postgres"
+                else if (n ~ /^finapp\/finapp-kafka-/) g = "broker"; else if (n ~ /^finapp-edge\//) g = "edge"
+                else if (n ~ /^finapp-observability\//) g = "telemetry"; else if (n ~ /^finapp-rehearsal\//) g = "simulator"
+                cpu[$2 SUBSEP g] += $4; nthr[$2 SUBSEP g] += $5; thr[$2 SUBSEP g] += $6; mem[$2 SUBSEP g] += $7; per[$2 SUBSEP g] += $8
+                seen[$2 SUBSEP g] = 1 }
+            END { for (k in seen) { split(k, p, SUBSEP)
+                print "c cpu_" p[2] "_cores " p[1] " " cpu[k] / 1e9
+                print "c throttled_" p[2] "_task_seconds " p[1] " " thr[k] / 1e9
+                print "c throttled_" p[2] "_periods " p[1] " " nthr[k]
+                print "c limited_" p[2] "_periods " p[1] " " per[k]
+                print "g memory_" p[2] "_mib " p[1] " " mem[k] / 1048576 } }' "$LOAD_ART/pods-names.tsv" "$LOAD_ART/pods.tsv" 2>/dev/null
+        for json in "$LOAD_ART"/prometheus/fleet_*.json "$LOAD_ART/prometheus/outbox_oldest_seconds.json" "$LOAD_ART/prometheus/inbox_lag_records.json"; do
+            [ -f "$json" ] || continue
+            name=$(basename "$json" .json)
+            grep -o '\[[0-9.]*,"[^"]*"\]' "$json" | tr -d '[]"' | awk -F, -v n="$name" '$2 != "NaN" {print "g " n " " int($1) " " $2}'
+        done
+        awk -F'\t' 'NF >= 4 {print "c db_statement_seconds " $2 " " $4 / 1000; print "c db_statements " $2 " " $3}' "$LOAD_ART/pg-statements_total.tsv" 2>/dev/null
+        awk -F'\t' 'NF >= 13 {print "c db_commits " $2 " " $3; print "c db_rollbacks " $2 " " $4; print "c db_deadlocks " $2 " " $5
+            print "c db_temp_bytes " $2 " " $7; print "c db_blocks_read " $2 " " $8; print "c db_rows_written " $2 " " $10 + $11 + $12}' \
+            "$LOAD_ART/pg-database.tsv" 2>/dev/null
+        awk -F'\t' 'NF >= 6 {print "c wal_bytes " $2 " " $5; print "c wal_full_page_images " $2 " " $4}' "$LOAD_ART/pg-wal.tsv" 2>/dev/null
+        awk -F'\t' 'NF >= 7 {print "c checkpoint_write_seconds " $2 " " $6 / 1000; print "c checkpoint_sync_seconds " $2 " " $7 / 1000}' \
+            "$LOAD_ART/pg-checkpointer.tsv" 2>/dev/null
+        awk -F'\t' 'NF >= 8 && $3 == "finapp" { e = $2; seen[e] = 1
+                if ($5 == "active") active[e] += $8
+                if ($7 ~ /WAL/) wal[e] += $8
+                if ($6 == "Lock") lock[e] += $8
+                if ($6 == "IO") io[e] += $8 }
+            END { for (e in seen) { print "g db_sessions_active " e " " active[e] + 0; print "g db_waiting_wal " e " " wal[e] + 0
+                print "g db_waiting_lock " e " " lock[e] + 0; print "g db_waiting_io " e " " io[e] + 0 } }' "$LOAD_ART/pg-activity.tsv" 2>/dev/null
+        awk -F'\t' 'NF >= 3 {print "g db_lock_waits " $2 " " $3}' "$LOAD_ART/pg-locks.tsv" 2>/dev/null
+    } > "$WORK/signals.txt"
+    awk -v stages="$WORK/stages.txt" -v t0="$LOAD_T0" -v speed="$LOAD_SPEED" -f "$LOAD_SRC/resources.awk" "$WORK/signals.txt" \
+        > "$LOAD_ART/stages-resources.tsv" || return 1
+    # A table with no replica CPU or no database time is no reading of the platform's side: the caller fails the run on it.
+    [ "$(grep -c . "$LOAD_ART/stages-resources.tsv")" -ge 2 ] && grep -q 'cpu_app_cores_per_s' "$LOAD_ART/stages-resources.tsv" \
+        && grep -q 'db_statement_seconds_per_s' "$LOAD_ART/stages-resources.tsv"
+}
+
+# load_saturation: the saturation signals as Prometheus holds them over the run, what the run wrote counted by minute, and the statements
+# with their text, into the artefacts. LOAD_MISSING names the signals Prometheus held no series for; it returns non-zero then.
+load_saturation() {
     mkdir -p "$LOAD_ART/prometheus"
     to=$(date +%s)
     for signal in \
@@ -708,20 +967,71 @@ load_census() {
         "hikari_acquire_max|hikaricp_connections_acquire_seconds_max{job=\"finapp\"}" \
         "outbox_age|max(finapp_outbox_oldest_publishable_seconds)" \
         "inbox_lag|max(finapp_inbox_lag)" \
-        "requests|sum by (instance) (rate(http_server_requests_seconds_count{job=\"finapp\"}[1m]))"; do
+        "requests|sum by (instance) (rate(http_server_requests_seconds_count{job=\"finapp\"}[1m]))" \
+        "fleet_heap_bytes|sum(jvm_memory_used_bytes{job=\"finapp\",area=\"heap\"})" \
+        "fleet_gc_seconds_per_s|sum(rate(jvm_gc_pause_seconds_sum{job=\"finapp\"}[1m]))" \
+        "fleet_gc_pauses_per_s|sum(rate(jvm_gc_pause_seconds_count{job=\"finapp\"}[1m]))" \
+        "fleet_threads|sum(jvm_threads_live_threads{job=\"finapp\"})" \
+        "fleet_busy_request_threads|sum(tomcat_threads_busy_threads{job=\"finapp\"})" \
+        "fleet_pool_active|sum(hikaricp_connections_active{job=\"finapp\"})" \
+        "fleet_pool_pending|sum(hikaricp_connections_pending{job=\"finapp\"})" \
+        "fleet_pool_held_connections|sum(rate(hikaricp_connections_usage_seconds_sum{job=\"finapp\"}[1m]))" \
+        "fleet_pool_wait_seconds|sum(rate(hikaricp_connections_acquire_seconds_sum{job=\"finapp\"}[1m])) / sum(rate(hikaricp_connections_acquire_seconds_count{job=\"finapp\"}[1m]))" \
+        "fleet_pool_wait_max_seconds|max(hikaricp_connections_acquire_seconds_max{job=\"finapp\"})" \
+        "fleet_requests_per_s|sum(rate(http_server_requests_seconds_count{job=\"finapp\"}[1m]))" \
+        "outbox_oldest_seconds|max(finapp_outbox_oldest_publishable_seconds)" \
+        "inbox_lag_records|max(finapp_inbox_lag)"; do
+        # The name before the first bar, the query after it (no query holds a bar).
         telemetry_get "$LOAD_PROM" "/api/v1/query_range?query=$(urlencode "${signal#*|}")&start=$LOAD_STARTED&end=$to&step=10" \
             > "$LOAD_ART/prometheus/${signal%%|*}.json" 2>&1 || true
     done
-    missing=""
-    for signal in cpu heap threads hikari_active outbox_age inbox_lag requests; do
-        grep -q '"values":\[\[' "$LOAD_ART/prometheus/$signal.json" || missing="$missing $signal"
-    done
-    [ -z "$missing" ] || fail "saturation signals absent from Prometheus over the run:$missing: see load/prometheus"
+    # What the run wrote, counted by minute (P16-TSK-007): the events and when they were published, the journal's entries and lines, the
+    # events by type and the records each consumer took. Counts and times only, by the test-only server's superuser.
+    psql_query -F "$(printf '\t')" -c "SELECT extract(epoch FROM date_trunc('minute', occurred_at))::bigint, count(*),
+        count(*) FILTER (WHERE published_at IS NOT NULL), round(avg(extract(epoch FROM (coalesce(first_published_at, published_at) - occurred_at)))::numeric, 3),
+        round(max(extract(epoch FROM (coalesce(first_published_at, published_at) - occurred_at)))::numeric, 3)
+        FROM platform.outbox_event GROUP BY 1 ORDER BY 1" > "$LOAD_ART/written-events-per-minute.tsv" 2>&1 || true
+    psql_query -F "$(printf '\t')" -c "SELECT extract(epoch FROM date_trunc('minute', e.created_at))::bigint, count(DISTINCT e.id), count(*)
+        FROM ledger.journal_entry e JOIN ledger.journal_line l ON l.entry_id = e.id GROUP BY 1 ORDER BY 1" > "$LOAD_ART/written-entries-per-minute.tsv" 2>&1 || true
+    psql_query -F "$(printf '\t')" -c "SELECT event_type, count(*) FROM platform.outbox_event GROUP BY 1 ORDER BY 2 DESC" \
+        > "$LOAD_ART/written-events-by-type.tsv" 2>&1 || true
+    psql_query -F "$(printf '\t')" -c "SELECT consumer, count(*) FROM platform.inbox_message GROUP BY 1 ORDER BY 2 DESC" \
+        > "$LOAD_ART/consumed-by-consumer.tsv" 2>&1 || true
+    # The settlement files and the reconciliation batches since the load began: when each arrived, was attested and last changed state.
+    psql_query -F "$(printf '\t')" -c "SELECT 'file', id, status, extract(epoch FROM received_at)::bigint, extract(epoch FROM attested_at)::bigint,
+        extract(epoch FROM status_changed_at)::bigint FROM settlement.file WHERE received_at >= to_timestamp($LOAD_FROM)
+        UNION ALL SELECT 'batch', id, status, extract(epoch FROM created_at)::bigint, NULL, extract(epoch FROM status_changed_at)::bigint
+        FROM reconciliation.reconciliation_batch WHERE created_at >= to_timestamp($LOAD_FROM) ORDER BY 4" \
+        > "$LOAD_ART/written-settlement.tsv" 2>&1 || true
     pg_admin -c "SELECT s.queryid, s.calls, round(s.total_exec_time::numeric, 1), round(s.mean_exec_time::numeric, 3), s.rows,
         left(regexp_replace(s.query, '\s+', ' ', 'g'), 300) FROM pg_stat_statements s JOIN pg_database d ON d.oid = s.dbid
         WHERE d.datname = 'finapp' ORDER BY s.total_exec_time DESC LIMIT 50" > "$LOAD_ART/pg-statements-final.txt" 2>&1 || true
+    LOAD_MISSING=""
+    for signal in cpu heap threads hikari_active outbox_age inbox_lag requests fleet_heap_bytes fleet_pool_held_connections; do
+        grep -q '"values":\[\[' "$LOAD_ART/prometheus/$signal.json" || LOAD_MISSING="$LOAD_MISSING $signal"
+    done
+    [ -z "$LOAD_MISSING" ]
+}
+
+load_census() {
+    report="$LOAD_ART/k6/report.tsv"
+    ok_of() { awk -F'\t' -v op="$1" '$1 == op {print $4}' "$report"; }
+    topup_minor=$(load_profile_value topUpMinor)
+    LOAD_TRANSFERS=$(ok_of transfer)
+    LOAD_CHECKOUTS=$(ok_of checkout)
+    LOAD_TOPUPS=$((LOAD_FUNDED + $(ok_of topup)))
+    LOAD_WALLET_MINOR=$((LOAD_FUNDED_MINOR + $(ok_of topup) * topup_minor))
+    census load
+    # A last sample, after the census: nothing the load left behind pages afterwards.
+    : > "$WORK/load-sample-failed"
+    load_sample final
+    [ ! -s "$WORK/load-sample-failed" ] || fail "the sample after the load failed: $(cat "$WORK/load-sample-failed")"
+    pass "the sample after the load and its census passed"
+    # The saturation signals, what the run wrote and the statements (load_saturation), and the per-stage table of the platform's side.
+    load_saturation || fail "saturation signals absent from Prometheus over the run:$LOAD_MISSING: see load/prometheus"
+    load_resources || fail "the per-stage resources hold no replica CPU or no database time: see load/stages-resources.tsv and load/pods.tsv"
     stats=$(cat "$LOAD_ART"/pg-database.tsv 2>/dev/null | grep -c . || true)
-    [ "$stats" -ge $(( $(load_seconds "$LOAD_DURATION") / 12 )) ] || fail "PostgreSQL's statistics were read $stats times over the load, not every 10 s: see load/statistics-errors.log"
+    [ "$stats" -ge $(( $(load_total_seconds) / 12 )) ] || fail "PostgreSQL's statistics were read $stats times over the load, not every 10 s: see load/statistics-errors.log"
     pass "the saturation signals are in the artefacts: Prometheus over the run, PostgreSQL's statistics $stats times, the containers' CPU and memory"
     # The workload and the machine it ran on (ADR-0126 decision 1).
     {
@@ -738,5 +1048,9 @@ load_census() {
         printf 'generator\tk6 %s %s\n' "$K6_VERSION" "$K6_DIGEST"
         printf 'driven\t%s\n' "$(load_operations k6 | tr '\n' ' ')$(load_operations callbacks | tr '\n' ' ')$(load_operations harness | tr '\n' ' ')"
         printf 'not driven\t%s\n' "$(load_operations none | tr '\n' ' ')"
+        # P16-TSK-007: the fleet asked for, the stages run and the machine's clocks.
+        printf 'replicas asked\t%s\n' "$LOAD_REPLICAS"
+        printf 'stages\t%s\n' "$(tr '\n' ';' < "$WORK/stages.txt")"
+        printf 'k6 seconds a host second\t%s (the VM'"'"'s monotonic clock against the host'"'"'s, load/clock.tsv: k6 schedules and times by the first)\n' "$LOAD_SPEED"
     } > "$LOAD_ART/workload.txt"
 }

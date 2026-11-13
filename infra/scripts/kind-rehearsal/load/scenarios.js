@@ -12,6 +12,10 @@
 // payment sweep's dispatched age and five minutes, the time the platform takes to conclude a payment whose provider answer was lost), so
 // the census can count exactly one effect per key the generator was told succeeded.
 //
+// THE PROFILES (P16-TSK-007). The demonstration runs every operation at a constant rate; normal, peak, sustained, stress and isolation
+// run them in stages (model.js), each a factor of the target's peak. BNPL, lending repayments and loan credit decisions are not driven on
+// kind, each profile saying why: every one rests on a credit approval, which no kind deployment can give.
+//
 // SAME-KEY RETRIES (PHASE_16_PLAN.md section 5.1). One money-moving iteration in twenty (retryShare 0.05) sends each of its commands
 // twice under the same key: half of them the second copy beside the first, before either is answered, half of them after the first
 // answer. Every answer of a key must name the same transfer, payment or checkout; the report counts the keys retried and the keys
@@ -40,8 +44,20 @@ const driven = profile.operations.filter((operation) => operation.generator === 
 // An iteration under way when the load's duration ends is let finish within the bound, so no movement is left unknown by the generator.
 const GRACEFUL_STOP = `${RESOLVE_SECONDS + 120}s`;
 
+// A staged profile (P16-TSK-007, model.js): its stages as written, or, when LOAD_DURATION shortens the run, every stage shortened in
+// proportion (at least two seconds each), which kind-rehearsal/load.sh computes the same way and records as not the profile's workload.
+function seconds(text) {
+    const value = Number(String(text).slice(0, -1));
+    return String(text).endsWith('h') ? value * 3600 : String(text).endsWith('m') ? value * 60 : value;
+}
+const STAGES = profile.stages ? (() => {
+    const total = profile.stages.reduce((sum, stage) => sum + stage[0], 0);
+    const scale = __ENV.LOAD_DURATION ? seconds(__ENV.LOAD_DURATION) / total : 1;
+    return profile.stages.map((stage) => [Math.max(2, Math.round(stage[0] * scale)), ...stage.slice(1)]);
+})() : null;
+
 export const options = {
-    scenarios: Object.fromEntries(driven.map((operation) => [operation.name, openModel(operation, DURATION, GRACEFUL_STOP)])),
+    scenarios: Object.fromEntries(driven.map((operation) => [operation.name, openModel(operation, DURATION, GRACEFUL_STOP, STAGES)])),
     summaryTrendStats: ['min', 'med', 'p(90)', 'p(95)', 'p(99)', 'max', 'avg', 'count'],
     insecureSkipTLSVerify: false,
     userAgent: `finapp-load/${profile.name}`,
@@ -61,6 +77,7 @@ for (const operation of driven) {
         failed: new Counter(`failed_attempts_${name}`),
         conflicts: new Counter(`conflicts_${name}`),
         unresolved: new Counter(`unresolved_${name}`),
+        abandoned: new Counter(`abandoned_${name}`),
         retried: new Counter(`retried_${name}`),
         agreed: new Counter(`retry_agreed_${name}`),
     };
@@ -133,6 +150,12 @@ function retryable(response) {
 // definitive answer within the bound, which the census must then be able to explain and the harness fails the run for.
 const REFUSED = 'refused';
 const UNRESOLVED = 'unresolved';
+// ABANDONED (P16-TSK-007): a checkout whose every answer under its key was a replay. The session token is in the creating answer and in
+// no other (CheckoutService.create), so a client that lost that answer can never pay the session: it stays OPEN and expires, nothing moved,
+// and the census counts no payment for it. Found on a compressed stress run: the session committed, then the second transaction that reads
+// it back waited past the pool's 5 s bound and the creating answer was a 500. Recorded per operation and stage, never a pass of anything:
+// the outcome is known (no payment), unlike UNRESOLVED's.
+const ABANDONED = 'abandoned';
 
 // Between two asks: a second through the first minute, then five, as a client backs off while the platform concludes.
 function pause(since) {
@@ -189,6 +212,8 @@ function conclude(op, outcome, started) {
     m.flow.add(Date.now() - started);
     if (outcome === UNRESOLVED) {
         m.unresolved.add(1);
+    } else if (outcome === ABANDONED) {
+        m.abandoned.add(1);
     } else if (outcome === REFUSED) {
         m.refused.add(1);
     } else {
@@ -311,8 +336,16 @@ export function checkout() {
     // The token appears once, in the creating answer; a replay names the same session and carries none.
     const checkoutId = json(created[0], 'checkoutId');
     const token = created.map((answer) => json(answer, 'sessionToken')).find((value) => value);
-    if (!token || (created.length === 2 && json(created[1], 'checkoutId') !== checkoutId)) {
+    // Two sessions under one key would be the key's second effect: never explained away.
+    if (created.length === 2 && json(created[1], 'checkoutId') !== checkoutId) {
         conclude(op, UNRESOLVED, started);
+        return;
+    }
+    if (!token) {
+        if (created.length === 2) {
+            agreed(op, created, 'checkoutId');
+        }
+        conclude(op, ABANDONED, started);
         return;
     }
     const confirm = request(op, 'POST', '/v1/checkout/sessions/confirmation', { sessionToken: token, paymentMethodId: who.card },

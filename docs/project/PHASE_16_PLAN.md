@@ -276,6 +276,18 @@ Every profile also runs with **same-key retries**: a fraction of commands (5%) i
 some before and some after the first answer, so that "the client retries" is part of every load and the census can count
 one effect per key.
 
+*(Erratum, 2026-11-13, `P16-TSK-007`, which built the normal, peak, sustained and stress profiles; `OPERATIONS_RUNBOOK.md` §11.45.
+**(1)** The stress profile is a fixed staircase, nine 5-minute steps from a quarter of the target's peak to 1.5 times it, and the break
+is read from the run: an open-model generator stopped at an objective would abandon movements in flight, whose outcomes the census
+must count, so the run goes on past the break and records the iterations it cannot start. **(2)** The sustained profile enters its two
+hours at peak by the peak profile's step from 30 minutes at the average, so one run holds all three. **(3)** On `kind` no credit
+approval can be given, automatic or by a person: no bureau can be configured there (unresolved question 13), and without the bureau's
+total balance the exposure is unassessed (`INV-CRD-09`, `INV-CRD-10`). So BNPL purchases and instalments, lending repayments and loan
+credit decisions (§4.3) are not driven by any profile; a simulated bureau on `kind` is an application change, routed to `P16-TSK-018`.
+**(4)** The reference machine's Linux VM keeps a monotonic clock that can run faster than its wall clock, by 8% in E30's run and by
+0.5% in the isolation run three hours later; the generator runs on the first, so its rates and latencies are that much higher than
+written in the host's seconds, and each run records the ratio.)*
+
 ### 5.2 What is measured
 
 Throughput and the latency distribution (p50, p95, p99, max) per operation from the load generator's side (open model, so

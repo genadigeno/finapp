@@ -827,52 +827,31 @@ It depends on no owner decision and changes no runtime behaviour. Built and gate
 
 ### Just completed
 
+**`P16-TSK-007` — The workload baseline: the demonstration run and the engineering workload measured** — `COMPLETE` (2026-11-13; branch `P16-TSK-007` from master `0a09a273`, wave C beside `-019`, master `be669bd2` merged in; no migration, no application code, no ADR; marks no task `READY` - the coordinator does). **What changed.** The load harness gained the normal, peak, sustained, stress and isolation profiles (`infra/scripts/kind-rehearsal/load/`), each operation named at the target's peak and scaled per stage by an open `ramping-arrival-rate` model and judged on the sum over its stages, only the stress profile running past the break. `REHEARSAL_LOAD_REPLICAS` (3 to 7) runs the fleet at the connection budget's formula in the run's own rendered overlay. Every run now cuts the client's measures and the platform's (each pod's cgroup CPU, throttling and memory, the JVMs' and pools' sums, the database's time) by stage in the host's seconds, records the VM's clock against the host's, keeps what it measured when a sample stops it, and writes what it wrote per minute. A checkout whose one token-bearing answer was lost is recorded abandoned. The entry's probe, `REHEARSAL_PROBE=slow-statement`, is built and held by its contract test. BNPL, lending repayments and loan credit decisions stay undriven: on `kind` no bureau can be configured, so no credit approval can be given (`INV-CRD-09`, `INV-CRD-10`); their setup was built, refused `422 credit.ExposureUnassessable` on a development cluster, and removed. **Measured** (`CAPACITY_MODEL.md` §3.4, `OPERATIONS_RUNBOOK.md` §11.45's record): E30 at three replicas (commit `89b8fc60`) carried 0.42 of the target's peak in host seconds within every objective and broke at 0.53. **The first limit is the database's CPU** (1.10 cores of 1, throttled in every period), four fifths of its statement time the merchant API's payable read folding the account's whole history; the isolation run (commit `f021383f`, green) carried each operation alone at the target's peak. The ratio of the target to the engineering workload is about 2.4 (2.6 counting the movements not driven). The machine's WAL stall did not recur in either run. **Routed**: the payable read to `P16-TSK-008`; a checkout's `500` after its session committed and the census starved of the pool (what stopped E30's sampler) to `P16-TSK-016`; the outbox relay falling behind checkouts alone at the target's peak (8 aggregates a poll per replica) to `P16-TSK-013`; a simulated bureau on `kind` to `P16-TSK-018`. **Owed under PI-025** (the owner's word mid-task): E29 (normal, peak, sustained) at three and seven replicas, E30 at seven, E31 (the probe) and the demonstration on this tree; E29 and E31 read not run in the register. **Tests**: `LoadRehearsalContractTest` (six probes in two rounds, each caught) and the guards reading the changed files, named in the change log's row.
+
 **`P16-TSK-019` — The failure-injection toolkit and its safety boundary (ADR-0127, C6, C7)** — `COMPLETE` (2026-11-13; branch
-
 `P16-TSK-019` from master `0a09a273`, wave C beside `-007`; no migration, no application code, no new ADR - ADR-0127 carries a dated note;
-
 marks no task `READY` - the coordinator does). **What changed.** The `kind` harness's `experiments` scope
-
 (`infra/scripts/kind-rehearsal/experiments.sh`, `OPERATIONS_RUNBOOK.md` §11.46): a cluster of one control plane and three workers each a
-
 zone, every image in every node, the base's `DoNotSchedule` zone rule restored in the scope's own rendered copy; Toxiproxy 2.13.0 pinned
-
 by digest on the application's database, broker and provider hops (`hostAliases` in that copy alone, the clients' URLs and
-
 `verify-full` unchanged, its admin API on its pod's loopback); a synchronous standby of the test-only PostgreSQL in another zone (C7);
-
 the safety boundary read from the cluster at each steady state and before each fault put on (its context again just before a kill) - the context (the node, its own context and server, the API's nodes, a
-
 marker the scope writes when it makes the cluster), every Secret value hashed against the run's ledger (`kind-secrets.sh`'s new
-
 `KIND_SECRETS_LEDGER`), every endpoint the run's own - each refusal proven by a plant in every run; a fault registry that `finish()`
-
 empties, resets and reads back on every way out; the step shape; E01. `deploy/` is untouched (the entry's `deploy/overlays/kind/`
-
 corrected by the design: the standby, the proxy and their policies are harness-applied test-only manifests). **E01** at three replicas
-
 `PASSED` (run 4, commit `a6fee3a1`, 11:08-11:21Z): a replica's JVM killed with SIGKILL from its node with a payout's claim in flight on it;
-
 its endpoint out 1 s and back 18 s after; no other replica unready, no page; the claim taken over and completed once by another 55 s
-
 after; two requests failed, both in flight on it; the census green. **Probes**: the entry's own (an unmarked cluster made by hand,
-
 refused at the cluster step both ways, nothing changed in it), `guard-off`, `crash-with-faults` and `term-with-faults` on the kept
-
 cluster (six faults left on by a dying harness, every one removed by its exit trap and read clean by hand), and 12 contract probes
-
 (`MUTATION_TESTING.md` §2). **Threat model**: an `EXISTS` row each for T29 (the harness acts with no person's cluster credential and
-
 only on the cluster it made) and T36 (a relay on the database hop sees only TLS). **Tests**: `ExperimentsRehearsalContractTest`
-
 (12 members), the guards reading the changed files, the four always-run (counts in `history/CHANGE_LOG.md`'s row); no database case
-
 written. **Machine**: four nodes held 7.8 GiB; the lock held 09:38-11:22Z. **Not on a cluster**: every cluster run ran on `a6fee3a1`;
-
 the later commits (from `88d027da`: the standby's phrase by `secretKeyRef`, the role's SQL by placeholder, the names the secret
-
 discoverer reads) ran in containers and by the contract test only, by the owner's word ("we dont need long running checks and tests"):
-
 E01 on the final bytes owed under PI-025.
 
 ### Previously
@@ -1588,6 +1567,8 @@ arm, the image loads on every node, the census's experiment payouts, `finish()`'
 `telemetry.sh` (one image load on every node), `kind-secrets.sh`, `scanner-pins.sh` and `check-pinned-images.sh` - all shared with `-007`.
 The cluster is deleted and the lock released. Owed under PI-025 (its bullet): E01 and the boundary's plants and probes on the final
 bytes, every cluster run of this task having been on `a6fee3a1`.
+
+**After `P16-TSK-007`'s gate (2026-11-13):** once it merges, `P16-TSK-008`, `-009`, `-010`, `-013`, `-016` and `-024` have every dependency met; `-018` and `-022` wait for `-019` as well. No new owner item. Routed by `-007`: the merchant API's payable read (the first limit at three replicas) to `-008`'s entry, a checkout's `500` after its session committed and the census starved of the pool to `-016`'s, the outbox relay's ceiling to `-013`'s, a simulated bureau on `kind` (without which no credit, lending or BNPL flow can run there) to `-018`'s. Its remaining runs are listed under PI-025. Busy request threads have no series (Tomcat's MBean registry is off), so `CAPACITY_MODEL.md` §3.4's threads column reads live threads; the first task that needs the figure turns the registry on.
 
 **The owner's word on long-running checks (2026-11-13, "we dont need long running checks and tests"):** Phase 16's `kind` runs are postponed as `POSTPONED_ISSUES.md` PI-025. From now on a task builds its experiments, load profiles and drills, holds them by contract tests, and runs only short named test classes. It lists the cluster runs it owes under PI-025 and never records an unperformed run as a result. Wave C's `P16-TSK-007` and `P16-TSK-019` stop their remaining cluster runs, keep the runs already recorded, and finish. The owner also gave the word to start wave D, then wave E, each task as its dependencies merge.
 
