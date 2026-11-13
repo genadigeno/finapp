@@ -1423,10 +1423,10 @@ EOF
     # P16-TSK-008: the contended rows' waits and the deadlocks (E38); the soak's tables, log, plans and index build (E39).
     [ "$LOAD_CONTENTION_ON" != true ] || load_contention_judge
     [ "$LOAD_SOAK" != true ] || load_soak_judge
-    # P16-TSK-011: the posting scope's cost on the hot path, after the contention profile's load (E62).
-    [ "$LOAD_CONTENTION_ON" != true ] || load_posting_scope
     # P16-TSK-012: the decisions' readings over the soak (E65).
     [ "$LOAD_DECISIONS" != 1 ] || load_decisions_judge
+    # P16-TSK-011: the posting scope's cost on the hot path, after the contention profile's load (E62).
+    [ "$LOAD_CONTENTION_ON" != true ] || load_posting_scope
 }
 
 # The shed census (P16-TSK-016, ADR-0137; OPERATIONS_RUNBOOK.md section 11.52). A shed request was refused before its handler, so it
