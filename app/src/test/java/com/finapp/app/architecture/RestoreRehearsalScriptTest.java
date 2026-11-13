@@ -334,7 +334,11 @@ class RestoreRehearsalScriptTest {
         assertThat(workflow).as("and when what the rehearsal reads changes: the pins, the chart, the launcher, the code it calls")
                 .contains("|^gradle/libs\\.versions\\.toml$").contains("|^infra/scripts/kind-rehearsal/gl-mapping\\.json$")
                 .contains("|^app/build\\.gradle\\.kts$").contains("|^deploy/overlays/kind/postgres\\.yaml$")
-                .contains("|^(accounting|ledger|accounts|transfers|lending|bnpl|fx|merchant)/src/main/java/");
+                .contains("|^(accounting|ledger|accounts|transfers|lending|bnpl|fx|merchant|credit|settlement|reconciliation|consent|checkout"
+                        + "|identity|platform)/src/main/java/")
+                .as("and what the widened seed and the window call (P16-TSK-024): the credit simulators and the key check value tool")
+                .contains("|^app/src/test/java/com/finapp/app/credit/(LendingStormCredit|SimulatedBureauEngine)\\.java$")
+                .contains("|^infra/scripts/KeyCheckValue\\.java$");
         assertThat(harness).as("the artefacts CI keeps are the ones the run writes")
                 .contains("ART=${RESTORE_ARTEFACTS:-$ROOT/build/restore-rehearsal}");
     }

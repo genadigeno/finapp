@@ -433,9 +433,15 @@ millis() {
     echo $(($(date +%s%N) / 1000000))
 }
 
-# switched <container>: the WAL segment in progress finished, and waited for until the archive holds it; its name answered.
+# switched <container>: the WAL segment in progress finished, and waited for until the archive holds every segment before the one now
+# in use; the last of them named. pg_switch_wal() does nothing when nothing was written since the last switch (a backup's stop makes
+# one), and then answers a position inside the segment in use, which is never archived until it too is finished: so the segment
+# waited for is read from where the insert position now stands, the one before its own (a position one byte on, never on a boundary).
 switched() {
-    segment=$(sql "$1" 'SELECT pg_walfile_name(pg_switch_wal())')
+    sql "$1" 'SELECT pg_switch_wal()' > /dev/null
+    segment=$(sql "$1" "SELECT pg_walfile_name(position - f.file_offset - 1) FROM (SELECT pg_current_wal_insert_lsn() + 1 AS position) p,
+        LATERAL pg_walfile_name_offset(p.position) f")
+    [ -n "$segment" ] || cannot "the segment before the one in use could not be named"
     waited=0
     until [ "$(sql "$1" "SELECT coalesce(last_archived_wal >= '$segment', false) FROM pg_stat_archiver")" = t ]; do
         waited=$((waited + 1))
