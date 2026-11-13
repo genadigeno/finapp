@@ -82,6 +82,12 @@ import javax.net.ssl.SSLContext;
  * beside the counts, so that "an ambiguous call is never resent" is read on the provider's side: a dispatch key sent twice with no
  * inquiry of it between is a blind resend.
  *
+ * <p>THE DECLINE CONTROL (P16-TSK-029, RESILIENCE_EXPERIMENTS.md E86, OPERATIONS_RUNBOOK.md section 11.63): while {@code
+ * /tmp/decline-card-share} holds a whole percent, a card authorization whose Idempotency-Key falls in that share by its hash answers
+ * {@code {"status":"declined"}}, a provider's ordinary decline, recorded as any answer is, so a retry under the key gets it again. The
+ * load scope puts it on before the decline profile's load and takes it off after it and on every way out. A decline is a business
+ * outcome: the platform answers it with the payment FAILED, and no objective may count it as an error.
+ *
  * <p>No port serves plain HTTP. It holds no credential and verifies none: a bearer key is the adapter's confinement rule to meet, and a
  * simulator that checked it would prove only that the rehearsal's generator and the application agree.
  */
@@ -106,6 +112,8 @@ public final class Simulator {
             "payout", List.of("/payouts"),
             "fx", List.of("/fx/quotes", "/fx/executions"),
             "reference", List.of("/fx/reference/rates"));
+    /** The decline control's share (P16-TSK-029): a whole percent of card authorizations answered declined, by their key. */
+    private static final Path DECLINE = Path.of("/tmp/decline-card-share");
     /** Every request's line for /tmp/requests.tsv, drained by the counts' writer. */
     private static final java.util.concurrent.ConcurrentLinkedQueue<String> REQUEST_LOG = new java.util.concurrent.ConcurrentLinkedQueue<>();
 
@@ -189,7 +197,8 @@ public final class Simulator {
         server.createContext("/payout-destinations/tokenisations", exchange -> answer(exchange, "/payout-destinations/tokenisations",
                 key -> "{\"status\":\"tokenised\",\"reference\":\"pdr_" + shortId() + "\",\"last4\":\"3000\"}"));
         server.createContext("/authorizations", exchange -> answer(exchange, "/authorizations",
-                key -> "{\"status\":\"approved\",\"reference\":\"psp_auth-" + UUID.randomUUID() + "\"}"));
+                key -> declined(key) ? "{\"status\":\"declined\",\"reason\":\"do_not_honor\"}"
+                        : "{\"status\":\"approved\",\"reference\":\"psp_auth-" + UUID.randomUUID() + "\"}"));
         server.createContext("/captures", exchange -> answer(exchange, "/captures",
                 key -> "{\"status\":\"approved\",\"reference\":\"psp_cap-" + UUID.randomUUID() + "\"}"));
         server.createContext("/refunds", exchange -> answer(exchange, "/refunds",
@@ -423,6 +432,24 @@ public final class Simulator {
         String requested = exchange.getRequestURI().getPath();
         int from = prefix.endsWith("/") ? prefix.length() : prefix.length() + 1;
         return requested.length() > from ? requested.substring(from) : "-";
+    }
+
+    /**
+     * The decline control (P16-TSK-029, E86): whether this authorization's key falls in the share {@code /tmp/decline-card-share} names,
+     * a whole percent, by the key's own hash, so every request under one key is judged alike. No file, or one that is not a percent,
+     * declines nothing. Read only inside the first answer to a key: a key answered before keeps its answer.
+     */
+    private static boolean declined(String key) {
+        if (!Files.exists(DECLINE)) {
+            return false;
+        }
+        int share;
+        try {
+            share = Integer.parseInt(Files.readString(DECLINE).trim());
+        } catch (IOException | NumberFormatException unreadable) {
+            return false;
+        }
+        return share > 0 && Math.floorMod(key.hashCode(), 100) < share;
     }
 
     /** The rail a path belongs to, or null. */

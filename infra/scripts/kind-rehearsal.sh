@@ -304,6 +304,8 @@ finish() {
     done
     # The experiments' faults (P16-TSK-019), on every way out and before the cluster goes: a kept cluster is left with none on.
     experiments_clear_faults
+    # The decline run's control (P16-TSK-029, E86), likewise: a no-op unless the load put it on.
+    load_declines off
     for container in $CONTAINERS; do
         dock rm -f "$container" >/dev/null 2>&1
     done

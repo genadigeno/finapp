@@ -1178,3 +1178,36 @@ tests:
         alertname: ConsumptionBurnFast
         exp_alerts: []
 
+
+  # P16-TSK-029 (PHASE_16_PLAN.md section 15: business outcomes spend no budget). A decline wave over an hour on both instances: three
+  # payment commands in ten refused (422: a risk refusal, insufficient funds, a refused confirmation), a card decline answering 200 with
+  # its payment FAILED among the rest, and three transfers in ten refused for insufficient funds - and no 5xx. Neither objective burns:
+  # a refusal is a modelled outcome, not the platform failing. Counting it as an error (the error class widened to 4xx) would page
+  # here, which is the entry's probe.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="200", uri="/v1/checkout/sessions/confirmation"}'
+        values: '0+4200x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="422", uri="/v1/checkout/sessions/confirmation"}'
+        values: '0+1800x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="200", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+4200x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="422", uri="/v1/payments/{id}/confirmation"}'
+        values: '0+1800x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="a:8081", method="POST", status="201", uri="/v1/transfers"}'
+        values: '0+2100x80'
+      - series: 'http_server_requests_seconds_count{job="finapp", instance="b:8081", method="POST", status="422", uri="/v1/transfers"}'
+        values: '0+900x80'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: PaymentCheckoutBurnFast
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: PaymentCheckoutBurnSlow
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: TransferAvailabilityBurnFast
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: TransferAvailabilityBurnSlow
+        exp_alerts: []

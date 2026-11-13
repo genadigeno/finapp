@@ -658,6 +658,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T14 | A database that cannot be read serves nothing: with no connection to be had, a session presented at a customer's, an operator's or a stepped-up door, and a merchant's key at its door, are each answered by the store's failure thrown as itself - never an `ApiException`, so never a `401` and never a pass - the unit of work rolled back, nothing recorded, no session, merchant or actor left and no handler reached; a request presenting nothing is refused `401` without the database; the same interceptor serves when the database answers | EXISTS | `app/src/test/java/com/finapp/app/session/DegradedStorageFailsClosedTest.java#aSessionLookupWithTheDatabaseAwayServesNothing`; `app/src/test/java/com/finapp/app/session/DegradedStorageFailsClosedTest.java#aMerchantKeyLookupWithTheDatabaseAwayServesNothing`; `app/src/test/java/com/finapp/app/session/DegradedStorageFailsClosedTest.java#presentingNothingIsRefusedWithoutTheDatabase`; `app/src/test/java/com/finapp/app/session/DegradedStorageFailsClosedTest.java#theSameInterceptorServesWhenTheDatabaseAnswers` |
 | T14 | Every experiment carries the security probe, built: a customer's and an operator's sessions and the merchant's key held from its steady state; the probe's control on every ready replica (each held credential served `200`, four protected requests refused `401`, or the run cannot go on); then every application pod asked directly every 5 s from just before the fault to the recovery's end; a protected request answered `2xx` or `3xx`, a held credential refused, or a fault in which no protected request was answered fails the experiment; and every replica of a rolling restart serves the sessions held from before it (E82, registered at ten) | EXISTS | `app/src/test/java/com/finapp/app/architecture/SecurityUnderFailureContractTest.java#everyExperimentCarriesTheProbe`; `app/src/test/java/com/finapp/app/architecture/SecurityUnderFailureContractTest.java#theProbeAsksEveryReplicaDirectly`; `app/src/test/java/com/finapp/app/architecture/SecurityUnderFailureContractTest.java#theProbeHasItsControl`; `app/src/test/java/com/finapp/app/architecture/SecurityUnderFailureContractTest.java#theJudgeFailsOnWhatItIsThereToSee`; `app/src/test/java/com/finapp/app/architecture/SecurityUnderFailureContractTest.java#e82AsksEveryNewReplica` |
 | T14 | On a real cluster: no protected request answered without its check while any experiment's fault is on, and no held session lost through a replica's crash, a database failover or a rolling restart at ten (E01, E05, E82). Built and contract-tested; their runs postponed by the owner with Phase 16's other cluster runs | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
+| T14 | The objectives' judgement over a load run reads each objective, its budget, its pairs and its indicator from the committed rules at run time, never copied, and passes none blind: MET only at a burn rate of at most 1 with neither pair fired, an objective without a sample or a window without the alert planted before the load refused, an objective not met failing the run that asked; a real burn judged from Prometheus's own history, a pair that held past its wait and never fired failing it; a decline wave holding every refusal to a decline the provider gave | EXISTS | `app/src/test/java/com/finapp/app/architecture/ObjectivesRehearsalContractTest.java#theObjectivesAreReadFromTheRulesAndJudgedOnBoth`; `app/src/test/java/com/finapp/app/architecture/ObjectivesRehearsalContractTest.java#theLoadsJudgementIsOptInAndNeverBlind`; `app/src/test/java/com/finapp/app/architecture/ObjectivesRehearsalContractTest.java#aRealBurnIsJudgedFromPrometheusHistory`; `app/src/test/java/com/finapp/app/architecture/ObjectivesRehearsalContractTest.java#theDeclineRunCountsEveryRefusalAsADecline` |
+| T14 | On a real cluster, every objective judged at the sustained profile (E84), a real burn of the objectives under a slowed database paging and clearing (E85), and a wave of provider declines spending no budget (E86). Built and contract-tested; their runs postponed by the owner with Phase 16's other cluster runs | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
 | T15 | An unbalanced journal entry is refused at commit, whoever writes it, raw SQL included (`INV-LED-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#aDirectUnbalancedInsertIsRefusedAtCommit` |
 | T15 | The application role holds no `UPDATE`, `DELETE` or `TRUNCATE` on the journal | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theColumnSweep` |
 | T15 | The journal's append-only trigger binds even the migrator (`INV-HIST-01`) | EXISTS | `app/src/test/java/com/finapp/app/domain/JournalPostingDatabaseTest.java#theAppendOnlyTriggerBindsTheMigrator` |
@@ -760,6 +762,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T23 | The provider's hop black-holed for every replica on a real cluster (E15): a call that never reached the provider answering `503`, one sent and unanswered recorded unknown and never sent again, and every payment and payout concluded once by the sweeps after the return. Built and contract-tested; its run postponed by the owner with Phase 16's other cluster runs | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
 | T23 | The payout rail's outage experiment measures what its row names, on the platform's side and the simulator's: the payout rail and card tokenisation degraded through the fault registry; no payout completed without a creation the provider took under its reference, read at every pass of the watch and after; every payout born since the start concluded within twice the payout sweep's dispatched age, read from the code, and none left unknown twice; no payout's key sent again without an inquiry between; a fault that degraded nothing is no pass; a card attach refused during it storing no method, and one stored after | EXISTS | `app/src/test/java/com/finapp/app/architecture/AvailabilityMatrixTest.java#e73TakesThePayoutRailAndTokenisationAway` |
 | T23 | On a real cluster, the payout rail unavailable and then silent and card tokenisation unavailable under the workload (E73): no payout concluded without the provider's effect, every unknown concluded once, no blind resend, the refused attach storing nothing. Built and contract-tested; its run postponed by the owner with Phase 16's other cluster runs | GAP | `PI-025`; owner: the owner, since 2026-11-13 |
+| T23 | A break or a suspense item that ages past its bound behind one already standing raises an alert of its own: a count per severity of the open breaks past that severity's bound and one of the suspense items past thirty days, each counted from the clock the age gauges use so that a count of one is exactly the age rule holding, the bounds read from the committed rules; NaN on every series when unreadable, never zero (§6 item 42 (a)) | EXISTS | `app/src/test/java/com/finapp/app/telemetry/AgedCountMetricsTest.java#aBreakCountsExactlyWhenItsAgeRuleWouldHold`; `app/src/test/java/com/finapp/app/telemetry/AgedCountMetricsTest.java#aSuspenseItemCountsExactlyWhenItsAgeRuleWouldHold`; `app/src/test/java/com/finapp/app/telemetry/AgedCountMetricsTest.java#theBoundsAreTheRulesThresholds`; `app/src/test/java/com/finapp/app/telemetry/AgedCountMetricsTest.java#anUnreadableReadingIsNaN`; `infra/prometheus/rules/settlement-reconciliation.yml` `contains: - alert: BreakNewlyAgedHigh`; `app/src/test/java/com/finapp/app/telemetry/AlertCatalogueTest.java#everyAlertFiresInOneCaseAndStaysSilentOnItsSeriesInAnother` |
+| T23 | A provider's outage spends a budget: today a provider answering `503` or nothing leaves its payments `UNKNOWN` behind a success status, so no objective burns and `PaymentUnknownAged` alone pages; a processing indicator, and the balance read's objective, proposed and not adopted | GAP | `owner item 70`; owner: the owner, since 2026-11-13 |
 | T24 | Every webhook delivery, duplicates included, is retained as evidence (`INV-HIST-02`) | EXISTS | `app/src/test/java/com/finapp/app/payments/PaymentWebhookDatabaseTest.java#aTripleDeliveryLandsOneDedupeRecordAndThreeEvidenceRows` |
 | T24 | A late KYC callback is kept as evidence and decides nothing | EXISTS | `app/src/test/java/com/finapp/app/kyc/ProviderCallbackDatabaseTest.java#aLateCallbackIsEvidenceOnly` |
 | T24 | FX provider evidence is append-only | EXISTS | `fx/src/test/java/com/finapp/fx/FxProviderEvidenceDatabaseTest.java#evidenceIsAppendOnly` |
@@ -1155,14 +1159,14 @@ were added on 2026-11-09 and await the owner." until then.)* **Items 35, 36, 38 
 read "... and they await the owner." until then.)* **Item 40 was added on 2026-11-12 by the delivery's task and decided the same
 day under the owner's standing word for waves G and H ("start H after G, accept all recommendations"), as recommended.**
 **Item 42 was added on 2026-11-12 by the runbooks' rehearsal and decided the same day under the same standing word, each part as
-recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.** **Items 55, 56, 57, 58, 60, 61, 62, 63 and
+recommended; its parts (d), (e), (j) (i), (k) and (l) were built the same day.** **Its part (a) was built on 2026-11-13.** **Items 55, 56, 57, 58, 60, 61, 62, 63 and
 64 were added on 2026-11-13 by Phase 16's tasks, and the owner decided them the same day, accepting each recommendation** ("Start
 wave F, and accept all nine recommendations"); each item's decision follows its options. *(This paragraph read "**Item 55 was
 added on 2026-11-13 by the contention measurement and awaits the owner.** **Item 63 was added on 2026-11-13 by the idempotency
 records' sweep and awaits the owner.**" until the owner's decision of 2026-11-13.)* **Item 66 was added on 2026-11-13 by the data
 tier's availability task, and the owner decided it on 2026-11-14, accepting its recommendations** ("yes"); its decision follows its
-options. **Item 67 was added on 2026-11-13 by the capacity calibration and awaits the owner.** **Item 71 was added on 2026-11-13 by
-the disaster-recovery plan and awaits the owner.**
+options. **Item 67 was added on 2026-11-13 by the capacity calibration and awaits the owner.** **Item 70 was added on 2026-11-13 by the objectives' validation under load and awaits the owner.**
+**Item 71 was added on 2026-11-13 by the disaster-recovery plan and awaits the owner.**
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -1926,7 +1930,13 @@ the disaster-recovery plan and awaits the owner.**
     *Recommendation*: **(i)**, built in Phase 16 before any environment holds parked value, this item holding the gap until then, with (ii) the control meanwhile. No
     environment holds parked value yet; once one does, it stands for months, and an alert that started firing months ago says nothing
     of the break raised today. (iii) hides value from the alert meant to see it. **Decided 2026-11-12** under the owner's standing
-    word ("accept all recommendations", waves G and H): as recommended.
+    word ("accept all recommendations", waves G and H): as recommended. **Built 2026-11-13** (ADR-0148): the two meters,
+    `finapp.reconciliation.break.aged` per severity and `finapp.reconciliation.suspense.aged`, counting what is past each age rule's own
+    bound from the clock the age gauges use, so a count of one is exactly that rule holding; and beside each of the five age rules one that
+    fires when its count rises above its least of the last two hours while one stood, with the same severity and wait - five rules where
+    the option said two, because an alert's severity and wait are its rule's. Their promtool cases hold a rise, a resolution and a new
+    aging within the window, a fall, a standing count, the first to age (the age rule's own) and an unreadable fleet; §4's T23 row cites
+    the guard. `OPERATIONS_RUNBOOK.md` §11.11 step 4 keeps the daily read until the rules have fired on a real deployment (PI-025). This part is closed.
 
     **(b) A migration outside a transaction** (T12, T33). The build refuses one: `EveryMigrationRunsInATransactionTest` reads every
     script with the pinned Flyway's own parser and refuses each form Flyway would run outside a transaction (`CREATE INDEX
@@ -2860,6 +2870,29 @@ the disaster-recovery plan and awaits the owner.**
     `OPERATIONS_RUNBOOK.md` §11.55 says.
 
     *Awaiting the owner* (2026-11-13). Until decided: §4's T3 and T20 `GAP` rows naming this item.
+
+70. **T23's and T14's residual: what the objectives cannot see** *(added 2026-11-13 by the objectives' validation under load, ADR-0148,
+    `docs/architecture/SLOS.md` §6 and §7)*. Reading the objectives against the code found that a budgeted objective cannot see a
+    provider's outage: the card adapter reads a provider's `503` or its silence as an indeterminate answer (`INV-LIFE-03`), the payment
+    rests `UNKNOWN` and its command answers the payment's state with a success status, so `payment_checkout` spends nothing while no card
+    payment can conclude. Only `PaymentUnknownAged` tells, a page fifteen minutes in. The edge's own answers (its `429`s, its `5xx` when no
+    replica is ready) never reach the application's request timer, so only the edge's fast-pair page reads them, with no objective or slow
+    pair of their own. The balance read, the target's largest operation, has
+    no objective at all, and `PHASE_16_PLAN.md` §4.3's latency targets for payments, the merchant API and reads, and §15's settlement
+    ingestion and reconciliation completion indicators, are proposed and not adopted, so no bucket or rule exists for them (§15 adds one
+    only where a target is adopted). The options:
+    - **(i) Adopt `SLOS.md` §7's indicators** as objectives: a payment-processing indicator (card payments concluded within
+      `PaymentUnknownAged`'s fifteen minutes, which a provider's outage spends), balance-read availability and latency, the edge's own
+      availability with its slow pair, payment and merchant-API latency, settlement ingestion (the platform's own wait, the attestation left out) and reconciliation completion; each
+      with its buckets or meter, its recording windows, its two burn pairs and its promtool cases, built in a task of its own, its targets
+      the proposed ones until a run measures them.
+    - **(ii) Adopt only the processing indicator and the balance read's availability now**, the latency indicators after E84's run has
+      measured the latencies the targets would be judged against.
+    - **(iii) Keep the ten objectives as they are**: a provider's outage stays `PaymentUnknownAged`'s and the per-rail failure rate's (owner
+      decision C12), and reads stay unbudgeted.
+    *Recommendation*: **(ii)**: the two indicators close the blind spots that matter for money now - an outage that stops every card
+    payment and the operation customers use most - and need no target guessed; the latency targets are better adopted against a measured
+    distribution than before one. Until decided: §4's T23 `GAP` row naming this item. *Awaiting the owner* (2026-11-13).
 
 71. **T32's and T42's residuals: what a recovery from the loss of the whole account needs that only a real environment can hold** *(added 2026-11-13 by the disaster-recovery plan, ADR-0149; `OPERATIONS_RUNBOOK.md` §11.64)*. Two questions the plan leaves to the owner.
 

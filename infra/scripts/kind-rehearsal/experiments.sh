@@ -112,8 +112,8 @@
 #   matrix-mismatch    (P16-TSK-023, with E06) the run's own copy of docs/architecture/AVAILABILITY.md claims internal transfers (O04)
 #                      AVAILABLE while the database is away (row A01): E06's walk must fail on that row, and a run that sent no transfer in
 #                      the window could not show it.
-# REHEARSAL_EXPERIMENTS names the experiments to run (E01 by default; the catalogue is P16-TSK-008's, -013's, -018's, -020...-023's and
-# P16-TSK-027's).
+# REHEARSAL_EXPERIMENTS names the experiments to run (E01 by default; the catalogue is P16-TSK-008's, -013's, -018's, -020...-023's,
+# P16-TSK-027's and P16-TSK-029's E85, a real burn of the objectives under E51's slowed database, at the end of this file).
 # The provider experiments E17, E18 and E21 (P16-TSK-018) degrade the simulator one rail at a time (its flags degrade-<rail>-unavailable and
 # -silent, put on and taken off by the hold kind) or slow its hop (a latency toxic); E19 and E20 refuse to run, each naming why.
 #
@@ -3425,6 +3425,10 @@ E17_observe() {
     provider_watch "$PROVIDER_PHASE_SECONDS" "the card rail silent"
     provider_rail_outcomes silent
     experiments_record "unknown-age page during the fault" "PaymentUnknownAged $(provider_page PaymentUnknownAged)"
+    # P16-TSK-029 (SLOS.md section 6): recorded, never judged. The provider's 503 and its silence are indeterminate answers to the adapter,
+    # the payment rests UNKNOWN and its command answers the payment's state, so no budget is spent: the payment objective's pairs stay
+    # silent through a provider outage by design, and PaymentUnknownAged is what tells (THREAT_MODEL.md section 6 item 70).
+    experiments_record "payment objective during the fault" "PaymentCheckoutBurnFast $(provider_page PaymentCheckoutBurnFast), PaymentCheckoutBurnSlow $(provider_page PaymentCheckoutBurnSlow)"
 }
 
 E17_recover() {
@@ -6973,4 +6977,91 @@ E25_recover() {
     experiments_window E25 "$E25_KILLED_AT" "$E25_BACK_AT" half "$E25_LOST_ADDRESS"
     experiments_edge_read "$EXP_DIR" $((E25_KILLED_AT - 60))
     availability_check A09 "$E25_KILLED_AT" $((E25_BACK_AT + EXPERIMENTS_WALK_MARGIN))
+}
+
+# ---------------------------------------------------------------------------------------------------
+# E85: a real burn (P16-TSK-029; ADR-0148; docs/architecture/SLOS.md section 6; OPERATIONS_RUNBOOK.md section 11.63), at three replicas.
+# The database slowed under the workload by E51's toxic, so the fleet sheds (ADR-0137: a shed is a 503 on its route), held until a fast
+# burn pair pages or 15 minutes pass, then removed. Judged from Prometheus's own history over the fault and after: every objective whose
+# burn pair's expression held, unbroken, for its for and a minute fired (objectives_held), at least one held (a fault that burned nothing
+# fast enough to page proves nothing: the run could not measure), the page reached Alertmanager's page receiver, the fleet's 503s cover
+# what it shed (a shed the objectives could not see would spend nothing), and no fast pair still pages ten minutes after the toxic is gone
+# (its five-minute window drained). No correctness page throughout (ADR-0127 decision 6); every request resolved by its key; census green.
+# ---------------------------------------------------------------------------------------------------
+
+E85_LATENCY_MS=${REHEARSAL_E85_LATENCY_MS:-250}
+E85_HOLD_SECONDS=900
+E85_CLEAR_SECONDS=600
+
+E85_steady() {
+    OBJECTIVES_GET=experiments_prometheus
+    burning=$(objectives_burning)
+    [ "$burning" != UNREADABLE ] || cannot "E85: the burn alerts could not be read before the fault"
+    [ -z "$burning" ] || cannot "E85: burn alerts already firing before the fault ($burning), so a burn the fault makes could not be told apart"
+    # Retrying by key for 30 minutes: the hold is 15 at most, its clearing 10, and a payment caught mid-call waits the sweep's dispatched age.
+    experiments_start_workload e85 1800
+    sleep 60
+    E85_SHED_BEFORE=$(e51_shed)
+    [ -n "$E85_SHED_BEFORE" ] || cannot "E85: the fleet's shedding meter could not be read before the fault"
+    experiments_record "steady state" "no burn alert firing; the workload retrying by its keys; $E85_SHED_BEFORE requests shed by the fleet before the fault"
+}
+
+E85_fault() {
+    experiments_fault_on toxic postgres e85-latency latency "latency=$E85_LATENCY_MS"
+    E85_FAULT_AT=$(date +%s)
+    experiments_record fault "a latency toxic of $E85_LATENCY_MS ms on every answer from the database, on the application's database hop, at $(date -u -d "@$E85_FAULT_AT" +%H:%M:%SZ)"
+}
+
+E85_observe() {
+    deadline=$((E85_FAULT_AT + E85_HOLD_SECONDS))
+    E85_PAGED=""
+    : > "$EXP_DIR/burns.tsv"
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        firing=$(experiments_pages_firing)
+        if [ -n "$firing" ]; then
+            EXP_STOPPED="a correctness page while the database was slow: $firing"
+            log "E85 STOP: $EXP_STOPPED"
+            return 0
+        fi
+        burning=$(objectives_burning)
+        printf '%s\t%s\n' "$(date -u +%H:%M:%S)" "${burning:-none}" >> "$EXP_DIR/burns.tsv"
+        E85_PAGED=$(printf '%s\n' $burning | grep 'BurnFast$' | head -1 || true)
+        [ -z "$E85_PAGED" ] || break
+        sleep 15
+    done
+    E85_SHED_DURING=$(e51_shed)
+    experiments_record paged "${E85_PAGED:-no fast pair within $E85_HOLD_SECONDS s} after $(( $(date +%s) - E85_FAULT_AT )) s; the burn alerts every 15 s in experiments/E85/burns.tsv"
+}
+
+E85_recover() {
+    removed=$(date +%s)
+    cleared=""
+    while [ $(( $(date +%s) - removed )) -lt "$E85_CLEAR_SECONDS" ]; do
+        burning=$(objectives_burning)
+        printf '%s\t%s\n' "$(date -u +%H:%M:%S)" "${burning:-none}" >> "$EXP_DIR/burns.tsv"
+        if [ "$burning" != UNREADABLE ] && ! printf '%s\n' $burning | grep -q 'BurnFast$'; then
+            cleared=$(( $(date +%s) - removed ))
+            break
+        fi
+        sleep 15
+    done
+    now=$(date +%s)
+    objectives_held "$EXP_DIR/held.tsv" "$E85_FAULT_AT" "$now" || cannot "E85: the burn pairs could not be read from slo.yml"
+    held=$(awk -F'\t' 'NR > 1 && $3 == "held"' "$EXP_DIR/held.tsv" | grep -c . || true)
+    shed=$(( ${E85_SHED_DURING:-$E85_SHED_BEFORE} - E85_SHED_BEFORE ))
+    [ "$held" -ge 1 ] || cannot "E85: no objective's burn pair held under the slowed database ($shed requests shed), so a real burn was not made: REHEARSAL_E85_LATENCY_MS raises the toxic; see experiments/E85/held.tsv"
+    unfired=$(awk -F'\t' 'NR > 1 && $3 == "held" && $4 != "fired" {printf "%s (%s) ", $2, $1}' "$EXP_DIR/held.tsv")
+    [ -z "$unfired" ] || fail "E85: a burn pair held past its for and its alert never fired: ${unfired}see experiments/E85/held.tsv"
+    [ -n "$E85_PAGED" ] || fail "E85: no fast burn pair paged within $E85_HOLD_SECONDS s of the fault, though $held pairs held: see experiments/E85/held.tsv"
+    signals_routed "$E85_PAGED" || fail "E85: $E85_PAGED never reached Alertmanager's page receiver"
+    [ -n "$cleared" ] || fail "E85: a fast burn pair still paging $E85_CLEAR_SECONDS s after the database's latency was removed: see experiments/E85/burns.tsv"
+    answered=$(objectives_value "sum(increase(http_server_requests_seconds_count{job=\"finapp\",status=\"503\"}[$((now - E85_FAULT_AT))s]))" "$now")
+    case $answered in '' | *[!0-9.e+]*) cannot "E85: the fleet's 503 answers over the fault could not be read ('$answered')" ;; esac
+    [ "$(awk -v a="$answered" -v s="$shed" 'BEGIN { print (a + 0 >= s * 0.95) ? "ok" : "unseen" }')" = ok ] \
+        || fail "E85: the fleet shed $shed requests and its request timer counted $answered answers 503: a shed the objectives cannot see spends no budget"
+    stop_workload e85
+    [ "$(workload_unresolved e85)" = 0 ] || fail "E85: $(workload_unresolved e85) requests stayed unresolved by their keys: see workload-e85.tsv"
+    assert_flows_ran e85
+    experiments_record judged "$held burn pairs held, every one fired (experiments/E85/held.tsv); $E85_PAGED routed to the page receiver; the fast pairs clear $cleared s after the removal; $shed shed and $answered answered 503 by the fleet"
+    pass "E85: a real burn paged - $E85_PAGED, routed - every burn pair that held fired, the sheds were the objectives' 503s, and the fast pairs stopped $cleared s after the burn did"
 }

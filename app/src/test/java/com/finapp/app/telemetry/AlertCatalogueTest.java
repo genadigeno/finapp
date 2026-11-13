@@ -195,7 +195,9 @@ class AlertCatalogueTest {
         Path directory = rulesDirectory();
         int checked = 0;
         for (Alert alert : alerts()) {
-            if (!STATED_FILES.contains(alert.file()) && !Set.of("CreditScorecardMissing", "BnplSweepClaimFailing").contains(alert.name())) {
+            // P16-TSK-029: the break-age counts' rise rules (THREAT_MODEL.md section 6 item 42 (a)), each comparing the fleet's max with its own past.
+            if (!STATED_FILES.contains(alert.file()) && !Set.of("CreditScorecardMissing", "BnplSweepClaimFailing", "BreakNewlyAgedCritical",
+                    "BreakNewlyAgedHigh", "BreakNewlyAgedMedium", "BreakNewlyAgedLow", "SuspenseItemNewlyAged").contains(alert.name())) {
                 continue;
             }
             String stated = statedAggregation(Files.readString(directory.resolve(alert.file())), alert.name());

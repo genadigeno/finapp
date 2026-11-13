@@ -170,6 +170,22 @@ public class ReconciliationBeans {
     }
 
     /**
+     * The break-age counts (`P16-TSK-029`, {@code THREAT_MODEL.md} §6 item 42 (a)): the breaks of each severity and the suspense
+     * items past their bounds, so a newly aged one behind a standing one is alerted.
+     */
+    @Bean
+    com.finapp.app.telemetry.AgedCountMetrics agedCountMetrics(
+            javax.sql.DataSource dataSource,
+            Clock clock,
+            io.micrometer.core.instrument.MeterRegistry meterRegistry) {
+        return new com.finapp.app.telemetry.AgedCountMetrics(
+                new com.finapp.reconciliation.JdbcAgedReadings(),
+                dataSource::getConnection,
+                clock,
+                meterRegistry);
+    }
+
+    /**
      * Park, unpark and the release primitive (`P8-TSK-010`, ADR-0070) — the reconciliation
      * posting path, over the ledger's own {@code PostingService}.
      */

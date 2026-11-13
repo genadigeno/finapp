@@ -206,6 +206,69 @@ groups:
           summary: "A LOW reconciliation break open for over fifteen days"
           description: "The oldest open LOW break has stood {{ $value | humanizeDuration }}. Follow up with GET /v1/operator/reconciliation/breaks. See OPERATIONS_RUNBOOK.md section 11.23."
 
+      # ---------------------------------------------------------------- newly aged, while one stands
+      # P16-TSK-029 (THREAT_MODEL.md section 6 item 42 (a), decided (i)). The age rules above read the OLDEST, so while one parked item
+      # stands they stay firing on it and a break or item that ages behind it raises nothing. Each rule here sits beside one of them:
+      # the count of what is past the same bound (AgedCountMetrics, its bounds held to the thresholds above by AgedCountMetricsTest)
+      # above its least over the last two hours, while that least was at least one - one stood throughout, so the first to age is
+      # the age rule's to raise, not this one's. A count that falls (a resolution) or stays raises nothing; one resolved and another
+      # aged within the window does. The window outlasts every for here, so each can hold its for; the alert stands until the rise
+      # leaves the window. Same severity and for as the age rule beside it.
+
+      - alert: BreakNewlyAgedCritical
+        # Aggregation: max() - a fleet-wide gauge every instance reads from the same database; a NaN instance is ignored
+        expr: max by (severity) (finapp_reconciliation_break_aged{severity="critical"}) > min_over_time(max by (severity) (finapp_reconciliation_break_aged{severity="critical"})[2h:1m]) and min_over_time(max by (severity) (finapp_reconciliation_break_aged{severity="critical"})[2h:1m]) >= 1
+        for: 1m
+        labels:
+          severity: page
+          break_severity: critical
+        annotations:
+          summary: "Another CRITICAL reconciliation break, while one already stands"
+          description: "{{ $value }} open CRITICAL breaks now, more than at any moment of the last two hours while one stood: a new one, behind the one BreakAgeCritical already holds. Follow up with GET /v1/operator/reconciliation/breaks. See OPERATIONS_RUNBOOK.md section 11.23."
+
+      - alert: BreakNewlyAgedHigh
+        # Aggregation: max() - a fleet-wide gauge every instance reads from the same database; a NaN instance is ignored
+        expr: max by (severity) (finapp_reconciliation_break_aged{severity="high"}) > min_over_time(max by (severity) (finapp_reconciliation_break_aged{severity="high"})[2h:1m]) and min_over_time(max by (severity) (finapp_reconciliation_break_aged{severity="high"})[2h:1m]) >= 1
+        for: 5m
+        labels:
+          severity: page
+          break_severity: high
+        annotations:
+          summary: "Another HIGH reconciliation break past a day, while one already stands"
+          description: "{{ $value }} open HIGH breaks are over a day old now, more than at any moment of the last two hours while one stood: a new one aged, behind the one BreakAgeHigh already holds. Follow up with GET /v1/operator/reconciliation/breaks. See OPERATIONS_RUNBOOK.md section 11.23."
+
+      - alert: BreakNewlyAgedMedium
+        # Aggregation: max() - a fleet-wide gauge every instance reads from the same database; a NaN instance is ignored
+        expr: max by (severity) (finapp_reconciliation_break_aged{severity="medium"}) > min_over_time(max by (severity) (finapp_reconciliation_break_aged{severity="medium"})[2h:1m]) and min_over_time(max by (severity) (finapp_reconciliation_break_aged{severity="medium"})[2h:1m]) >= 1
+        for: 15m
+        labels:
+          severity: ticket
+          break_severity: medium
+        annotations:
+          summary: "Another MEDIUM reconciliation break past five days, while one already stands"
+          description: "{{ $value }} open MEDIUM breaks are over five days old now, more than at any moment of the last two hours while one stood. Follow up with GET /v1/operator/reconciliation/breaks. See OPERATIONS_RUNBOOK.md section 11.23."
+
+      - alert: BreakNewlyAgedLow
+        # Aggregation: max() - a fleet-wide gauge every instance reads from the same database; a NaN instance is ignored
+        expr: max by (severity) (finapp_reconciliation_break_aged{severity="low"}) > min_over_time(max by (severity) (finapp_reconciliation_break_aged{severity="low"})[2h:1m]) and min_over_time(max by (severity) (finapp_reconciliation_break_aged{severity="low"})[2h:1m]) >= 1
+        for: 1h
+        labels:
+          severity: ticket
+          break_severity: low
+        annotations:
+          summary: "Another LOW reconciliation break past fifteen days, while one already stands"
+          description: "{{ $value }} open LOW breaks are over fifteen days old now, more than at any moment of the last two hours while one stood. Follow up with GET /v1/operator/reconciliation/breaks. See OPERATIONS_RUNBOOK.md section 11.23."
+
+      - alert: SuspenseItemNewlyAged
+        # Aggregation: max() - a fleet-wide gauge every instance reads from the same database; a NaN instance is ignored
+        expr: max(finapp_reconciliation_suspense_aged) > min_over_time(max(finapp_reconciliation_suspense_aged)[2h:1m]) and min_over_time(max(finapp_reconciliation_suspense_aged)[2h:1m]) >= 1
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Another suspense item past 30 days, while one already stands (INV-REC-05)"
+          description: "{{ $value }} suspense items are over 30 days old now, more than at any moment of the last two hours while one stood: a new one aged, behind the one SuspenseItemAged already holds. Follow up with GET /v1/operator/reports/reconciliation/suspense. See OPERATIONS_RUNBOOK.md section 11.23."
+
       # ---------------------------------------------------------------- the other gauges, unreadable
 
       - alert: ReconciliationGaugesUnreadable
@@ -214,13 +277,16 @@ groups:
         # instance's gauge refresher is behind (platform.yml's GaugesStale says which). While one is NaN its alert cannot
         # fire there; a CRITICAL break is unknown, not absent. Each reads 0 when nothing is open, NaN only when unread. Per
         # instance, each leg naming its series in a `gauge` label; max by (job, instance) also drops the break age's own
-        # `severity`, which the rule's label would override into four alerts of one label set.
+        # `severity`, which the rule's label would override into four alerts of one label set. P16-TSK-029: the break-age
+        # counts too, which the rise rules above compare, NaN together when their one reading fails.
         expr: >-
           label_replace(max by (job, instance) (finapp_reconciliation_run_age_seconds != finapp_reconciliation_run_age_seconds), "gauge", "finapp_reconciliation_run_age_seconds", "", "")
           or label_replace(max by (job, instance) (finapp_settlement_file_age != finapp_settlement_file_age), "gauge", "finapp_settlement_file_age", "", "")
           or label_replace(max by (job, instance) (finapp_reconciliation_expectation_overdue != finapp_reconciliation_expectation_overdue), "gauge", "finapp_reconciliation_expectation_overdue", "", "")
           or label_replace(max by (job, instance) (finapp_reconciliation_suspense_age_seconds != finapp_reconciliation_suspense_age_seconds), "gauge", "finapp_reconciliation_suspense_age_seconds", "", "")
           or label_replace(max by (job, instance) (finapp_reconciliation_break_age != finapp_reconciliation_break_age), "gauge", "finapp_reconciliation_break_age", "", "")
+          or label_replace(max by (job, instance) (finapp_reconciliation_break_aged != finapp_reconciliation_break_aged), "gauge", "finapp_reconciliation_break_aged", "", "")
+          or label_replace(max by (job, instance) (finapp_reconciliation_suspense_aged != finapp_reconciliation_suspense_aged), "gauge", "finapp_reconciliation_suspense_aged", "", "")
         for: 10m
         labels:
           severity: ticket
