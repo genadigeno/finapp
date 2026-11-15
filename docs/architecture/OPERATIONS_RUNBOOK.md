@@ -3284,6 +3284,7 @@ latest; the run, as its record names it.
 | §11.64 | `platform` | 0 | 11 | 11 | — | — | — | — | Phase 16 drill |
 | §11.65 | `platform` | 0 | 4 | 4 | — | — | — | — | no account |
 | §11.66 | `platform`, `payments`, `reconciliation` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
+| §11.67 | `platform` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -4606,6 +4607,59 @@ its recovery and census still run. Exactly-once is not claimed: a pass shows eff
   the page.
 - **A scenario that could not run** (`??`): its reason is the line; nothing is claimed for it.
 - **The probe**: the inbox's dedupe turned off on a throwaway branch must turn F05 red with a second effect counted (owed under PI-025).
+
+### 11.67 The integrated soak: eight hours at ten replicas under a schedule of faults, and reading what it leaves (`P16-TST-001`)
+
+*(Written by `P16-TST-001`, 2026-11-14, from `infra/scripts/kind-rehearsal/experiments.sh`'s soak section, `load.sh`'s declared fault
+window and `load/integrated-soak.json`. Not run: by the owner's word of 2026-11-13 the run is owed (`POSTPONED_ISSUES.md` PI-025;
+`RESILIENCE_EXPERIMENTS.md` E90), and no soak's verdict is claimed here. Each procedure below is read, not rehearsed: section 11.38's
+reason "Phase 16 drill".)*
+
+**What the soak is.** Phase 16's substance in one run (owner decision C1): the target's mix held eight hours at the engineering workload,
+at ten replicas, with faults drawn from the register injected during it and the census sampled every 30 s throughout. Every scheduled
+fault is its own experiment of section 11.46, run under the load with its own criteria, security probe and census through its window;
+after each the fleet must be back at its ten. It is the machine's endurance as much as the platform's: it needs the room the ten-instance
+runs need (section 11.58) for eight hours.
+
+#### Running the soak
+
+1. `REHEARSAL_SCOPE=experiments REHEARSAL_SOAK=1 REHEARSAL_EXPERIMENTS_REPLICAS=10 infra/scripts/kind-rehearsal.sh`. The profile is
+   `integrated-soak` (soak.json's mix without the load scope's own database readings, which are E39's); naming another, or naming
+   `REHEARSAL_EXPERIMENTS`, is refused before anything is built.
+2. The schedule is `REHEARSAL_SOAK_SCHEDULE`, minute:experiment after the load began, ascending; its default
+   (`SOAK_SCHEDULE_DEFAULT`) kills a replica each hour (E01 at 45, 105, 165, 225, 285, 345, 405), loses a broker (E08 at 150), rolls the
+   fleet (E82 at 240), takes a provider away (E17 at 315) and fails the database over last (E05 at 440). The soak admits E01, E05, E08,
+   E17 and E82; E05 must be the last fault (it leaves one server and no standby), and the last fault no later than minute 450.
+3. The probe: add `REHEARSAL_PROBE=soak-unbalanced`. At minute 300 one journal line is raised by one minor unit as the superuser with
+   replication role, behind the safety boundary's context check; the next sample's trial balance must fail the soak. A run with the
+   probe is red by design and proves nothing else: run it apart from the soak whose record counts.
+
+#### Reading the soak's record
+
+- `load/samples.tsv`: every 30-second sample. `OUTAGE` appears only inside E05's declared window and only for a sample whose census
+  could not be read; a census that was read and failed is `FAIL` there too. `experiments/soak/windows.tsv` holds the window, its outage
+  samples and the first sample after it, which must be `PASS`.
+- `experiments/soak/schedule.tsv`: each scheduled entry, its planned minute, when it started and ended, and its verdict;
+  `experiments/<id>/record.tsv` each fault's own record (an experiment scheduled twice keeps its last run's directory).
+- `experiments/soak/heap-lag.tsv` and `tables.tsv`: the soak's own samples every 15 minutes - the kind Prometheus keeps six hours, so the
+  first hour's figures exist only here - and `growth.tsv`, each named table's bytes per journal entry in the first and last thirds.
+- The end: the heap after collection in the last hour at most 1.25 times the first hour's and at most 0.8 of the largest heap; every
+  table's growth per entry at most 1.5 times its first third's; the inbox's lag after the last fault at most 1000 (`InboxLagHigh`'s
+  threshold), and the full census after the load. A bound with nothing to read fails the soak.
+
+#### When the soak is red
+
+- **A census sample failed**: the sample's line names the clause. Outside the window, or inside it with the census read, it is the
+  platform's: section 11.66's reading of (a) and (b) applies, and the soak stays red until the defect's task lands.
+- **A scheduled fault FAILED**: its own section says how to read it (11.46 for E01, 11.51 for E08, 11.53 for E17, 11.62 for E82, 11.54
+  for E05). A fleet not back at ten after it is the same finding as E01's replacement not ready.
+- **The heap grew past its bound**: compare `heap-lag.tsv` hour by hour. A steady climb across replacements (E01 and E82 replace pods) is a
+  leak in what every replica builds; take a heap dump of a replica of the last hour before the cluster goes (keep it with
+  `REHEARSAL_KEEP`), and open a task.
+- **A table's growth per entry rose**: `growth.tsv` names it. A table that grows faster than the work it records holds something the work
+  does not explain - a retry's leftovers, an unswept record, a duplicate. A task of its own; never a retention change to make it pass.
+- **The lag stayed high after the last fault**: a group that did not catch up within the load's last half hour (section 11.1.1's lag
+  reading). Read which module's lag in `heap-lag.tsv`'s neighbours (Prometheus's own series, for the last six hours).
 
 ### 11.33 Rotations rehearsed on kind: running them, reading them, the last record (`P15-TSK-020`)
 

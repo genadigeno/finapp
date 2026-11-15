@@ -832,6 +832,13 @@ commit and the date; do not delete the entry.
     connections releasing one ledger hold at a barrier), written and compiled, is owed to PI-023's pass with the database tier, which the owner
     asked this task not to run. Nothing ran before the word. What ran instead, on 2026-11-14, without a cluster: `sh -n` over the changed
     scripts and `ScenarioExperimentsContractTest` with its two probes (`MUTATION_TESTING.md` §2).
+  - **`P16-TST-001`** (the integrated soak; `OPERATIONS_RUNBOOK.md` §11.67, whose record is empty; `RESILIENCE_EXPERIMENTS.md` E90): **E90**, the
+    soak at ten replicas (`REHEARSAL_SCOPE=experiments REHEARSAL_SOAK=1 REHEARSAL_EXPERIMENTS_REPLICAS=10`), eight hours of the integrated-soak
+    profile under the default schedule (E01 hourly, E08, E82, E17, E05 last inside its declared fault window), its heap, tables and lag judged
+    at its end; and **its probe** apart (`REHEARSAL_PROBE=soak-unbalanced`, one journal line raised by one minor unit at minute 300, which the
+    next sample's trial balance must refuse), with its `MUTATION_TESTING.md` §2 row then. Nothing ran before the word. What ran instead, on
+    2026-11-14, without a cluster: `sh -n` over the changed scripts, the profile parsed as JSON and compared with soak.json, and
+    `SoakContractTest` with its two probes (`MUTATION_TESTING.md` §2).
 
 ## PI-026 — The first real environment's managed-service decisions: the audit archive's bucket and read door, the restore's release and window
 

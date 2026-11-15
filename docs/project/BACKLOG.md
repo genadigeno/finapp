@@ -31125,7 +31125,7 @@ on none:
 - **Operational documentation**: the readiness review's Phase 16 addendum.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TST-001 — The integrated soak: ten replicas, the engineering workload, faults on a schedule** — `READY` (2026-11-14; marked by `P16-TSK-027`'s completion gate, the one next task its gate names: every dependency, `-015`, `-025` and `-027`, `COMPLETE`) *(read "`PLANNED`" until then)*
+**P16-TST-001 — The integrated soak: ten replicas, the engineering workload, faults on a schedule** — `COMPLETE` (2026-11-14; designed, built and gated straight through on the owner's "Start next task, design then implement then completion", branch `P16-TST-001` from `9369f9f1` (`P16-TSK-027`, PR #21, unmerged); no migration, no production code, no ADR; **built and contract-tested, the run owed under `POSTPONED_ISSUES.md` PI-025**; marks no task `READY`: none is eligible without the owner's word) *(read "`READY` (2026-11-14; marked by `P16-TSK-027`'s completion gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: the phase's substance in one run, not postponed (C1): an 8-hour soak at ten replicas at the engineering workload,
   with a schedule of faults drawn from the register injected during it (a pod kill each hour, a broker loss, a database failover,
   a rolling deploy, a provider outage) and the invariants sampled throughout.
@@ -31144,6 +31144,34 @@ on none:
   their bounds; every fault recovered within its experiment's criteria.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`.
 - **Operational documentation**: the soak's record in the register.
+- **As built (2026-11-14, gate `COMPLETE`; no migration, no production code, no ADR; the run owed under PI-025).** **The soak**:
+  `REHEARSAL_SOAK=1` in the experiments scope at ten replicas (`REHEARSAL_EXPERIMENTS_REPLICAS=10`), beside `load/integrated-soak.json` -
+  soak.json's mix, stages and eight hours without its `soak` flag, whose database readings are the load scope's own (E39) and which the
+  experiments refuse beside them - and a schedule of faults (`REHEARSAL_SOAK_SCHEDULE`, minute:experiment; default E01 at 45, 105, 165, 225,
+  285, 345 and 405, E08 at 150, E82 at 240, E17 at 315, E05 at 440), each its own experiment run by `experiment_run` under the load with its
+  criteria, security probe and window census, the fleet required back at ten within 900 s after each, a failed sample between faults failing
+  the soak. `soak_resolve` refuses, before anything is built: another scope or count, another profile, `REHEARSAL_EXPERIMENTS` beside the
+  schedule, minutes out of order, an experiment the soak does not admit (it admits E01, E05, E08, E17 and E82, each reading three or more
+  ready replicas or the run's count, added to `EXPERIMENTS_AT_A_COUNT` with the soak alone), a fault after E05, a fault later than minute
+  450, and the probe on a scheduled minute or without the soak. **`P16-TSK-022`'s routed note, built**: a declared fault window in
+  `load.sh`'s `load_sample` - while `$WORK/load-fault-window` is open, a sample whose census could not be read is `OUTAGE`, recorded and
+  not failed, the load not stopped; a census read with a FAIL stays FAIL; E05 runs inside it and the first sample after it must PASS.
+  **The bounds**, read by the soak's own sampler every 15 minutes because the kind Prometheus keeps six hours: the fleet's live data after
+  collection in the last hour at most 1.25 x the first hour's and 0.8 x the largest heap; each named table's bytes per journal entry in the
+  last third at most 1.5 x the first third's; the inbox's lag after the last fault at most 1000 (InboxLagHigh's threshold); a bound with
+  nothing to read fails the soak. **The probe** (`REHEARSAL_PROBE=soak-unbalanced`): one journal line raised by one minor unit at minute
+  300 as the superuser with replication role, behind the safety boundary's context check; the trial balance is a clause sampled every 30
+  s, so the next sample fails the soak. `SoakContractTest` (6 members) holds the text, the default schedule checked against the soak's own
+  rules; two probes recorded (`MUTATION_TESTING.md` §2). Register E90, runbook §11.67 and its count row, PI-025's owed run and probe.
+  **Each criterion**: the soak completes with zero census failures; heap, table growth and lag within bounds; every fault recovered within
+  its experiment's criteria - built, each judged by the text above, the run owed and nothing claimed. **For the first run**: the machine must
+  carry ten replicas eight hours; `jvm_gc_live_data_size_bytes` is Micrometer's default JVM metric and was not read from a live replica here.
+  **Multi-instance**: `PASS` - nothing runs here; the soak is ten replicas throughout. **Not run**: any cluster. **The gate's finding, fixed**:
+  every read of the database named `PG_POD` as it stood in the shell that ran it, and the load's census sampler and the soak's sampler are
+  forked before E05 promotes the standby, so after the failover they would have asked the fenced server for the rest of the soak and no sample
+  after the window could ever pass - the soak red by construction. E05's move now also writes the promoted pod to `$WORK/primary`, and
+  `psql_query` and `pg_admin` read it through `pg_primary`; `ExperimentsRehearsalContractTest#theReadsFollowThePrimary` (`P16-TSK-022`'s)
+  widened with a dated note, `SoakContractTest` holding it; probe P3.
 - **Risk**: High (machine endurance). **Cx**: L.
 - *Routed from `P16-TSK-022` (2026-11-13):* the failover drill (E05, `OPERATIONS_RUNBOOK.md` §11.54) runs under the experiments
   scope's retrying workload, not a k6 profile: the load harness's sampler stops the load at any unreadable sample, and a database

@@ -472,9 +472,16 @@ class ExperimentsRehearsalContractTest {
     @Test
     @DisplayName("every read of the database follows the primary: the harness's reads name a pod a failover moves, and E05 moves it")
     void theReadsFollowThePrimary() {
+        // Until 2026-11-14 the first assertion read psql_query exec'ing into "$PG_POD" itself. P16-TST-001's soak fails the database over
+        // under the load, whose census sampler was forked before E05 moved PG_POD, so every read now names the pod pg_primary answers:
+        // the file E05's move writes for every background reader, or PG_POD.
         assertThat(harness).as("one name for the pod every read uses, the test-only server's until a failover")
-                .contains("\nPG_POD=finapp-postgres-0\n").contains("kube -n finapp exec -i \"$PG_POD\" -c postgres -- psql -q -X -A -t -U finapp -d finapp \"$@\"");
+                .contains("\nPG_POD=finapp-postgres-0\n").contains("kube -n finapp exec -i \"$(pg_primary)\" -c postgres -- psql -q -X -A -t -U finapp -d finapp \"$@\"");
         assertThat(function(harness, "psql_query")).doesNotContain("finapp-postgres-0");
+        assertThat(function(harness, "pg_primary")).as("a reader forked before a failover reads the primary the move wrote")
+                .contains("[ -s \"$WORK/primary\" ]").contains("cat \"$WORK/primary\"").contains("printf '%s\\n' \"$PG_POD\"");
+        assertThat(function("E05_observe")).as("E05's move written for every background reader of the run")
+                .contains("printf '%s\\n' \"$PG_POD\" > \"$WORK/primary\"");
         String observe = function("E05_observe");
         assertThat(observe.indexOf("PG_POD=finapp-postgres-standby-0")).as("the reads moved with the Service, after the promotion")
                 .isGreaterThan(observe.indexOf("kube -n finapp patch service finapp-postgres")).isGreaterThan(observe.indexOf("SELECT pg_promote(true, 60)"));
