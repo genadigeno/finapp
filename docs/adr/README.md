@@ -186,6 +186,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0148](ADR-0148-the-objectives-judged-under-load-and-break-age-counts.md) | The objectives judged under load, never recalibrated by a run; a real burn by shedding; the break-age counts | Proposed | 16 | Platform observability · Reconciliation |
 | [0149](ADR-0149-the-disaster-recovery-plan-what-survives-what-is-regenerated.md) | The disaster-recovery plan: what survives outside the environment, what is regenerated, and the recovered platform proven before any role logs in | Proposed | 16 | Platform · every module (recovered) · Ledger · Reconciliation |
 | [0150](ADR-0150-the-recovery-regions-standing-site.md) | The recovery region's standing site: the database's region copy, the rings replicated under the region's own key, no multi-region key, and promotion only after the fence | Proposed | 16 | Platform · infrastructure (Terraform) · Ledger (one writer) |
+| [0151](ADR-0151-no-module-leaves-the-monolith-the-extraction-evaluation.md) | No module leaves the monolith: the service-extraction evaluation, each criterion read against the evidence, and what would reopen it | Proposed | 16 | Every module (the deployment topology) · Risk · Reconciliation · Payment Methods |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch
@@ -263,7 +264,8 @@ ADR-0124 (observability, SLOs and error budgets) and ADR-0125 (configuration and
 `Proposed`, from `PHASE_15_PLAN.md`; the next free number is ADR-0126.)*
 
 *(The Phase 16 row stays: no service extraction or partitioning decision is taken at the transition, which leaves each to the
-task whose measurement justifies it (`PHASE_16_PLAN.md` §6.5, §24; `P16-TSK-012`, `P16-TSK-030`). The Phase 15 → 16 transition
+task whose measurement justifies it (`PHASE_16_PLAN.md` §6.5, §24; `P16-TSK-012`, `P16-TSK-030`). *(Each taken since: ADR-0142, no table
+partitioned and no replica routed at the target; ADR-0151 (`P16-TSK-030`, 2026-11-15), no module extracted.)* The Phase 15 → 16 transition
 (2026-11-12) wrote ADR-0126 (the workload model and load testing), ADR-0127 (the failure-injection method), ADR-0128 (recovery
 objectives and the post-recovery gate) and ADR-0129 (availability and the multi-region stance), all `Proposed`, from
 `PHASE_16_PLAN.md`; the next free number is ADR-0130.)*
@@ -273,6 +275,7 @@ objectives and the post-recovery gate) and ADR-0129 (availability and the multi-
 *(`P16-TSK-028`, 2026-11-13, wrote ADR-0147 (security under scale and failure), `Proposed`, the number the coordinator reserved for it in wave F.)*
 *(`P16-TSK-025`, 2026-11-13, wrote ADR-0149 (the disaster-recovery plan), `Proposed`, the number the coordinator reserved for it in wave F.)*
 *(`P16-TSK-026`, 2026-11-14, wrote ADR-0150 (the recovery region's standing site), `Proposed`, the next free number; wave G reserved none.)*
+*(`P16-TSK-030`, 2026-11-15, wrote ADR-0151 (no module leaves the monolith: the service-extraction evaluation), `Proposed`, the next free number.)*
 *(2026-11-13: the partitioning half of the Phase 16 row is decided by
 ADR-0142, no table partitioned, the decision derived and its overturning measurement built and owed under `POSTPONED_ISSUES.md`
 PI-025. The row stays for the service-extraction decision.)*

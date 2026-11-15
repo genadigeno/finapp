@@ -31113,7 +31113,7 @@ on none:
   reduced to the columns they read, the binds typed as the driver sends them, the index used.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-030 — The service-extraction evaluation (ADR-0001's revisit)** — `READY` (2026-11-15; marked by `P15-REM-001`'s completion gate: `-008`, `-014` and `P15-REM-001` `COMPLETE`) *(read "`PLANNED`" until then)*
+**P16-TSK-030 — The service-extraction evaluation (ADR-0001's revisit)** — `COMPLETE` (2026-11-15; designed, written and gated straight through on the owner's "Start P16-TSK-030", branch `P16-TSK-030` from `5b9bd5ae` (`P15-REM-001`, unmerged); ADR-0151 `Proposed`; documents only, no migration, no code; marks `P16-TSK-031` `READY`) *(read "`READY` (2026-11-15; marked by `P15-REM-001`'s completion gate: `-008`, `-014` and `P15-REM-001` `COMPLETE`)" and before that "`PLANNED`" until its gate)*
 - **Objective**: decide from the phase's measurements whether any module should leave the monolith. This covers the risk module's M3
   split triggers, the reconciliation intake rules held in `app`, and `DECISIONS.md` §Deferred "Service extraction". The decision is
   recorded as an ADR, which may say "none".
@@ -31132,9 +31132,24 @@ on none:
 - **Measurable acceptance criteria**: an ADR with its evidence; each debt row re-ruled.
 - **Definition of done**: `DOD-ARCH`, `DOD-DOC`.
 - **Operational documentation**: none.
+- **As built (2026-11-15, gate `COMPLETE`; ADR-0151 `Proposed`; documents only).** **No module leaves the monolith**: every module
+  read against `MODULE_ARCHITECTURE.md` §7's four criteria on the evidence on record. Measured (`CAPACITY_MODEL.md` §3.4, two `kind` runs at
+  three replicas): the first limit is the single database writer's CPU, which an extraction does not divide; no money movement's cost
+  belongs to one module (a transfer is `transfers`, `accounts`, `ledger`, `risk` and `platform` in one transaction, 138 statements); the
+  one nearly single-module cost, sign-in's hash, is horizontal replica CPU. `paymentmethods`, §7's likeliest, holds structurally no card
+  data, so no PCI scope; no module carries an isolation regime of its own; one release train, one owner. ADR-0151 names the atomicity each
+  extraction would cost (decision 2), answers the writer by ADR-0134 and ADR-0142 rather than by an extraction or a database split
+  (decision 3), and lists what would reopen it (decision 4: card data entering the platform, a jurisdiction demanding AML isolation, a
+  measured module-specific limit while the database has headroom, M3's trigger 2 measured, a second team or a release held). **Each debt
+  row re-ruled**: risk stays one module in the monolith, the row kept for M3's trigger 2 alone (PI-004, the production alert); the
+  reconciliation intake joins stay in `app`, re-owned to an extraction of `settlement` or `reconciliation`; `DECISIONS.md` §Deferred
+  "Service extraction" decided. Per-service identity and mTLS stay deferred (`SECRET_MANAGEMENT.md`); ADR-0001's "§5" corrected to §7 with
+  its Follow-up noted; dated notes on ADR-0107, `MODULE_ARCHITECTURE.md` §7 and M3, `SYSTEM_ARCHITECTURE.md` and `PHASE_16_PLAN.md` §17.
+  **Multi-instance**: `PASS` - nothing runs. **The evidence's limit**, stated in the ADR: two runs at three replicas; the ten-replica,
+  contention and soak runs owed (PI-025) and risk's latency beside the sweep unread (PI-004), each a reopening trigger when it runs.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-031 — The distributed-system audit and the capacity and operational review** — `PLANNED`
+**P16-TSK-031 — The distributed-system audit and the capacity and operational review** — `READY` (2026-11-15; marked by `P16-TSK-030`'s completion gate: `-002`, `-004`, `-010`…`-012`, `-015`, `-017` and `-025`…`-030` `COMPLETE`) *(read "`PLANNED`" until then)*
 - **Objective**: `PHASE_16_PLAN.md` §16 at ten, cited answer by answer. The capacity model completed. `PRODUCTION_READINESS.md`'s
   Phase 16 cells re-read with the evidence. The operational review of every new procedure.
 - **Affected components**: documents; `DISTRIBUTED_EXECUTION.md`.

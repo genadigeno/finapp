@@ -862,7 +862,7 @@ violation of the multi-instance rule, it raises a remediation task and the exit 
 | `CURRENT_STATE.md` debt rows owned by Phase 16: audit archival, idempotency sweep and the unused `DELETE`; session rows; posting once-ness's second rank (#61) | The owner, 2026-11-08 and -09 | `-010`, `-011` |
 | Debt rows: the idempotency claim's lock order (#52); advisory namespace 3 (#53); `settlement.source FOR UPDATE`; the rescreening census; risk's whole-day proofs; the lending capital row and L6 across BNPL's waits | C15, 2026-11-08; the Phase 12 → 13 gate | `-008` (measured; an ADR if a change is needed) |
 | Debt rows: a poisoned row delaying a sweep; a rematch residual faulting every tick; a corrupt card attempt id | C15, 2026-11-08 | `-017` |
-| Debt rows: the reconciliation intake rules in `app`; the risk module's extraction decision and M3's split triggers; `DECISIONS.md` §Deferred "Service extraction" | C15; `P13-DOC-001` | `-030` |
+| Debt rows: the reconciliation intake rules in `app`; the risk module's extraction decision and M3's split triggers; `DECISIONS.md` §Deferred "Service extraction" | C15; `P13-DOC-001` | `-030` *(each ruled 2026-11-15, ADR-0151)* |
 | `DECISIONS.md` §Deferred: automatic rail availability from observed failure rates | C15, 2026-11-08 | `-018` (C12) |
 | `DECISIONS.md` §Deferred: capital tranches, "if a measurement demands it" | Phase 11 review | `-008` |
 

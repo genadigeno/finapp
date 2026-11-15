@@ -172,6 +172,9 @@ reviews; deferring the second trigger's measurement under PI-004 is the recommen
 (`PHASE_13_PLAN.md` §1.2 item 76). Two couplings the measurement must read are named: T-eval's case opening waits,
 untimed, on a monitoring claim holding the party's case (item 95), and a T-eval queued on R2a past its 250 ms budget
 becomes a fail-safe judged by the amount band alone (item 77).)*
+*(`P16-TSK-030`, 2026-11-15, ADR-0151 decision 5: **`risk` stays one module, in the monolith.** Trigger 1 has not fired - the
+regulatory report's retention is a class of the platform's policy, kept per table inside `risk`; trigger 2 stays unmeasured, with
+PI-004's storm and `RiskEvaluationLatencyOverBudget`, and its first answer would be a split into modules, not an extraction.)*
 
 **M4 — Audit lives in `platform`.** The audit trail is cross-cutting mechanism, not a domain
 (ADR-0010): every module writes to it, in the caller's transaction. A separate module would
@@ -1565,6 +1568,14 @@ its callers is the primary architectural asset of this design.
 `paymentmethods` is the module most likely to be extracted, on criterion 2: PCI scope is the
 one isolation boundary that is far more expensive to introduce after the fact, which is why
 it is a separate module from the outset (§3, M7).
+
+*(Evaluated by `P16-TSK-030`, 2026-11-15, ADR-0151, `Proposed`: **no module is extracted.** On the evidence on record - two `kind` runs at
+three replicas (`CAPACITY_MODEL.md` §3.4) - the first limit is the single database writer's CPU, which an extraction does not divide, and
+every money movement's cost spans several modules, so none scales apart (criterion 1). `paymentmethods` holds structurally no card data, so
+criterion 2 has no PCI scope to isolate; no other module carries a regime of its own; one release train and one owner leave criteria 3
+and 4 unmet. ADR-0151 names the atomicity each extraction would cost and, in its decision 4, what would reopen the question: card data
+entering the platform, a jurisdiction demanding AML isolation, a measured module-specific limit while the database has headroom, a
+second team or a release held by the shared train.)*
 
 ---
 

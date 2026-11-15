@@ -1476,6 +1476,14 @@ the region's own key. One residency rule covers both regions. A regional promoti
 returns is never promoted back. Rebuilding the platform there at need is `THREAT_MODEL.md` §6 item 72. →
 [ADR-0150](../adr/ADR-0150-the-recovery-regions-standing-site.md)
 
+**No module leaves the monolith** (`P16-TSK-030`, 2026-11-15, `Proposed`). ADR-0001's revisit, after `P15-REM-001` made the boundaries hold:
+every module read against `MODULE_ARCHITECTURE.md` §7's four criteria on Phase 16's evidence. Measured on `kind` at three replicas, the first
+limit is the single database writer's CPU, and no money movement's cost belongs to one module, so no module scales apart and the saturated
+resource is the one an extraction does not divide; `paymentmethods` holds no card data, so no PCI scope; `risk` stays one module with M3's
+triggers unfired or unmeasured; one release train, one owner. Each extraction's lost atomicity is named; the writer is answered by
+ADR-0134 and ADR-0142, never first by an extraction or a database split. What would reopen it is decision 4. →
+[ADR-0151](../adr/ADR-0151-no-module-leaves-the-monolith-the-extraction-evaluation.md)
+
 **Security under scale and failure (proposed).** Every check a request meets before its handler reads PostgreSQL and fails closed when
 it cannot (a failure, never a pass and never a refusal nobody decided), held without a database. Every experiment carries a security
 probe: every replica asked directly while the fault is on, a protected request answered without its check failing the experiment, held
@@ -1561,7 +1569,7 @@ Recorded so these are not mistaken for oversights.
 
 | Deferred | Until | Why |
 |----------|-------|-----|
-| Service extraction | Phase 16 | Requires measurement; anticipating it costs atomicity now (ADR-0001) *(Planned by the Phase 15 → 16 transition (2026-11-12): `P16-TSK-030` evaluates it by measurement after `P15-REM-001`; an extraction, if justified, is an ADR and a programme of its own, never built in Phase 16 - `PHASE_16_PLAN.md` §1.3.)* |
+| Service extraction | ~~Phase 16~~ **Decided: none** (ADR-0151, `P16-TSK-030`, 2026-11-15, `Proposed`) | Requires measurement; anticipating it costs atomicity now (ADR-0001) *(Planned by the Phase 15 → 16 transition (2026-11-12): `P16-TSK-030` evaluates it by measurement after `P15-REM-001`; an extraction, if justified, is an ADR and a programme of its own, never built in Phase 16 - `PHASE_16_PLAN.md` §1.3.)* *(**Evaluated** by `P16-TSK-030`, 2026-11-15: no module meets any of `MODULE_ARCHITECTURE.md` §7's four criteria on the evidence on record - the one resource measured saturating is the shared database writer, which an extraction does not divide; the reopening triggers are ADR-0151's decision 4, the owed runs (PI-025, PI-004) read against them.)* |
 | Kubernetes and Terraform | Phase 15 *(**C15** (`P15-TSK-002`, 2026-11-08): this phase - `P15-TSK-009`…`-016`)* | Deployment topology should follow a proven architecture, not precede it *(Planned by the Phase 14 → 15 transition (2026-11-07): ADR-0120, ADR-0121 (`Proposed`), `P15-TSK-009`…`-016`; `PHASE_15_PLAN.md` §6, §7.)* |
 | Real provider connectivity | Never | Adapters plus simulation give the same design pressure without the risk |
 | Jurisdiction-specific compliance | Per phase | Jurisdiction-neutral core; specifics behind policy/configuration/adapters |

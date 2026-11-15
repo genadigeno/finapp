@@ -25,7 +25,8 @@ Build the platform as a **single deployable modular monolith** over one PostgreS
 with strictly enforced module boundaries (ADR-0006) and schema-per-module data ownership.
 
 Services are extracted only when a specific module demonstrates a measured need, recorded in
-a superseding ADR, against the criteria in `MODULE_ARCHITECTURE.md` §5.
+a superseding ADR, against the criteria in `MODULE_ARCHITECTURE.md` §7 *(read "§5" until `P16-TSK-030`, 2026-11-15: the criteria
+have been §7 since the document's sections were numbered; §5 is state ownership)*.
 
 ## Alternatives Considered
 
@@ -85,4 +86,10 @@ compensation logic.
 ## Follow-up
 
 Revisit at Phase 16 with load and capacity measurements. Any extraction requires a
-superseding ADR citing the evidence and the criterion from `MODULE_ARCHITECTURE.md` §5.
+superseding ADR citing the evidence and the criterion from `MODULE_ARCHITECTURE.md` §7 *(read "§5" until `P16-TSK-030`)*.
+
+*(Revisited by `P16-TSK-030`, 2026-11-15, [ADR-0151](ADR-0151-no-module-leaves-the-monolith-the-extraction-evaluation.md), `Proposed`:
+**no module is extracted**, and this ADR stands unsuperseded. Measured on `kind` at three replicas (`CAPACITY_MODEL.md` §3.4), the first
+limit is the single database writer's CPU, which an extraction does not divide, and no money movement's cost belongs to one module; no
+module meets an isolation, cadence or ownership criterion - `paymentmethods` holds no card data, the trigger this ADR names. ADR-0151
+decision 4 lists what would reopen it.)*
