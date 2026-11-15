@@ -362,6 +362,70 @@ class HoldDatabaseTest {
         }
     }
 
+    /**
+     * {@code PHASE_16_PLAN.md} §13 scenario 8's gap, closed by a test where it is cheaper than an experiment ({@code P16-TSK-027}): until
+     * this case a ledger hold's release was tested only sequentially ({@link #releaseRestoresAvailabilityExactly}). Ten instances, each its
+     * own connection, release one hold at once: exactly one release acts, the other nine converge on it, and availability is restored once.
+     */
+    @Test
+    @DisplayName("ten concurrent releases of one hold release it once: one act, one record, one event, availability restored exactly once")
+    void tenConcurrentReleasesOfOneHoldReleaseOnce() throws Exception {
+        Wallet wallet = fundedWallet(1000);
+        Hold held;
+        long auditBefore;
+        long eventsBefore;
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope actor = SecurityContext.enter(wallet.actor());
+                CorrelationContext.Scope flow = flow()) {
+            app.setAutoCommit(false);
+            held = holdService().place(app, wallet.account().id(), Money.ofMinorUnits(600, USD));
+            app.commit();
+            assertThat(holdsMinorOf(app, wallet.account())).isEqualTo(600);
+            auditBefore = auditRowsFor(app, "ledger.HoldReleased");
+            eventsBefore = eventRowsFor(app, "ledger.HoldReleased");
+        }
+
+        int instances = 10;
+        CyclicBarrier start = new CyclicBarrier(instances);
+        ExecutorService pool = Executors.newFixedThreadPool(instances);
+        int acted = 0;
+        try {
+            List<Callable<Boolean>> releases = new ArrayList<>();
+            for (int i = 0; i < instances; i++) {
+                releases.add(
+                        () -> {
+                            try (Connection own = DatabaseRoles.application();
+                                    SecurityContext.Scope actor = SecurityContext.enter(wallet.actor());
+                                    CorrelationContext.Scope flow = flow()) {
+                                own.setAutoCommit(false);
+                                start.await();
+                                HoldService.Release release = holdService().release(own, held.id()).orElseThrow();
+                                own.commit();
+                                assertThat(release.hold().status()).isEqualTo(HoldStatus.RELEASED);
+                                return release.released();
+                            }
+                        });
+            }
+            for (Future<Boolean> outcome : pool.invokeAll(releases)) {
+                if (outcome.get(60, TimeUnit.SECONDS)) {
+                    acted++;
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+
+        assertThat(acted).as("exactly one release acts; the other nine converge on it (INV-BAL-04, INV-CON-01)").isEqualTo(1);
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(holdsMinorOf(app, wallet.account()))
+                    .as("availability restored exactly once: no second decrement below the hold's own amount")
+                    .isZero();
+            assertThat(activeHoldRowsFor(app, wallet.account())).isZero();
+            assertThat(auditRowsFor(app, "ledger.HoldReleased")).as("one release recorded (INV-AUD-01)").isEqualTo(auditBefore + 1);
+            assertThat(eventRowsFor(app, "ledger.HoldReleased")).as("one release announced (INV-EVT-01)").isEqualTo(eventsBefore + 1);
+        }
+    }
+
     @Test
     @DisplayName("a crash mid-placement is all-or-nothing: the rollback leaves no trace")
     void aCrashMidPlacementIsAllOrNothing() throws Exception {

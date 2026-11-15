@@ -3283,6 +3283,7 @@ latest; the run, as its record names it.
 | §11.63 | `platform`, `payments`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.64 | `platform` | 0 | 11 | 11 | — | — | — | — | Phase 16 drill |
 | §11.65 | `platform` | 0 | 4 | 4 | — | — | — | — | no account |
+| §11.66 | `platform`, `payments`, `reconciliation` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -4546,6 +4547,65 @@ recorded in the incident with its actor and time:
    against the recovered books, raised and explained as section 11.35 says, never merged into the journal.
 4. Retire the returned region's database only after the incident's lead has recorded that every break it explains is raised. A later return
    to that region is a new recovery site built from code, never the old database promoted.
+
+### 11.66 Financial correctness under failure: the fifteen scenarios, their seven checks, and what a person does when one is red (`P16-TSK-027`)
+
+*(Written by `P16-TSK-027`, 2026-11-14, from `infra/scripts/kind-rehearsal/experiments.sh`'s scenario section (F01 to F15) and
+`RESILIENCE_EXPERIMENTS.md` §4. Not run: by the owner's word of 2026-11-13 every run is owed (`POSTPONED_ISSUES.md` PI-025), and no
+scenario's verdict is claimed here. Each procedure below is read, not rehearsed: section 11.38's reason "Phase 16 drill".)*
+
+**What a scenario is.** One of `PHASE_16_PLAN.md` §13's fifteen failures, driven on `kind` against the deployment under the
+demonstration workload (the engineering workload for F07, F08 and F14, at ten replicas), as an experiment of its own: it runs through
+`experiment_run`, so it carries the security probe, the safety boundary and the census like every experiment of section 11.46. What
+makes it a scenario is that it counts **the seven checks**, each recorded in `experiments/<id>/seven-checks.tsv` with its evidence:
+(a) one effect per key, (b) no money created or destroyed, (c) no history changed, (d) no evidence lost, (e) a re-run converges,
+(f) a same-key retry answers the stored result, (g) a planted discrepancy raised as a break. A failed check makes the scenario `FAILED`;
+its recovery and census still run. Exactly-once is not claimed: a pass shows effectively-once effects, counted.
+
+#### Running the scenarios
+
+1. Every scenario at three replicas but the three at ten, one run at a time, F11 last (it leaves one database server and no standby, as
+   E05 does): `REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="F01 F02 F03 F04 F05 F09 F10 F12 F13 F15 F11" infra/scripts/kind-rehearsal.sh`.
+2. The three at ten, under the engineering workload: `REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS_REPLICAS=10
+   REHEARSAL_EXPERIMENTS_LOAD=sustained REHEARSAL_EXPERIMENTS="F07 F08 F14" infra/scripts/kind-rehearsal.sh`. Each refuses to start below ten.
+3. F06 refuses whatever is asked: no loan can exist on `kind` (no bureau; the owner's decision of 2026-11-13, unresolved question 13). Its
+   partial proof is lending's own database cases and the lending storm, owed to PI-023's pass.
+4. The knobs, each with its default: `REHEARSAL_SCENARIO_PLANT_MINOR` (100, the planted difference), `REHEARSAL_SCENARIO_BREAK_SECONDS`
+   (900, how long check (g) waits for the break), `REHEARSAL_F09_LINES` (400, the lines of F09's and F10's files: raise it when F10 reads no
+   run mid-walk), `REHEARSAL_F13_LATE_SECONDS` (300, how late F13's success arrives), `REHEARSAL_F02_SECONDS` (120) and
+   `REHEARSAL_F05_AT_TEN_SECONDS` (180).
+
+#### Reading a scenario's record
+
+- `experiments/<id>/record.tsv`: the steps, the fault as put on, each check's line, the seven checks' summary, the verdict.
+- `experiments/<id>/seven-checks.tsv`: one line per check (letter, `PASS` or `FAIL`, evidence). All seven must be counted: a scenario
+  that counted fewer is `FAILED` for that alone.
+- `experiments/<id>/journal-before.tsv`, `journal-after.tsv` and `journal-rerun.tsv`: every journal entry with its digest, and the
+  growing tables' counts, read in one `REPEATABLE READ READ ONLY` transaction each - (c), (d) and (e)'s evidence.
+- `experiments/<id>/keys.tsv`: every request the scenario recorded (kind, key, reference, first status, the first body's sha256) - (f)'s.
+- `experiments/<id>/planted-settlement.csv` and `plant.log`: the planted line and its delivery - (g)'s.
+
+#### When a scenario is red
+
+- **(a) or (b)**: the census names the clause. A second effect for a key, or money out of balance, is a production defect: open the
+  incident (section 11.12), freeze money movement as section 11.20 says if the balance is wrong, and file a task of its own; the scenario
+  stays red until it lands. Never edit the journal: a correction is a reversal.
+- **(c)**: an entry read before the fault changed or vanished. History is never mutated; this is the worst finding a scenario can make.
+  Keep the run's database (do not delete the cluster), take the two snapshots' differing ids to the incident, and stop every release.
+- **(d)**: a table that only grows lost rows across the fault - evidence lost. The same as (c), and the restore drill's evidence (section
+  11.35) is the first thing to check.
+- **(e)**: the scenario's re-run moved money again, or changed an entry: the path it re-ran is not idempotent end to end. A task of its own.
+- **(f)**: a same-key retry was answered otherwise than first. Read `keys.tsv` against the resent file: a different status is the
+  idempotency store's defect; the same status with other bytes may be a response that embeds a time or a server-made field, which is a
+  defect of the stored response, not of the effect. Either is a task of its own.
+- **(g)**: the planted difference raised no break within the wait. First rule out the harness: the file accepted (`plant.log`), the run
+  completed, the source's rule set active (section 1). Then it is reconciliation's defect - unresolved money no one is told about.
+- **A correctness page that only the plant raised**: whether a settled amount 1.00 EUR off a capture leaves the position and cash proofs
+  quiet (`PositionProofFailing`, `CashProofFailing`) was not seen before these were written. If the first run shows the plant alone paging,
+  every scenario stops for it: that is a harness defect, repaired by planting a difference those proofs do not count, never by excusing
+  the page.
+- **A scenario that could not run** (`??`): its reason is the line; nothing is claimed for it.
+- **The probe**: the inbox's dedupe turned off on a throwaway branch must turn F05 red with a second effect counted (owed under PI-025).
 
 ### 11.33 Rotations rehearsed on kind: running them, reading them, the last record (`P15-TSK-020`)
 

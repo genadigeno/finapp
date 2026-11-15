@@ -165,6 +165,9 @@ EXPERIMENTS_AT_A_COUNT="E45 E01 E02 E03 E04 E25"
 # P16-TSK-028's two (OPERATIONS_RUNBOOK.md section 11.62), each read at the run's count: the sign-in door's limit held across the fleet (E81)
 # and the sessions held through a rolling restart of every replica (E82).
 EXPERIMENTS_AT_A_COUNT="$EXPERIMENTS_AT_A_COUNT E81 E82"
+# P16-TSK-027's three scenarios at ten (OPERATIONS_RUNBOOK.md section 11.66): two instances capturing one payment (F07), releasing one hold
+# (F08), and a redeploy with transactions in flight (F14), each refusing to start below ten.
+EXPERIMENTS_AT_A_COUNT="$EXPERIMENTS_AT_A_COUNT F07 F08 F14"
 # fleet_resolve (P16-TSK-014): the run's count refused before anything is built unless it is three to the kind overlay's ceiling, read from the
 # overlay, and a count other than three refused wherever the steps are written for three: the release's probes (their quota and timings are
 # three's), every experiment but those of EXPERIMENTS_AT_A_COUNT, and every other scope. The load scope's count is load_preflight's too.
@@ -1254,12 +1257,13 @@ census() {
     # move money only through their workloads, which transfer_ok_count reads.
     expected_transfers=$(( $(transfer_ok_count) + SMOKE_TRANSFERS + ${LOAD_TRANSFERS:-0} + ${EXPERIMENTS_TRANSFERS:-0} ))
     # The telemetry steps' one traced top-up, of its own planted amount (P15-TSK-023); zero until it runs.
-    expected_topups=$(( $(flow_ok_count top-up) + SMOKE_TOPUPS + ${TELEMETRY_TOPUPS:-0} + ${LOAD_TOPUPS:-0} ))
+    # The scenario experiments' own card payments (P16-TSK-027: F07's raced one, F13's timed-out one), each of its own amount; zero elsewhere.
+    expected_topups=$(( $(flow_ok_count top-up) + SMOKE_TOPUPS + ${TELEMETRY_TOPUPS:-0} + ${LOAD_TOPUPS:-0} + ${EXPERIMENTS_TOPUPS:-0} ))
     expected_checkouts=$(( $(flow_ok_count checkout) + SMOKE_CHECKOUTS + ${LOAD_CHECKOUTS:-0} ))
     # E01's own payout, sent by the experiments scope (P16-TSK-019); zero in every other scope.
     expected_payouts=$(( $(flow_ok_count payout) + SMOKE_PAYOUTS + ${EXPERIMENTS_PAYOUTS:-0} ))
     # Every top-up credits one wallet: 5.00 in a smoke, 0.05 in the workload. Transfers move money between the same wallets and a checkout is paid by card.
-    expected_wallets=$(( SMOKE_TOPUPS * 500 + $(flow_ok_count top-up) * 5 + ${TELEMETRY_TOPUP_MINOR:-0} + ${LOAD_WALLET_MINOR:-0} ))
+    expected_wallets=$(( SMOKE_TOPUPS * 500 + $(flow_ok_count top-up) * 5 + ${TELEMETRY_TOPUP_MINOR:-0} + ${LOAD_WALLET_MINOR:-0} + ${EXPERIMENTS_TOPUP_MINOR:-0} ))
     # The disaster-recovery exercise's rebuild (P16-TSK-025): what the restored books held at the backup's instant, as the census before it was
     # told (the vault's expected.env, read by dr_resolve); zero in every other scope and before the disaster. The rebuilt simulator never saw
     # those payments, so the provider's side counts only what was told after the release.
