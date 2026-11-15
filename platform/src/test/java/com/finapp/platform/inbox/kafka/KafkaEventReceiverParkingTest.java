@@ -101,6 +101,22 @@ class KafkaEventReceiverParkingTest {
     }
 
     @Test
+    @DisplayName("a parked record carries its event's correlation, so the dead-letter row is a correlation sink (P16-TST-002)")
+    void aParkedRecordCarriesItsEventsCorrelation() {
+        KafkaEventReceiver receiver = receiver(failing(new IllegalArgumentException("unreadable payload")));
+        EventId event = EventId.next(IDS);
+        consumer.addRecord(record(0, event));
+        receiver.pollOnce();
+        consumer.addRecord(record(0, event));
+
+        assertThat(receiver.pollOnce().parked()).isEqualTo(1);
+        assertThat(parking.failures)
+                .as("every failure counted toward the park names the flow that produced the event, which the row then holds")
+                .hasSize(2)
+                .allSatisfy(failure -> assertThat(failure.correlation()).contains(CorrelationId.of("probe-flow")));
+    }
+
+    @Test
     @DisplayName("a parked record does not block the next record of its partition")
     void aParkedRecordDoesNotBlockItsPartition() {
         AtomicInteger later = new AtomicInteger();

@@ -31239,7 +31239,7 @@ on none:
   (fence, check, promote alone, move the Service, the journal compared) called from the soak's schedule. E05 leaves one server and
   no standby, so in a soak it is the last database fault, or the standby is rebuilt after it.
 
-**P16-TST-002 — The exit pass: the mandatory experiments' quick forms on the final tree** — `READY` (2026-11-15; marked by `P16-TSK-031`'s completion gate: `-031` and `P16-TST-001` `COMPLETE`) *(read "`PLANNED`" until then)*
+**P16-TST-002 — The exit pass: the mandatory experiments' quick forms on the final tree** — `COMPLETE` (2026-11-15; designed, run and gated straight through on the owner's "Start P16-TST-002", branch `P16-TST-002` from `8f20d7c3` (`X-TSK-020`, unmerged); **the hermetic half run once on the final tree, one stale guard found and fixed, every quick form owed under `POSTPONED_ISSUES.md` PI-025**; no production code, no migration, no ADR; marks no task `READY`: the phase's remaining items wait on the owner's word) *(read "`READY` (2026-11-15; marked by `P16-TSK-031`'s completion gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: once, on the final tree, re-run the quick forms of the mandatory experiments, and run the named guard classes. Then
   run the database and Kafka fleet tiers as the owner decides under C2 and C11.
   - The quick forms: the demonstration load with invariants during load, E01, E05, E09, the restore with its verification, and
@@ -31258,6 +31258,22 @@ on none:
 - **Measurable acceptance criteria**: every quick form green on the final tree; the guards green.
 - **Definition of done**: `DOD-TEST`.
 - **Operational documentation**: the records.
+- **As built (2026-11-15, gate `COMPLETE`; the hermetic half; every cluster run owed).** **The owner's word decides the shape**: the
+  task's quick forms are `kind` and container runs, and PI-025 (the owner, 2026-11-13: "we dont need long running checks and tests")
+  postponed every Phase 16 run after C2 and C11 were accepted; the owner's standing rule keeps the database and Kafka tiers out. So the
+  task ran what the word allows, once, and recorded the rest as owed - the shape `P16-TST-001` and `P16-TSK-027` took. **The final
+  tree**: the code of commit `8f20d7c3` - every Phase 16 item but the owner's remediation (M16.14, `P16-REM-001`…`-003`, unscheduled)
+  and the exit review; a remediation task that merges later re-runs its own checks and re-opens nothing here. **Run, fresh, once,
+  across every module**: the hermetic tiers - `unitTest`, `sliceTest` and `architectureTest` - 7,000 unit, 299 slice and 1,299 architecture tests across 25 modules, 0 failed, after the one red it found was fixed and platform's two tiers and app's architecture tier re-run on the fix. The architecture tier holds
+  every harness's contract test (`KindRehearsalContractTest`, `ExperimentsRehearsalContractTest`, `ScenarioExperimentsContractTest`,
+  `SoakContractTest`, `DisasterRecoveryRehearsalContractTest` and the rest), the register's guard, and the readiness, audit and
+  provider-call guards: each quick form's harness reads as built on this tree. **What the pass found**: `platform`'s `CorrelationSinkCoverageTest` red on the final tree - five platform packages (`abuse`, `deadletter`, `outbound`, `retention`, `sourcejoin`) added in Phases 15 and 16 had never been classified as correlation sinks or not, and no per-task run had read `platform`'s architecture tier (the class `X-TSK-018` named). Fixed here: `deadletter` is a sink - a parked record carries its event's correlation, `NOT NULL` (platform `V011`), now asserted hermetically by `KafkaEventReceiverParkingTest#aParkedRecordCarriesItsEventsCorrelation` (probe recorded) - and the other four are not, each with its reason in the guard. No production code changed. **Not run, owed** (PI-025's entry for this task names
+  each with its switches): the demonstration load with the census at every sample, at three and at ten replicas (E27's form); E01, E09
+  and E05 at three; the restore with its verification (E59, E61); F01 at three and F14 at ten; E30 again with E52, the stress profile
+  at three. **The fleet tiers** (`databaseTest`, `kafkaTest`): not run, the owner's standing word; C11's narrow pre-flight stays
+  PI-023's. **E30's standing `FAILED`** stays: its remediation cell's other live task, `P16-REM-001`, holds it from this gate (the
+  register's guard reads it so); its re-run is owed. **Multi-instance**: `PASS` - nothing runs on instances here; the ten-instance
+  answer is `DISTRIBUTED_EXECUTION.md` §4b's, by construction, measured not yet - the quick forms are the measurement.
 - **Risk**: Medium. **Cx**: M.
 - **Routed from `P16-TSK-016` (2026-11-13): E30's standing `FAILED` result is held here.** E30 (the stress profile at three replicas,
   `RESILIENCE_EXPERIMENTS.md`) stopped at its 35th sample on two causes: the source-join census starved of the pool and a checkout's

@@ -839,6 +839,17 @@ commit and the date; do not delete the entry.
     next sample's trial balance must refuse), with its `MUTATION_TESTING.md` §2 row then. Nothing ran before the word. What ran instead, on
     2026-11-14, without a cluster: `sh -n` over the changed scripts, the profile parsed as JSON and compared with soak.json, and
     `SoakContractTest` with its two probes (`MUTATION_TESTING.md` §2).
+  - **`P16-TST-002`** (the exit pass; `RESILIENCE_EXPERIMENTS.md` E27, E01, E05, E09, E59, E61, F01, F14, E30 and E52): once, on the
+    final tree, with the record of each in its row: **the demonstration load** with the census at every sample (`REHEARSAL_SCOPE=load`,
+    the default `demonstration` profile) at three replicas and at ten (`REHEARSAL_LOAD_REPLICAS=10`); **E01, E09 and E05** at three
+    (`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E01 E09 E05"`, E05 last, as it promotes the standby); **the restore with its
+    verification**, E59's logical restore drill (`infra/scripts/restore-rehearsal.sh`, `OPERATIONS_RUNBOOK.md` §11.35) and E61's
+    post-recovery gate on what it restores (§11.55); **scenarios 1 and 14**, F01 at three (`REHEARSAL_EXPERIMENTS=F01`) and F14 at ten
+    (`REHEARSAL_EXPERIMENTS=F14 REHEARSAL_EXPERIMENTS_REPLICAS=10`); and **E30 again with E52**, the stress profile at three
+    (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=stress`), its result appended to both rows - E30's standing `FAILED` held meanwhile by
+    `P16-REM-001`. The database and Kafka fleet tiers the task named are PI-023's. Nothing ran. What ran instead, on 2026-11-15,
+    without a cluster: every module's `unitTest`, `sliceTest` and `architectureTest`, fresh on the code of commit `8f20d7c3`
+    (7,000 unit, 299 slice and 1,299 architecture tests across 25 modules, 0 failed, after the one red it found was fixed and platform's two tiers and app's architecture tier re-run on the fix).
 
 ## PI-026 — The first real environment's managed-service decisions: the audit archive's bucket and read door, the restore's release and window
 
