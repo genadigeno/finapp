@@ -42,3 +42,8 @@ output "endpoint" {
   description = "The database's address, for the store's URL entries at first fill and the bootstrap step (OPERATIONS_RUNBOOK.md section 11.7)."
   value       = aws_db_instance.this.endpoint
 }
+
+output "backup_copy_vault_arns" {
+  description = "Every vault the daily snapshot is copied to, read from the planned backup plan: the account copy's, and the recovery region's where one is kept."
+  value       = toset([for copy in one(aws_backup_plan.database.rule).copy_action : copy.destination_vault_arn])
+}

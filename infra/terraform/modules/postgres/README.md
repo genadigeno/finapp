@@ -66,6 +66,14 @@ input because no such account exists: `THREAT_MODEL.md` §6 item 23 holds the ch
 automated backups to another region would keep point-in-time recovery under another key, and is Phase 16's
 (ADR-0121 follow-up).
 
+**The recovery region's copy** (ADR-0150, 2026-11-14). The account copy stays in the database's region by the owner's decision
+(`THREAT_MODEL.md` §6 item 23 (a)), so a region's loss takes it too. `backup_region_copy_vault_arn` names a second destination
+for the same daily snapshot, in another region (refused in the database's own region); production gives it the recovery-region
+root's vault (`environments/production-recovery`), staging none. It is a snapshot like the first copy, so ADR-0128's tier 4 keeps
+its 24-hour recovery point; replicating automated backups for point-in-time recovery across regions is still the option the owner
+may buy (ADR-0129, C10 (B)). With a region copy the `database` key also admits AWS Backup and RDS in the recovery region (the
+security module's `recovery_region`), as it already does for a copy across an account.
+
 Each key's policy is in the security module: the `database` key admits RDS, and the destination's account when the copy crosses one;
 the `database_backup` key admits AWS Backup. The master credential's entry is RDS's own, under the `secrets` key, and only that
 module's bootstrap role reads it, while that role exists, through this module's `master_user_secret_arn`.
@@ -74,7 +82,8 @@ module's bootstrap role reads it, while that role exists, through this module's 
 
 Inputs: `name_prefix`, `region`, `account_id`, `vpc_id`, `private_subnet_ids_by_zone`, `client_security_group_id`,
 `instance_class`, `allocated_storage_gib`, `max_allocated_storage_gib`, `max_connections`, `storage_kms_key_arn`,
-`backup_kms_key_arn`, `secrets_kms_key_arn`, `backup_retention_days`, `backup_copy_vault_arn`, `snapshot_retention_days`.
+`backup_kms_key_arn`, `secrets_kms_key_arn`, `backup_retention_days`, `backup_copy_vault_arn`, `backup_region_copy_vault_arn`
+(optional), `snapshot_retention_days`.
 Outputs: `identifier` and six that read the plan back for the roots' tests. See `variables.tf` and `outputs.tf`.
 
 ## Operating it

@@ -676,6 +676,16 @@ recorded act after the first is fenced (its database stopped or its credentials 
 `-026` writes this as an assessment document section and the Terraform variants (a recovery-region root composing the
 existing modules, the backup copy's cross-region destination) checked by `terraform test` with mock providers, never applied.
 
+*(2026-11-14, `P16-TSK-026`, as built: the assessment is `SYSTEM_ARCHITECTURE.md` §Multi-Region Assessment, decided in ADR-0150.
+The recovery-region root (`infra/terraform/environments/production-recovery`) holds the standing site alone - the vault the daily
+snapshot is also copied to and the key every ring version is replicated under, in a second region of production's account - and
+composes a module of its own (`modules/recovery-region`), not the existing ones: composing them a second time in one account collides
+on IAM and bucket names, which are global, and production's state is kept in the region that is lost (`THREAT_MODEL.md` §6 item 72).
+The cross-region destination is a second copy of the same snapshot, and it is §11.2's tier 4 source ("as tier 3, into another
+region" read the account copy, which stays in the region and is lost with it); the rings replicate, no credential does, and no key is
+multi-region. The regional promotion procedure is `OPERATIONS_RUNBOOK.md` §11.65. **Erratum**: "item 21 (a)" in this plan, ADR-0128
+and ADR-0149 is `THREAT_MODEL.md` §6 item **23** (a), the dedicated backup account; item 21 is the namespaces' policies.)*
+
 ---
 
 ## 13. Financial correctness under failure (Part 20 — the most important part)

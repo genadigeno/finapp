@@ -62,3 +62,13 @@ output "human_role_arns" {
   description = "Each role a person assumes, by name."
   value       = { for name, role in aws_iam_role.human : name => role.arn }
 }
+
+output "field_key_replicas" {
+  description = "Each ring version's replicas, by entry, read from the plan: the region and the key each is wrapped under there."
+  value       = { for key, ring in aws_secretsmanager_secret.field_key : key => [for replica in ring.replica : { region = replica.region, kms_key_id = replica.kms_key_id }] }
+}
+
+output "replicated_credential_entries" {
+  description = "The entries other than the rings that are replicated anywhere, read from the plan: none, since a recovery generates every credential again."
+  value       = [for key, entry in aws_secretsmanager_secret.entry : key if length(entry.replica) > 0]
+}

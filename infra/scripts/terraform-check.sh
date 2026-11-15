@@ -70,6 +70,12 @@
 #   registry-mutable           a repository's tags made mutable                    the registry module's test
 #   registry-no-scan           scan on push turned off                             the registry module's test
 #
+# And one per named property of the recovery region (P16-TSK-026, ADR-0150):
+#
+#   region-copy-in-region            the region copy admitted in the database's region  the postgres module's test
+#   ring-not-replicated              the rings' replica to the recovery region removed  the security module's test
+#   recovery-site-in-primary-region  the standing site admitted in production's region  the recovery-region module's test
+#
 # WHAT IT NEVER DOES. It initialises no backend (every init is -backend=false) and holds no credential:
 # no container is given a variable or a file from the host beyond the infra, deploy and docs directories,
 # mounted read-only (deploy holds the overlays, whose max_connections the database reads; docs holds the
@@ -350,6 +356,21 @@ HCL
     sed -i 's/scan_on_push = true/scan_on_push = false/' \
         /scratch/plants/registry-no-scan/infra/terraform/modules/registry/main.tf
     planted registry-no-scan modules/registry/main.tf
+
+    plant region-copy-in-region
+    sed -i 's/|| try(split(":", var.backup_region_copy_vault_arn)\[3\], "") != var.region/|| true/' \
+        /scratch/plants/region-copy-in-region/infra/terraform/modules/postgres/variables.tf
+    planted region-copy-in-region modules/postgres/variables.tf
+
+    plant ring-not-replicated
+    sed -i '/^  dynamic "replica" {/,/^  }$/d' \
+        /scratch/plants/ring-not-replicated/infra/terraform/modules/security/main.tf
+    planted ring-not-replicated modules/security/main.tf
+
+    plant recovery-site-in-primary-region
+    sed -i 's/condition     = var.primary_region != var.region/condition     = var.primary_region != ""/' \
+        /scratch/plants/recovery-site-in-primary-region/infra/terraform/modules/recovery-region/variables.tf
+    planted recovery-site-in-primary-region modules/recovery-region/variables.tf
 }
 
 # Every directory holding a .tf file, found rather than listed, so a module added later is checked
@@ -564,6 +585,9 @@ refuses backup-copy-unconditioned "can use the database key outside the copy" te
 refuses inventory-row-no-entry "An inventory row has no entry" terraform_on "$PLANTS/inventory-row-no-entry/infra/terraform" environments/production
 refuses registry-mutable "tags are not immutable" terraform_on "$PLANTS/registry-mutable/infra/terraform" modules/registry
 refuses registry-no-scan "does not scan on push" terraform_on "$PLANTS/registry-no-scan/infra/terraform" modules/registry
+refuses region-copy-in-region "var.backup_region_copy_vault_arn, was expected to" terraform_on "$PLANTS/region-copy-in-region/infra/terraform" modules/postgres
+refuses ring-not-replicated "A ring version is not replicated to the recovery region" terraform_on "$PLANTS/ring-not-replicated/infra/terraform" modules/security
+refuses recovery-site-in-primary-region "var.primary_region, was expected to" terraform_on "$PLANTS/recovery-site-in-primary-region/infra/terraform" modules/recovery-region
 
 if [ "$status" -eq 0 ]; then
     echo "ok   every check green, every plant refused for its reason"

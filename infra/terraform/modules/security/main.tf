@@ -201,6 +201,13 @@ locals {
     for region in distinct([var.region, split(":", var.database_backup_copy_vault_arn)[3]]) : ["backup.${region}.amazonaws.com", "rds.${region}.amazonaws.com"]
   ])
 
+  # The recovery region's copy of the daily snapshot (ADR-0150) reads it under the database key from the recovery region's side
+  # too, as a copy across an account does: the same two services, in that region, and only for the database key.
+  recovery_region_copy_services = var.recovery_region == null ? [] : [
+    "backup.${var.recovery_region.region}.amazonaws.com",
+    "rds.${var.recovery_region.region}.amazonaws.com",
+  ]
+
   key_policies = {
     for purpose, key in local.key_purposes : purpose => {
       Version = "2012-10-17"
@@ -218,7 +225,10 @@ locals {
           Principal = { AWS = local.account_root }
           Action    = local.key_use_through_a_service
           Resource  = "*"
-          Condition = { StringEquals = { "kms:ViaService" = [for service in key.services : "${service}.${var.region}.amazonaws.com"] } }
+          Condition = { StringEquals = { "kms:ViaService" = concat(
+            [for service in key.services : "${service}.${var.region}.amazonaws.com"],
+            purpose == "database" ? local.recovery_region_copy_services : [],
+          ) } }
         }] : [],
         # EKS needs the caller of CreateCluster to describe the key and make the grant. Neither kms:ViaService nor
         # kms:GrantIsForAWSResource can bound it: AWS lists no ViaService name for EKS, and documents that the
@@ -384,6 +394,18 @@ resource "aws_secretsmanager_secret" "field_key" {
   description             = "${each.value.variable} of finapp-${each.value.workload} in ${local.environment}: docs/architecture/SECRET_MANAGEMENT.md section 3."
   kms_key_id              = aws_kms_key.this["field_keys"].arn
   recovery_window_in_days = 30
+
+  # Each ring version replicated to the recovery region before it is needed (ADR-0150), wrapped there under that region's
+  # own key. Only the rings: every credential is generated again in a recovery, never carried (ADR-0149 decision 2).
+  # force_overwrite_replica_secret stays false, so an entry already standing under this name there is never replaced.
+  dynamic "replica" {
+    for_each = var.recovery_region == null ? [] : [var.recovery_region]
+
+    content {
+      region     = replica.value.region
+      kms_key_id = replica.value.field_keys_kms_key_arn
+    }
+  }
 
   lifecycle {
     prevent_destroy = true

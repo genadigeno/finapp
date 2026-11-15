@@ -63,6 +63,13 @@ reading `modules/kafka`'s own entry, the trust naming what the overlay names, th
   from the inventory. The role that reads them exists only while `bootstrap_role_enabled` is on, has no access entry and a boundary of its own.
   Break-glass reads no secret, as `deploy/base/rbac-humans.yaml` intends. The step's URL is no secret and comes from the root's
   `database_endpoint` output.
+- **The rings in the recovery region, and nothing else** (ADR-0150, 2026-11-14). With `recovery_region` given (production, from the
+  recovery-region root), every field-key entry is replicated there, wrapped under that region's own `field_keys` key: a region's loss
+  leaves every ring version readable. No other entry is replicated, because a recovery generates every credential again and carries
+  only the rings (ADR-0149 decision 2). No key is multi-region: each replica is re-wrapped under a key that never leaves its region.
+  The `database` key also admits AWS Backup and RDS in the recovery region, for the daily snapshot's region copy (the postgres module's
+  `backup_region_copy_vault_arn`). Where the rings survive the loss of the whole account is a different question, `THREAT_MODEL.md` §6
+  item 71 (a).
 
 ## What could not be checked without an account
 
@@ -79,12 +86,14 @@ Each of these reads as AWS documents it and has never met AWS. A real first appl
 | The caller of `CreateCluster` needs `kms:CreateGrant` and `kms:DescribeKey` on the etcd key | AWS's EKS page names both for that caller. Whether the grant needs anything more is unverified |
 | The operator needs `secretsmanager:GetSecretValue` alone | Read from the operator's source by `P15-TSK-018`, never run against a store |
 | `aws:MultiFactorAuthAge` bounds the factor, and `sts:RoleSessionName` can be held to `${aws:username}` | As AWS documents them; the cluster's and CloudTrail's naming of the session has not been seen |
+| A ring's replica is re-wrapped under the recovery region's key, with every version of its value | Secrets Manager documents replication within an account under a key of the replica's region; whether every version or only the labelled ones is replicated is unverified, and each ring version is its own entry here, so a version is never only a non-current value |
+| A copy to another region in this account reads the snapshot through `backup` and `rds` in the recovery region | Written by analogy with the cross-account copy's two-region statement; unverified. If the bound refuses, the copy fails closed and the first copy job in staging shows it |
 
 ## Inputs and outputs
 
 Inputs: `name_prefix`, `region`, `account_id`, `secret_inventory_path`, `external_secret_manifest_paths`, `secret_store_manifest_path`,
 `workload_namespace`, `cluster_name`, `cluster_role_arn`, `workload_identity_provider_arn`, `workload_identity_issuer`,
-`master_user_secret_arn`, `database_backup_copy_vault_arn`, `human_users`, `bootstrap_role_enabled`.
+`master_user_secret_arn`, `database_backup_copy_vault_arn`, `recovery_region` (optional), `human_users`, `bootstrap_role_enabled`.
 Outputs: `kms_key_arns`, `secret_entry_names` (carrying the plan's stops), `secret_reader_role_arns`, `human_role_arns`, and three that read
 the plan back for the roots' tests. See `variables.tf` and `outputs.tf`.
 

@@ -54,6 +54,39 @@ variable "other_environment_account_ids" {
   }
 }
 
+variable "recovery_region" {
+  description = "Production's recovery region, as environments/production-recovery outputs it (ADR-0150): the region, the vault the daily snapshot is also copied to there, and the key the rings' replicas are wrapped under there. Apply that root first. No default: where production recovers is chosen with its account."
+  type = object({
+    region                  = string
+    database_copy_vault_arn = string
+    field_keys_kms_key_arn  = string
+  })
+
+  validation {
+    condition     = var.recovery_region.region != var.region
+    error_message = "The recovery region is production's own region, so a region's loss would take the recovery site with it."
+  }
+
+  validation {
+    condition     = try(split(":", var.recovery_region.database_copy_vault_arn)[3] == var.recovery_region.region && split(":", var.recovery_region.database_copy_vault_arn)[4] == var.account_id, false)
+    error_message = "The region copy's vault is not the recovery region's in production's account: the standing site is production's own (ADR-0150)."
+  }
+}
+
+variable "residency_regions" {
+  description = "The regions the residency rule admits for production's data, the same value the recovery-region root is given. No default: no jurisdiction is chosen (ROADMAP.md, Non-Goals), and every copy of the data must satisfy the rule the database does (ADR-0129, ADR-0150)."
+  type        = set(string)
+
+  validation {
+    condition = (
+      contains(var.residency_regions, var.region)
+      && contains(var.residency_regions, var.recovery_region.region)
+      && contains(var.residency_regions, try(split(":", var.database_backup_copy_vault_arn)[3], ""))
+    )
+    error_message = "Production's region, its recovery region or its account copy's region is outside the regions the residency rule admits."
+  }
+}
+
 variable "audit_archive_lock" {
   description = "The audit archive's write-once mode and period. No default: the period is OPEN until a real jurisdiction is chosen (DATA_RETENTION.md section 3)."
   type = object({

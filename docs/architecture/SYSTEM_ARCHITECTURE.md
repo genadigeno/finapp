@@ -192,6 +192,56 @@ GitOps, and every production change needs two persons. The CI table above gains 
 infrastructure, observability-rule and `kind`-rehearsal jobs as `P15-TSK-003`…`-025` land, each a pinned script that also
 runs on a developer's machine.
 
+## Multi-Region Assessment (Phase 16)
+
+*(Written by `P16-TSK-026`, 2026-11-14, from `PHASE_16_PLAN.md` §12; decided in ADR-0129 (the stance) and ADR-0150 (the standing site),
+both `Proposed`. The Terraform below is checked with mock providers and has never been applied: the project has no cloud account.)*
+
+**The stance: one region, several availability zones, active-passive for the financial record, and no active-active writes.** Every
+arbiter of the platform is a row or a constraint in one PostgreSQL, and the journal has one writer. Two regions accepting postings
+against the same accounts would need a merge on money (a posting accepted in each region against the same balance), which no
+invariant of the catalogue admits (`INV-LED-*`, `INV-BAL-*`). Inside the region a synchronous standby takes over a lost zone or
+instance (ADR-0128 tier 1). Another region is a **recovery site**, restored from a copy (tier 4: RPO 24 h, RTO 24 h until the owner
+buys replication, C10 (B)).
+
+**Split-brain is refused by procedure, never by a health check.** The recovery region is promoted only by a person's recorded act
+after the first region is **fenced**: its public names withdrawn, every provider credential revoked at its provider (a recovery
+regenerates them anyway, ADR-0149) and its secret readers' trust revoked, and, where its control plane still answers, its database
+stopped and its fleet scaled to zero. Revocation is the fence that works when the region does not answer: money leaves the platform
+only through a provider, so a region whose provider credentials are dead cannot move it, and without its public names it reaches no
+customer; whatever it still writes to its own database is orphaned. A region that returns is never promoted back: it stays stopped, and anything it
+wrote after the copy's instant is a reconciliation break found from the providers' statements, never merged.
+`OPERATIONS_RUNBOOK.md` §11.65 is the procedure.
+
+| Store or workflow | Model | Why |
+|---|---|---|
+| PostgreSQL (the journal and every arbiter) | One writer; Multi-AZ synchronous in the region; the recovery region restores the daily **region copy** | Authoritative ownership first. The account copy (`THREAT_MODEL.md` §6 item 23 (a)) stays in the same region by the owner's decision, so the region copy is what outlives the region |
+| `finapp-app` | Active in one region; deployed in the other from code and the release's digests | Stateless; correctness is the database's |
+| `finapp-migrator` | With the writer's region | Migrations follow the writer |
+| Kafka | Per region, never mirrored; the recovery region's brokers start empty and are refilled from the outbox | Not truth (rule 12); mirroring would add a second ordering domain for nothing financial |
+| Telemetry | Per region | Diagnostic only |
+| Object storage (state, archives) | Copied across an account (decided); production's Terraform state lives in its own region | The state's loss with its region is half of item 72 |
+| Field-level key rings | **Replicated to the recovery region before need**, each version wrapped there under that region's own key; no credential replicated | A version unreadable there is evidence lost (ADR-0149 decision 1); credentials are regenerated, never carried (decision 2) |
+| KMS keys | Independent keys in each region; **no multi-region key** | One key's material in two regions lets one region's compromise or mistake reach the other (ADR-0150 decision 4) |
+| Customer reads (balances, statements) | From the active region only; no read-only regional cache for anything a customer may act on | A stale balance shown as current is a misstatement to a customer |
+| Settlement and reconciliation | Active region only; after a regional recovery, the window since the copy's instant re-ingested (`OPERATIONS_RUNBOOK.md` §11.35) | Evidence ordering and each source's gapless sequence |
+| Provider connectivity | A provider's regional endpoints are a real environment's decision | Simulated today |
+| Data residency | One rule for both regions: `residency_regions`, an open decision with no default, must hold production's region, the recovery region and the account copy's | No jurisdiction is chosen (`ROADMAP.md`, Non-Goals) |
+| Cross-region latency | On no request path | No synchronous cross-region call is designed |
+
+**What exists in the recovery region before a disaster** (built, never applied). `infra/terraform/environments/production-recovery`
+is production's site in a second region of production's account, with its own state key, and composes `modules/recovery-region`:
+the vault each daily snapshot is also copied to, under a key of that region, and the key the rings' replicas are wrapped under. It is
+applied before production's root, whose `recovery_region` input takes its outputs: the postgres module copies the snapshot there as a
+second destination (refused in the database's own region), and the security module replicates every ring entry there and nothing else.
+The site takes no write and can promote nothing.
+
+**What does not exist yet, and why.** Rebuilding the cluster, the data tier, the brokers and the fleet in the recovery region at need
+cannot be planned from the production root in the same account: its IAM roles, users and groups and its bucket names are global and
+would collide with the first region's, and its state is in the lost region. That rebuild, and whether the recovery site should instead
+live in the backup account so that the account's loss and the region's meet one site, are `THREAT_MODEL.md` §6 item 72, beside item
+71 (the rings and the images outside the account). Until decided, tier 4's recovery point exists and its rebuild is designed only.
+
 ## Architectural Principles
 
 1. Domain ownership before service decomposition.
