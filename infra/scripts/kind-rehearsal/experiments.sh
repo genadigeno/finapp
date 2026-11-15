@@ -113,7 +113,8 @@
 #                      AVAILABLE while the database is away (row A01): E06's walk must fail on that row, and a run that sent no transfer in
 #                      the window could not show it.
 # REHEARSAL_EXPERIMENTS names the experiments to run (E01 by default; the catalogue is P16-TSK-008's, -013's, -018's, -020...-023's,
-# P16-TSK-027's and P16-TSK-029's E85, a real burn of the objectives under E51's slowed database, at the end of this file).
+# P16-TSK-029's E85, a real burn of the objectives under E51's slowed database, and P16-TSK-027's fifteen scenarios F01...F15, each with
+# the seven checks, at the end of this file: F07, F08 and F14 at ten replicas, REHEARSAL_EXPERIMENTS_REPLICAS=10; F11 last, as E05).
 # The provider experiments E17, E18 and E21 (P16-TSK-018) degrade the simulator one rail at a time (its flags degrade-<rail>-unavailable and
 # -silent, put on and taken off by the hold kind) or slow its hop (a latency toxic); E19 and E20 refuse to run, each naming why.
 #
@@ -200,6 +201,8 @@ EXPERIMENTS=${REHEARSAL_EXPERIMENTS:-E01}
 EXPERIMENTS_LOAD=${REHEARSAL_EXPERIMENTS_LOAD:-}
 # The experiments written to run under that load: their census is the load's samples through their window, and the full one after the load.
 EXPERIMENTS_UNDER_LOAD="E01 E02 E03 E04 E25"
+# P16-TSK-027: the three scenarios at ten may run under the engineering workload too (their checks (a) and (b) then read the load's window).
+EXPERIMENTS_UNDER_LOAD="$EXPERIMENTS_UNDER_LOAD F07 F08 F14"
 # And those that run only under it.
 EXPERIMENTS_NEED_LOAD="E02 E03 E04 E25"
 # The zone E04 takes away (experiments/kind-cluster.yaml's third worker).
@@ -227,6 +230,10 @@ EXPERIMENTS_PAYOUTS=0
 EXPERIMENTS_HOLD_APP=finapp-experiments-relay-hold
 # And its expected transfers this: E13's two cut transfers (P16-TSK-021), zero in every other scope.
 EXPERIMENTS_TRANSFERS=0
+# And its expected top-ups and wallet credit these (P16-TSK-027): the scenario experiments' own card payments, F07's and F13's, each of
+# its own amount; zero in every other scope.
+EXPERIMENTS_TOPUPS=0
+EXPERIMENTS_TOPUP_MINOR=0
 # P16-TSK-021's marks: the comment on a black hole's rules, the application names of the holder's and the lock's sessions, the limited
 # filesystem's mount point on each worker, and the ballast's name on it.
 EXPERIMENTS_FAULT_COMMENT=finapp-experiment-fault
@@ -1554,6 +1561,8 @@ experiment_run() {
     else
         census "$1"
     fi
+    # The scenario experiments (P16-TSK-027): checks (a) and (b) from the census just taken, and the seven checks summed.
+    case $1 in F[0-9][0-9]) scenario_census "$1" ;; esac
     firing=$(experiments_pages_firing)
     experiments_record "pages after" "${firing:-none}"
     [ -z "$firing" ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }a correctness page after the experiment: $firing"
@@ -7064,4 +7073,928 @@ E85_recover() {
     assert_flows_ran e85
     experiments_record judged "$held burn pairs held, every one fired (experiments/E85/held.tsv); $E85_PAGED routed to the page receiver; the fast pairs clear $cleared s after the removal; $shed shed and $answered answered 503 by the fleet"
     pass "E85: a real burn paged - $E85_PAGED, routed - every burn pair that held fired, the sheds were the objectives' 503s, and the fast pairs stopped $cleared s after the burn did"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# THE FIFTEEN SCENARIOS (P16-TSK-027; PHASE_16_PLAN.md section 13; RESILIENCE_EXPERIMENTS.md section 4; OPERATIONS_RUNBOOK.md section
+# 11.66). Each scenario is an experiment of its own, F01...F15, run by experiment_run like every other (its security probe and its census
+# included), each composing the experiments of section 9.2 its register row names, and each counting the seven checks of the register's
+# section 1.3 into experiments/<id>/seven-checks.tsv:
+#   (a) no unintended duplicate financial effect - the census's one-per lines (one journal entry per posting scope, one transfer per
+#       rehearsal reference, one capture posting per captured card attempt, one capture and one payout key at the provider);
+#   (b) no unexplained money created or destroyed - the census's trial balance zero per currency and its GL equals ledger line;
+#   (c) no silent mutation of history - every journal entry read before the fault there after it with the same digest;
+#   (d) no permanent loss of financial evidence - no table that only grows has fewer rows after the fault;
+#   (e) safe recovery and replay - the scenario's own re-run (Fnn_rerun) adds no effect for its references and changes no entry;
+#   (f) correct idempotency - every request the scenario recorded, sent again under its key through another replica, answered with the
+#       same status and the same bytes;
+#   (g) reconciliation detects what is unresolved - a settlement line planted before the fault (a real capture of the run, settled
+#       REHEARSAL_SCENARIO_PLANT_MINOR minor units off, 1.00 EUR by default) raised as a break within REHEARSAL_SCENARIO_BREAK_SECONDS.
+# (c) to (g) are judged at the end of the scenario's recovery (scenario_after), (a) and (b) from its census (scenario_census, called by
+# experiment_run). A check that fails stops the scenario: it is FAILED, and its recovery and census still run. Exactly-once is not claimed:
+# what a pass shows is effectively-once effects, counted. Built and contract-tested (ScenarioExperimentsContractTest); every run owed under
+# POSTPONED_ISSUES.md PI-025, so no scenario's verdict is claimed. F06 refuses: no loan can exist on kind (the owner's decision of 2026-11-13
+# that no test-only bureau is built, unresolved question 13).
+# ---------------------------------------------------------------------------------------------------
+
+SCENARIO_PLANT_MINOR=${REHEARSAL_SCENARIO_PLANT_MINOR:-100}
+SCENARIO_BREAK_SECONDS=${REHEARSAL_SCENARIO_BREAK_SECONDS:-900}
+
+# scenario_check <letter> <PASS|FAIL> <evidence>: one of the seven checks, recorded; a FAIL stops the scenario (FAILED, recovered, censused).
+scenario_check() {
+    printf '%s\t%s\t%s\n' "$1" "$2" "$3" >> "$EXP_DIR/seven-checks.tsv"
+    experiments_record "check ($1)" "$2: $3"
+    [ "$2" = PASS ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }check ($1) failed: $3"
+}
+
+# scenario_tag: eight hex characters for a key or a reference of this run.
+scenario_tag() {
+    od -An -N4 -tx1 /dev/urandom | tr -d ' \n'
+}
+
+# scenario_before: what every scenario reads before its fault - the participants, the journal and the tables that only grow (checks c and
+# d), and the planted discrepancy delivered (check g). Called at the end of each scenario's steady state, once its own workload runs.
+scenario_before() {
+    : > "$EXP_DIR/seven-checks.tsv"
+    : > "$EXP_DIR/keys.tsv"
+    SCENARIO_REFS=""
+    SCENARIO_FIRST_POD=""
+    experiments_participants
+    experiments_db_snapshot "$EXP_DIR" before
+    scenario_plant
+}
+
+# scenario_plant: one settlement line for the simulated PSP naming a real capture of the run by its provider reference, its amount
+# SCENARIO_PLANT_MINOR minor units more than the capture: an unresolved difference reconciliation must raise. Delivered and attested as the
+# load's file is (load.sh's load_settlement), its reconciliation operators seeded the same way. A run with no capture yet cannot plant.
+scenario_plant() {
+    row=$(psql_query -c "SELECT capture_provider_reference || '|' || captured_amount_minor FROM payments.payment_attempt
+        WHERE capture_provider_reference IS NOT NULL AND captured_amount_minor > 0 ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')
+    SCENARIO_PLANT_REF=${row%%|*}
+    captured=${row##*|}
+    [ -n "$SCENARIO_PLANT_REF" ] && [ "$captured" != "$row" ] || cannot "$EXP_ID: no captured card payment of the run to plant a settlement difference against"
+    planted=$((captured + SCENARIO_PLANT_MINOR))
+    day=$(date -u +%Y-%m-%d)
+    tag=$(scenario_tag)
+    remittance=$(( 10000000 + $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') ))
+    awk -v day="$day" -v tag="$tag" -v ref="$SCENARIO_PLANT_REF" -v gross="$planted" -v remittance="$remittance" -v id="$EXP_ID" '
+        function decimal(minor) { return sprintf("%d.%02d", int(minor / 100), minor % 100) }
+        BEGIN { fee = int((gross * 15 + 500) / 1000) + 25
+            print "H,SIM_PSP_CSV,1,PSPB-" id "-" tag ",EUR," day
+            print "D,1,SALE," decimal(gross) "," decimal(fee) ",EUR," day ",,," ref ",,,,Card capture"
+            print "T,1," decimal(gross - fee) ",PSP-REM-83" remittance }' > "$CLIENT/scenario-$EXP_ID.csv"
+    cp "$CLIENT/scenario-$EXP_ID.csv" "$EXP_DIR/planted-settlement.csv"
+    psql_query <<SQL >> "$EXP_DIR/plant.log" 2>&1 || cannot "$EXP_ID: the reconciliation operators could not be seeded"
+INSERT INTO identity.role_assignment (id, identity_id, role_name, assigned_by, assigned_at)
+ SELECT uuidv7(), i.id, 'RECONCILIATION_OPERATOR', i.id, now() FROM identity.identity i
+  WHERE i.login_identifier IN ('$(sed -n 's/^operator.login=//p' "$CLIENT/state.properties")', '$(sed -n 's/^controller.login=//p' "$CLIENT/state.properties")')
+  AND NOT EXISTS (SELECT 1 FROM identity.role_assignment r WHERE r.identity_id = i.id AND r.role_name = 'RECONCILIATION_OPERATOR');
+SQL
+    client settle-file "$day" "scenario-$EXP_ID.csv" >> "$EXP_DIR/plant.log" 2>&1 || cannot "$EXP_ID: the planted settlement file could not be delivered: see experiments/$EXP_ID/plant.log"
+    experiments_record planted "a settlement line naming capture $SCENARIO_PLANT_REF at $planted minor units against its $captured: a difference of $SCENARIO_PLANT_MINOR that must become a break (check g)"
+}
+
+# scenario_planted_break: how many breaks reconciliation raised since the scenario began on an external item keyed by the planted capture.
+scenario_planted_break() {
+    psql_query -c "SELECT count(DISTINCT b.id) FROM reconciliation.break b
+        JOIN reconciliation.external_item_key k ON k.item_id = b.external_item_id
+        WHERE k.key_value = '$SCENARIO_PLANT_REF' AND b.created_at >= to_timestamp($EXP_STARTED_AT)" | tr -d '[:space:]'
+}
+
+# scenario_record <kind> <key> <reference> <file>: a request the scenario sent and its first full answer, for check (f) and its re-run.
+scenario_record() {
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$(experiments_status "$4")" \
+        "$(sed '/^status=/,$d' "$4" | sha256sum | cut -d' ' -f1)" "$4" >> "$EXP_DIR/keys.tsv"
+    [ "$3" = - ] || SCENARIO_REFS="${SCENARIO_REFS:+$SCENARIO_REFS,}'$3'"
+}
+
+# scenario_transfer <address> <key> <reference> <label> <seconds>: 0.01 EUR between the run's first two customers straight to one replica,
+# experiments_transfer's request with the client's patience bounded, so that an answer can be given up on while its command commits.
+scenario_transfer() {
+    printf '%s\n' "$EXP_CUSTOMER" | kube -n finapp-edge exec -i np-edge -c probe -- /bin/sh -c '
+        IFS= read -r bearer
+        curl -s -w "\nstatus=%{http_code}\n" --max-time "$6" -X POST -H "Authorization: Bearer $bearer" -H "Content-Type: application/json" \
+            -H "Idempotency-Key: $1" -d "{\"sourceAccountId\":\"$3\",\"destinationAccountId\":\"$4\",\"amount\":\"0.01\",\"currency\":\"EUR\",\"reference\":\"$2\"}" \
+            "http://$5:8080/v1/transfers"
+        echo "curl=$?"' probe "$2" "$3" "$EXP_FROM" "$EXP_TO" "$1" "$5" > "$EXP_DIR/transfer-$4.txt" 2>&1
+}
+
+# scenario_keyed_transfer <label>: one transfer under a fresh key and a workload's reference (wl-, which the census holds to one transfer),
+# sent straight to a ready replica and recorded for checks (e) and (f); counted for the census when it was answered.
+scenario_keyed_transfer() {
+    tag=$(scenario_tag)
+    pod=$(experiments_a_ready_replica)
+    SCENARIO_FIRST_POD=${pod%% *}
+    scenario_transfer "${pod##* }" "$EXP_ID-$tag" "wl-$EXP_ID-$tag" "$1" 60
+    case $(experiments_status "$EXP_DIR/transfer-$1.txt") in 200 | 201) EXPERIMENTS_TRANSFERS=$((EXPERIMENTS_TRANSFERS + 1)) ;; esac
+    scenario_record transfer "$EXP_ID-$tag" "wl-$EXP_ID-$tag" "$EXP_DIR/transfer-$1.txt"
+}
+
+# scenario_resend: check (f) - every recorded request sent again under its key through a replica other than the one it was first sent to,
+# its answer's status and bytes compared with the first full answer.
+scenario_resend() {
+    other=$(experiments_a_ready_replica "$SCENARIO_FIRST_POD")
+    [ -n "$other" ] || { scenario_check f FAIL "no ready replica to send the recorded requests again to"; return 0; }
+    address=${other##* }
+    sent=0
+    differ=""
+    while IFS="$(printf '\t')" read -r kind key reference status digest file; do
+        [ -n "$key" ] || continue
+        case $kind in
+            transfer) scenario_transfer "$address" "$key" "$reference" "resend-$sent" 60; again="$EXP_DIR/transfer-resend-$sent.txt" ;;
+            payout) experiments_payout "$address" "$key" "resend-$sent"; again="$EXP_DIR/payout-resend-$sent.txt" ;;
+            *) continue ;;
+        esac
+        sent=$((sent + 1))
+        if [ "$(experiments_status "$again")" != "$status" ] || [ "$(sed '/^status=/,$d' "$again" | sha256sum | cut -d' ' -f1)" != "$digest" ]; then
+            differ="$differ $key ($(experiments_status "$again") against $status)"
+        fi
+    done < "$EXP_DIR/keys.tsv"
+    if [ "$sent" -eq 0 ]; then
+        scenario_check f FAIL "the scenario recorded no request to send again"
+    elif [ -z "$differ" ]; then
+        scenario_check f PASS "$sent recorded requests sent again under their keys through ${other%% *}: the same status and bytes each"
+    else
+        scenario_check f FAIL "answered otherwise than first:$differ"
+    fi
+}
+
+# scenario_effects: how many transfers carry the scenario's own references; 0 when it recorded none.
+scenario_effects() {
+    [ -n "$SCENARIO_REFS" ] || { echo 0; return 0; }
+    psql_query -c "SELECT count(*) FROM transfers.transfer WHERE reference IN ($SCENARIO_REFS)" | tr -d '[:space:]'
+}
+
+# scenario_rerun_transfer: the scenario's first recorded transfer sent again under its key, as its re-run.
+scenario_rerun_transfer() {
+    line=$(awk -F'\t' '$1 == "transfer" {print $2 " " $3; exit}' "$EXP_DIR/keys.tsv")
+    [ -n "$line" ] || return 0
+    scenario_transfer "$(experiments_a_ready_replica | cut -d' ' -f2)" "${line%% *}" "${line##* }" rerun 60
+}
+
+# scenario_after: checks (c) to (g), at the end of the scenario's recovery, once its workload has ended and every unknown has concluded.
+scenario_after() {
+    experiments_db_snapshot "$EXP_DIR" after
+    experiments_db_compare "$EXP_DIR" before after
+    if [ "$DB_MISSING" = 0 ] && [ "$DB_CHANGED" = 0 ]; then
+        scenario_check c PASS "$DB_COMPARED journal entries read before the fault, each there after it with the same digest"
+    else
+        scenario_check c FAIL "of $DB_COMPARED entries read before the fault $DB_MISSING are missing after it and $DB_CHANGED changed"
+    fi
+    if [ -z "$DB_FEWER" ]; then
+        scenario_check d PASS "no table that only grows has fewer rows after the fault (journal, lines, audit, outbox, idempotency, transfers, payments, payouts)"
+    else
+        scenario_check d FAIL "rows lost: $DB_FEWER"
+    fi
+    # (e): the scenario's own re-run, then nothing it covers has moved again.
+    effects_before=$(scenario_effects)
+    SCENARIO_RERUN="none"
+    "${EXP_ID}_rerun"
+    experiments_db_snapshot "$EXP_DIR" rerun
+    experiments_db_compare "$EXP_DIR" after rerun
+    effects_after=$(scenario_effects)
+    if [ "$DB_MISSING" = 0 ] && [ "$DB_CHANGED" = 0 ] && [ "$effects_before" = "$effects_after" ]; then
+        scenario_check e PASS "the re-run ($SCENARIO_RERUN) converged: $effects_after effects for the scenario's references before and after it, no entry missing or changed"
+    else
+        scenario_check e FAIL "the re-run ($SCENARIO_RERUN): effects $effects_before -> $effects_after, $DB_MISSING entries missing and $DB_CHANGED changed"
+    fi
+    scenario_resend
+    # (g): the planted line, raised as a break.
+    deadline=$(( $(date +%s) + SCENARIO_BREAK_SECONDS ))
+    raised=0
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        raised=$(scenario_planted_break)
+        case $raised in '' | *[!0-9]*) raised=0 ;; esac
+        [ "$raised" -ge 1 ] && break
+        sleep 15
+    done
+    if [ "$raised" -ge 1 ]; then
+        scenario_check g PASS "the planted difference on capture $SCENARIO_PLANT_REF raised as $raised break(s)"
+    else
+        scenario_check g FAIL "the planted difference on capture $SCENARIO_PLANT_REF raised no break within $SCENARIO_BREAK_SECONDS s"
+    fi
+}
+
+# scenario_census <id>: checks (a) and (b) read from the census experiment_run took for the scenario, and the seven checks' summary. The
+# census itself fails the run on any FAIL line; these are the lines it held, recorded per check.
+scenario_census() {
+    if [ -n "$EXPERIMENTS_LOAD_ON" ]; then
+        # Under the load beside the experiments (the engineering workload: F07, F08, F14) the census is the load's window over the
+        # scenario, whose samples carry the census's sampled clauses, the one-per and balance lines among them; it fails the run itself on
+        # a red sample, and the full census follows the load.
+        window=$(awk -F'\t' -v id="$1" '$1 == id' "$EXP_ART/windows.tsv" 2>/dev/null | tail -1 | tr '\t' ' ')
+        if [ -n "$window" ]; then
+            scenario_check a PASS "the load's census samples over the scenario's window held every one-per clause ($window)"
+            scenario_check b PASS "the load's census samples over the scenario's window held the trial balance ($window)"
+        else
+            scenario_check a FAIL "no window of the load's census was read for $1"
+            scenario_check b FAIL "no window of the load's census was read for $1"
+        fi
+    else
+        file="$ART/census-$1.txt"
+        ones=$(grep -c '^PASS|one ' "$file" 2>/dev/null || true)
+        balance=$(grep -c '^PASS|trial balance zero per currency\|^PASS|GL equals ledger' "$file" 2>/dev/null || true)
+        if [ "${ones:-0}" -ge 3 ]; then
+            scenario_check a PASS "$ones one-per lines of the census PASS (census-$1.txt)"
+        else
+            scenario_check a FAIL "only ${ones:-0} one-per lines of the census read PASS (census-$1.txt)"
+        fi
+        if [ "${balance:-0}" -ge 2 ]; then
+            scenario_check b PASS "the trial balance zero per currency and GL = ledger PASS (census-$1.txt)"
+        else
+            scenario_check b FAIL "the census's trial balance or GL = ledger was not read PASS (census-$1.txt)"
+        fi
+    fi
+    failed=$(awk -F'\t' '$2 != "PASS" {printf "%s ", $1}' "$EXP_DIR/seven-checks.tsv")
+    counted=$(cut -f1 "$EXP_DIR/seven-checks.tsv" | sort -u | tr -d '\n')
+    [ "$counted" = abcdefg ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the seven checks were not all counted (counted: $counted)"
+    experiments_record "seven checks" "${failed:-all seven PASS}"
+}
+
+# ---------------------------------------------------------------------------------------------------
+# F01: a transfer committed, its HTTP response lost - the client gives up on its answer while the commit is slowed past its patience (a
+# latency toxic on the database hop), then retries under the same key through another replica.
+# ---------------------------------------------------------------------------------------------------
+
+F01_steady() {
+    start_workload f01 retry
+    sleep 8
+    scenario_before
+    first=$(experiments_a_ready_replica)
+    F01_POD=${first%% *}
+    F01_FIRST=${first##* }
+    second=$(experiments_a_ready_replica "$F01_POD")
+    F01_SECOND=${second##* }
+    [ -n "$F01_FIRST" ] && [ -n "$F01_SECOND" ] && [ "$F01_FIRST" != "$F01_SECOND" ] || cannot "F01: two ready replicas are needed"
+    tag=$(scenario_tag)
+    F01_KEY="F01-$tag"
+    F01_REF="wl-F01-$tag"
+}
+
+F01_fault() {
+    experiments_fault_on toxic postgres f01-slow-commit latency latency=4000
+    scenario_transfer "$F01_FIRST" "$F01_KEY" "$F01_REF" lost 2
+    experiments_record fault "the transfer $F01_REF sent to $F01_POD with the client's patience at 2 s while the database hop is 4 s slow: its answer given up ($(sed -n 's/^curl=//p' "$EXP_DIR/transfer-lost.txt"))"
+}
+
+F01_observe() {
+    experiments_fault_off toxic postgres f01-slow-commit latency latency=4000
+    deadline=$(( $(date +%s) + 120 ))
+    committed=0
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        committed=$(psql_query -c "SELECT count(*) FROM transfers.transfer WHERE reference = '$F01_REF'" | tr -d '[:space:]')
+        [ "$committed" = 1 ] && break
+        sleep 3
+    done
+    [ "$committed" = 1 ] || cannot "F01: the transfer whose answer was given up never committed, so no committed command's answer was lost (read $committed)"
+    SCENARIO_FIRST_POD=$F01_POD
+    scenario_transfer "$F01_SECOND" "$F01_KEY" "$F01_REF" retried 60
+    case $(experiments_status "$EXP_DIR/transfer-retried.txt") in
+        200 | 201) EXPERIMENTS_TRANSFERS=$((EXPERIMENTS_TRANSFERS + 1)) ;;
+        *) EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the retry under the lost answer's key was answered $(experiments_status "$EXP_DIR/transfer-retried.txt")" ;;
+    esac
+    scenario_record transfer "$F01_KEY" "$F01_REF" "$EXP_DIR/transfer-retried.txt"
+    count=$(psql_query -c "SELECT count(*) FROM transfers.transfer WHERE reference = '$F01_REF'" | tr -d '[:space:]')
+    [ "$count" = 1 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$count transfers carry $F01_REF after the retry: a second effect"
+    experiments_record retried "under the same key through the other replica: $(experiments_status "$EXP_DIR/transfer-retried.txt"); $count transfer for the reference"
+}
+
+F01_recover() {
+    experiments_workload_end f01
+    scenario_after
+}
+
+F01_rerun() {
+    SCENARIO_RERUN="the lost answer's request sent again to the replica that lost it"
+    scenario_transfer "$F01_FIRST" "$F01_KEY" "$F01_REF" rerun 60
+}
+
+# ---------------------------------------------------------------------------------------------------
+# F02: a payment provider succeeds and its answer is lost - every answer of the provider's hop dropped (a timeout toxic on its downstream
+# stream alone), so each call reaches the simulator, which takes its effect, and no answer comes back; the sweeps resolve each unknown once.
+# ---------------------------------------------------------------------------------------------------
+
+F02_steady() {
+    experiments_start_workload f02 1200
+    sleep 8
+    scenario_before
+    F02_KEY="F02-$(scenario_tag)"
+}
+
+F02_fault() {
+    experiments_fault_on toxic simulator f02-answers-lost timeout timeout=0
+    F02_AT=$(date +%s)
+    pod=$(experiments_a_ready_replica)
+    SCENARIO_FIRST_POD=${pod%% *}
+    experiments_payout "${pod##* }" "$F02_KEY" lost
+    experiments_record fault "every answer of the provider's hop dropped from $(iso "$F02_AT"); a payout under $F02_KEY sent to ${pod%% *} meanwhile: $(experiments_status "$EXP_DIR/payout-lost.txt")"
+}
+
+F02_observe() {
+    sleep "${REHEARSAL_F02_SECONDS:-120}"
+    unknown=$(experiments_value 'max(finapp_payments_unknown_age)')
+    payouts=$(experiments_value 'max(finapp_merchant_payout_unknown_age)')
+    experiments_record unknown "while the answers were lost: a payment's unknown age ${unknown:-unread}, a payout's ${payouts:-unread}"
+    experiments_fault_off toxic simulator f02-answers-lost timeout timeout=0
+    experiments_payout "$(experiments_a_ready_replica "$SCENARIO_FIRST_POD" | cut -d' ' -f2)" "$F02_KEY" retried
+    case $(experiments_status "$EXP_DIR/payout-retried.txt") in 200 | 201 | 202) EXPERIMENTS_PAYOUTS=$((EXPERIMENTS_PAYOUTS + 1)) ;; esac
+    scenario_record payout "$F02_KEY" - "$EXP_DIR/payout-retried.txt"
+}
+
+F02_recover() {
+    experiments_workload_end f02
+    deadline=$(( $(date +%s) + 1200 ))
+    open=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        open=$(psql_query -c "SELECT (SELECT count(*) FROM payments.payment_intent WHERE status IN ('REQUIRES_CONFIRMATION', 'PROCESSING')) || '|' || (SELECT count(*) FROM merchant.merchant_payout WHERE status NOT IN ('PAID', 'FAILED', 'RETURNED'))" | tr -d '[:space:]')
+        [ "$open" = "0|0" ] && break
+        sleep 15
+    done
+    experiments_record resolved "unknown payments and payouts left after the sweeps: $open"
+    scenario_keyed_transfer after
+    scenario_after
+}
+
+F02_rerun() {
+    SCENARIO_RERUN="the payout's request sent again under its key, the provider's answers whole"
+    experiments_payout "$(experiments_a_ready_replica | cut -d' ' -f2)" "$F02_KEY" rerun
+}
+
+# ---------------------------------------------------------------------------------------------------
+# F03: a ledger posting succeeds and its event's publication fails - E09 (every broker stopped while postings continue), then E22's resend
+# of published rows (a relay that crashed between the broker's acknowledgement and its mark).
+# ---------------------------------------------------------------------------------------------------
+
+F03_steady() {
+    E09_steady
+    scenario_before
+    scenario_keyed_transfer sent
+}
+
+F03_fault() { E09_fault; }
+
+F03_observe() {
+    E09_observe
+    E09_recover
+    E22_steady
+    E22_fault
+    E22_observe
+}
+
+F03_recover() {
+    E22_recover
+    scenario_after
+}
+
+F03_rerun() {
+    SCENARIO_RERUN="the scenario's transfer sent again under its key after every outbox row was published"
+    scenario_rerun_transfer
+}
+
+# ---------------------------------------------------------------------------------------------------
+# F04: a consumer processes an event and crashes before its acknowledgement - E01 under the workload: a replica's JVM killed with SIGKILL
+# while its consumers hold records, every record whose effect committed redelivered and not applied twice.
+# ---------------------------------------------------------------------------------------------------
+
+F04_steady() {
+    E01_steady
+    scenario_before
+    scenario_keyed_transfer sent
+}
+
+F04_fault() { E01_fault; }
+F04_observe() { E01_observe; }
+
+F04_recover() {
+    E01_recover
+    scenario_after
+}
+
+F04_rerun() {
+    SCENARIO_RERUN="the scenario's transfer sent again under its key once every group had settled after the kill"
+    scenario_rerun_transfer
+}
+
+# ---------------------------------------------------------------------------------------------------
+# F05: the same event delivered to several processing attempts - E22 (published rows sent again, every group reset to its earliest offset),
+# then the fleet scaled 3 -> 10 -> 3 under the workload, every partition handed between members twice.
+# ---------------------------------------------------------------------------------------------------
+
+F05_steady() {
+    E22_steady
+    scenario_before
+    scenario_keyed_transfer sent
+}
+
+F05_fault() { E22_fault; }
+
+F05_observe() {
+    E22_observe
+    experiments_fault_on scaled finapp finapp-app 10 "$FLEET_REPLICAS"
+    deadline=$(( $(date +%s) + 600 ))
+    until [ "$(kube -n finapp get deployment finapp-app -o jsonpath='{.status.readyReplicas}' 2>/dev/null)" = 10 ]; do
+        [ "$(date +%s)" -lt "$deadline" ] || { EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the fleet did not reach ten ready replicas within 600 s"; break; }
+        sleep 5
+    done
+    sleep "${REHEARSAL_F05_AT_TEN_SECONDS:-180}"
+    experiments_fault_off scaled finapp finapp-app 10 "$FLEET_REPLICAS"
+    experiments_record scaled "the fleet at ten replicas for ${REHEARSAL_F05_AT_TEN_SECONDS:-180} s under the workload, then back at $FLEET_REPLICAS"
+}
+
+F05_recover() {
+    ready_fleet 600 || fail "F05: the fleet did not return to $FLEET_REPLICAS ready replicas"
+    E22_recover
+    scenario_after
+}
+
+F05_rerun() {
+    SCENARIO_RERUN="the scenario's transfer sent again under its key after two rebalances"
+    scenario_rerun_transfer
+}
+
+# ---------------------------------------------------------------------------------------------------
+# F06: a service crashes during a repayment allocation. It cannot be driven on kind: every loan rests on a credit approval, and none is
+# possible there, automatic or by a person (no bureau can be configured, and the owner decided on 2026-11-13 that no test-only bureau is
+# built for kind in Phase 16: unresolved question 13; E20's reason; load.sh's undriven flows). The repayment's atomicity and idempotency rest
+# on lending's own database cases (RepaymentDatabaseTest) and the lending storm, owed to PI-023's pass.
+# ---------------------------------------------------------------------------------------------------
+
+F06_steady() {
+    cannot "F06 cannot be driven on kind: no loan can exist there - every loan rests on a credit approval, and no bureau can be configured (the owner's decision of 2026-11-13, unresolved question 13; E20's reason)"
+}
+F06_fault() { :; }
+F06_observe() { :; }
+F06_recover() { :; }
+F06_rerun() { :; }
+
+# ---------------------------------------------------------------------------------------------------
+# F07: two instances capture the same payment - one card payment created, then its confirmation (which authorizes and captures) sent to
+# every replica at once over its own connection, at ten replicas, the provider's capture callback delivered while they race.
+# ---------------------------------------------------------------------------------------------------
+
+# scenario_card_payment <amount> <file>: a card payment of the run's first customer created straight on a replica, its id in SCENARIO_PAYMENT.
+scenario_card_payment() {
+    card=$(experiments_state customer.0.card)
+    [ -n "$card" ] || cannot "$EXP_ID: the client's state names no customer's card"
+    printf '%s\n' "$EXP_CUSTOMER" | kube -n finapp-edge exec -i np-edge -c probe -- /bin/sh -c '
+        IFS= read -r bearer
+        curl -s -w "\nstatus=%{http_code}\n" --max-time 60 -X POST -H "Authorization: Bearer $bearer" -H "Content-Type: application/json" \
+            -H "Idempotency-Key: $1" -d "{\"amount\":\"$4\",\"currency\":\"EUR\",\"paymentMethodId\":\"$2\"}" "http://$3:8080/v1/payments"
+        echo "curl=$?"' probe "$EXP_ID-$(scenario_tag)" "$card" "$(experiments_a_ready_replica | cut -d' ' -f2)" "$1" > "$EXP_DIR/$2" 2>&1
+    SCENARIO_PAYMENT=$(sed -n 's/.*"id":"\([^"]*\)".*/\1/p' "$EXP_DIR/$2" | head -1)
+    [ -n "$SCENARIO_PAYMENT" ] || cannot "$EXP_ID: the card payment could not be created: see experiments/$EXP_ID/$2"
+}
+
+# scenario_confirm <address> <label> <seconds>: the payment's confirmation (authorize and capture) sent straight to one replica.
+scenario_confirm() {
+    printf '%s\n' "$EXP_CUSTOMER" | kube -n finapp-edge exec -i np-edge -c probe -- /bin/sh -c '
+        IFS= read -r bearer
+        curl -s -w "\nstatus=%{http_code}\n" --max-time "$3" -X POST -H "Authorization: Bearer $bearer" "http://$2:8080/v1/payments/$1/confirmation"
+        echo "curl=$?"' probe "$SCENARIO_PAYMENT" "$1" "$3" > "$EXP_DIR/confirm-$2.txt" 2>&1
+}
+
+# scenario_capture_entries: the capture postings of the scenario's payment, every attempt's.
+scenario_capture_entries() {
+    psql_query -c "SELECT count(*) FROM ledger.journal_entry WHERE idempotency_scope IN
+        (SELECT 'payment-capture:' || id FROM payments.payment_attempt WHERE payment_intent_id = '$SCENARIO_PAYMENT')" | tr -d '[:space:]'
+}
+
+# scenario_callback <label>: the card provider's approved authorization and capture deliveries for the scenario's payment, signed as the
+# provider signs (load-callbacks, one feed line, sent once and stopped).
+scenario_callback() {
+    feed=$(psql_query -c "SELECT id || ' ' || coalesce(auth_reference, '-') || ' ' || coalesce(auth_provider_reference, '-') || ' '
+        || coalesce(capture_reference, '-') || ' ' || coalesce(capture_provider_reference, '-')
+        FROM payments.payment_attempt WHERE payment_intent_id = '$SCENARIO_PAYMENT' ORDER BY created_at DESC LIMIT 1" | sed 's/^ *//')
+    [ -n "$feed" ] || return 1
+    printf '%s\n' "$feed" > "$CLIENT/callbacks-feed-$1.txt"
+    touch "$CLIENT/stop-callbacks-$1"
+    client load-callbacks "$1" 0 1 > "$EXP_DIR/callback-$1.log" 2>&1
+}
+
+F07_steady() {
+    [ "$FLEET_REPLICAS" -ge 10 ] || cannot "F07 runs at ten replicas: REHEARSAL_EXPERIMENTS_REPLICAS=10"
+    start_workload f07 retry
+    sleep 8
+    scenario_before
+    scenario_card_payment 0.07 payment-created.txt
+}
+
+F07_fault() {
+    i=0
+    F07_RACERS=""
+    for address in $(experiments_fleet | awk -F'|' 'NF >= 5 && $2 == "True" && $6 == "" {print $5}'); do
+        scenario_confirm "$address" "race-$i" 90 &
+        F07_RACERS="$F07_RACERS $!"
+        i=$((i + 1))
+    done
+    F07_SENT=$i
+    # The provider's capture callback, racing the confirmations: as soon as the capture's reference exists, its approved delivery.
+    deadline=$(( $(date +%s) + 60 ))
+    raced=""
+    while [ "$(date +%s)" -lt "$deadline" ] && [ -z "$raced" ]; do
+        referenced=$(psql_query -c "SELECT count(*) FROM payments.payment_attempt WHERE payment_intent_id = '$SCENARIO_PAYMENT' AND capture_reference IS NOT NULL" | tr -d '[:space:]')
+        if [ "${referenced:-0}" -ge 1 ]; then
+            scenario_callback f07race && raced=yes
+        else
+            sleep 1
+        fi
+    done
+    # Only the racers: a bare wait would wait for every child of the harness, the security probe running until the recovery's end among them.
+    # shellcheck disable=SC2086
+    wait $F07_RACERS
+    experiments_record fault "the confirmation of $SCENARIO_PAYMENT sent to $F07_SENT replicas at once; the provider's capture callback ${raced:-not sent, no capture reference appeared}"
+}
+
+F07_observe() {
+    statuses=$(for f in "$EXP_DIR"/confirm-race-*.txt; do experiments_status "$f"; done | sort | uniq -c | tr -s ' ' | tr '\n' ';')
+    captured=$(psql_query -c "SELECT count(*) FROM payments.payment_attempt WHERE payment_intent_id = '$SCENARIO_PAYMENT' AND capture_provider_reference IS NOT NULL" | tr -d '[:space:]')
+    entries=$(scenario_capture_entries)
+    state=$(psql_query -c "SELECT status FROM payments.payment_intent WHERE id = '$SCENARIO_PAYMENT'" | tr -d '[:space:]')
+    experiments_record raced "answers: $statuses; $captured captured attempts, $entries capture entries, the payment $state"
+    [ "$captured" = 1 ] && [ "$entries" = 1 ] && [ "$state" = SUCCEEDED ] \
+        || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the race left $captured captured attempts and $entries capture entries, the payment $state: one of each is the success"
+    # The race's payment is one more card top-up the census counts, of its own amount.
+    if [ "$state" = SUCCEEDED ]; then
+        EXPERIMENTS_TOPUPS=$((EXPERIMENTS_TOPUPS + 1))
+        EXPERIMENTS_TOPUP_MINOR=$((EXPERIMENTS_TOPUP_MINOR + 7))
+    fi
+}
+
+F07_recover() {
+    experiments_workload_end f07
+    scenario_keyed_transfer after
+    F07_ENTRIES=$(scenario_capture_entries)
+    scenario_after
+    [ "$(scenario_capture_entries)" = "$F07_ENTRIES" ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the re-run's confirmation added a capture entry"
+}
+
+F07_rerun() {
+    SCENARIO_RERUN="the payment's confirmation sent once more, and its capture callback delivered again"
+    scenario_confirm "$(experiments_a_ready_replica | cut -d' ' -f2)" rerun 60
+    scenario_callback f07again || true
+}
+
+# ---------------------------------------------------------------------------------------------------
+# F08: two instances release the same hold - a merchant payout's effect held at the provider (hold-payouts) with its claim IN_PROGRESS, the
+# fleet at ten replicas, the hold lifted while every replica's sweep may conclude it: one conclusion, one dispatch, one payout key. The
+# ledger hold released concurrently is HoldDatabaseTest#tenConcurrentReleasesOfOneHoldReleaseOnce (database tier, owed to PI-023's pass).
+# ---------------------------------------------------------------------------------------------------
+
+F08_steady() {
+    [ "$FLEET_REPLICAS" -ge 10 ] || cannot "F08 runs at ten replicas: REHEARSAL_EXPERIMENTS_REPLICAS=10"
+    start_workload f08 retry
+    sleep 8
+    scenario_before
+    F08_KEY="F08-$(scenario_tag)"
+}
+
+F08_fault() {
+    experiments_fault_on hold hold-payouts
+    pod=$(experiments_a_ready_replica)
+    SCENARIO_FIRST_POD=${pod%% *}
+    experiments_payout "${pod##* }" "$F08_KEY" held &
+    F08_FIRST=$!
+    sleep 5
+    experiments_record fault "a payout under $F08_KEY sent to ${pod%% *} with its effect taken and its answer held at the provider, ten replicas able to conclude it"
+}
+
+F08_observe() {
+    experiments_fault_off hold hold-payouts
+    wait "$F08_FIRST" 2>/dev/null || true
+    experiments_payout "$(experiments_a_ready_replica "$SCENARIO_FIRST_POD" | cut -d' ' -f2)" "$F08_KEY" retried
+    case $(experiments_status "$EXP_DIR/payout-retried.txt") in 200 | 201 | 202) EXPERIMENTS_PAYOUTS=$((EXPERIMENTS_PAYOUTS + 1)) ;; esac
+    scenario_record payout "$F08_KEY" - "$EXP_DIR/payout-retried.txt"
+    # The payout by the id its answer names, concluded once by whichever of the ten replicas' sweeps reached it.
+    payout=$(sed -n 's/.*"id":"\([^"]*\)".*/\1/p' "$EXP_DIR/payout-retried.txt" | head -1)
+    deadline=$(( $(date +%s) + 900 ))
+    state=""
+    while [ -n "$payout" ] && [ "$(date +%s)" -lt "$deadline" ]; do
+        state=$(psql_query -c "SELECT status FROM merchant.merchant_payout WHERE id = '$payout'" | tr -d '[:space:]')
+        case $state in PAID | FAILED | RETURNED) break ;; esac
+        sleep 10
+    done
+    [ -n "$payout" ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the payout's answer named no payout"
+    experiments_record concluded "the held payout concluded ${state:-unread}; the census counts one payout key at the provider per payout"
+}
+
+F08_recover() {
+    experiments_workload_end f08
+    scenario_keyed_transfer after
+    scenario_after
+}
+
+F08_rerun() {
+    SCENARIO_RERUN="the payout's request sent again under its key after it concluded"
+    experiments_payout "$(experiments_a_ready_replica | cut -d' ' -f2)" "$F08_KEY" rerun
+}
+
+# ---------------------------------------------------------------------------------------------------
+# F09: a settlement file ingested while a previous ingestion is incomplete - a source's file delivered, the replica whose log names it killed
+# while it parses, the source's next file delivered at once: one acceptance at a time per source, the gapless sequence kept, the
+# interrupted parse finished by another replica.
+# ---------------------------------------------------------------------------------------------------
+
+# scenario_files: two settlement files of the simulated PSP, f09-1.csv and f09-2.csv, each settling the run's latest captures
+# (REHEARSAL_F09_LINES of them, 400 by default) so that a parse takes long enough to be interrupted.
+scenario_files() {
+    day=$(date -u +%Y-%m-%d)
+    psql_query -c "SELECT capture_provider_reference || '|' || captured_amount_minor FROM payments.payment_attempt
+        WHERE capture_provider_reference IS NOT NULL AND captured_amount_minor > 0 ORDER BY created_at DESC LIMIT ${REHEARSAL_F09_LINES:-400}" \
+        | tr -d ' ' | grep '|' > "$EXP_DIR/captures.txt" || true
+    [ -s "$EXP_DIR/captures.txt" ] || cannot "$EXP_ID: no captured card payment of the run to settle"
+    for n in 1 2; do
+        tag=$(scenario_tag)
+        remittance=$(( 10000000 + $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') ))
+        awk -F'|' -v day="$day" -v tag="$tag" -v remittance="$remittance" -v n="$n" -v id="$EXP_ID" '
+            function decimal(minor) { return sprintf("%d.%02d", int(minor / 100), minor % 100) }
+            BEGIN { print "H,SIM_PSP_CSV,1,PSPB-" id "-" n "-" tag ",EUR," day }
+            { c++; fee = int(($2 * 15 + 500) / 1000) + 25; net += $2 - fee
+              print "D," c ",SALE," decimal($2) "," decimal(fee) ",EUR," day ",,," $1 ",,,,Card capture" }
+            END { print "T," c "," decimal(net) ",PSP-REM-84" remittance }' "$EXP_DIR/captures.txt" > "$CLIENT/$EXP_ID-$n.csv"
+    done
+    SCENARIO_DAY=$day
+}
+
+# scenario_replica_naming <id> <seconds>: the first ready replica whose log names the id within that many seconds; any ready one if none does.
+scenario_replica_naming() {
+    victim=""
+    deadline=$(( $(date +%s) + $2 ))
+    while [ -z "$victim" ] && [ "$(date +%s)" -lt "$deadline" ]; do
+        for pod in $(experiments_fleet | awk -F'|' 'NF >= 5 && $2 == "True" && $6 == "" {print $1}'); do
+            if kube -n finapp logs "$pod" --since=120s 2>/dev/null | grep -q "$1"; then
+                victim=$pod
+                break
+            fi
+        done
+        [ -n "$victim" ] || sleep 1
+    done
+    [ -n "$victim" ] || victim=$(experiments_a_ready_replica | cut -d' ' -f1)
+    printf '%s\n' "$victim"
+}
+
+F09_steady() {
+    start_workload f09 retry
+    sleep 8
+    scenario_before
+    scenario_keyed_transfer sent
+    scenario_files
+}
+
+F09_fault() {
+    client settle-file "$SCENARIO_DAY" "$EXP_ID-1.csv" > "$EXP_DIR/file-1.log" 2>&1 || cannot "$EXP_ID: the first file could not be delivered: see experiments/$EXP_ID/file-1.log"
+    SCENARIO_FILE=$(sed -n 's/^settlement file=\([^ ]*\) .*/\1/p' "$EXP_DIR/file-1.log" | tail -1)
+    [ -n "$SCENARIO_FILE" ] || cannot "$EXP_ID: no file id came back: see experiments/$EXP_ID/file-1.log"
+    victim=$(scenario_replica_naming "$SCENARIO_FILE" 60)
+    experiments_kill_jvm "$victim"
+    client settle-file "$SCENARIO_DAY" "$EXP_ID-2.csv" > "$EXP_DIR/file-2.log" 2>&1 \
+        || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the source's next file was not taken while the first one's parse was interrupted"
+    experiments_record fault "file $SCENARIO_FILE's parse interrupted by killing $victim; the source's next file delivered at once"
+}
+
+# scenario_ingested: every file of the scenario accepted or rejected, and no source sequence taken twice; FAILED otherwise.
+scenario_ingested() {
+    deadline=$(( $(date +%s) + 900 ))
+    open=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        open=$(psql_query -c "SELECT count(*) FROM settlement.file WHERE status IN ('RECEIVED', 'PARSED') AND created_at >= to_timestamp($EXP_STARTED_AT)" | tr -d '[:space:]')
+        [ "$open" = 0 ] && break
+        sleep 10
+    done
+    accepted=$(psql_query -c "SELECT count(*) FROM settlement.file WHERE status = 'ACCEPTED' AND created_at >= to_timestamp($EXP_STARTED_AT)" | tr -d '[:space:]')
+    doubled=$(psql_query -c "SELECT count(*) FROM (SELECT source_id, source_sequence FROM reconciliation.reconciliation_batch
+        WHERE kind = 'BATCH' GROUP BY source_id, source_sequence HAVING count(*) > 1) twice" | tr -d '[:space:]')
+    experiments_record ingested "files of the scenario left received or parsed: ${open:-unread}; accepted: $accepted; a source's sequence run twice: $doubled"
+    [ "${open:-1}" = 0 ] && [ "$doubled" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }files left unaccepted (${open:-unread}) or a sequence run twice ($doubled)"
+}
+
+F09_observe() {
+    scenario_ingested
+}
+
+F09_recover() {
+    ready_fleet 600 || fail "$EXP_ID: the fleet did not return to $FLEET_REPLICAS ready replicas"
+    experiments_workload_end f09
+    scenario_after
+}
+
+F09_rerun() {
+    SCENARIO_RERUN="the first file delivered again, a duplicate the source refuses or converges on"
+    client settle-file "$SCENARIO_DAY" "$EXP_ID-1.csv" > "$EXP_DIR/file-1-again.log" 2>&1 || true
+}
+
+# ---------------------------------------------------------------------------------------------------
+# F10: a reconciliation run crashes halfway through a batch - a file's run read mid-walk and the replica whose log names it killed: another
+# resumes from the last committed cursor, which never walks back (INV-REC-04), and nothing is matched twice.
+# ---------------------------------------------------------------------------------------------------
+
+F10_steady() {
+    start_workload f10 retry
+    sleep 8
+    scenario_before
+    scenario_keyed_transfer sent
+    scenario_files
+}
+
+F10_fault() {
+    client settle-file "$SCENARIO_DAY" "$EXP_ID-1.csv" > "$EXP_DIR/file-1.log" 2>&1 || cannot "$EXP_ID: the file could not be delivered: see experiments/$EXP_ID/file-1.log"
+    deadline=$(( $(date +%s) + 300 ))
+    run=""
+    while [ -z "$run" ] && [ "$(date +%s)" -lt "$deadline" ]; do
+        run=$(psql_query -c "SELECT id || '|' || cursor || '|' || item_count FROM reconciliation.reconciliation_batch
+            WHERE status = 'IN_PROGRESS' AND cursor > 0 AND cursor < item_count AND created_at >= to_timestamp($EXP_STARTED_AT)
+            ORDER BY created_at DESC LIMIT 1" | tr -d '[:space:]')
+        [ -n "$run" ] || sleep 1
+    done
+    [ -n "$run" ] || cannot "F10: no run was read mid-walk to interrupt (raise REHEARSAL_F09_LINES)"
+    F10_RUN=${run%%|*}
+    victim=$(scenario_replica_naming "$F10_RUN" 5)
+    experiments_kill_jvm "$victim"
+    experiments_record fault "run $F10_RUN interrupted at cursor $(printf '%s' "$run" | cut -d'|' -f2) of $(printf '%s' "$run" | cut -d'|' -f3) by killing $victim"
+}
+
+F10_observe() {
+    deadline=$(( $(date +%s) + 900 ))
+    state=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        state=$(psql_query -c "SELECT status || '|' || cursor || '|' || item_count FROM reconciliation.reconciliation_batch WHERE id = '$F10_RUN'" | tr -d '[:space:]')
+        case $state in COMPLETED*) break ;; esac
+        sleep 10
+    done
+    twice=$(psql_query -c "SELECT count(*) FROM (SELECT external_item_id FROM reconciliation.break WHERE run_id = '$F10_RUN' AND external_item_id IS NOT NULL
+        GROUP BY external_item_id HAVING count(*) > 1) t" | tr -d '[:space:]')
+    experiments_record resumed "run $F10_RUN ended ${state:-unread}; external items with two breaks from it: $twice"
+    case $state in COMPLETED*) ;; *) EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the interrupted run did not complete on another replica (${state:-unread})" ;; esac
+    [ "$twice" = 0 ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }$twice external items carry two breaks from the interrupted run"
+}
+
+F10_recover() {
+    ready_fleet 600 || fail "$EXP_ID: the fleet did not return to $FLEET_REPLICAS ready replicas"
+    experiments_workload_end f10
+    scenario_after
+}
+
+F10_rerun() {
+    SCENARIO_RERUN="the interrupted run's file delivered again after the run completed"
+    client settle-file "$SCENARIO_DAY" "$EXP_ID-1.csv" > "$EXP_DIR/file-1-again.log" 2>&1 || true
+}
+
+# ---------------------------------------------------------------------------------------------------
+# F11: the database primary fails during financial processing - E05 (the primary killed, fenced, the standby promoted) under the workload.
+# It leaves one server and no standby, so it runs last, as E05 does.
+# ---------------------------------------------------------------------------------------------------
+
+F11_steady() {
+    E05_steady
+    scenario_before
+    scenario_keyed_transfer sent
+}
+
+F11_fault() { E05_fault; }
+F11_observe() { E05_observe; }
+
+F11_recover() {
+    E05_recover
+    scenario_after
+}
+
+F11_rerun() {
+    SCENARIO_RERUN="the scenario's transfer sent again under its key on the promoted primary"
+    scenario_rerun_transfer
+}
+
+# ---------------------------------------------------------------------------------------------------
+# F12: Kafka becomes temporarily unavailable - E09 under the workload: money still moves, every event published once after the return.
+# ---------------------------------------------------------------------------------------------------
+
+F12_steady() {
+    E09_steady
+    scenario_before
+    scenario_keyed_transfer sent
+}
+
+F12_fault() { E09_fault; }
+F12_observe() { E09_observe; }
+
+F12_recover() {
+    E09_recover
+    scenario_after
+}
+
+F12_rerun() {
+    SCENARIO_RERUN="the scenario's transfer sent again under its key after the outbox drained"
+    scenario_rerun_transfer
+}
+
+# ---------------------------------------------------------------------------------------------------
+# F13: a provider returns a delayed success after an internal timeout - the card rail silent past the timeout (degrade-card-silent) for one
+# payment's confirmation, the rail back, the sweep's inquiry concluding it, and only then, REHEARSAL_F13_LATE_SECONDS later (300), the
+# provider's approved callbacks for it: evidence, or a break, never a second effect.
+# ---------------------------------------------------------------------------------------------------
+
+F13_steady() {
+    experiments_start_workload f13 1200
+    sleep 8
+    scenario_before
+    scenario_card_payment 0.13 payment-created.txt
+}
+
+F13_fault() {
+    experiments_fault_on hold degrade-card-silent
+    scenario_confirm "$(experiments_a_ready_replica | cut -d' ' -f2)" timeout 120
+    experiments_record fault "the card rail silent past the timeout; the confirmation of $SCENARIO_PAYMENT answered $(experiments_status "$EXP_DIR/confirm-timeout.txt")"
+}
+
+F13_observe() {
+    experiments_fault_off hold degrade-card-silent
+    deadline=$(( $(date +%s) + 1200 ))
+    F13_STATE=""
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        F13_STATE=$(psql_query -c "SELECT status FROM payments.payment_intent WHERE id = '$SCENARIO_PAYMENT'" | tr -d '[:space:]')
+        case $F13_STATE in SUCCEEDED | FAILED | CANCELED) break ;; esac
+        sleep 15
+    done
+    experiments_record concluded "the timed-out payment concluded ${F13_STATE:-unread} by the sweep's inquiry"
+    sleep "${REHEARSAL_F13_LATE_SECONDS:-300}"
+    before=$(scenario_capture_entries)
+    scenario_callback f13late || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the payment had no attempt to deliver a late callback for"
+    sleep 30
+    after=$(scenario_capture_entries)
+    experiments_record late "the approved callbacks delivered ${REHEARSAL_F13_LATE_SECONDS:-300} s after the payment concluded $F13_STATE: capture entries $before -> $after"
+    [ "${after:-x}" = "${before:-y}" ] \
+        || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the late success added a capture entry ($before -> $after) to a payment the sweep had concluded $F13_STATE"
+    if [ "$F13_STATE" = SUCCEEDED ]; then
+        EXPERIMENTS_TOPUPS=$((EXPERIMENTS_TOPUPS + 1))
+        EXPERIMENTS_TOPUP_MINOR=$((EXPERIMENTS_TOPUP_MINOR + 13))
+    fi
+}
+
+F13_recover() {
+    experiments_workload_end f13
+    scenario_keyed_transfer after
+    F13_ENTRIES=$(scenario_capture_entries)
+    scenario_after
+    [ "$(scenario_capture_entries)" = "$F13_ENTRIES" ] || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the re-run's late callback added a capture entry"
+}
+
+F13_rerun() {
+    SCENARIO_RERUN="the late callbacks delivered once more"
+    scenario_callback f13again || true
+}
+
+# ---------------------------------------------------------------------------------------------------
+# F14: a service redeployed while transactions are in progress - E82 (a rolling restart of the whole fleet) at ten replicas under the
+# workload, then the rollout undone, every request resolved by its key. The N - 1 to N walk at ten is the release scope's E26
+# (REHEARSAL_RELEASE_REPLICAS=10); this is the experiments scope's half, run with REHEARSAL_EXPERIMENTS_REPLICAS=10.
+# ---------------------------------------------------------------------------------------------------
+
+F14_steady() {
+    [ "$FLEET_REPLICAS" -ge 10 ] || cannot "F14 runs at ten replicas: REHEARSAL_EXPERIMENTS_REPLICAS=10"
+    E82_steady
+    scenario_before
+    scenario_keyed_transfer sent
+}
+
+F14_fault() { E82_fault; }
+
+F14_observe() {
+    E82_observe
+    kube -n finapp rollout undo deployment/finapp-app >> "$EXP_ART/faults.log" 2>&1 || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the rollout could not be undone"
+    kube -n finapp rollout status deployment/finapp-app --timeout="${ROLLOUT_TIMEOUT}s" >> "$EXP_DIR/rollout.log" 2>&1 \
+        || EXP_STOPPED="${EXP_STOPPED:+$EXP_STOPPED; }the undone rollout did not complete within $ROLLOUT_TIMEOUT s"
+    experiments_record undone "the rolling restart undone at ten replicas under the workload"
+}
+
+F14_recover() {
+    E82_recover
+    scenario_after
+}
+
+F14_rerun() {
+    SCENARIO_RERUN="the scenario's transfer sent again under its key after the roll and its undo"
+    scenario_rerun_transfer
+}
+
+# ---------------------------------------------------------------------------------------------------
+# F15: a recovery process replays previously processed messages - E22's reset: every consumer group set back to its earliest offset with
+# the fleet at zero, as the restore drill's broker step sets them back to the restore's instant, and every record replayed: each applied
+# record absorbed by its inbox, none applied twice. The restore drill's own broker step is E87's (P16-TSK-025).
+# ---------------------------------------------------------------------------------------------------
+
+F15_steady() {
+    E22_steady
+    scenario_before
+    scenario_keyed_transfer sent
+}
+
+F15_fault() { E22_fault; }
+F15_observe() { E22_observe; }
+
+F15_recover() {
+    E22_recover
+    scenario_after
+}
+
+F15_rerun() {
+    SCENARIO_RERUN="the scenario's transfer sent again under its key after every group replayed from its earliest offset"
+    scenario_rerun_transfer
 }

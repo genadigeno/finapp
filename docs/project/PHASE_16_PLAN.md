@@ -728,6 +728,14 @@ its own container, so scenario 3 cites it `[own-container]`, not `[db]`; `Health
 which needs no database and runs per task as the `[hermetic]` label meant. Each scenario is registered there as its own
 experiment, `F01`…`F15`, composing the experiments of §9.2 this column names.)*
 
+*(2026-11-14, `P16-TSK-027`, as built: each scenario is an experiment of the `experiments` scope (`infra/scripts/kind-rehearsal/experiments.sh`),
+run through `experiment_run` and counting the seven checks into `experiments/<id>/seven-checks.tsv`, a failed check making it `FAILED`; (g)'s
+discrepancy is a real capture of the run settled 1.00 EUR off, planted before the fault. Scenario 8's ledger-hold half is a database case
+(`HoldDatabaseTest#tenConcurrentReleasesOfOneHoldReleaseOnce`). **Scenario 6 cannot be driven on `kind`**: no loan can exist there, the
+owner having decided on 2026-11-13 that no test-only bureau is built (unresolved question 13), so F06 refuses with that reason and its
+partial proof stays lending's own cases. Built and contract-tested; **every run owed** under `POSTPONED_ISSUES.md` PI-025, the database case
+under PI-023's pass, so no scenario's verdict is claimed. `OPERATIONS_RUNBOOK.md` §11.66.)*
+
 ---
 
 ## 14. Capacity and scaling strategy (Part 21)

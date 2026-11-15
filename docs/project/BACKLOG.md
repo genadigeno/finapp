@@ -30903,7 +30903,7 @@ on none:
   region - item 72 (a), beside item 71. **Not run**: anything against an account. **Found, not this task's**: three hermetic guards red on master (`StoredBoundsAreTheDatabasesTest`, `ArchitectureRulesAreDocumentedTest`, `HandlerSetCatalogueTest`), each reading only files this task left unchanged - fixed by `X-TSK-019` the same day.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-027 — Financial correctness under failure: the fifteen scenarios** — `READY` (2026-11-14; marked by `P16-TSK-026`'s completion gate, the one next task its gate names: every dependency, `-013`, `-016`, `-018`, `-020`, `-021` and `-022`, `COMPLETE`, and wave G started by the owner's "Start next task") *(read "`PLANNED`" until then)*
+**P16-TSK-027 — Financial correctness under failure: the fifteen scenarios** — `COMPLETE` (2026-11-14; designed, built and gated straight through on the owner's "Start next task", branch `P16-TSK-027` from `e63dc338` (`P16-TSK-026` and `X-TSK-019`, unmerged, PR #20); no migration, no production code, no ADR; **built and contract-tested, every cluster run owed under `POSTPONED_ISSUES.md` PI-025**, scenario 8's database case owed to PI-023's pass; marks `P16-TST-001` `READY`) *(read "`READY` (2026-11-14; marked by `P16-TSK-026`'s completion gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: each of `PHASE_16_PLAN.md` §13's fifteen scenarios executed end to end on `kind` under load, with the seven checks
   counted and recorded. This is the phase's most important task.
 - **Affected components**: every money-moving module; the harness.
@@ -30927,6 +30927,35 @@ on none:
 - **Measurable acceptance criteria**: fifteen scenario rows filled with their seven checks, each `PASS` or a remediation task named.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`.
 - **Operational documentation**: the scenarios' findings in the runbook where a person acts.
+- **As built (2026-11-14, gate `COMPLETE`; no migration, no production code, no ADR; every cluster run owed under PI-025).** **The
+  scenarios**: F01 to F15 in `infra/scripts/kind-rehearsal/experiments.sh`, each an experiment of the `experiments` scope run by
+  `experiment_run` (so the safety boundary, the security probe and the census come with it), each composing its register row - F01 a
+  transfer's answer given up while its commit is slowed past the client's patience, then retried by key through another replica; F02 the
+  provider's answers dropped downstream alone; F03 E09 then E22's resend; F04 E01; F05 E22 then the fleet 3 -> 10 -> 3; F07 one payment's
+  confirmation to every replica at once with the provider's callback racing; F08 a payout's effect held at the provider with ten replicas able
+  to conclude it; F09 the parsing replica killed while the source's next file arrives; F10 a run read mid-walk and its replica killed; F11 E05;
+  F12 E09; F13 the card rail silent past the timeout, then the provider's approved callbacks 300 s after the payment concluded; F14 E82 at ten
+  then the rollout undone; F15 E22's reset. **The seven checks**, each recorded in `experiments/<id>/seven-checks.tsv`, a failed one making the
+  scenario `FAILED` (recovered and censused still): (a) and (b) from the census (its one-per lines; its trial balance and GL equals ledger), or
+  the load's window under a load; (c) and (d) the journal and the growing tables compared before and after; (e) the scenario's own re-run
+  adding no effect and changing no entry; (f) every recorded key sent again through another replica, the same status and bytes; (g) a real
+  capture of the run settled 1.00 EUR off, planted before the fault and raised as a break after. F07, F08 and F14 are written for ten and
+  refuse below it (`EXPERIMENTS_AT_A_COUNT`), and may run under the engineering workload. The census counts the scenarios' own card payments
+  at their amounts (`EXPERIMENTS_TOPUPS`, `EXPERIMENTS_TOPUP_MINOR`). **F06 refuses**: no loan can exist on `kind` (the owner's decision of
+  2026-11-13 that no test-only bureau is built, unresolved question 13; E20's reason), its partial proof lending's own database cases.
+  **Scenario 8's gap**: `HoldDatabaseTest#tenConcurrentReleasesOfOneHoldReleaseOnce`, ten connections releasing one ledger hold at a barrier -
+  one release acts, one record, one event, availability restored once; written and compiled, owed to PI-023's pass (the database tier, which
+  the owner asked this task not to run). `ScenarioExperimentsContractTest` (8 members) holds the text; two probes recorded
+  (`MUTATION_TESTING.md` §2). Register rows F01-F15 filled `N/A: not run` with their reasons; runbook §11.66 and its count row; PI-025's owed
+  runs, the entry's probe (the inbox's dedupe off, F05 red) among them; `PHASE_16_PLAN.md` §13 noted. **Each criterion**: fifteen rows filled
+  - built, each run owed, none `PASS` and none claimed; F06 not drivable, recorded with its reason. **For the first run**: whether (g)'s
+  planted settlement difference leaves the position and cash proofs quiet (their pages would stop every scenario) is unverified, and the
+  amounts the harness's SQL reads are read from the schema, not from a run. **Multi-instance**: `PASS` - nothing runs here; every scenario at
+  three or more replicas, three at ten. **Not run**: any cluster; the database tier. **The gate's finding, fixed**: F07 waited for its racing
+  confirmations with a bare `wait`, which waits for every child of the harness - the security probe `experiment_run` starts before the fault
+  and stops at the recovery among them - so F07 would have hung before its observation; it now waits for its racers by their ids, and the
+  contract test refuses a bare wait anywhere in the scenarios (probe P3, `MUTATION_TESTING.md` §2). The runbook names the plant's one
+  unverified risk (a proof page raised by the plant alone) and its repair.
 - **Risk**: High. **Cx**: XL.
 
 **P16-TSK-028 — Security under scale and failure** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-028` from master `fb0e014b`, wave F; no migration, no production code changed, no alert rule; ADR-0147 `Proposed`; **built and contract-tested, every run owed under `POSTPONED_ISSUES.md` PI-025**; one owner item, `THREAT_MODEL.md` §6 item 69; marks no task `READY` - the coordinator does) *(read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-014` and `P16-TSK-022`, both `COMPLETE`)" until the gate)*
@@ -31096,7 +31125,7 @@ on none:
 - **Operational documentation**: the readiness review's Phase 16 addendum.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TST-001 — The integrated soak: ten replicas, the engineering workload, faults on a schedule** — `PLANNED`
+**P16-TST-001 — The integrated soak: ten replicas, the engineering workload, faults on a schedule** — `READY` (2026-11-14; marked by `P16-TSK-027`'s completion gate, the one next task its gate names: every dependency, `-015`, `-025` and `-027`, `COMPLETE`) *(read "`PLANNED`" until then)*
 - **Objective**: the phase's substance in one run, not postponed (C1): an 8-hour soak at ten replicas at the engineering workload,
   with a schedule of faults drawn from the register injected during it (a pod kill each hour, a broker loss, a database failover,
   a rolling deploy, a provider outage) and the invariants sampled throughout.

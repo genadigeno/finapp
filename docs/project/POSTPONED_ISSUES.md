@@ -821,6 +821,17 @@ commit and the date; do not delete the entry.
     parsed by the pinned `promtool check rules` and evaluated by the pinned `promtool test rules` against a planted payment-objective burn;
     the new rules' and the decline wave's promtool cases; the two counts' statements in a throwaway container of PostgreSQL 18.6 (no
     `kind`, no application, the module's tables reduced to the columns they read); the simulator compiled with the JDK.
+  - **`P16-TSK-027`** (financial correctness under failure, the fifteen scenarios; `OPERATIONS_RUNBOOK.md` §11.66, whose record is empty;
+    `RESILIENCE_EXPERIMENTS.md` §4.2): in the `experiments` scope at three replicas, one run at a time, **F01, F02, F03, F04, F05, F09, F10,
+    F12, F13 and F15**, then **F11** last (it leaves one database server and no standby); at ten replicas under the engineering workload
+    (`REHEARSAL_EXPERIMENTS_REPLICAS=10 REHEARSAL_EXPERIMENTS_LOAD=sustained`), **F07, F08 and F14**; each with its seven checks in
+    `experiments/<id>/seven-checks.tsv`, every check `PASS` or a remediation task of its own named in the register's row. **F06** is not owed:
+    it cannot be driven on `kind` (no loan can exist there; the owner's decision of 2026-11-13, unresolved question 13). **The entry's probe**:
+    the inbox's dedupe turned off on a throwaway branch, F05 run on its image, a second effect counted and F05 red, with its
+    `MUTATION_TESTING.md` §2 row then. **Scenario 8's database case**, `HoldDatabaseTest#tenConcurrentReleasesOfOneHoldReleaseOnce` (ten
+    connections releasing one ledger hold at a barrier), written and compiled, is owed to PI-023's pass with the database tier, which the owner
+    asked this task not to run. Nothing ran before the word. What ran instead, on 2026-11-14, without a cluster: `sh -n` over the changed
+    scripts and `ScenarioExperimentsContractTest` with its two probes (`MUTATION_TESTING.md` §2).
 
 ## PI-026 — The first real environment's managed-service decisions: the audit archive's bucket and read door, the restore's release and window
 
