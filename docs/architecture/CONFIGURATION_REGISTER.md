@@ -129,6 +129,8 @@ placeholder value there is unsafe rather than harmless: `CreditBeans` refuses an
 | `finapp.accounting.valuation.max-age-hours` | `FINAPP_ACCOUNTING_VALUATION_MAXAGEHOURS` | FINANCIAL | `96` | default | default | default | default | default | Judged once per rate set against the period's end, which is data, and stored on the set (`JdbcValuationRateSetStore`), immutable from that judgement. Two replicas may capture under different bounds and each set still states the bound that admitted it, and a set is used only once it is approved. |
 | `finapp.api.max-request-bytes` | `FINAPP_API_MAXREQUESTBYTES` | OPERATIONAL | `1048576` | default | default | default | default | default | - |
 | `finapp.api.settlement-upload-max-request-bytes` | `FINAPP_API_SETTLEMENTUPLOADMAXREQUESTBYTES` | OPERATIONAL | `12582912` | default | default | default | default | default | - |
+| `finapp.api.database-unreachable.retry-after` | `FINAPP_API_DATABASE_UNREACHABLE_RETRY_AFTER` | OPERATIONAL | `PT5S` | default | default | default | default | default | - |
+| `finapp.api.database-unreachable.retry-after-spread` | `FINAPP_API_DATABASE_UNREACHABLE_RETRY_AFTER_SPREAD` | OPERATIONAL | `PT5S` | default | default | default | default | default | - |
 | `finapp.audit.archive.batch-size` | `FINAPP_AUDIT_ARCHIVE_BATCHSIZE` | OPERATIONAL | `1000` | default | default | default | default | default | - |
 | `finapp.audit.archive.bucket` | `FINAPP_AUDIT_ARCHIVE_BUCKET` | OPERATIONAL | `finapp-audit-archive` | default | default | default | default | default | - |
 | `finapp.audit.archive.endpoint` | `FINAPP_AUDIT_ARCHIVE_ENDPOINT` | OPERATIONAL | (blank) | default | default | default | default | default | - |

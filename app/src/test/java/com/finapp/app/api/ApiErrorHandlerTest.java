@@ -95,6 +95,39 @@ class ApiErrorHandlerTest {
             throw com.finapp.app.abuse.SourceLimitRefused.storeUnavailable();
         }
 
+        /**
+         * The database unreachable (`P16-REM-002`): a transaction that could not begin, the pool's wait ended because no connection
+         * could be made - Hikari's timeout carrying the last attempt's failure, as the driver words it, a host in it.
+         */
+        @PostMapping(path = "/probe/database-unreachable", consumes = MediaType.APPLICATION_JSON_VALUE)
+        String databaseUnreachable(@RequestBody String body) {
+            java.sql.SQLException refused = new java.sql.SQLException("Connection to db-primary.internal:5432 refused " + SECRET, "08001");
+            throw new org.springframework.transaction.CannotCreateTransactionException("Could not open JDBC Connection for transaction",
+                    new java.sql.SQLTransientConnectionException(
+                            "finapp - Connection is not available, request timed out after 3000ms.", "08001", refused));
+        }
+
+        /** The connection lost mid-command, as a store reports it: the driver's exception dropped, its SQLState kept in text. */
+        @PostMapping(path = "/probe/connection-lost", consumes = MediaType.APPLICATION_JSON_VALUE)
+        String connectionLost(@RequestBody String body) {
+            throw new IllegalStateException(com.finapp.platform.persistence.DatabaseFailure.describe("posting the entry",
+                    new java.sql.SQLException("An I/O error occurred while sending to the backend.", "08006")));
+        }
+
+        /** Every connection made and busy while the database is up: an overload, never the database lost. */
+        @PostMapping(path = "/probe/pool-exhausted", consumes = MediaType.APPLICATION_JSON_VALUE)
+        String poolExhausted(@RequestBody String body) {
+            throw new org.springframework.transaction.CannotCreateTransactionException("Could not open JDBC Connection for transaction",
+                    new java.sql.SQLTransientConnectionException("finapp - Connection is not available, request timed out after 3000ms."));
+        }
+
+        /** A statement's own failure on a live connection: its statement timeout. */
+        @PostMapping(path = "/probe/statement-timeout", consumes = MediaType.APPLICATION_JSON_VALUE)
+        String statementTimeout(@RequestBody String body) {
+            throw new IllegalStateException(com.finapp.platform.persistence.DatabaseFailure.describe("reading the account",
+                    new java.sql.SQLException("canceling statement due to statement timeout", "57014")));
+        }
+
         @PostMapping(path = "/probe/body", consumes = MediaType.APPLICATION_JSON_VALUE)
         String body(@RequestBody Payload payload) {
             return "ok";
@@ -145,6 +178,36 @@ class ApiErrorHandlerTest {
 
         assertContract(response, 503, "api.TemporarilyUnavailable");
         assertThat(response.headers().firstValue("Retry-After")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a database that could not be reached is 503 api.TemporarilyUnavailable with a Retry-After, and nothing of the pool, the"
+            + " host or the cause (P16-REM-002, item 61)")
+    void anUnreachableDatabaseIs503WithRetryAfter() throws Exception {
+        HttpResponse<String> response = postJson("/probe/database-unreachable", "{}");
+
+        assertContract(response, 503, "api.TemporarilyUnavailable");
+        assertThat(response.headers().firstValue("Retry-After").map(Long::parseLong))
+                .as("the configured base and spread, whole seconds").hasValueSatisfying(seconds -> assertThat(seconds).isBetween(5L, 10L));
+        assertThat(response.body()).doesNotContain(SECRET).doesNotContain("db-primary").doesNotContain("5432")
+                .doesNotContain("Connection is not available").doesNotContain("08001");
+    }
+
+    @Test
+    @DisplayName("a connection lost mid-command, as a store reports it, is the same 503 (P16-REM-002)")
+    void aConnectionLostMidCommandIs503() throws Exception {
+        HttpResponse<String> response = postJson("/probe/connection-lost", "{}");
+
+        assertContract(response, 503, "api.TemporarilyUnavailable");
+        assertThat(response.headers().firstValue("Retry-After")).isPresent();
+    }
+
+    @Test
+    @DisplayName("an exhausted pool while the database is up, and a statement's own timeout, are not the database lost: each keeps its"
+            + " 500 (P16-REM-002)")
+    void anOverloadAndAStatementFailureAreNot503() throws Exception {
+        assertContract(postJson("/probe/pool-exhausted", "{}"), 500, "api.InternalError");
+        assertContract(postJson("/probe/statement-timeout", "{}"), 500, "api.InternalError");
     }
 
     @Test

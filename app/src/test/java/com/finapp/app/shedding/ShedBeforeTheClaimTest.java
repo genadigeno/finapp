@@ -104,7 +104,7 @@ class ShedBeforeTheClaimTest {
 
     private MockMvc door(boolean nothingDeployed) {
         return MockMvcBuilders.standaloneSetup(new KeyedDoor())
-                .setControllerAdvice(new ApiErrorHandler(new StaticListableBeanFactory().getBeanProvider(StepUpRefusals.class)))
+                .setControllerAdvice(new ApiErrorHandler(new StaticListableBeanFactory().getBeanProvider(StepUpRefusals.class), new org.springframework.beans.factory.support.StaticListableBeanFactory().getBeanProvider(com.finapp.app.api.DatabaseUnreachableAnswer.class)))
                 .addInterceptors(new ShedAtTheDoor(shedding, new RequestSurfaces(nothingDeployed)), authentication,
                         new ShedOnTheDeadline(shedding))
                 .build();

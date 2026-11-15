@@ -103,8 +103,11 @@ public enum PlatformErrorCode implements ErrorCode {
     TOO_MANY_REQUESTS("api.TooManyRequests", 429, "Too many requests."),
 
     /**
-     * The door could not count the request, so it stays closed: the counter's store is unavailable (`P15-TSK-022`). Retryable, and
-     * not a statement about the request.
+     * The request could not be served because a store it needs is unavailable, and the refusal is temporary. Two causes answer it:
+     * a door could not count the request, so it stays closed - the counter's store is unavailable (`P15-TSK-022`), no
+     * {@code Retry-After} because nothing knows one; and since `P16-REM-002` (item 61 (i)), a request that could not reach the
+     * database or lost it mid-request, with a {@code Retry-After}. Either way retryable, the same request under the same
+     * {@code Idempotency-Key} safe to send again, and not a statement about the request.
      */
     TEMPORARILY_UNAVAILABLE("api.TemporarilyUnavailable", 503, "Temporarily unavailable; try again shortly."),
 

@@ -72,7 +72,7 @@ Failures of the *protocol*, raised before any business module is reached.
 | `api.IdempotencyKeyRequired` | 422 | An operation requiring `Idempotency-Key` was called without one. |
 | `api.TooManyRequests` | 429 | A door's per-source limit was reached; retry after the `Retry-After` it carries. |
 | `api.InternalError` | 500 | Something failed that the client cannot act on. |
-| `api.TemporarilyUnavailable` | 503 | The door could not count the request, so it did not serve it; try again shortly. |
+| `api.TemporarilyUnavailable` | 503 | A store the request needs is unavailable, so it was not served, and the refusal is temporary: the door could not count the request (no `Retry-After`), or the database could not be reached or was lost mid-request (with a `Retry-After`). The same request under the same `Idempotency-Key` is safe to send again. |
 | `api.Overloaded` | 503 | The instance shed the request before serving it: nothing was done, no idempotency claim exists, and the same request under the same key, after the `Retry-After` it carries, is a first attempt. |
 
 ### `deadletter` — `DeadLetterErrorCode` *(`P15-TSK-028`)*
@@ -1760,6 +1760,15 @@ nothing happened: no idempotency claim, no row, no posting, and the client's ret
 carries `Retry-After` in whole seconds, at least 1 and jittered so that clients shed together do not return together, and the same
 body for every caller and route: it says nothing about why, how busy, or the request. It is decided before authentication, and it
 only ever refuses. The operator surface and the provider callbacks are not shed (`API_CONVENTIONS.md` §5a).
+
+**A request that cannot reach the database is told the refusal is temporary** (`P16-REM-002`; `THREAT_MODEL.md` §6 item 61 (i)).
+When the database cannot be reached - a connection the driver could not make or lost, a server shutting down or not yet back, the
+pool's wait ending because no connection could be made - the answer is `api.TemporarilyUnavailable` (503) with a `Retry-After` in
+whole seconds, a configured base plus a random part of a spread, so clients refused together do not return together. The same
+request under the same `Idempotency-Key` is safe to send again: a command that committed before the connection went is replayed
+by its key, and one that did not is a first attempt. The body names no pool, host or cause. An exhausted pool while the database
+is up is not this answer but an overload, shed before the handler as `api.Overloaded`; a statement's own failure on a live
+connection - a timeout, a constraint - keeps its own answer.
 
 ### Correlation at the boundary
 

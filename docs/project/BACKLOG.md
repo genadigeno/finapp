@@ -31395,7 +31395,7 @@ parts are `POSTPONED_ISSUES.md` PI-026 and PI-027.*
   and the checkpointed read's three account-taking methods are classified in `OwnershipIsScopedTest`.
 - **Risk**: High (a schema change on the hottest table). **Cx**: L.
 
-**P16-REM-002 — A lost database answered `503 api.TemporarilyUnavailable` with `Retry-After` (`THREAT_MODEL.md` §6 item 61)** — `READY` (2026-11-15; scheduled by the owner's "Start P16-REM-002", marked at `X-TSK-021`'s gate) *(read "`PLANNED`" until then)*
+**P16-REM-002 — A lost database answered `503 api.TemporarilyUnavailable` with `Retry-After` (`THREAT_MODEL.md` §6 item 61)** — `COMPLETE` (2026-11-15; scheduled by the owner's "Start P16-REM-002", marked `READY` at `X-TSK-021`'s gate and run straight through, branch `P16-REM-002` from `ba0610f0` (`X-TSK-021`, unmerged); no migration; marks `P16-REM-003` `READY` on the owner's word) *(read "`READY` (2026-11-15; marked at `X-TSK-021`'s gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: a money-moving command that cannot reach the database - the driver's connection failure, or the pool's wait ending
   because no connection could be made - answers `503 api.TemporarilyUnavailable` with a `Retry-After`, the same `Idempotency-Key`
   safe to send again, in one mapping the error contract states, as the owner decided (item 61 (i), 2026-11-13). Today it answers
@@ -31433,9 +31433,29 @@ parts are `POSTPONED_ISSUES.md` PI-026 and PI-027.*
   T16 row naming item 61 `EXISTS` with its evidence, and item 61 closed.
 - **Definition of done**: `DOD-API`, `DOD-TEST`.
 - **Operational documentation**: `ERROR_CONTRACT.md`; `OPERATIONS_RUNBOOK.md` §11.54 (what a client sees during a failover) and §11.28.
+- **As built (2026-11-15, gate `COMPLETE`).** **The classification**, `DatabaseUnreachable` (platform's persistence): down the cause
+  chain, and from a store's message where a store keeps only the SQLState (`InboxFailures`' reading), the database is lost on a
+  connection exception (SQLState class `08`, `SQLNonTransientConnectionException`), on a server going away or not yet back (`57P01`,
+  `57P02`, `57P03`: a failover's and a shutdown's), and on the pool's timeout only when it carries a cause that is itself lost - Hikari
+  sets that cause, and the last attempt's state, only when no connection could be made. An exhausted pool's timeout carries neither,
+  so it stays the overload shedding answers; a statement timeout (`57014`), a constraint and a serialisation refusal keep their own
+  answers. **The answer**, `ApiErrorHandler`'s last resort: such a failure is `503 api.TemporarilyUnavailable` with `Retry-After`
+  (`finapp.api.database-unreachable.retry-after` 5 s plus up to `-retry-after-spread` 5 s, whole seconds, the shedding's jitter, read
+  through `DatabaseUnreachableAnswer`), logged at `WARN` once without its stack, the body naming no pool, host or cause.
+  `PlatformErrorCode.TEMPORARILY_UNAVAILABLE`'s text now names both causes; `ERROR_CONTRACT.md`'s row and its section say the same key
+  is safe to send again. **Not changed**: the shed answer (`ShedBeforeTheClaimTest` green beside it), the door's own `503` without
+  `Retry-After`, and a refused step-up whose record cannot be written, which stays `500` as its interceptor's does. **Tests**:
+  `DatabaseUnreachableTest` (6: every cause, the busy pool, a statement's own, the chain, both message spellings),
+  `ApiErrorHandlerTest` over a real server (an unreachable database `503` with a `Retry-After` of 5 to 10 and nothing of the cause; a
+  connection lost mid-command, as a store words it, the same; an exhausted pool and a statement timeout still `500`). **Probes**
+  (recorded): the pool's timeout never lost - the outage answered `500`, red; always lost - the overload answered `503`, red. **Owed**:
+  E05 and the rolls scope's database roll read the new answer when they run (PI-025). **Registers**: `CONFIGURATION_REGISTER.md`'s two
+  rows; `PRODUCTION_READINESS.md`'s four cells that named this task re-read at the gate - the two Failure handling cells now name the
+  answer built and E05's run owed (PI-025), the two Security cells drop it from T16's owners. **Multi-instance**: `PASS` - a mapping and a
+  configured bound, the same on every replica; nothing held.
 - **Risk**: Medium. **Cx**: S.
 
-**P16-REM-003 — Report generation's opening bounded by a checkpoint for each locked month (`THREAT_MODEL.md` §6 item 64)** — `PLANNED`
+**P16-REM-003 — Report generation's opening bounded by a checkpoint for each locked month (`THREAT_MODEL.md` §6 item 64)** — `READY` (2026-11-15; scheduled by the owner's "Start P16-REM-003", marked at `P16-REM-002`'s gate) *(read "`PLANNED`" until then)*
 - **Objective**: bound the trial-balance definitions' from-inception fold, as the owner placed it (item 64 (i), 2026-11-13). When a
   month locks, store its GL groups (purpose, owner kind, currency, scale, direction) of every line dated before the next month's
   start, under the mapping version it pinned. A run's opening is then the latest locked month's checkpoint plus the lines dated after
