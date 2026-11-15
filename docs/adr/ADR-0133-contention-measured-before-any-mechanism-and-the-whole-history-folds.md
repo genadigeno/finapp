@@ -54,7 +54,10 @@ pair's waits read against the pair's growing history.
    balance mutated outside a posting, a weaker isolation for money and a cache in front of a decision.
 3. **The whole-history folds are bounded by a commit-order checkpoint.** This is proposed here, and its build is the owner's to place
    (`THREAT_MODEL.md` §6 item 55). *(2026-11-13: placed by the owner at item 55 (i), for the payable read: built in a task of its own,
-   `P16-REM-001`, with its database cases run before it merges, ahead of any real environment.)* A checkpoint is the fold of one account's lines (for the breakdown, its buckets) over every line whose
+   `P16-REM-001`, with its database cases run before it merges, ahead of any real environment.)* *(2026-11-15: built by
+   `P16-REM-001` - ledger `V038`, `CheckpointedPositionBreakdown` over `BucketFold`, the merchant API's payable query its one reader -
+   and its database cases run green that day on the owner's word, the two probes below each seen red: the watermark above the
+   snapshot's `xmin`, and the cluster check removed.)* A checkpoint is the fold of one account's lines (for the breakdown, its buckets) over every line whose
    entry's commit-order position (`txid`, ledger `V034`) lies below a watermark *W*. *W* is `pg_snapshot_xmin` of the snapshot that read
    them, so every transaction below *W* has finished and every committed line below it was visible to that read. No line can ever be
    added below *W* afterwards, and no clock or writer can choose *W*. A read is then the latest valid checkpoint's buckets plus every
@@ -109,7 +112,8 @@ limit has a bounded design with its hazards named, the restore's above all. The 
 it is measured.
 
 Negative: until the owner places item 55 the payable read stays linear in history *(2026-11-13: placed at (i); it stays so until
-`P16-REM-001` is built)*. E30's first limit stands, and each merchant's read
+`P16-REM-001` is built)* *(2026-11-15: built; the read folds a checkpoint and the lines since, and E30 again measures it,
+owed under PI-025)*. E30's first limit stands, and each merchant's read
 grows. The soak (E39) leaves the payable read out for that reason.
 
 Operational impact: the `kind` overlay's test-only server preloads `auto_explain`, inert until a run opens its window. The runs set
@@ -136,3 +140,7 @@ journal. Deleting every checkpoint changes no figure, only the read's cost.
 - The owner places item 55. The recommendation: build decision 3 in its own task, with its database cases run before it merges, ahead
   of any real environment that would hold a merchant's months of history. *(2026-11-13: placed so by the owner; the task is
   `P16-REM-001`.)*
+- *2026-11-15*: decision 3 built for the payable read by `P16-REM-001` (ledger `V038`; `CheckpointedPositionBreakdown`,
+  `BucketFold`; `CLASSIFICATION_VERSION` 1 pinned by `PositionClassificationIsVersionedTest`; the proofs on the whole fold, held by
+  `PositionCheckpointsAreTheApisAloneTest`). Its database cases ran green on PostgreSQL 18.6 before any merge. The decision path's fold
+  is untouched, for its own ADR after E38; E30 and E52 again, E38 and E39 measure what the bound and the index cost (PI-025).

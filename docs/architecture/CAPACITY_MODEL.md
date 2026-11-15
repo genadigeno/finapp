@@ -343,6 +343,10 @@ The first does it on every call; the second does it under the account's row lock
 core per read per day of a merchant's history, so about 60 ms a read after a month and 0.73 s after a year, against 5.56 payable reads a
 second in the busiest hour. The read was **measured** as E30's first limit (§3.4). Its bound is ADR-0133 decision 3, and its build
 was placed by the owner on 2026-11-13 (`THREAT_MODEL.md` §6 item 55 (i)): `P16-REM-001`, its database cases run before it merges.
+**Built 2026-11-15** (ledger `V038`, its database cases green): a read folds the latest checkpoint and the lines since, so its cost
+is the lines posted since a read last stored one - at most about 1,000 settled lines, the store's threshold, plus the traffic since -
+not the merchant's age. **Derived**, not measured: at W4 that is a bounded read for every merchant, whatever its history; E30 again
+with E52 measures it, owed under `POSTPONED_ISSUES.md` PI-025, and E38 and E39 the new index's cost on every line posted.
 *(Read "proposed, and its build is the owner's to place" until the owner's decision of 2026-11-13.)* The decision path's fold is
 measured by E38's pair.
 

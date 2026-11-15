@@ -5848,6 +5848,25 @@ in `payments.sweep_row_failure` or `merchant.sweep_row_failure` and backed off. 
 2026-11-13), and the first run of each writes its record here with its commit, its artefacts and, for E38, the explanation of every
 deadlock it found.
 
+**The payable read's checkpoint** (`P16-REM-001`; ADR-0133 decision 3; ledger `V038`). `GET /v1/merchant/payable` answers from the latest
+valid checkpoint of the merchant payable account (`ledger.position_checkpoint` and its buckets) and the lines posted since, and a read
+past 1,000 settled lines stores a new one in a savepoint that never fails it. The proofs never read a checkpoint.
+
+- **What you see.** Nothing, when it works. A `WARN` "the position checkpoint of … could not be read" or "… could not be stored" when
+  one could not be: the read answered from the lines, at the cost of the history since the last good checkpoint, its figure unchanged.
+  Many of them at once is a grant, a read-only routing or a database fault to find, never a wrong figure.
+- **After a logical restore.** Every restored checkpoint names the old cluster (`cluster_identity`, `pg_control_system()`'s
+  `system_identifier`) and is never read. Each merchant's first payable read folds its whole history and stores a new checkpoint: expect
+  those reads to be slow once. Nothing to do; deleting the restored rows only saves the space.
+- **Retiring every checkpoint** (a suspicion, or a classification change shipped without its version bump): as the migrator,
+  `DELETE FROM ledger.position_checkpoint_bucket; DELETE FROM ledger.position_checkpoint;`. No figure changes, only the next reads'
+  cost. The application role cannot do it: it may read and add, never change or remove.
+- **Before `V038` runs on a large journal.** Its `ADD COLUMN` is a catalogue change, but its index build holds `SHARE` on
+  `ledger.journal_line` and blocks every posting while it reads the table. Build it first by hand, outside a transaction:
+  `CREATE INDEX CONCURRENTLY journal_line_by_account_and_transaction ON ledger.journal_line (ledger_account_id, txid);` - the
+  migration's `IF NOT EXISTS` then keeps it. A failed concurrent build leaves an `INVALID` index under that name: drop it and build
+  again before the migration runs.
+
 ### 11.49 The connection budget at ten replicas, the autoscaler's metric on `kind`, and a pooler refused (`P16-TSK-009`, ADR-0134)
 
 **What it is.** Owner decision C3 decided by ADR-0134. The `kind` overlay states the connection budget for ten replicas exactly

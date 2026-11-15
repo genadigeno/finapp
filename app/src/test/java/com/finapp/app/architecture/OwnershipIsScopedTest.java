@@ -4479,6 +4479,44 @@ class OwnershipIsScopedTest {
                                         + " accounts from findAllOwned (owner_ref = ? in the"
                                         + " ledger's statement) under the merchant's own key.")),
                     Map.entry(
+                            "com.finapp.ledger.CheckpointedPositionBreakdown.breakdown",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P16-REM-001. JdbcPositionBreakdown's fold, from the latest"
+                                        + " commit-order checkpoint and the lines since - the same"
+                                        + " figure for the same account - so classified as it is,"
+                                        + " for its reason: ownership is a property of the SURFACE"
+                                        + " that discloses the figure. Its one surface is the"
+                                        + " merchant payable view, which reaches here only with"
+                                        + " accounts from findAllOwned under the merchant's own"
+                                        + " key; the checkpoint rows it reads and writes carry"
+                                        + " the account they fold and nothing else.")),
+                    Map.entry(
+                            "com.finapp.ledger.CheckpointedPositionBreakdown.latest",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P16-REM-001. A private step of breakdown, above: the"
+                                        + " latest checkpoint of the account breakdown was"
+                                        + " handed, read in its savepoint. It is reached only"
+                                        + " from there, so its account is breakdown's.")),
+                    Map.entry(
+                            "com.finapp.ledger.CheckpointedPositionBreakdown.store",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P16-REM-001. A private step of breakdown, above: the fold"
+                                        + " it computed for the account it was handed, stored as"
+                                        + " a checkpoint in its savepoint. Reached only from"
+                                        + " there, so its account is breakdown's.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcPositionBreakdown.accountTerms",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "P16-REM-001. The account's currency and normal balance,"
+                                        + " the first read of both breakdowns, extracted so the"
+                                        + " two share it. Package-private and reached only from"
+                                        + " their breakdown methods, classified above, so its"
+                                        + " account is theirs.")),
+                    Map.entry(
                             "com.finapp.ledger.JdbcPurposeBalances.linesOn",
                             new Entry(
                                     Scope.NOT_OWNED,

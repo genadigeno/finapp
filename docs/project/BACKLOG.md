@@ -31315,7 +31315,7 @@ depends on finished tasks only, so the coordinator marks it `READY` when the own
 (`POSTPONED_ISSUES.md` PI-025, the runbook), and items 57 and 62's first-real-environment parts and items 60 and 63's after-the-phases
 parts are `POSTPONED_ISSUES.md` PI-026 and PI-027.*
 
-**P16-REM-001 — The merchant payable read bounded by ADR-0133's commit-order checkpoint (`THREAT_MODEL.md` §6 item 55)** — `PLANNED`
+**P16-REM-001 — The merchant payable read bounded by ADR-0133's commit-order checkpoint (`THREAT_MODEL.md` §6 item 55)** — `COMPLETE` (2026-11-15; scheduled by the owner's "Start P16-REM-001" after `P16-TST-002`'s gate and run straight through, branch `P16-REM-001` from `fb2caf23` (`P16-TST-002`, unmerged); one ledger migration (`V038`); its database cases run on the owner's word that day, green, before any merge; marks `X-TSK-021` `READY` on the owner's word, the census its gate found owed) *(read "`PLANNED`" until then)*
 - **Objective**: build ADR-0133 decision 3 for `GET /v1/merchant/payable`, as the owner placed it (item 55 (i), 2026-11-13). The read
   becomes the latest valid checkpoint of the merchant payable account's buckets, the fold of every line whose entry's commit-order
   position (`txid`, ledger `V034`) lies below the checkpoint's watermark (`pg_snapshot_xmin` of the snapshot that read them), plus every
@@ -31364,6 +31364,35 @@ parts are `POSTPONED_ISSUES.md` PI-026 and PI-027.*
 - **Definition of done**: `DOD-FIN`, `DOD-KERNEL`, `DOD-TEST`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.48 (the payable read's bound, and what a restore does to its
   checkpoints); `CAPACITY_MODEL.md` §3.5.
+- **As built (2026-11-15, gate `COMPLETE`).** **The migration**, ledger `V038`: `journal_line.txid`, stamped by a BEFORE INSERT
+  trigger that fires last of the line's (V034's argument, for the line); the index `(ledger_account_id, txid)`, `IF NOT EXISTS` so a
+  large journal's index built `CONCURRENTLY` by hand first is kept; `position_checkpoint` (account, `classification_version`,
+  precedence, namespaces, `cluster_identity` - `pg_control_system()`'s `system_identifier` - the `xid8` watermark and the lines folded;
+  `UNIQUE` over all six as `position_checkpoint_one_per_watermark`) and `position_checkpoint_bucket` (each bucket's total with its
+  currency and scale); the application role granted `SELECT, INSERT` only. **The read**, `CheckpointedPositionBreakdown` (ledger): the
+  latest checkpoint valid for this account, version, precedence, namespaces and cluster, then every line at or above its watermark in
+  one statement that also returns its own snapshot's `pg_snapshot_xmin`, folded by `BucketFold` - the whole fold's arithmetic, now one
+  class `JdbcPositionBreakdown` folds through too; past 1,000 settled lines it stores the checkpoint and the lines below that `xmin`,
+  never one above. Reading and storing each run in a savepoint: a failure (read-only transaction, refused grant, unreadable or foreign
+  row, auto-commit) rolls back to it and the read answers from the lines. **The wiring**: `MerchantBeans`' payable query alone; the
+  proofs keep `JdbcPositionBreakdown`, the whole history (`PositionCheckpointsAreTheApisAloneTest`, the
+  rule `onlyThePayableQueryReadsACheckpoint`). **The version**: `CLASSIFICATION_VERSION` 1, pinned by `PositionClassificationIsVersionedTest`
+  to a fingerprint of the classifying SQL, `JdbcPositionBreakdown#line`, `Bucket#of` and `BucketFold#key`. **Tests**: hermetic -
+  `BucketFoldSplitTest` (500 random histories, every split, any order, and the same refusals at the same totals),
+  `CheckpointedPositionBreakdownTest` (8 cases over a scripted connection), the migration's text, the wiring rule's teeth; **database,
+  run 2026-11-15 on PostgreSQL 18.6** (`PositionCheckpointDatabaseTest`, 6 cases, the owner's exception to the standing skip): the
+  line's stamp, the split under ten instances posting and ten reading (every read the whole fold of its snapshot), ten racing writers
+  (one row per watermark, each the fold below it), the version and cluster refusals, a read-only read, the role's limits. **Probes**
+  (recorded): a rule changed without the version - red; the store folding a line above its watermark - red; and the backlog's two on the
+  database: the watermark taken above the snapshot's `xmin` - the concurrent split case red; the cluster check removed - the refusal
+  case red. **Not changed**: the API's contract (`DERIVED`, the lifetime terms); the decision path's own fold (excluded, its own ADR
+  after E38). **Owed**: E30 again with E52 (PI-025), which measures the bound; E38 and E39, the index's write cost on the posting path.
+  **Multi-instance**: `PASS` - proven at ten on PostgreSQL: ten writers racing one watermark store one row, every read under ten
+  posters equals the whole fold; no clock, lease or memory decides anything. **The gate's finding** (IMPORTANT, owned): a
+  checkpoint row is the application role's to write and each is built on the one before, so a forged or wrong row would show a
+  merchant a wrong payable for good, and no proof compares the two folds - recorded in `THREAT_MODEL.md` §5 under T14, owned by
+  `X-TSK-021`. Also at the gate: `V038` carries a contract marker (`waives=TRIGGER`: the stamp refuses no write of any release),
+  and the checkpointed read's three account-taking methods are classified in `OwnershipIsScopedTest`.
 - **Risk**: High (a schema change on the hottest table). **Cx**: L.
 
 **P16-REM-002 — A lost database answered `503 api.TemporarilyUnavailable` with `Retry-After` (`THREAT_MODEL.md` §6 item 61)** — `PLANNED`
@@ -32427,6 +32456,24 @@ word, "Do this task here"; branch `X-TSK-020` from `32c27525` (`P16-TSK-031`, un
 - **Verified** (fresh): the guard, 6 tests, green; then the whole `:app:architectureTest`, 1,242 tests, 0 failed. `databaseTest` and `kafkaTest` not run,
   by the owner's word.
 - **Risk**: Low. **Cx**: M.
+
+**X-TSK-021 — The payable read's checkpoints proven against the whole fold: a census among the source proofs** — `READY`
+*(2026-11-15; found by `P16-REM-001`'s gate and marked by the owner's word, "Start X-TSK-021", during it; cross-cutting, no milestone)*
+- **Context**: `P16-REM-001` answers `GET /v1/merchant/payable` from a commit-order checkpoint and the lines since. A checkpoint row is
+  the application role's to write, and each new one is built on the one before, so a row forged with that credential, or stored wrong
+  by a defect the version fingerprint does not catch, shows a merchant a wrong payable and carries the error into every later
+  checkpoint. The proofs read the whole fold by design (`onlyThePayableQueryReadsACheckpoint`), so nothing compares the two.
+- **Objective**: a source proof, `PAYABLE_CHECKPOINT`, read with `MERCHANT_PAYABLE`'s source on the proofs' snapshot: every merchant
+  payable's drill-down as the API reads it, from its checkpoint, equals the drill-down from the whole fold. A payable that differs is
+  a `SOURCE_DISCREPANCY` break like any proof's, its evidence naming no amount; the catalogue becomes `source-proofs:v2`.
+- **Scope**: the proof's enum value and the catalogue version (accounting); a census reading that never stores (ledger); the reading in
+  `ProductSourceProofs` and its wiring through one named class the wiring rule admits (app); the runbook's answer to the break.
+  **Exclusions**: refusing a checkpoint automatically (an operator retires the account's checkpoints, §11.48); a schedule of its own.
+- **Acceptance**: a payable whose checkpoint differs from the whole fold is named by the proof, and one that agrees is not; the census
+  stores nothing on the read-only snapshot; the wiring rule refuses any other class naming the checkpointed read; the existing proofs'
+  readings unchanged; `THREAT_MODEL.md` §5's T14 residual struck to what remains.
+- **Probe**: the census's comparison made to pass always - the planted wrong checkpoint is not named, red.
+- **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Low. **Cx**: M.
 
 ---
 
