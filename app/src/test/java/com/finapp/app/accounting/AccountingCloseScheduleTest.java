@@ -408,6 +408,39 @@ class AccountingCloseScheduleTest {
     }
 
     @Test
+    @DisplayName("the openings leg: the writer's, one checkpoint a tick counted; its failure metered and ending only itself; registered at"
+            + " zero before anything fails (P16-REM-003)")
+    void theOpeningsLeg() {
+        assertThat(registry.get(CloseRunMetrics.LEG_FAILED).tag("leg", AccountingCloseSchedule.OPENINGS_LEG).counter().count()).isZero();
+        assertThat(openingsSchedule(() -> true).openingsOnce()).isEqualTo(1);
+        assertThat(openingsSchedule(() -> false).openingsOnce()).as("none missing, or another instance folding it").isZero();
+
+        AccountingCloseSchedule failing = openingsSchedule(() -> {
+            throw new IllegalStateException("the database is gone");
+        });
+        assertThat(failing.openingsOnce()).isZero();
+        assertThat(registry.get(CloseRunMetrics.LEG_FAILED).tag("leg", AccountingCloseSchedule.OPENINGS_LEG).counter().count()).isEqualTo(1);
+        assertThat(failing.openOnce()).as("the other legs go on").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("the lifecycle runs the openings leg at once, at the checks' cadence, on its own thread (P16-REM-003)")
+    void theOpeningsLegRunsAtOnce() throws Exception {
+        CountDownLatch folded = new CountDownLatch(1);
+        cadence = new AccountingCloseSchedule.Cadence(Duration.ofHours(1), Duration.ofHours(1), Duration.ofHours(1), Duration.ofHours(1), 18, 10);
+        AccountingCloseSchedule schedule = openingsSchedule(() -> {
+            folded.countDown();
+            return false;
+        });
+        schedule.start();
+        try {
+            assertThat(folded.await(30, TimeUnit.SECONDS)).as("the openings leg ran with no poll elapsed").isTrue();
+        } finally {
+            schedule.stop();
+        }
+    }
+
+    @Test
     @DisplayName("the cadence is refused at start-up unless every poll and batch is positive")
     void theCadenceIsJudged() {
         Duration second = Duration.ofSeconds(1);
@@ -438,6 +471,11 @@ class AccountingCloseScheduleTest {
     private AccountingCloseSchedule schedule(AccountingCloseSchedule.Inquiries inquiries) {
         return new AccountingCloseSchedule(accountingPeriods(), closeRuns, checks(), orphans, inquiries, transactions, metrics,
                 AccountingFlowScope.NONE, IDS, cadence);
+    }
+
+    private AccountingCloseSchedule openingsSchedule(AccountingCloseSchedule.Openings openings) {
+        return new AccountingCloseSchedule(accountingPeriods(), closeRuns, checks(), orphans, AccountingCloseSchedule.Inquiries.NONE, openings,
+                transactions, metrics, AccountingFlowScope.NONE, IDS, cadence);
     }
 
     private AccountingCloseSchedule schedule() {

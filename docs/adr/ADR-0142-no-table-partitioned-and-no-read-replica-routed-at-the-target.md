@@ -158,6 +158,17 @@ answers a decision.
 - Run E65 with E39 (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=soak REHEARSAL_LOAD_DECISIONS=1`, PI-025), and record its readings in
   `OPERATIONS_RUNBOOK.md` §11.57 against this ADR's thresholds.
 - The owner decides item 64, the report folds' bound. *(Decided 2026-11-13 at (i): an opening checkpoint for each locked month,
-  built by `P16-REM-003`, its database cases run before it merges.)*
+  built by `P16-REM-003`, its database cases run before it merges.)* *(Built 2026-11-15 by `P16-REM-003`, accounting `V017`: every
+  report's opening - `LedgerTrialBalanceReads.before` and `ledger`, `LedgerCounterpartyPositionReads.before` - starts from the latest
+  locked month's checkpoint still under the lock it was folded under and folds only the lines dated after that month; the proofs and
+  the close's GL = ledger check stay on the whole fold. Two departures from item 64 (i)'s wording, neither changing what a read means.
+  **The checkpoint is written after the lock commits**, by `AccountingCloseSchedule`'s openings leg (`OpeningCheckpoints`), not in the
+  lock's transaction: that transaction holds the posting cutoff's key exclusively from its advance to its commit (ADR-0114), and a
+  month's fold inside it would hold every posting in the platform behind it. What "written by the lock" was for still holds: a
+  checkpoint is valid only while its month's row is not `OPEN` and its `locked_at` is the one it was folded under, and its insert reads
+  that lock again. **It holds the journal's own classification** (purpose, owner kind, currency, scale, direction), not a pinned
+  version's GL accounts: the mapping is applied on the read, so no version change can stale it, and the failure scenario "a mapping
+  version change" cannot arise. Its database cases ran green on PostgreSQL 18.6 before any merge; E65 on the final tree stays owed under
+  PI-025.)*
 - Revisit decision 1 for the audit trail when a jurisdiction's retention period is decided (item 23 (b)), and for the idempotency records
   once their sweep exists.

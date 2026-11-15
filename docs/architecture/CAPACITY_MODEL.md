@@ -419,6 +419,15 @@ three. E65 fits that rate from seven runs over the soak's growing journal (`load
 lines, and the lines at the bound. Measured: —. The bound is `THREAT_MODEL.md` §6 item 64, placed by the owner on 2026-11-13 at (i):
 an opening checkpoint for each locked month, built by `P16-REM-003`. *(Read "the owner's to place" until that decision.)*
 
+**Bounded since 2026-11-15** (`P16-REM-003`, accounting `V017`). Every opening starts from the latest locked month's checkpoint and
+folds only the lines dated after that month, so a statement's lines are the months since the latest lock, not the journal's life.
+**Derived**: a report on the month in progress folds that month's lines (≈ 42 million at the target's 0.5 billion a year), and two
+months' (≈ 84 million) in the days between a month's end and its lock. The four-minute bound then holds above ≈ 0.35 million lines a
+second at any age of the journal, where it needed ≈ 2.1 million within the first year and more every year after. The writer pays one
+month's fold per lock, once, on the writer's pool, after the lock commits (≈ 42 million lines a month), and the first deployment pays a
+backfill: every month already locked, oldest first, one a checks-poll (30 s), the first from inception. A move back costs the reads
+one month more until the month locks again. Measured: —, E65's to fit on the final tree (PI-025).
+
 ---
 
 ## 4. The connection budget at ten

@@ -159,8 +159,13 @@ class ReportingNeverWritesTest {
     static final Set<String> LEDGER_WRITERS = Set.of(PostingService.class.getName(), ReversalService.class.getName(),
             AdjustmentService.class.getName(), HoldService.class.getName(), ProjectionRebuilds.class.getName());
 
-    /** What a report port's adapter may call of a store or of {@code CloseRuns}: reads, on the snapshot it is handed. */
-    static final Set<String> ADAPTER_STORE_READS = Set.of("find", "view", "content", "rates", "approvedFor", "countByStatus", "proposedOf");
+    /**
+     * What a report port's adapter may call of a store or of {@code CloseRuns}: reads, on the snapshot it is handed. {@code latest} since
+     * `P16-REM-003`: the opening reads' {@code OpeningCheckpointStore.latest}, two {@code SELECT}s; its writes are the openings leg's alone
+     * ({@code OpeningCheckpointsAreTheReportsAloneTest}).
+     */
+    static final Set<String> ADAPTER_STORE_READS = Set.of("find", "view", "content", "rates", "approvedFor", "countByStatus", "proposedOf",
+            "latest");
 
     @ArchTest
     static void noReportingClassReachesAWriter(JavaClasses imported) {

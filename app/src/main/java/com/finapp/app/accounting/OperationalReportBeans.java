@@ -7,6 +7,7 @@ import com.finapp.accounting.CloseRunStore;
 import com.finapp.accounting.CloseRuns;
 import com.finapp.accounting.CloseStatusReads;
 import com.finapp.accounting.CounterpartyPositionReads;
+import com.finapp.accounting.OpeningCheckpointStore;
 import com.finapp.accounting.OperationalDoorBound;
 import com.finapp.accounting.OperationalReports;
 import com.finapp.accounting.ReconciliationDisclosure;
@@ -45,10 +46,13 @@ public class OperationalReportBeans {
 
     // ------------------------------------------------------------------ the journal's
 
-    /** The counterparty's dimension the trial balance's statements do not carry: nothing nets between them. */
+    /**
+     * The counterparty's dimension the trial balance's statements do not carry: nothing nets between them. Every opening from the
+     * latest valid checkpoint (`P16-REM-003`).
+     */
     @Bean
-    CounterpartyPositionReads counterpartyPositionReads() {
-        return new LedgerCounterpartyPositionReads();
+    CounterpartyPositionReads counterpartyPositionReads(OpeningCheckpointStore openingCheckpointStore) {
+        return new LedgerCounterpartyPositionReads(openingCheckpointStore);
     }
 
     @Bean

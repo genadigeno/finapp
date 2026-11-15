@@ -6580,6 +6580,32 @@ runs and its bytes, first and last, per live row and per movement. Multiply a fi
 
 Never point either pool at a replica to relieve the primary. ADR-0142 decision 2 says what must exist first.
 
+**The opening checkpoint: the bound, and what a move back costs** (`P16-REM-003`, accounting `V017`, `THREAT_MODEL.md` §6 item 64).
+Every report's opening - the trial balance's and its ledger windows, the balance sheet's, the GL activity's, the purpose reports' and the
+safeguarding position's - starts from the latest locked month's checkpoint still under the lock it was folded under, and folds only
+the lines dated after that month (`CAPACITY_MODEL.md` §3.6). The figures are the whole fold's; the proofs and the close's GL = ledger
+check never read a checkpoint.
+- **Who writes it.** `AccountingCloseSchedule`'s openings leg, at the checks' poll (`finapp.accounting.close.checks-poll`, 30 s), one
+  month a tick, oldest first, after the lock commits - never in the lock's transaction, which holds every posting behind the cutoff's
+  key. Ten instances fold a month once: the leg's transaction takes a try-lock (namespace 14, key `opening-checkpoint`) and an
+  instance that does not get it skips the tick. The first deployment backfills every month already locked, the first from inception.
+- **Is every locked month checkpointed?** In a read-only session:
+  `SELECT period.period_start, period.status, checkpoint.written_at FROM accounting.accounting_period period LEFT JOIN accounting.opening_checkpoint checkpoint ON checkpoint.period_id = period.id AND checkpoint.period_locked_at = period.locked_at WHERE period.status <> 'OPEN' ORDER BY period.period_start;`
+  A month with no `written_at` more than a minute after its lock: the leg is failing - `finapp.accounting.close.leg.failed{leg="openings"}`
+  and `AccountingCloseLegFailing` on its second failure, its class in the log. Nothing is wrong meanwhile: a read starts from the
+  checkpoint before it, or from inception, and only takes longer. A fold runs on the writer's pool, bounded by its five-minute socket
+  timeout (`spring.datasource.hikari.data-source-properties.socketTimeout`): each month's fold is that month's lines from the month before's checkpoint, but the first is every line dated
+  through the first locked month's end - all history before accounting's first period. A fold past the bound fails each tick the same
+  way; that is a capacity finding for E65, not a figure at risk.
+- **A move back.** An unlock or a reopen clears the month's `locked_at`, so its checkpoint is never read again - nothing to do by hand.
+  Until the month locks again, a read after it starts from the month before's checkpoint and folds one month more; the relock gets a
+  new checkpoint within a tick. The voided one stays, as evidence of what was read under that lock.
+- **A checkpoint suspected wrong.** The application role can only read and add (`V017`'s grants). A FINAL run's regeneration
+  (`POST /v1/operator/accounting/report-runs/{id}/regeneration`) compares a fresh generation with the stored bytes: a run generated
+  before the checkpoint existed and regenerating not identical after it names one. To discard every checkpoint, as the migrator, in one
+  transaction: `DELETE FROM accounting.opening_checkpoint_group; DELETE FROM accounting.opening_checkpoint;` - no figure changes, the
+  leg writes them again oldest first, and the reads fold from inception meanwhile.
+
 **The record.** Empty: E65 has not run. It is owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of 2026-11-13), and its first
 run writes its record here with its commit, its artefacts, the fit and each table's reading against ADR-0142.
 

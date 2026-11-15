@@ -3,6 +3,8 @@ package com.finapp.app.accounting;
 import com.finapp.accounting.AccountingStorageException;
 import com.finapp.accounting.CounterpartyPositionReads;
 import com.finapp.accounting.JournalReads;
+import com.finapp.accounting.OpeningCheckpoint;
+import com.finapp.accounting.OpeningCheckpointStore;
 import com.finapp.accounting.Side;
 import com.finapp.platform.persistence.DatabaseFailure;
 import java.sql.Connection;
@@ -28,6 +30,10 @@ import java.util.Optional;
  * application role's existing grants; none locks a row. Never the entry's reference, reason or actor; {@code created_at} is filtered on -
  * a PROVISIONAL run's cut - and never selected. {@code owner_kind = 'COUNTERPARTY'} starts from a handful of accounts, and
  * {@code journal_line_by_account} (ledger {@code V004}) serves the walk from them.
+ *
+ * <p><strong>The opening, bounded</strong> (`P16-REM-003`): built with an {@link OpeningCheckpointStore}, {@link #before} starts from
+ * the latest valid checkpoint's counterparty sums and folds only the lines dated after its month ({@link #AFTER}); built without one,
+ * from inception.
  */
 public final class LedgerCounterpartyPositionReads implements CounterpartyPositionReads {
 
@@ -46,6 +52,9 @@ public final class LedgerCounterpartyPositionReads implements CounterpartyPositi
     /** The movement's lines: a posting-date range, both ends inclusive. */
     static final String WITHIN = COLUMNS + LINES + " AND entry.posting_date >= ? AND entry.posting_date <= ?";
 
+    /** After a checkpoint: only the lines dated after its month (`P16-REM-003`). */
+    static final String AFTER = " AND entry.posting_date > ?";
+
     /** A PROVISIONAL run's cut: entries created at or before its claim. */
     static final String AT_THE_CUT = " AND entry.created_at <= ?";
 
@@ -53,16 +62,36 @@ public final class LedgerCounterpartyPositionReads implements CounterpartyPositi
             + " line.direction ORDER BY account.purpose, account.owner_kind, counterparty.code, line.currency, line.scale,"
             + " line.direction";
 
+    private final Optional<OpeningCheckpointStore> checkpoints;
+
+    /** The reads folding every opening from inception - no checkpoint. */
+    public LedgerCounterpartyPositionReads() {
+        this.checkpoints = Optional.empty();
+    }
+
+    /** The reads whose openings start from the latest valid checkpoint (`P16-REM-003`). */
+    public LedgerCounterpartyPositionReads(OpeningCheckpointStore checkpoints) {
+        this.checkpoints = Optional.of(Objects.requireNonNull(checkpoints, "checkpoints"));
+    }
+
     @Override
     public List<JournalReads.Aggregate> before(Connection snapshot, LocalDate before, Optional<Instant> cut) {
         Objects.requireNonNull(before, "before");
         Objects.requireNonNull(cut, "cut");
-        try (PreparedStatement read = snapshot.prepareStatement(BEFORE + (cut.isPresent() ? AT_THE_CUT : "") + GROUPS)) {
-            read.setDate(1, Date.valueOf(before));
-            if (cut.isPresent()) {
-                read.setTimestamp(2, Timestamp.from(cut.get()));
+        Optional<OpeningCheckpoint> from = checkpoints.flatMap(store -> store.latest(snapshot, before, cut))
+                .filter(found -> found.precedes(before));
+        try (PreparedStatement read = snapshot.prepareStatement(BEFORE + (from.isPresent() ? AFTER : "")
+                + (cut.isPresent() ? AT_THE_CUT : "") + GROUPS)) {
+            int parameter = 1;
+            read.setDate(parameter++, Date.valueOf(before));
+            if (from.isPresent()) {
+                read.setDate(parameter++, Date.valueOf(from.get().through()));
             }
-            return aggregates(read);
+            if (cut.isPresent()) {
+                read.setTimestamp(parameter, Timestamp.from(cut.get()));
+            }
+            List<JournalReads.Aggregate> after = aggregates(read);
+            return from.map(checkpoint -> checkpoint.counterparties(after)).orElse(after);
         } catch (SQLException failure) {
             throw failed("reading the counterparties' opening", failure);
         }

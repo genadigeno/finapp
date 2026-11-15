@@ -145,7 +145,7 @@ class LedgerTrialBalanceReadsTest {
     void theDefinitionIsRegistered() {
         TrialBalanceBeans beans = new TrialBalanceBeans();
         TrialBalanceDefinition definition = beans.trialBalanceDefinition(
-                beans.trialBalanceReads(new InMemoryGlMappingStore()),
+                beans.trialBalanceReads(new InMemoryGlMappingStore(), beans.openingCheckpointStore()),
                 beans.valuationRateReads(new com.finapp.accounting.testing.InMemoryValuationRateSetStore()));
         ReportDefinitions registry = ReportDefinitions.of(definition);
         assertThat(registry.current("TRIAL_BALANCE")).containsSame(definition);

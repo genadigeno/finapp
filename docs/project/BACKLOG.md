@@ -31287,7 +31287,7 @@ on none:
   task is `P16-REM-001`, its database cases run before it merges; E30's remediation cell names it. Read "once the owner places it"
   above as placed since.)*
 
-**P16-DOC-001 — The Phase 16 exit review** — `PLANNED`
+**P16-DOC-001 — The Phase 16 exit review** — `READY` (2026-11-15; scheduled by the owner's "Start P16-DOC-001", marked at `P16-REM-003`'s gate) *(read "`PLANNED`" until then)*
 - **Objective**: rule every criterion of `PHASE_GATES.md` §5 Phase 16 and the universal exit gate with evidence. Accept or correct
   ADR-0126…0129. Record C1–C12 as decided. List every designed-only criterion by name. Answer the ten-instance question on counts.
   Remind the owner of PI-004, PI-023 and PI-024.
@@ -31455,7 +31455,7 @@ parts are `POSTPONED_ISSUES.md` PI-026 and PI-027.*
   configured bound, the same on every replica; nothing held.
 - **Risk**: Medium. **Cx**: S.
 
-**P16-REM-003 — Report generation's opening bounded by a checkpoint for each locked month (`THREAT_MODEL.md` §6 item 64)** — `READY` (2026-11-15; scheduled by the owner's "Start P16-REM-003", marked at `P16-REM-002`'s gate) *(read "`PLANNED`" until then)*
+**P16-REM-003 — Report generation's opening bounded by a checkpoint for each locked month (`THREAT_MODEL.md` §6 item 64)** — `COMPLETE` (2026-11-15; scheduled by the owner's "Start P16-REM-003", marked `READY` at `P16-REM-002`'s gate and run straight through, branch `P16-REM-003` from `97e80dd4` (`P16-REM-002`, unmerged); accounting `V017`; its database cases run green before any merge on the owner's word; marks `P16-DOC-001` `READY` on the owner's word) *(read "`READY` (2026-11-15; marked at `P16-REM-002`'s gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: bound the trial-balance definitions' from-inception fold, as the owner placed it (item 64 (i), 2026-11-13). When a
   month locks, store its GL groups (purpose, owner kind, currency, scale, direction) of every line dated before the next month's
   start, under the mapping version it pinned. A run's opening is then the latest locked month's checkpoint plus the lines dated after
@@ -31496,6 +31496,42 @@ parts are `POSTPONED_ISSUES.md` PI-026 and PI-027.*
   generation `EXISTS` with its evidence, and item 64 closed.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.57 (the bound and what a move back costs); `CAPACITY_MODEL.md` §3.6.
+- **As built (2026-11-15, gate `COMPLETE`).** **The checkpoint**, accounting `V017`: `opening_checkpoint` (one per month's lock,
+  `UNIQUE (period_id, period_locked_at)`, `latest_created` the latest creation instant of the entries it folds) and
+  `opening_checkpoint_group` (its sums in the three shapes the opening reads take: GL - purpose, owner kind, currency, scale, direction;
+  LEDGER - currency, scale, direction, no account joined, folded by the ledger's own statement; COUNTERPARTY - per counterparty code);
+  the application role `SELECT, INSERT` only, the reporting role `SELECT` (its closed register grows by the two tables). **Valid** while
+  its month's row is not `OPEN` and holds the `locked_at` it was folded under: an unlock or a reopen clears `locked_at` and a relock
+  stamps another, so a move back voids it without touching it. **The reads**: `LedgerTrialBalanceReads.before` and `ledger` and
+  `LedgerCounterpartyPositionReads.before` take the latest valid checkpoint before their day in their own statements on the same
+  snapshot, and fold only the lines dated after its month (`AND entry.posting_date > ?`, the ledger's statement still naming no
+  accounting table); under a cut, only a checkpoint whose `latest_created` the cut keeps - the journal's `created_at` is the posting
+  instance's clock, so the lock's own instant could not say it. The report definitions are unchanged. **The writer**,
+  `OpeningCheckpoints`, the close schedule's fifth leg (openings, at the checks' poll): a try-lock on namespace 14's new key
+  `opening-checkpoint`, the oldest month not `OPEN` whose present lock has none, folded by the very reads a report takes (from the
+  month before's checkpoint), inserted by `INSERT ... SELECT` from the period row only while it holds that lock. **Two departures from
+  this entry's wording, recorded in ADR-0142's follow-up and ADR-0114's as-built**: the checkpoint is written after the lock commits, not
+  in the lock's transaction - that transaction holds the cutoff's key exclusively and a month's fold there would hold every posting
+  behind it; and it holds the journal's own classification, not a pinned version's accounts, so no mapping change can stale it.
+  **Kept whole**: the close's GL = ledger check and the source proofs (`OpeningCheckpointsAreTheReportsAloneTest`: only the two read
+  adapters, the writer and their wirings may name an `OpeningCheckpointStore`, and only the writer stores). **Tests**:
+  `OpeningCheckpointTest` (the split equal to the whole fold over five seeded journals, every day and month after three locked months; a
+  chain of incremental checkpoints equal to each month's whole fold; the cut), `OpeningCheckpointsTest` (the writer),
+  `OpeningCheckpointStatementsTest` (the statements and `V017`), `OpeningCheckpointReadsTest` (the real adapters through the report's
+  snapshot view), `AccountingCloseScheduleTest` (the leg), the ArchUnit pair with teeth. **Database cases** (the owner's exception, run
+  on PostgreSQL 18.6 before any merge): 8 cases green in their own container (2026-11-15, 34.8 s): the split equal to the whole fold over three locked months -
+  every day's opening from 1998-12-01 to 1999-05-01, the counterparties and every month's ledger windows, with no cut and under one; an
+  unlock and then a reopen each voiding their month's checkpoint, a line posted into the month read, each relock checkpointed anew and
+  the voided rows kept; a FINAL run generated before any checkpoint regenerating identical from February's; a cut before March's
+  latest creation (a line a skewed instance created a day ahead) served February's; ten instances storing one checkpoint per lock; a
+  lock rolled back leaving none; the try-lock's key apart from `cutoff` and `mapping` by `hashtext`; the application role refused
+  `UPDATE` and `DELETE` and the reporting role `INSERT` (`42501`). **Probe** (recorded): a checkpoint kept after its month moved back (the read's validity dropped) - the move-back case
+  red at the GL side before 1999-04-01; the ledger merge adding a checkpoint into the period's own window - the seeded split red. **Gate findings (MINOR, recorded, not
+  fixed)**: no gauge counts the locked months lacking a checkpoint - the leg's failure meter and alert and runbook §11.57's query
+  answer it, and a read stays the whole fold's meanwhile; a fold is bounded by the writer pool's five-minute socket timeout, and the
+  first checkpoint folds every line before accounting's first period, which a journal with long pre-accounting history could exceed -
+  E65's to measure. **Owed**: E65 on the final tree (PI-025). **Multi-instance**: `PASS` - one instance folds a month by a try-lock, the insert arbitrates by the period's lock and the
+  unique, and every instance reads the same checkpoint from the same rows.
 - **Risk**: Medium. **Cx**: L.
 
 ---

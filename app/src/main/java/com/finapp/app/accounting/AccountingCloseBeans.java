@@ -8,12 +8,16 @@ import com.finapp.accounting.AccrualCompleteness;
 import com.finapp.accounting.CloseChecks;
 import com.finapp.accounting.CloseRunStore;
 import com.finapp.accounting.CloseRuns;
+import com.finapp.accounting.CounterpartyPositionReads;
 import com.finapp.accounting.FinalTrialBalance;
 import com.finapp.accounting.JdbcCloseRunStore;
+import com.finapp.accounting.OpeningCheckpointStore;
+import com.finapp.accounting.OpeningCheckpoints;
 import com.finapp.accounting.ReconciliationDisclosure;
 import com.finapp.accounting.ReconciliationRunCoverage;
 import com.finapp.accounting.ReportRuns;
 import com.finapp.accounting.SourceProofs;
+import com.finapp.accounting.TrialBalanceReads;
 import com.finapp.accounting.ValuationRateSets;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
@@ -123,6 +127,17 @@ public class AccountingCloseBeans {
         return new CloseRunMetrics(meterRegistry);
     }
 
+    /**
+     * The openings leg's writer (`P16-REM-003`): a locked month's opening checkpoint, folded by the very reads a report takes, after
+     * the lock has committed.
+     */
+    @Bean
+    OpeningCheckpoints openingCheckpoints(OpeningCheckpointStore openingCheckpointStore, TrialBalanceReads trialBalanceReads,
+            CounterpartyPositionReads counterpartyPositionReads, IdGenerator idGenerator) {
+        return new OpeningCheckpoints(openingCheckpointStore, trialBalanceReads, counterpartyPositionReads,
+                new LedgerJournalCreations(), idGenerator);
+    }
+
     /** The close schedule - every instance, no leader, off in test contexts. */
     @Bean
     @ConditionalOnProperty(name = "finapp.accounting.sweeper.enabled", havingValue = "true", matchIfMissing = true)
@@ -132,6 +147,7 @@ public class AccountingCloseBeans {
             CloseChecks closeChecks,
             ReportRunGenerator reportRunGenerator,
             RegulatorySubmissionDriver regulatorySubmissionDriver,
+            OpeningCheckpoints openingCheckpoints,
             AccountingTransactions accountingTransactions,
             CloseRunMetrics closeRunMetrics,
             AccountingFlowScope accountingFlowScope,
@@ -143,7 +159,9 @@ public class AccountingCloseBeans {
             @Value("${finapp.accounting.close.checks-batch:18}") int checksBatch,
             @Value("${finapp.accounting.close.orphans-batch:10}") int orphansBatch) {
         return new AccountingCloseSchedule(accountingPeriods, closeRuns, closeChecks, reportRunGenerator::completeOrphaned,
-                regulatorySubmissionDriver::inquireDue, accountingTransactions, closeRunMetrics, accountingFlowScope, idGenerator,
+                regulatorySubmissionDriver::inquireDue,
+                () -> accountingTransactions.inTransaction(uow -> openingCheckpoints.storeNext(uow).isPresent()),
+                accountingTransactions, closeRunMetrics, accountingFlowScope, idGenerator,
                 new AccountingCloseSchedule.Cadence(openPoll, checksPoll, orphansPoll, inquiryPoll, checksBatch, orphansBatch));
     }
 

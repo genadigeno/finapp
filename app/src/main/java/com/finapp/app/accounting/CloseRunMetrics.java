@@ -34,7 +34,7 @@ public final class CloseRunMetrics {
     public static final List<String> OUTCOMES = List.of("passed", "failed", "disclosed", "deferred", "overtaken");
 
     /** The {@code leg} tag's values. */
-    public static final List<String> LEGS = List.of("open", "checks", "orphans", "inquiry");
+    public static final List<String> LEGS = List.of("open", "checks", "orphans", "inquiry", "openings");
 
     private final MeterRegistry registry;
     private final Timer duration;
@@ -89,7 +89,7 @@ public final class CloseRunMetrics {
 
     private Counter leg(String leg) {
         return Counter.builder(LEG_FAILED)
-                .description("The close schedule's legs that failed, by leg (open, checks, orphans, inquiry)")
+                .description("The close schedule's legs that failed, by leg (open, checks, orphans, inquiry, openings)")
                 .tag("leg", leg)
                 .register(registry);
     }

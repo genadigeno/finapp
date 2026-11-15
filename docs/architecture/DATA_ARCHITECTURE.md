@@ -44,7 +44,8 @@ Decided by [ADR-0142](../adr/ADR-0142-no-table-partitioned-and-no-read-replica-r
   once-ness arbiters (the idempotency claim, the inbox's dedupe row, the outbox's event identity, the posting scope) and the journal's
   integrity keys, and a time key would make each hold within a partition only. A partition can also be detached or dropped, which no
   history guard refuses. The journal is never deleted, so a partition buys it no retention. Its hot reads are by account over the whole
-  history, which no time key prunes: ADR-0133's checkpoint and item 64's decision bound those reads instead.
+  history, which no time key prunes: ADR-0133's checkpoint and item 64's decision bound those reads instead (both built, 2026-11-15:
+  ledger `V038`, accounting `V017`).
 - **Retention is a batched, leaderless `DELETE`** (`OPERATIONS_RUNBOOK.md` §11.15). At the target the outbox's sweep has 2.7 times the
   capacity its writes need at the three-replica minimum, by derivation.
 - **One primary serves every door.** Every decision, balance and once-ness check reads the primary under its lock, through the writer's
