@@ -210,7 +210,11 @@ class StoredBoundsAreTheDatabasesTest {
                         "JdbcSettlementCycleReads#created_at",
                         "JdbcSettlementCycleReads#received_at",
                         // A gauge's horizon: how many deadlines fall inside it, a reading and no decision.
-                        "JdbcDisputeStore#respond_by")) {
+                        "JdbcDisputeStore#respond_by",
+                        // The break-age counts' cutoffs (P16-TSK-029, AgedCountMetrics): this instance's clock, as the age gauges'
+                        // own, so a count of one is the age rule holding; a meter's reading that decides and writes nothing.
+                        // Added 2026-11-14 by the remediation of three guards red on master (X-TSK-019).
+                        "JdbcAgedReadings#raised_at")) {
             census.put(pacing, Kind.PACING);
         }
         census.put("JdbcRiskSignalStore#observed_at", Kind.LOOKBACK);

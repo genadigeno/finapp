@@ -30900,7 +30900,7 @@ on none:
   post-recovery gate; a region that returns never promoted back), its count row "no account". `RESILIENCE_EXPERIMENTS.md` D04 noted.
   **Not composed**: the existing modules in the recovery root at need - item 72 (recommended (i): production's state replicated and a site
   qualifier, with the first real environment); where the site belongs, production's account (as built) or the backup account's second
-  region - item 72 (a), beside item 71. **Not run**: anything against an account. **Found, not this task's**: three hermetic guards red on master (`StoredBoundsAreTheDatabasesTest`, `ArchitectureRulesAreDocumentedTest`, `HandlerSetCatalogueTest`), each reading only files this task left unchanged (`CURRENT_STATE.md` §Next Task).
+  region - item 72 (a), beside item 71. **Not run**: anything against an account. **Found, not this task's**: three hermetic guards red on master (`StoredBoundsAreTheDatabasesTest`, `ArchitectureRulesAreDocumentedTest`, `HandlerSetCatalogueTest`), each reading only files this task left unchanged - fixed by `X-TSK-019` the same day.
 - **Risk**: Low. **Cx**: M.
 
 **P16-TSK-027 — Financial correctness under failure: the fifteen scenarios** — `READY` (2026-11-14; marked by `P16-TSK-026`'s completion gate, the one next task its gate names: every dependency, `-013`, `-016`, `-018`, `-020`, `-021` and `-022`, `COMPLETE`, and wave G started by the owner's "Start next task") *(read "`PLANNED`" until then)*
@@ -32217,6 +32217,34 @@ entry, the plan and `CURRENT_STATE.md` until numbered here)*
   - the fix at its cause: no production check changed or loosened, no test disabled, no assertion weakened;
   - the three suites and the whole `:settlement:databaseTest` green from a fresh run, read from the JUnit XML, with
     `:settlement:test` and `:settlement:architectureTest`.
+
+**X-TSK-019 — Three architecture guards red on master since Phase 15 and 16 merges** — `COMPLETE` *(2026-11-14; found by
+`P16-TSK-026`'s gate, which ran the whole `:app:architectureTest` fresh, and done on the owner's word, "Do this task here"; on
+branch `claude/project-progress-status-1498c8` after `P16-TSK-026`'s commit; cross-cutting, no milestone, marks no task `READY`)*
+- **Context**: `app`'s architecture tier. Each guard read only files the merge that broke it changed, and each of those merges ran a
+  selection of guards that did not include it, so all three stood red on master: the class `X-TSK-018` named (a suite going dark when
+  its merge runs only its own).
+- **The failures** (`:app:architectureTest` on master's bytes plus `P16-TSK-026`, 1,202 tests, 3 failed), each classified:
+  - `StoredBoundsAreTheDatabasesTest#everyStoreIsInTheCensus` - `JdbcAgedReadings#raised_at` (`P16-TSK-029`) compares a timestamp column
+    with a bind parameter nobody classified. **Test register lagging the code, not a defect of the code**: `AgedCountMetrics` binds a cutoff
+    from this instance's clock, as the age gauges' own, a meter's reading that decides and writes nothing, so a count of one is exactly the
+    age rule holding. Fix: censused as `PACING` beside the gauge horizon `JdbcDisputeStore#respond_by`, with the reason.
+  - `ArchitectureRulesAreDocumentedTest#documentAndRulesAgreeExactly` - `P16-TSK-012`'s five rules (`nothingButTheReportingPoolBuildsAConnection`,
+    `theConnectionRuleSeesTheReportingPoolBuildOne`, `noProductionBeanDeclaresADataSource`, `onlyReportGenerationReachesTheReportingPool`,
+    `theReachRuleSeesTheGeneratorsWiring`) ran on every build and `MODULE_ARCHITECTURE.md` §6 named none of them. **Documentation drift.**
+    Fix: §6's "One primary serves every door" entry, each rule under its marker, the address layer named in prose as a JUnit test.
+  - `HandlerSetCatalogueTest#everyHandlerClassIsComposed` - `SpannedInboxHandler` (`P15-TSK-023`, 2026-11-11, three days after the guard)
+    implements `InboxEventHandler` to wrap each group's handlers in the flow's span, and the guard read every implementer as a handler a
+    bean must compose. **Guard blind to a wrapper.** Fix: a class holding the `InboxEventHandler` it forwards to is a wrapper and is held
+    apart, and the wrappers must be exactly the named `WRAPPERS`, so a new one is a reviewed change and never a handler the rule stops
+    seeing; every other implementer is still held to a composing bean.
+- **Not weakened**: no assertion removed or loosened; the census, the document and the named wrappers each fail on the next unreviewed
+  addition. **Probe** (recorded, `MUTATION_TESTING.md`): `WRAPPERS` emptied - `everyHandlerClassIsComposed` red; restored byte-identical
+  (sha256 `5e9adc56…d552be4c`, verified).
+- **Multi-instance**: `PASS` - tests and documentation only; no production code changed.
+- **Verified** (fresh): the three guards and `OnePrimaryServesEveryDoorTest`, `HandlerSetDiffTest`, `DeadLetterWiringTest` - 55 tests, green;
+  then the whole `:app:architectureTest`, 1,202 tests, 0 failed. `databaseTest` and `kafkaTest` not run, by the owner's word.
+- **Risk**: Low. **Cx**: S.
 
 ---
 
