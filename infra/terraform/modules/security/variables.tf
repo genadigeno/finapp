@@ -93,6 +93,32 @@ variable "database_backup_copy_vault_arn" {
   }
 }
 
+variable "recovery_region" {
+  description = "The recovery region production keeps beside its own (ADR-0129, ADR-0150), as the recovery-region root outputs it: the region, and the key there that the field-level key rings' replicas are wrapped under. Every ring version's entry is replicated there, and nothing else is (ADR-0149 decision 2: credentials are regenerated, rings recovered). The database key also admits the copy's services there. Null where no recovery region is kept (staging)."
+  type = object({
+    region                 = string
+    field_keys_kms_key_arn = string
+  })
+  default = null
+
+  validation {
+    condition     = var.recovery_region == null || can(regex("^[a-z]{2}(-[a-z]+)+-[0-9]$", var.recovery_region.region))
+    error_message = "A region reads like eu-west-1."
+  }
+
+  validation {
+    condition     = var.recovery_region == null || try(var.recovery_region.region != var.region, false)
+    error_message = "The recovery region is the environment's own region, so the rings' replicas would be lost with it."
+  }
+
+  # The replica's key is in the replica's region and this account: Secrets Manager replicates within an account, and
+  # re-wraps each replica under a key of the region it lands in (no multi-region key, ADR-0150).
+  validation {
+    condition     = var.recovery_region == null || can(regex("^arn:aws:kms:${var.recovery_region.region}:${var.account_id}:key/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$", var.recovery_region.field_keys_kms_key_arn))
+    error_message = "The rings' replica key is a KMS key's ARN in the recovery region and this account; an alias can be repointed and a multi-region key shares one key's material across regions, so both are refused."
+  }
+}
+
 variable "human_users" {
   description = "The people with access to this environment, by IAM user name, and the roles each may assume (read-only, break-glass, bootstrap). No default: an empty list locks everyone out, and who holds break-glass is a decision."
   type = map(object({

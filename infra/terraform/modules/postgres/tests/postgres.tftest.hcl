@@ -298,6 +298,40 @@ run "a_copy_vault_in_this_account_and_another_region_is_admitted" {
   }
 }
 
+# The recovery region's copy (ADR-0150): the same snapshot, a second destination, in another region. Without it the plan
+# copies once, which the run above holds with one().
+run "a_region_copy_goes_to_its_vault_beside_the_account_copy" {
+  command = plan
+
+  variables {
+    backup_region_copy_vault_arn = "arn:aws:backup:eu-west-1:111111111111:backup-vault:finapp-staging-region-copies"
+  }
+
+  assert {
+    condition = toset([for copy in one(aws_backup_plan.database.rule).copy_action : copy.destination_vault_arn]) == toset([
+      "arn:aws:backup:eu-central-1:999999999999:backup-vault:finapp-copies",
+      "arn:aws:backup:eu-west-1:111111111111:backup-vault:finapp-staging-region-copies",
+    ])
+    error_message = "The daily snapshot is not copied both to the account copy's vault and to the recovery region's."
+  }
+
+  assert {
+    condition     = alltrue([for copy in one(aws_backup_plan.database.rule).copy_action : one(copy.lifecycle).delete_after == var.snapshot_retention_days])
+    error_message = "A copy is kept for another period than the snapshot it copies."
+  }
+}
+
+# The probe: a region copy that stays in the database's region is lost with it, whichever account holds it.
+run "a_region_copy_in_the_databases_own_region_is_refused" {
+  command = plan
+
+  variables {
+    backup_region_copy_vault_arn = "arn:aws:backup:eu-central-1:999999999999:backup-vault:finapp-staging-region-copies"
+  }
+
+  expect_failures = [var.backup_region_copy_vault_arn]
+}
+
 run "point_in_time_below_a_week_is_refused" {
   command = plan
 

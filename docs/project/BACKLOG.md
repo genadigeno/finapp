@@ -30853,7 +30853,7 @@ on none:
   **Owed under PI-025**: E87, E88, E89 and the probes `skip-verification` and `config-drift`. **Guards and probes**: see
   `CURRENT_STATE.md` §Just completed and `MUTATION_TESTING.md` §2.
 
-**P16-TSK-026 — The multi-region assessment and Terraform variants (C10; ADR-0129; `THREAT_MODEL.md` §6 item 21 (a))** — `PLANNED`
+**P16-TSK-026 — The multi-region assessment and Terraform variants (C10; ADR-0129; `THREAT_MODEL.md` §6 item 21 (a))** — `COMPLETE` (2026-11-14; designed, built and gated straight through on the owner's word "Start next task", taken as wave G's start for this task, on branch `claude/project-progress-status-1498c8` from master `7f7b4527`; no migration, no application code; ADR-0150 `Proposed`; Terraform checked with mock providers and never applied; one new owner item, `THREAT_MODEL.md` §6 item 72; marks `P16-TSK-027` `READY`) *(read "`PLANNED`" until then; "item 21 (a)" in this heading is the register's item **23** (a), the dedicated backup account - `PHASE_16_PLAN.md` §12's erratum)*
 - **Objective**: write `PHASE_16_PLAN.md` §12's assessment as the architecture's own section. Add a recovery-region Terraform root
   and the backup copy's cross-region destination, both checked with mock providers and never applied.
 - **Affected components**: `SYSTEM_ARCHITECTURE.md`, `infra/terraform/environments/` (a recovery root), module variables.
@@ -30877,9 +30877,33 @@ on none:
 - **Measurable acceptance criteria**: the assessment written; the variants' checks green; no apply.
 - **Definition of done**: `DOD-ARCH`, `DOD-BUILD`.
 - **Operational documentation**: the regional promotion procedure in the runbook.
+- **As built (2026-11-14, gate `COMPLETE`; ADR-0150 `Proposed`; no migration; nothing applied).** **The assessment** is
+  `SYSTEM_ARCHITECTURE.md` §Multi-Region Assessment: the stance (one writer, multi-AZ active-passive, no active-active writes), split-brain
+  refused by procedure, the per-store and per-workflow table, what the recovery region holds before need and what it does not. **Found while
+  designing**: the account copy stays in the database's region by the owner's decision (item 23 (a)), so ADR-0128's tier 4 had no recovery
+  point outside the region; and the production root cannot be planned a second time in its own account (IAM and bucket names are global) while
+  its state lives in the region that is lost - item 72. **The variants**: `infra/terraform/environments/production-recovery`, production's
+  site in a second region of its account (its own state key, named and tagged as production), composing `modules/recovery-region` - the
+  vault the daily snapshot is also copied to, under a key of that region, its policy refusing a copy from any other account and granting
+  nothing, and the key every ring version's replica is wrapped under there; each key rotating, never multi-region, used only through its own
+  services in that region. The postgres module's optional `backup_region_copy_vault_arn` (a second copy action, refused in the database's own
+  region); the security module's optional `recovery_region` (every field-key entry replicated there under that key, no credential replicated,
+  the database key admitting AWS Backup and RDS there); the production root's required `recovery_region` (the recovery-region root's output,
+  whole; its vault in that region and production's account) and `residency_regions` (an open decision, no default, holding production's
+  region, the recovery region and the account copy's), both roots outputting it. **The probe**: a copy destination in the same region is
+  refused at plan (`a_region_copy_in_the_databases_own_region_is_refused`), and `terraform-check.sh`'s plant `region-copy-in-region` removes
+  the refusal and is refused by that run; `ring-not-replicated` and `recovery-site-in-primary-region` likewise. `TerraformIsPinnedAndCheckedTest`
+  widened: roots map to their environment (`production-recovery` → production), a recovery root may require fewer providers than production
+  but never another or another version, `residency_regions` an open decision, the three plants required. **The procedure** is
+  `OPERATIONS_RUNBOOK.md` §11.65 (the standing site; the fence - public names withdrawn, every provider credential revoked at its provider,
+  the readers' trust revoked, the lost database stopped if it answers - recorded before anything is promoted; the promotion under the
+  post-recovery gate; a region that returns never promoted back), its count row "no account". `RESILIENCE_EXPERIMENTS.md` D04 noted.
+  **Not composed**: the existing modules in the recovery root at need - item 72 (recommended (i): production's state replicated and a site
+  qualifier, with the first real environment); where the site belongs, production's account (as built) or the backup account's second
+  region - item 72 (a), beside item 71. **Not run**: anything against an account. **Found, not this task's**: three hermetic guards red on master (`StoredBoundsAreTheDatabasesTest`, `ArchitectureRulesAreDocumentedTest`, `HandlerSetCatalogueTest`), each reading only files this task left unchanged - fixed by `X-TSK-019` the same day.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-027 — Financial correctness under failure: the fifteen scenarios** — `PLANNED`
+**P16-TSK-027 — Financial correctness under failure: the fifteen scenarios** — `COMPLETE` (2026-11-14; designed, built and gated straight through on the owner's "Start next task", branch `P16-TSK-027` from `e63dc338` (`P16-TSK-026` and `X-TSK-019`, unmerged, PR #20); no migration, no production code, no ADR; **built and contract-tested, every cluster run owed under `POSTPONED_ISSUES.md` PI-025**, scenario 8's database case owed to PI-023's pass; marks `P16-TST-001` `READY`) *(read "`READY` (2026-11-14; marked by `P16-TSK-026`'s completion gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: each of `PHASE_16_PLAN.md` §13's fifteen scenarios executed end to end on `kind` under load, with the seven checks
   counted and recorded. This is the phase's most important task.
 - **Affected components**: every money-moving module; the harness.
@@ -30903,6 +30927,35 @@ on none:
 - **Measurable acceptance criteria**: fifteen scenario rows filled with their seven checks, each `PASS` or a remediation task named.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`.
 - **Operational documentation**: the scenarios' findings in the runbook where a person acts.
+- **As built (2026-11-14, gate `COMPLETE`; no migration, no production code, no ADR; every cluster run owed under PI-025).** **The
+  scenarios**: F01 to F15 in `infra/scripts/kind-rehearsal/experiments.sh`, each an experiment of the `experiments` scope run by
+  `experiment_run` (so the safety boundary, the security probe and the census come with it), each composing its register row - F01 a
+  transfer's answer given up while its commit is slowed past the client's patience, then retried by key through another replica; F02 the
+  provider's answers dropped downstream alone; F03 E09 then E22's resend; F04 E01; F05 E22 then the fleet 3 -> 10 -> 3; F07 one payment's
+  confirmation to every replica at once with the provider's callback racing; F08 a payout's effect held at the provider with ten replicas able
+  to conclude it; F09 the parsing replica killed while the source's next file arrives; F10 a run read mid-walk and its replica killed; F11 E05;
+  F12 E09; F13 the card rail silent past the timeout, then the provider's approved callbacks 300 s after the payment concluded; F14 E82 at ten
+  then the rollout undone; F15 E22's reset. **The seven checks**, each recorded in `experiments/<id>/seven-checks.tsv`, a failed one making the
+  scenario `FAILED` (recovered and censused still): (a) and (b) from the census (its one-per lines; its trial balance and GL equals ledger), or
+  the load's window under a load; (c) and (d) the journal and the growing tables compared before and after; (e) the scenario's own re-run
+  adding no effect and changing no entry; (f) every recorded key sent again through another replica, the same status and bytes; (g) a real
+  capture of the run settled 1.00 EUR off, planted before the fault and raised as a break after. F07, F08 and F14 are written for ten and
+  refuse below it (`EXPERIMENTS_AT_A_COUNT`), and may run under the engineering workload. The census counts the scenarios' own card payments
+  at their amounts (`EXPERIMENTS_TOPUPS`, `EXPERIMENTS_TOPUP_MINOR`). **F06 refuses**: no loan can exist on `kind` (the owner's decision of
+  2026-11-13 that no test-only bureau is built, unresolved question 13; E20's reason), its partial proof lending's own database cases.
+  **Scenario 8's gap**: `HoldDatabaseTest#tenConcurrentReleasesOfOneHoldReleaseOnce`, ten connections releasing one ledger hold at a barrier -
+  one release acts, one record, one event, availability restored once; written and compiled, owed to PI-023's pass (the database tier, which
+  the owner asked this task not to run). `ScenarioExperimentsContractTest` (8 members) holds the text; two probes recorded
+  (`MUTATION_TESTING.md` §2). Register rows F01-F15 filled `N/A: not run` with their reasons; runbook §11.66 and its count row; PI-025's owed
+  runs, the entry's probe (the inbox's dedupe off, F05 red) among them; `PHASE_16_PLAN.md` §13 noted. **Each criterion**: fifteen rows filled
+  - built, each run owed, none `PASS` and none claimed; F06 not drivable, recorded with its reason. **For the first run**: whether (g)'s
+  planted settlement difference leaves the position and cash proofs quiet (their pages would stop every scenario) is unverified, and the
+  amounts the harness's SQL reads are read from the schema, not from a run. **Multi-instance**: `PASS` - nothing runs here; every scenario at
+  three or more replicas, three at ten. **Not run**: any cluster; the database tier. **The gate's finding, fixed**: F07 waited for its racing
+  confirmations with a bare `wait`, which waits for every child of the harness - the security probe `experiment_run` starts before the fault
+  and stops at the recovery among them - so F07 would have hung before its observation; it now waits for its racers by their ids, and the
+  contract test refuses a bare wait anywhere in the scenarios (probe P3, `MUTATION_TESTING.md` §2). The runbook names the plant's one
+  unverified risk (a proof page raised by the plant alone) and its repair.
 - **Risk**: High. **Cx**: XL.
 
 **P16-TSK-028 — Security under scale and failure** — `COMPLETE` (2026-11-13; designed, built and gated on branch `P16-TSK-028` from master `fb0e014b`, wave F; no migration, no production code changed, no alert rule; ADR-0147 `Proposed`; **built and contract-tested, every run owed under `POSTPONED_ISSUES.md` PI-025**; one owner item, `THREAT_MODEL.md` §6 item 69; marks no task `READY` - the coordinator does) *(read "`READY` (2026-11-13; marked by the coordinator at the owner's start of wave F, "Start wave F, and accept all nine recommendations"; its dependencies, `P16-TSK-014` and `P16-TSK-022`, both `COMPLETE`)" until the gate)*
@@ -31072,7 +31125,7 @@ on none:
 - **Operational documentation**: the readiness review's Phase 16 addendum.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TST-001 — The integrated soak: ten replicas, the engineering workload, faults on a schedule** — `PLANNED`
+**P16-TST-001 — The integrated soak: ten replicas, the engineering workload, faults on a schedule** — `READY` (2026-11-14; marked by `P16-TSK-027`'s completion gate, the one next task its gate names: every dependency, `-015`, `-025` and `-027`, `COMPLETE`) *(read "`PLANNED`" until then)*
 - **Objective**: the phase's substance in one run, not postponed (C1): an 8-hour soak at ten replicas at the engineering workload,
   with a schedule of faults drawn from the register injected during it (a pod kill each hour, a broker loss, a database failover,
   a rolling deploy, a provider outage) and the invariants sampled throughout.
@@ -32195,6 +32248,7 @@ entry, the plan and `CURRENT_STATE.md` until numbered here)*
     `:settlement:test` and `:settlement:architectureTest`.
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 **X-TSK-019 — `GET /v1/operator/me`: an operator's own identity, roles, permissions and session** — `COMPLETE`
 *(2026-11-13, on branch `P17-TSK-003` from master `ce1abd2e`; cross-referenced **finapp-admin-panel `P17-TSK-003`**
 (`PHASE_17_PLAN.md` §15 there, G-01), under **owner decision D-12 (2026-11-13)**: the console's milestone M1 completes now,
@@ -32406,6 +32460,35 @@ same place in this file, so whichever merges second takes the other's entry abov
     middleware, all in the one hash-named ConfigMap, so every controller holds the same routes after its rollout). Nothing is
     arbitrated; the API's correctness is the application's, untouched.
 >>>>>>> P17-TSK-004
+=======
+**X-TSK-019 — Three architecture guards red on master since Phase 15 and 16 merges** — `COMPLETE` *(2026-11-14; found by
+`P16-TSK-026`'s gate, which ran the whole `:app:architectureTest` fresh, and done on the owner's word, "Do this task here"; on
+branch `claude/project-progress-status-1498c8` after `P16-TSK-026`'s commit; cross-cutting, no milestone, marks no task `READY`)*
+- **Context**: `app`'s architecture tier. Each guard read only files the merge that broke it changed, and each of those merges ran a
+  selection of guards that did not include it, so all three stood red on master: the class `X-TSK-018` named (a suite going dark when
+  its merge runs only its own).
+- **The failures** (`:app:architectureTest` on master's bytes plus `P16-TSK-026`, 1,202 tests, 3 failed), each classified:
+  - `StoredBoundsAreTheDatabasesTest#everyStoreIsInTheCensus` - `JdbcAgedReadings#raised_at` (`P16-TSK-029`) compares a timestamp column
+    with a bind parameter nobody classified. **Test register lagging the code, not a defect of the code**: `AgedCountMetrics` binds a cutoff
+    from this instance's clock, as the age gauges' own, a meter's reading that decides and writes nothing, so a count of one is exactly the
+    age rule holding. Fix: censused as `PACING` beside the gauge horizon `JdbcDisputeStore#respond_by`, with the reason.
+  - `ArchitectureRulesAreDocumentedTest#documentAndRulesAgreeExactly` - `P16-TSK-012`'s five rules (`nothingButTheReportingPoolBuildsAConnection`,
+    `theConnectionRuleSeesTheReportingPoolBuildOne`, `noProductionBeanDeclaresADataSource`, `onlyReportGenerationReachesTheReportingPool`,
+    `theReachRuleSeesTheGeneratorsWiring`) ran on every build and `MODULE_ARCHITECTURE.md` §6 named none of them. **Documentation drift.**
+    Fix: §6's "One primary serves every door" entry, each rule under its marker, the address layer named in prose as a JUnit test.
+  - `HandlerSetCatalogueTest#everyHandlerClassIsComposed` - `SpannedInboxHandler` (`P15-TSK-023`, 2026-11-11, three days after the guard)
+    implements `InboxEventHandler` to wrap each group's handlers in the flow's span, and the guard read every implementer as a handler a
+    bean must compose. **Guard blind to a wrapper.** Fix: a class holding the `InboxEventHandler` it forwards to is a wrapper and is held
+    apart, and the wrappers must be exactly the named `WRAPPERS`, so a new one is a reviewed change and never a handler the rule stops
+    seeing; every other implementer is still held to a composing bean.
+- **Not weakened**: no assertion removed or loosened; the census, the document and the named wrappers each fail on the next unreviewed
+  addition. **Probe** (recorded, `MUTATION_TESTING.md`): `WRAPPERS` emptied - `everyHandlerClassIsComposed` red; restored byte-identical
+  (sha256 `5e9adc56…d552be4c`, verified).
+- **Multi-instance**: `PASS` - tests and documentation only; no production code changed.
+- **Verified** (fresh): the three guards and `OnePrimaryServesEveryDoorTest`, `HandlerSetDiffTest`, `DeadLetterWiringTest` - 55 tests, green;
+  then the whole `:app:architectureTest`, 1,202 tests, 0 failed. `databaseTest` and `kafkaTest` not run, by the owner's word.
+- **Risk**: Low. **Cx**: S.
+>>>>>>> e097d1ac2f57e9211e00d5e9ed79f3841b26fa57
 
 ---
 

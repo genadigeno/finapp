@@ -676,6 +676,16 @@ recorded act after the first is fenced (its database stopped or its credentials 
 `-026` writes this as an assessment document section and the Terraform variants (a recovery-region root composing the
 existing modules, the backup copy's cross-region destination) checked by `terraform test` with mock providers, never applied.
 
+*(2026-11-14, `P16-TSK-026`, as built: the assessment is `SYSTEM_ARCHITECTURE.md` §Multi-Region Assessment, decided in ADR-0150.
+The recovery-region root (`infra/terraform/environments/production-recovery`) holds the standing site alone - the vault the daily
+snapshot is also copied to and the key every ring version is replicated under, in a second region of production's account - and
+composes a module of its own (`modules/recovery-region`), not the existing ones: composing them a second time in one account collides
+on IAM and bucket names, which are global, and production's state is kept in the region that is lost (`THREAT_MODEL.md` §6 item 72).
+The cross-region destination is a second copy of the same snapshot, and it is §11.2's tier 4 source ("as tier 3, into another
+region" read the account copy, which stays in the region and is lost with it); the rings replicate, no credential does, and no key is
+multi-region. The regional promotion procedure is `OPERATIONS_RUNBOOK.md` §11.65. **Erratum**: "item 21 (a)" in this plan, ADR-0128
+and ADR-0149 is `THREAT_MODEL.md` §6 item **23** (a), the dedicated backup account; item 21 is the namespaces' policies.)*
+
 ---
 
 ## 13. Financial correctness under failure (Part 20 — the most important part)
@@ -717,6 +727,14 @@ seven checks counted, and its result written in the experiment register. What al
 its own container, so scenario 3 cites it `[own-container]`, not `[db]`; `HealthEndpointTest` is a Spring slice, `[slice]`,
 which needs no database and runs per task as the `[hermetic]` label meant. Each scenario is registered there as its own
 experiment, `F01`…`F15`, composing the experiments of §9.2 this column names.)*
+
+*(2026-11-14, `P16-TSK-027`, as built: each scenario is an experiment of the `experiments` scope (`infra/scripts/kind-rehearsal/experiments.sh`),
+run through `experiment_run` and counting the seven checks into `experiments/<id>/seven-checks.tsv`, a failed check making it `FAILED`; (g)'s
+discrepancy is a real capture of the run settled 1.00 EUR off, planted before the fault. Scenario 8's ledger-hold half is a database case
+(`HoldDatabaseTest#tenConcurrentReleasesOfOneHoldReleaseOnce`). **Scenario 6 cannot be driven on `kind`**: no loan can exist there, the
+owner having decided on 2026-11-13 that no test-only bureau is built (unresolved question 13), so F06 refuses with that reason and its
+partial proof stays lending's own cases. Built and contract-tested; **every run owed** under `POSTPONED_ISSUES.md` PI-025, the database case
+under PI-023's pass, so no scenario's verdict is claimed. `OPERATIONS_RUNBOOK.md` §11.66.)*
 
 ---
 

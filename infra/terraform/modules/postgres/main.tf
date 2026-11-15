@@ -166,6 +166,21 @@ resource "aws_backup_plan" "database" {
         delete_after = var.snapshot_retention_days
       }
     }
+
+    # The recovery region's copy (ADR-0150): the same daily snapshot, copied to a vault in another region under that
+    # vault's key, so that a region's loss leaves a recovery point (ADR-0128 tier 4, RPO 24 h). Absent where no
+    # recovery region is kept.
+    dynamic "copy_action" {
+      for_each = var.backup_region_copy_vault_arn == null ? [] : [var.backup_region_copy_vault_arn]
+
+      content {
+        destination_vault_arn = copy_action.value
+
+        lifecycle {
+          delete_after = var.snapshot_retention_days
+        }
+      }
+    }
   }
 }
 

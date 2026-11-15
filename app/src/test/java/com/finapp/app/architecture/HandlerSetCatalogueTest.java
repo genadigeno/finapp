@@ -53,12 +53,22 @@ class HandlerSetCatalogueTest {
 
     static final Path GENERATED = Path.of("build", "event-catalogue", "handler-catalogue.yaml");
 
+    /**
+     * The classes that wrap a handler rather than consume as one: each holds the {@link InboxEventHandler} it forwards to, takes its
+     * consumer name, topic and type from it, and is composed per handler at wiring, never by a bean of its own. Named, so that a new
+     * wrapper is a reviewed change and never a handler class this rule stops seeing. {@code SpannedInboxHandler} is `P15-TSK-023`'s
+     * flow span (ADR-0124 decision 8), wrapped around each group's handlers by {@code EventingBeans}' receiver; it arrived after this
+     * rule and was read as an uncomposed handler until `X-TSK-019` (2026-11-14).
+     */
+    static final Set<String> WRAPPERS = Set.of("com.finapp.app.eventing.SpannedInboxHandler");
+
     private static Production production;
     private static SortedSet<Handler> current;
     private static EventCatalogue events;
 
     /** The production import and the bean methods found in it. */
-    private record Production(List<Method> beanMethods, Set<String> handlerClasses, Set<String> composedClasses) {}
+    private record Production(
+            List<Method> beanMethods, Set<String> handlerClasses, Set<String> wrapperClasses, Set<String> composedClasses) {}
 
     @BeforeAll
     static void read() throws IOException {
@@ -70,7 +80,8 @@ class HandlerSetCatalogueTest {
             composed.add(handler);
             composedClasses.add(handler.getClass().getName());
         }
-        production = new Production(production.beanMethods(), production.handlerClasses(), composedClasses);
+        production = new Production(
+                production.beanMethods(), production.handlerClasses(), production.wrapperClasses(), composedClasses);
         current = HandlerSet.of(composed);
         events = EventCatalogue.fromProductionCode();
         Files.createDirectories(GENERATED.getParent());
@@ -84,9 +95,13 @@ class HandlerSetCatalogueTest {
                         .importPackages("com.finapp");
         List<Method> beanMethods = new ArrayList<>();
         Set<String> handlerClasses = new TreeSet<>();
+        Set<String> wrapperClasses = new TreeSet<>();
         for (JavaClass javaClass : classes) {
             if (javaClass.isAssignableTo(InboxEventHandler.class) && !javaClass.isInterface()) {
-                handlerClasses.add(javaClass.getName());
+                // A class holding the handler it forwards to is a wrapper: it consumes nothing of its own.
+                boolean wraps = javaClass.getFields().stream()
+                        .anyMatch(field -> field.getRawType().isEquivalentTo(InboxEventHandler.class));
+                (wraps ? wrapperClasses : handlerClasses).add(javaClass.getName());
             }
             for (JavaMethod method : javaClass.getMethods()) {
                 if (method.isAnnotatedWith(Bean.class) && method.getRawReturnType().isAssignableTo(InboxEventHandler.class)) {
@@ -94,13 +109,16 @@ class HandlerSetCatalogueTest {
                 }
             }
         }
-        return new Production(beanMethods, handlerClasses, Set.of());
+        return new Production(beanMethods, handlerClasses, wrapperClasses, Set.of());
     }
 
     @Test
     @DisplayName("every handler class in production is composed by a bean, and there are real ones")
     void everyHandlerClassIsComposed() {
         assertThat(production.handlerClasses()).as("the handler classes production holds").isNotEmpty();
+        assertThat(production.wrapperClasses())
+                .as("the classes wrapping a handler are the named ones: a new wrapper is reviewed, never a handler this rule stops seeing")
+                .containsExactlyInAnyOrderElementsOf(WRAPPERS);
         assertThat(production.composedClasses())
                 .as("a handler class no bean composes consumes nothing, and this diff could not see it")
                 .containsExactlyInAnyOrderElementsOf(production.handlerClasses());

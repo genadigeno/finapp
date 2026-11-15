@@ -231,6 +231,95 @@ run "a_backup_copy_inside_this_account_shares_the_key_with_nobody" {
 }
 
 # ------------------------------------------------------------------------------------------------
+# The recovery region (ADR-0150): the rings replicated there under its own key, and the database key usable by the copy.
+# ------------------------------------------------------------------------------------------------
+
+run "the_rings_are_replicated_to_the_recovery_region_under_its_key_and_no_credential_is" {
+  command = plan
+
+  variables {
+    recovery_region = {
+      region                 = "eu-west-1"
+      field_keys_kms_key_arn = "arn:aws:kms:eu-west-1:111111111111:key/bbbbbbbb-0000-0000-0000-000000000001"
+    }
+  }
+
+  assert {
+    condition = length(aws_secretsmanager_secret.field_key) > 0 && alltrue([
+      for ring in aws_secretsmanager_secret.field_key :
+      length(ring.replica) == 1 && one(ring.replica).region == "eu-west-1" && one(ring.replica).kms_key_id == "arn:aws:kms:eu-west-1:111111111111:key/bbbbbbbb-0000-0000-0000-000000000001"
+    ])
+    error_message = "A ring version is not replicated to the recovery region under that region's own key."
+  }
+
+  assert {
+    condition     = alltrue([for ring in aws_secretsmanager_secret.field_key : ring.force_overwrite_replica_secret != true])
+    error_message = "A ring's replica may overwrite an entry already standing in the recovery region."
+  }
+
+  assert {
+    condition     = length(aws_secretsmanager_secret.entry) > 0 && alltrue([for entry in aws_secretsmanager_secret.entry : length(entry.replica) == 0])
+    error_message = "A credential is replicated to the recovery region: credentials are generated again in a recovery, never carried."
+  }
+}
+
+run "the_database_key_admits_the_region_copys_services_in_the_recovery_region_and_no_other_key_does" {
+  command = plan
+
+  variables {
+    recovery_region = {
+      region                 = "eu-west-1"
+      field_keys_kms_key_arn = "arn:aws:kms:eu-west-1:111111111111:key/bbbbbbbb-0000-0000-0000-000000000001"
+    }
+  }
+
+  assert {
+    condition     = toset(jsondecode(aws_kms_key.this["database"].policy).Statement[1].Condition.StringEquals["kms:ViaService"]) == toset(["rds.eu-central-1.amazonaws.com", "backup.eu-west-1.amazonaws.com", "rds.eu-west-1.amazonaws.com"])
+    error_message = "The database key does not admit the region copy's services in the recovery region, or admits more."
+  }
+
+  assert {
+    condition     = alltrue([for purpose, key in aws_kms_key.this : purpose == "database" || !strcontains(key.policy, "eu-west-1")])
+    error_message = "A key other than the database's is usable from the recovery region."
+  }
+}
+
+run "no_ring_is_replicated_where_no_recovery_region_is_kept" {
+  command = plan
+
+  assert {
+    condition     = alltrue([for ring in aws_secretsmanager_secret.field_key : length(ring.replica) == 0])
+    error_message = "A ring is replicated though no recovery region is given."
+  }
+}
+
+run "a_recovery_region_that_is_this_region_is_refused" {
+  command = plan
+
+  variables {
+    recovery_region = {
+      region                 = "eu-central-1"
+      field_keys_kms_key_arn = "arn:aws:kms:eu-central-1:111111111111:key/bbbbbbbb-0000-0000-0000-000000000001"
+    }
+  }
+
+  expect_failures = [var.recovery_region]
+}
+
+run "a_rings_replica_key_outside_the_recovery_region_or_multi_region_is_refused" {
+  command = plan
+
+  variables {
+    recovery_region = {
+      region                 = "eu-west-1"
+      field_keys_kms_key_arn = "arn:aws:kms:eu-west-1:111111111111:key/mrk-0123456789abcdef0123456789abcdef"
+    }
+  }
+
+  expect_failures = [var.recovery_region]
+}
+
+# ------------------------------------------------------------------------------------------------
 # Secret entries.
 # ------------------------------------------------------------------------------------------------
 

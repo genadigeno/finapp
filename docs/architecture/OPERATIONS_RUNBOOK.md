@@ -3282,6 +3282,8 @@ latest; the run, as its record names it.
 | §11.62 | `platform`, `identity` | 0 | 6 | 6 | — | — | — | — | Phase 16 drill |
 | §11.63 | `platform`, `payments`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
 | §11.64 | `platform` | 0 | 11 | 11 | — | — | — | — | Phase 16 drill |
+| §11.65 | `platform` | 0 | 4 | 4 | — | — | — | — | no account |
+| §11.66 | `platform`, `payments`, `reconciliation` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -4476,6 +4478,137 @@ No run of the exercise, by the owner's word (PI-025): E87, E88 and E89 are owed,
 | `kind-secrets.sh`'s ring mode in its render mode, no cluster: the 24 ring versions the inventory holds (eight rings, three versions each) made into a stand-in escrow and given on stdin, then six refusals | With the escrow: exit 0, every one of the 24 lines carried verbatim into `finapp-app-secrets`, every other value generated (the application's password differing from a default run's); a default run's render held none of them. Refused, each with exit 1 and no object written: the MFA ring's version 1 withheld (`no value for FINAPP_MFA_KEY on stdin`); a password on stdin; a callback key on stdin; a name built to break the shell's quoting; an empty value. An unknown `KIND_SECRETS_RINGS` exit 2 |
 | `sh -n` over the four changed scripts; ShellCheck 0.10.0 (its image already on the machine) over `dr.sh` and `kind-secrets.sh` | No syntax error; no finding at error level, the warnings and notes the kinds the harness's other files carry |
 | `DisasterRecoveryRehearsalContractTest` and the guards that read the changed files | See `docs/project/history/CHANGE_LOG.md`'s row of 2026-11-13 |
+
+### 11.65 Regional promotion: the standing site, the fence before anything is promoted, and a region that returns (`P16-TSK-026`, ADR-0150, ADR-0129)
+
+*(Written by `P16-TSK-026`, 2026-11-14, from `infra/terraform/environments/production-recovery`, `infra/terraform/modules/recovery-region`
+and the production root's `recovery_region` input. Never run and not rehearsable here: there is no account and no second region (section
+11.38's reason "no account"). Every step naming a provider's service is written from the repository's plans and that service's documented
+behaviour, and says so where it was not read. Rebuilding the platform in the recovery region at need is designed only: `THREAT_MODEL.md`
+section 6 item 72.)*
+
+**When.** Production's region is lost: its control plane, its database and its standby unreachable together, and the provider's own status
+says the region, not an instance or a zone. A lost instance or zone is a failover (sections 11.40 and 11.54, tier 1); a lost account is
+section 11.64 (tier 3). It is declared an incident (section 11.12) whose lead names the person who will fence, the person who will release
+the recovered database, and the time the declaration was made. **The rule: nothing is promoted until the lost region is fenced and the fence
+is recorded, and no health check promotes anything.** A region that is only slow is not lost: waiting costs availability, and two writers
+cost money.
+
+#### Before any disaster: the standing site
+
+What the recovery region holds before it is needed, and how to see that it still does:
+
+1. The recovery-region root is applied before production's, and production's `recovery_region` input is its `recovery_region` output, whole
+   (the region, the region copies' vault, the rings' replica key). A change to either root is planned and applied from a reviewed plan, as
+   every root (item 7).
+2. Each day's recovery point is in the region copies' vault, in the recovery region, under the site's `region_copies` key, beside the
+   account copy (item 23 (a)). A day with no copy is a finding: the copy job failed closed, which is what a refused key policy or vault
+   policy looks like (the security module's and the recovery-region module's READMEs name both as unverified).
+3. Every ring version's entry shows a replica in the recovery region, under the site's `field_keys` key, in sync. A ring version made under
+   section 11.29 is replicated when it is made, before it is listed; a version without its replica is not listed.
+4. No credential entry has a replica anywhere: credentials are generated again in a recovery (ADR-0149 decision 2).
+5. `residency_regions` holds production's region, the recovery region and the account copy's region. A change of jurisdiction changes it in
+   both roots in one reviewed change.
+
+#### Declaring a regional recovery and fencing the lost region
+
+The fence is what refuses a split brain. It is made from outside the lost region, because the region may not answer, and each step is
+recorded in the incident with its actor and time:
+
+1. **Withdraw the public names** from the lost region's edge (DNS is global), so that no customer and no provider callback reaches it.
+2. **Revoke what the lost region would move money with.** Every provider credential and callback key, at each provider, which a recovery
+   issues again anyway (ADR-0149 decision 2): this is the fence that matters, because money leaves the platform only through a provider. Then
+   the abuse key, and the secret readers' trust (IAM holds it globally), so that no pod started in the lost region can fetch its secrets
+   again. A pod already running keeps the database and broker credentials it holds, and they reach only the lost region's own database:
+   whatever it writes there is orphaned, never merged, and found as section 11.65's last procedure says. A lost region that comes back can
+   then neither reach a customer nor move money at a provider.
+3. **If the lost region's control plane answers:** stop its database instance and scale its fleet and its migrator to zero, then confirm both.
+   If it does not answer, record that, and that steps 1 and 2 are the fence.
+4. **Record the fence as made**: the incident names each revocation and the time of the last. Only then does section 11.65's next procedure
+   begin. A fence that cannot be completed (a provider that cannot revoke a key) is recorded with what remains open; the incident's lead
+   decides whether to wait, and the decision is recorded.
+
+#### Promoting the recovery region
+
+1. Take the latest recovery point in the region copies' vault; its instant is **T**. Everything committed after T is lost by construction and
+   found again by the providers' statements and reconciliation (section 11.64, "What a recovery loses").
+2. Restore it in the recovery region under the post-recovery gate, exactly as section 11.64's order says from "the data tier and the broker
+   from code (the broker empty)" onwards: the platform's roles held `NOLOGIN`; the restore compared with its manifest; the platform's own
+   verification; the window; the person's recorded release (sections 11.35 and 11.55, ADR-0140). The rings come from their replicas in the
+   recovery region and are never generated; every credential is generated again.
+3. The cluster, the brokers and the fleet in the recovery region are rebuilt from the repository at the release's commit. **How that rebuild
+   is planned in production's account is not built** (item 72): until it is, this step is the declared incident's engineering work, and its
+   duration is tier 4's RTO.
+4. The public names are pointed at the recovery region's edge only after the release, and the incident records the instant money moved again.
+
+#### When the lost region returns
+
+1. **It is never promoted back.** The recovery region is now the only writer.
+2. Before anything else, stop the returned region's database and keep its fleet at zero (if step 3 of the fence could not be made, make it
+   now). Its credentials are already dead.
+3. Read what it wrote after T, without writing to it: those postings, captures, payouts and settlement lines are reconciliation breaks
+   against the recovered books, raised and explained as section 11.35 says, never merged into the journal.
+4. Retire the returned region's database only after the incident's lead has recorded that every break it explains is raised. A later return
+   to that region is a new recovery site built from code, never the old database promoted.
+
+### 11.66 Financial correctness under failure: the fifteen scenarios, their seven checks, and what a person does when one is red (`P16-TSK-027`)
+
+*(Written by `P16-TSK-027`, 2026-11-14, from `infra/scripts/kind-rehearsal/experiments.sh`'s scenario section (F01 to F15) and
+`RESILIENCE_EXPERIMENTS.md` §4. Not run: by the owner's word of 2026-11-13 every run is owed (`POSTPONED_ISSUES.md` PI-025), and no
+scenario's verdict is claimed here. Each procedure below is read, not rehearsed: section 11.38's reason "Phase 16 drill".)*
+
+**What a scenario is.** One of `PHASE_16_PLAN.md` §13's fifteen failures, driven on `kind` against the deployment under the
+demonstration workload (the engineering workload for F07, F08 and F14, at ten replicas), as an experiment of its own: it runs through
+`experiment_run`, so it carries the security probe, the safety boundary and the census like every experiment of section 11.46. What
+makes it a scenario is that it counts **the seven checks**, each recorded in `experiments/<id>/seven-checks.tsv` with its evidence:
+(a) one effect per key, (b) no money created or destroyed, (c) no history changed, (d) no evidence lost, (e) a re-run converges,
+(f) a same-key retry answers the stored result, (g) a planted discrepancy raised as a break. A failed check makes the scenario `FAILED`;
+its recovery and census still run. Exactly-once is not claimed: a pass shows effectively-once effects, counted.
+
+#### Running the scenarios
+
+1. Every scenario at three replicas but the three at ten, one run at a time, F11 last (it leaves one database server and no standby, as
+   E05 does): `REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="F01 F02 F03 F04 F05 F09 F10 F12 F13 F15 F11" infra/scripts/kind-rehearsal.sh`.
+2. The three at ten, under the engineering workload: `REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS_REPLICAS=10
+   REHEARSAL_EXPERIMENTS_LOAD=sustained REHEARSAL_EXPERIMENTS="F07 F08 F14" infra/scripts/kind-rehearsal.sh`. Each refuses to start below ten.
+3. F06 refuses whatever is asked: no loan can exist on `kind` (no bureau; the owner's decision of 2026-11-13, unresolved question 13). Its
+   partial proof is lending's own database cases and the lending storm, owed to PI-023's pass.
+4. The knobs, each with its default: `REHEARSAL_SCENARIO_PLANT_MINOR` (100, the planted difference), `REHEARSAL_SCENARIO_BREAK_SECONDS`
+   (900, how long check (g) waits for the break), `REHEARSAL_F09_LINES` (400, the lines of F09's and F10's files: raise it when F10 reads no
+   run mid-walk), `REHEARSAL_F13_LATE_SECONDS` (300, how late F13's success arrives), `REHEARSAL_F02_SECONDS` (120) and
+   `REHEARSAL_F05_AT_TEN_SECONDS` (180).
+
+#### Reading a scenario's record
+
+- `experiments/<id>/record.tsv`: the steps, the fault as put on, each check's line, the seven checks' summary, the verdict.
+- `experiments/<id>/seven-checks.tsv`: one line per check (letter, `PASS` or `FAIL`, evidence). All seven must be counted: a scenario
+  that counted fewer is `FAILED` for that alone.
+- `experiments/<id>/journal-before.tsv`, `journal-after.tsv` and `journal-rerun.tsv`: every journal entry with its digest, and the
+  growing tables' counts, read in one `REPEATABLE READ READ ONLY` transaction each - (c), (d) and (e)'s evidence.
+- `experiments/<id>/keys.tsv`: every request the scenario recorded (kind, key, reference, first status, the first body's sha256) - (f)'s.
+- `experiments/<id>/planted-settlement.csv` and `plant.log`: the planted line and its delivery - (g)'s.
+
+#### When a scenario is red
+
+- **(a) or (b)**: the census names the clause. A second effect for a key, or money out of balance, is a production defect: open the
+  incident (section 11.12), freeze money movement as section 11.20 says if the balance is wrong, and file a task of its own; the scenario
+  stays red until it lands. Never edit the journal: a correction is a reversal.
+- **(c)**: an entry read before the fault changed or vanished. History is never mutated; this is the worst finding a scenario can make.
+  Keep the run's database (do not delete the cluster), take the two snapshots' differing ids to the incident, and stop every release.
+- **(d)**: a table that only grows lost rows across the fault - evidence lost. The same as (c), and the restore drill's evidence (section
+  11.35) is the first thing to check.
+- **(e)**: the scenario's re-run moved money again, or changed an entry: the path it re-ran is not idempotent end to end. A task of its own.
+- **(f)**: a same-key retry was answered otherwise than first. Read `keys.tsv` against the resent file: a different status is the
+  idempotency store's defect; the same status with other bytes may be a response that embeds a time or a server-made field, which is a
+  defect of the stored response, not of the effect. Either is a task of its own.
+- **(g)**: the planted difference raised no break within the wait. First rule out the harness: the file accepted (`plant.log`), the run
+  completed, the source's rule set active (section 1). Then it is reconciliation's defect - unresolved money no one is told about.
+- **A correctness page that only the plant raised**: whether a settled amount 1.00 EUR off a capture leaves the position and cash proofs
+  quiet (`PositionProofFailing`, `CashProofFailing`) was not seen before these were written. If the first run shows the plant alone paging,
+  every scenario stops for it: that is a harness defect, repaired by planting a difference those proofs do not count, never by excusing
+  the page.
+- **A scenario that could not run** (`??`): its reason is the line; nothing is claimed for it.
+- **The probe**: the inbox's dedupe turned off on a throwaway branch must turn F05 red with a second effect counted (owed under PI-025).
 
 ### 11.33 Rotations rehearsed on kind: running them, reading them, the last record (`P15-TSK-020`)
 

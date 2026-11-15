@@ -1372,6 +1372,32 @@ methods, because `@Transactional` fails *silently* on self-invocation and
 `DEFINITION_OF_DONE.md` §1.4 requires a boundary that is deliberate rather than an accident of
 annotation placement. *(review)*
 
+### One primary serves every door (`P16-TSK-012`; ADR-0142; ADR-0129 decision 7)
+
+*(Documented 2026-11-14 by `X-TSK-019`: `P16-TSK-012` built these rules and they ran on every build, but this section did not name
+them, so `ArchitectureRulesAreDocumentedTest` was red on master from that merge until this entry.)* No read replica is routed, so no
+money-moving door, balance check or once-ness check can read one. A second server could be reached four ways, and each is refused
+(`OnePrimaryServesEveryDoorTest`; the fourth's own probe is a planted transfer door wired to the reporting pool, refused):
+
+- **A connection built**: no production class but `ReportingPool` depends on what turns an address into a connection - HikariCP, the
+  PostgreSQL driver, `DriverManager` and `Driver`, a `javax.sql` source other than `DataSource` itself, Spring Boot's builders and
+  Spring's driver-backed sources. Reading the writer pool's statistics, as the shedding door does (ADR-0137), builds nothing and passes.
+  Proven able to fail by planted classes building, configuring, borrowing from or closing a pool and connecting through `DriverManager`.
+  *(ArchUnit: `nothingButTheReportingPoolBuildsAConnection`)*
+- The connection rule sees what it guards: the reporting pool's own HikariCP pool is found, every production module is imported, and the
+  shedding door's reads of the writer pool are judged and pass. *(ArchUnit: `theConnectionRuleSeesTheReportingPoolBuildOne`)*
+- **A second pool declared**: no production `@Bean` returns a `DataSource` or a pool class, so the writer is Spring Boot's one
+  auto-configured pool; the census reads more than twenty beans taking that `DataSource` as a parameter. Proven able to fail by a planted
+  replica bean and a planted pool bean. *(ArchUnit: `noProductionBeanDeclaresADataSource`)*
+- **The reporting pool reached**: only report generation's wiring depends on `ReportingConnections` or `ReportingPool` - the pool's own
+  package and `AccountingBeans`' two methods that hand it to the run generator - so no money-moving door reaches that pool, whatever server
+  it ever reaches. *(ArchUnit: `onlyReportGenerationReachesTheReportingPool`)*
+- The reach rule sees the generator's wiring: `AccountingBeans.reportRunGenerator` and `generationSnapshots` are found taking the reporting
+  pool. *(ArchUnit: `theReachRuleSeesTheGeneratorsWiring`)*
+
+The address layer (no production class but `DatabaseEndpoint` names a database's address, read from every module's bytes) is a JUnit
+test in the same class, not an ArchUnit rule, so it is named here in prose. *(test: `OnePrimaryServesEveryDoorTest`)*
+
 ### Data boundary
 - Schema per module in one PostgreSQL database (ADR-0006).
 - **No foreign keys across module schemas.** Referential integrity across contexts is a

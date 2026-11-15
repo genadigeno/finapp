@@ -67,3 +67,7 @@ Financial impact: none on the books. Availability gives way to correctness where
 
 `P16-TSK-012` decides the replica question and its guard. `P16-TSK-023` writes the availability matrix. `P16-TSK-026` writes the
 assessment and the Terraform variants (never applied).
+
+*(2026-11-14: the assessment is `SYSTEM_ARCHITECTURE.md` §Multi-Region Assessment; what decision 5's "made available in the recovery
+region before they are needed" holds - the database's region copy, the rings replicated under the region's own key, no multi-region key - and
+the fence before promotion are ADR-0150. The rebuild in the recovery region at need is `THREAT_MODEL.md` §6 item 72.)*
