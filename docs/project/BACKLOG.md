@@ -31149,7 +31149,7 @@ on none:
   contention and soak runs owed (PI-025) and risk's latency beside the sweep unread (PI-004), each a reopening trigger when it runs.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-031 — The distributed-system audit and the capacity and operational review** — `READY` (2026-11-15; marked by `P16-TSK-030`'s completion gate: `-002`, `-004`, `-010`…`-012`, `-015`, `-017` and `-025`…`-030` `COMPLETE`) *(read "`PLANNED`" until then)*
+**P16-TSK-031 — The distributed-system audit and the capacity and operational review** — `COMPLETE` (2026-11-15; designed, written and gated straight through on the owner's "Start P16-TSK-031", branch `P16-TSK-031` from `0bc8bb06` (`P16-TSK-030`, unmerged); documents and one guard, no migration, no production code, no ADR; marks `P16-TST-002` `READY`) *(read "`READY` (2026-11-15; marked by `P16-TSK-030`'s completion gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: `PHASE_16_PLAN.md` §16 at ten, cited answer by answer. The capacity model completed. `PRODUCTION_READINESS.md`'s
   Phase 16 cells re-read with the evidence. The operational review of every new procedure.
 - **Affected components**: documents; `DISTRIBUTED_EXECUTION.md`.
@@ -31167,6 +31167,21 @@ on none:
   re-ruled.
 - **Definition of done**: `DOD-ARCH`, `DOD-DOC`.
 - **Operational documentation**: the readiness review's Phase 16 addendum.
+- **As built (2026-11-15, gate `COMPLETE`; documents and one guard; no violation found).** **The audit**: `DISTRIBUTED_EXECUTION.md`
+  §4b, the plan's eleven questions each answered at ten with its evidence (tests the build runs and the four recorded runs, E01, E27 and
+  E28 passed and E30 failed by design, all at three replicas), its ruling (all eleven `PASS`: no mechanism decides in a process) and its
+  gap (every ten-replica, contention, soak, pipeline and recovery run named as owed, PI-025; the database suites, PI-023); the plan's seven
+  items re-read (five confirmed, two corrected: the connection budget fits at ten on ADR-0134's server, and §3 is guarded both ways); no
+  new violation, instance-clock time still `X-TSK-008`'s and PI-021's; the completion question PASS by construction, measured at ten not
+  yet. **The guard**: `DistributedSystemAuditIsEvidencedTest` reads the questions and items from the plan's §16, resolves every citation
+  through `EvidenceCitations` plus the audit's own `run E.. VERDICT date` (a run the register records) and `owed E..` (registered, never
+  run), refuses a document, a bare file, an unrun database test or an owner as evidence and a finished task as an owner; its plants include
+  the backlog's probe, a claim citing a run that does not exist, and a recorded probe on the real section was seen red. **The capacity
+  model completed**: `CAPACITY_MODEL.md` §7, every part measured, derived or read and every unfilled cell's run named. **The readiness
+  cells**: the six the transition gave the phase re-read in place, each ruling standing; `PRODUCTION_READINESS.md` §6, the Phase 16
+  addendum - what the phase recorded, the cells re-read, and the operational review of all twenty-seven new procedures (§11.39's half,
+  §11.41 to §11.67): each states when, how, how to read it and what to do when red; six rehearsed with records, twenty read with their runs
+  owed, one designed-only. **Multi-instance**: `PASS` - nothing runs; the audit is the subject.
 - **Risk**: Low. **Cx**: M.
 
 **P16-TST-001 — The integrated soak: ten replicas, the engineering workload, faults on a schedule** — `COMPLETE` (2026-11-14; designed, built and gated straight through on the owner's "Start next task, design then implement then completion", branch `P16-TST-001` from `9369f9f1` (`P16-TSK-027`, PR #21, unmerged); no migration, no production code, no ADR; **built and contract-tested, the run owed under `POSTPONED_ISSUES.md` PI-025**; marks no task `READY`: none is eligible without the owner's word) *(read "`READY` (2026-11-14; marked by `P16-TSK-027`'s completion gate)" and before that "`PLANNED`" until its gate)*
@@ -31224,7 +31239,7 @@ on none:
   (fence, check, promote alone, move the Service, the journal compared) called from the soak's schedule. E05 leaves one server and
   no standby, so in a soak it is the last database fault, or the standby is rebuilt after it.
 
-**P16-TST-002 — The exit pass: the mandatory experiments' quick forms on the final tree** — `PLANNED`
+**P16-TST-002 — The exit pass: the mandatory experiments' quick forms on the final tree** — `READY` (2026-11-15; marked by `P16-TSK-031`'s completion gate: `-031` and `P16-TST-001` `COMPLETE`) *(read "`PLANNED`" until then)*
 - **Objective**: once, on the final tree, re-run the quick forms of the mandatory experiments, and run the named guard classes. Then
   run the database and Kafka fleet tiers as the owner decides under C2 and C11.
   - The quick forms: the demonstration load with invariants during load, E01, E05, E09, the restore with its verification, and
