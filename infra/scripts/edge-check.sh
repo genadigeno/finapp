@@ -37,10 +37,13 @@ export MSYS_NO_PATHCONV=1
 PLANTS=/scratch/edge-plants
 
 render_both() {
-    # render_both <deploy dir> <overlay> <output file>
+    # render_both <deploy dir> <overlay> <output file>: the application's stream and the edge's, and (X-TSK-020) the Operator Console's, which
+    # the operator edge routes /console to: edge.rego's [edge-console-*] read the three together.
     kustomize build "$1/overlays/$2" > "$3"
     printf '%s\n' '---' >> "$3"
     kustomize build "$1/edge/overlays/$2" >> "$3"
+    printf '%s\n' '---' >> "$3"
+    kustomize build "$1/console/overlays/$2" >> "$3"
 }
 
 edge_plant() {
@@ -78,6 +81,12 @@ PRODUCTION_EDGE=edge/overlays/production/kustomization.yaml
 PRODUCTION_APP=overlays/production/kustomization.yaml
 KUST=edge/base/kustomization.yaml
 QUOTA=edge/base/resourcequota.yaml
+OPERATOR_EDGE=edge/base/operator-edge.yaml
+EDGE_POLICY=edge/base/networkpolicy.yaml
+CONSOLE=console/base/console.yaml
+CONSOLE_POLICY=console/base/networkpolicy.yaml
+CONSOLE_QUOTA=console/base/resourcequota.yaml
+CONSOLE_PRODUCTION=console/overlays/production/kustomization.yaml
 
 plant_all() {
     # The general hardening, reused from finapp.rego, on a controller.
@@ -115,6 +124,8 @@ plant_all() {
     edge_plant_on edge-trace-context-operator-forwarded edge/base/operator-edge.yaml '/^          tracestate: ""$/d'
     edge_plant_on edge-trace-context-operator-null edge/base/operator-edge.yaml 's/^          baggage: ""$/          baggage:/'
     edge_plant_on edge-operator-no-allowlist "$OPERATOR_ROUTES" '1,/internal-only, body-cap/s/internal-only, //'
+    # Since X-TSK-020 the plant above lands on the first router, the console's: the application's operator router is planted on its own.
+    edge_plant_on edge-operator-default-no-allowlist "$OPERATOR_ROUTES" 's/middlewares: \[edge-headers, internal-only, body-cap\]/middlewares: [edge-headers, body-cap]/'
     # P15-TSK-042: each edge states its own surface on every router.
     edge_plant_on edge-surface-unstated "$PUBLIC_EDGE" '/^          X-Finapp-Surface: public$/d'
     edge_plant_on edge-surface-wrong-word edge/base/operator-edge.yaml 's/X-Finapp-Surface: operator$/X-Finapp-Surface: public/'
@@ -217,6 +228,29 @@ YAML
     edge_plant edge-quota-follows-a-stacked-rollout
     edge_mutate edge-quota-follows-a-stacked-rollout "$CONTROLLERS" '1,/^  replicas: 2$/s/^  replicas: 2$/  replicas: 3/'
     edge_mutate edge-quota-follows-a-stacked-rollout "$QUOTA" 's/"10"$/"12"/; s/^    requests.cpu: "1"$/    requests.cpu: 1200m/; s/ 5120Mi$/ 6144Mi/'
+
+    # The Operator Console (X-TSK-020): its route on the operator host alone, under its own headers; the API's policy kept; its namespace closed
+    # but for the operator controller; its workload hardened by the same reused rules as the controllers', and counted by the same quota rules.
+    edge_plant_on edge-console-on-public "$PUBLIC_ROUTES" 's/^  routers:$/  routers:\n    planted-console:\n      entryPoints: [websecure]\n      rule: "Method(`GET`) \&\& PathPrefix(`\/console\/`)"\n      service: finapp-console\n      middlewares: [edge-headers, source-session, hold-session, body-cap]\n      tls: {}/'
+    edge_plant_on edge-console-wider "$OPERATOR_ROUTES" 's/PathPrefix(`\/console\/`)/PathPrefix(`\/`)/'
+    edge_plant_on edge-console-api-headers "$OPERATOR_ROUTES" 's/middlewares: \[console-headers, internal-only, body-cap\]/middlewares: [edge-headers, internal-only, body-cap]/'
+    edge_plant_on edge-console-headers-on-api "$OPERATOR_ROUTES" '1,/middlewares: \[edge-headers, internal-only, body-cap\]/s/middlewares: \[edge-headers, internal-only, body-cap\]/middlewares: [console-headers, edge-headers, internal-only, body-cap]/'
+    edge_plant_on edge-console-csp-loosened "$OPERATOR_EDGE" "s/script-src 'self';/script-src 'self' 'unsafe-inline';/"
+    edge_plant_on edge-console-cache-control "$OPERATOR_EDGE" "s/^\\(        contentSecurityPolicy: \"default-src 'none'; script-src.*\\)\$/\\1\\n        customResponseHeaders:\\n          Cache-Control: no-store/"
+    edge_plant_on edge-api-csp-loosened "$OPERATOR_EDGE" "s/contentSecurityPolicy: \"default-src 'none'; frame-ancestors 'none'\"/contentSecurityPolicy: \"default-src 'self'; frame-ancestors 'none'\"/"
+    edge_plant_on edge-console-egress "$CONSOLE_POLICY" 's/^  ingress:$/  egress:\n    - to:\n        - ipBlock:\n            cidr: 192.0.2.0\/24\n  ingress:/'
+    edge_plant_on edge-console-ingress-public "$CONSOLE_POLICY" 's/app.kubernetes.io\/name: finapp-edge-operator$/app.kubernetes.io\/name: finapp-edge-public/'
+    edge_plant_on edge-console-no-default-deny "$CONSOLE_POLICY" '1,/^---$/d'
+    edge_plant_on edge-console-public-reaches "$EDGE_POLICY" '1,/^  egress:$/s/^  egress:$/  egress:\n    - to:\n        - namespaceSelector:\n            matchLabels:\n              kubernetes.io\/metadata.name: finapp-console\n      ports:\n        - protocol: TCP\n          port: 8080/'
+    edge_plant_on edge-console-unreached "$EDGE_POLICY" 's/kubernetes.io\/metadata.name: finapp-console$/kubernetes.io\/metadata.name: finapp-elsewhere/'
+    edge_plant_on edge-console-role-label "$CONSOLE" 's/^        app.kubernetes.io\/component: operator-console$/        app.kubernetes.io\/component: operator-console\n        finapp\/role: ingress-controller/'
+    edge_plant_on edge-console-one-replica "$CONSOLE" '1,/^  replicas: 2$/s/^  replicas: 2$/  replicas: 1/'
+    edge_plant_on edge-console-foreign-image "$CONSOLE_PRODUCTION" 's/^  - name: finapp-console$/  - name: finapp-console\n    newName: docker.io\/library\/nginx/'
+    edge_plant_on edge-console-tmp-on-disk "$CONSOLE" '/^            medium: Memory$/d'
+    edge_plant_on edge-console-writable "$CONSOLE" 's/readOnlyRootFilesystem: true/readOnlyRootFilesystem: false/'
+    edge_plant_on edge-console-mounted-account "$CONSOLE" "1,/$SWITCH: false/s/$SWITCH: false/$SWITCH: true/"
+    edge_plant_on edge-console-image-tag "$CONSOLE_PRODUCTION" 's/^    digest: sha256:0*$/    newTag: "1.0"/'
+    edge_plant_on edge-console-quota-pods-short "$CONSOLE_QUOTA" 's/^    pods: "5"$/    pods: "4"/'
 }
 
 in_container() {
@@ -273,7 +307,7 @@ CERTS=$(mktemp -d)
 status=0
 
 cleanup() {
-    docker rm -f "$RUN-public" "$RUN-operator" "$RUN-spool" "$RUN-backend" "$RUN-client" "$RUN-collector" "$RUN-sink" "$RUN-hung" >/dev/null 2>&1 || true
+    docker rm -f "$RUN-public" "$RUN-operator" "$RUN-spool" "$RUN-backend" "$RUN-client" "$RUN-collector" "$RUN-sink" "$RUN-hung" "$RUN-console" >/dev/null 2>&1 || true
     docker network rm "$NETWORK" >/dev/null 2>&1 || true
     docker volume rm -f "$VOLUME" "$VOLUME-public" "$VOLUME-operator" >/dev/null 2>&1 || true
     rm -rf "$CERTS"
@@ -381,6 +415,7 @@ edge_refused edge-trace-context-forwarded edge-trace-context
 edge_refused edge-trace-context-operator-forwarded edge-trace-context
 edge_refused edge-trace-context-operator-null edge-trace-context
 edge_refused edge-operator-no-allowlist edge-routes-operator
+edge_refused edge-operator-default-no-allowlist edge-routes-operator
 edge_refused edge-surface-unstated edge-surface
 edge_refused edge-surface-wrong-word edge-surface
 edge_refused edge-surface-router-unmarked edge-surface
@@ -409,6 +444,26 @@ edge_refused edge-third-replica edge-quota-pods
 edge_refused edge-surge-percent edge-quota-sizing
 edge_accepted edge-quota-follows-a-settled-rollout
 edge_accepted edge-quota-follows-a-stacked-rollout
+edge_refused edge-console-on-public edge-console-routes
+edge_refused edge-console-wider edge-console-routes
+edge_refused edge-console-api-headers edge-console-routes
+edge_refused edge-console-headers-on-api edge-console-routes
+edge_refused edge-console-csp-loosened edge-console-headers
+edge_refused edge-console-cache-control edge-console-headers
+edge_refused edge-api-csp-loosened edge-api-csp
+edge_refused edge-console-egress edge-console-network
+edge_refused edge-console-ingress-public edge-console-network
+edge_refused edge-console-no-default-deny edge-console-network
+edge_refused edge-console-public-reaches edge-console-network
+edge_refused edge-console-unreached edge-console-network
+edge_refused edge-console-role-label edge-console-network
+edge_refused edge-console-one-replica edge-console-workload
+edge_refused edge-console-foreign-image edge-console-workload
+edge_refused edge-console-tmp-on-disk edge-console-workload
+edge_refused edge-console-writable security-read-only
+edge_refused edge-console-mounted-account security-token
+edge_refused edge-console-image-tag images-digest
+edge_refused edge-console-quota-pods-short edge-quota-pods
 
 # ---------------------------------------------------------------------------------------------------
 # The routing: the committed files, in the pinned proxy.
@@ -518,6 +573,10 @@ layout "$VOLUME-public" public-routes.yaml public-edge.yaml public
 layout "$VOLUME-operator" operator-routes.yaml operator-edge.yaml operator
 
 docker run -d --name "$RUN-backend" --network "$NETWORK" --network-alias finapp-app.finapp.svc.cluster.local \
+    "$WHOAMI_IMAGE" --port 8080 --verbose >/dev/null
+# The Operator Console's static server (X-TSK-020), stood in for by the same image under the name operator-edge.yaml addresses: it sets no
+# security or caching header of its own, so every such header an answer carries is the edge's.
+docker run -d --name "$RUN-console" --network "$NETWORK" --network-alias finapp-console.finapp-console.svc.cluster.local \
     "$WHOAMI_IMAGE" --port 8080 --verbose >/dev/null
 # The controllers ship their own log and their access log to the collector's platform receiver (P16-TSK-003): the committed collector runs
 # under the name the static files name, with a sink standing in for its back ends that prints everything it receives, so what the proxy
@@ -891,6 +950,65 @@ expect_code "an operator route outside the prefix" 200 -X POST "$OPERATOR/v1/led
 expect_code "a session door" 200 -X POST "$OPERATOR/v1/authentications"
 expect_code "a customer route is not here" 404 "$OPERATOR/v1/me/accounts"
 expect_code "a provider callback is not here" 404 -X POST "$OPERATOR/v1/providers/payments/webhooks"
+
+echo "==   the Operator Console (X-TSK-020): GET /console/** on the operator host alone, under the console's headers; the API keeps its own"
+CONSOLE_CSP="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'"
+expect_code "the console's page" 200 "$OPERATOR/console/"
+expect_code "the console's bare path (its nginx redirects it)" 200 "$OPERATOR/console"
+expect_code "a deep link" 200 "$OPERATOR/console/approvals/$SAMPLE"
+expect_code "a content-hashed asset" 200 "$OPERATOR/console/assets/index-CjSZB-uo.js"
+expect_code "the console is never written to" 404 -X POST "$OPERATOR/console/"
+expect_code "a path beside the prefix" 404 "$OPERATOR/consoles"
+for path in /console /console/ /console/assets/index-CjSZB-uo.js //console/ /Console/; do
+    expect_code "the console on the public host: $path" 404 "$PUBLIC$path"
+done
+# header_once <label> <headers> <line>: the line, exactly and case aside, once. awk, because Git Bash's grep aborts on -c -i -F -x together.
+header_once() {
+    if [ "$(printf '%s\n' "$2" | awk -v want="$3" 'tolower($0) == tolower(want) {n++} END {print n + 0}')" -eq 1 ]; then
+        echo "ok   $1: $3"
+    else
+        printf '%s\n' "$2"
+        echo "!!   $1: not exactly once: $3"
+        status=1
+    fi
+}
+headers=$(client curl -sk -D - -o /dev/null --max-time 15 "$OPERATOR/console/" | tr -d '\r')
+header_once "the console" "$headers" "content-security-policy: $CONSOLE_CSP"
+header_once "the console" "$headers" 'strict-transport-security: max-age=31536000'
+header_once "the console" "$headers" 'x-content-type-options: nosniff'
+header_once "the console" "$headers" 'x-frame-options: DENY'
+header_once "the console" "$headers" 'referrer-policy: no-referrer'
+if printf '%s\n' "$headers" | grep -qi '^cache-control:'; then
+    printf '%s\n' "$headers"
+    echo "!!   the edge set Cache-Control on the console: its nginx's per-path caching would be overwritten"
+    status=1
+else
+    echo "ok   the edge sets no Cache-Control on the console: its nginx's own reaches the browser"
+fi
+headers=$(client curl -sk -D - -o /dev/null --max-time 15 "$OPERATOR/v1/operator/merchants/$SAMPLE" | tr -d '\r')
+header_once "an operator API route" "$headers" "content-security-policy: default-src 'none'; frame-ancestors 'none'"
+# The stand-in logs each request as an access line: ... "GET /console/ HTTP/1.1" ... - read, so the check below is not passed by a silent log.
+if docker logs "$RUN-console" 2>&1 | grep -q '"GET /console/assets/index-CjSZB-uo.js '; then
+    echo "ok   the console's backend logged the asset it served"
+else
+    docker logs "$RUN-console" 2>&1 | tail -5
+    echo "!!   the console's backend logged no request: the check below would pass on nothing"
+    status=1
+fi
+if docker logs "$RUN-console" 2>&1 | grep -Eq '"[A-Z]+ /v1/|"(POST|PUT|PATCH|DELETE) '; then
+    docker logs "$RUN-console" 2>&1 | grep -E '"[A-Z]+ /v1/|"(POST|PUT|PATCH|DELETE) ' | head
+    echo "!!   the console's backend received an API route or a write"
+    status=1
+else
+    echo "ok   the console's backend received no API route and no write"
+fi
+if docker logs "$RUN-backend" 2>&1 | grep -q '/console'; then
+    docker logs "$RUN-backend" 2>&1 | grep '/console' | head
+    echo "!!   the application's backend received a console path"
+    status=1
+else
+    echo "ok   the application's backend received no console path"
+fi
 
 echo "==   a renewed certificate, on a swapped volume, with no restart"
 subject() {

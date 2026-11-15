@@ -11,7 +11,7 @@
 # - Two replicas and a disruption budget, because the second rule makes the controller's availability every rollout's: while
 #   neither replica answers, no pod in the platform's namespaces can be created (those already running keep running).
 # - The namespaces it watches are the ones labelled policy.sigstore.dev/include: "true" (the chart's default selector), set on
-#   finapp and finapp-edge in deploy/namespaces. Its own namespace is not labelled, so it can always start.
+#   finapp, finapp-edge and finapp-console (X-TSK-020) in deploy/namespaces. Its own namespace is not labelled, so it can always start.
 #
 # ONE GAP IT CANNOT CLOSE ITSELF: its validating webhook is created with no rules and fills them in when it starts. Until then,
 # nothing is checked. The order is therefore the controller, its rules, the policies, and only then the platform's namespaces

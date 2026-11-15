@@ -177,7 +177,7 @@ class NamespaceSecurityManifestsTest {
     // ---------------------------------------------------------------------------------------------- Pod Security
 
     @Test
-    @DisplayName("all three namespaces state restricted at enforce, audit and warn, each version the cluster's own minor")
+    @DisplayName("every namespace - finapp, finapp-edge, finapp-observability and (X-TSK-020) finapp-console - states restricted at enforce, audit and warn, each version the cluster's own minor")
     void everyNamespaceIsRestrictedAndPinned() {
         Matcher pinned = Pattern.compile("(?m)^KUBERNETES_VERSION=(1\\.[0-9]+)\\.[0-9]+$").matcher(EvidenceCitations.read(root.resolve("infra/scanner-pins.sh")));
         assertThat(pinned.find()).as("the pin was read").isTrue();
@@ -185,7 +185,7 @@ class NamespaceSecurityManifestsTest {
 
         List<Map<String, Object>> namespaces = documents("deploy/namespaces/namespaces.yaml");
         assertThat(namespaces).extracting(namespace -> map(namespace, "metadata").get("name"))
-                .containsExactlyInAnyOrder("finapp", "finapp-edge", "finapp-observability");
+                .containsExactlyInAnyOrder("finapp", "finapp-edge", "finapp-observability", "finapp-console");
         for (Map<String, Object> namespace : namespaces) {
             Map<String, Object> labels = map(namespace, "metadata", "labels");
             for (String mode : List.of("enforce", "audit", "warn")) {

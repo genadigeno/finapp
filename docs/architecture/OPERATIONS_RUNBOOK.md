@@ -4091,12 +4091,15 @@ the controller yet, and no real identity signs anything.)*
 
 **What is there.** The Sigstore policy controller, two replicas in `cosign-system`, installed from its pinned chart with
 `deploy/operators/policy-controller/values.yaml`. It watches the namespaces labelled `policy.sigstore.dev/include: "true"`:
-`finapp` and `finapp-edge` (`deploy/namespaces`). Every pod there and every pod template is checked before it exists:
+`finapp`, `finapp-edge` and, since `X-TSK-020`, `finapp-console` (`deploy/namespaces`). Every pod there and every pod template is checked before it exists:
 Deployments, Jobs and their pods, init containers included. A debug container added to a running pod is checked too, by the controller's own registration of `pods/ephemeralcontainers` (read from its code, not exercised on `kind`). `deploy/admission` decides what passes:
 
 - `finapp-app` and `finapp-migrator`, and the names an environment's registry gives them (`finapp-<environment>-app`,
   `-migrator`), from any registry, must carry the trusted authority's signature (`finapp-images-signed`) and both attestations,
   SLSA provenance and the CycloneDX SBOM (`finapp-images-attested`);
+- *(`X-TSK-020`, 2026-11-14)* so must the Operator Console's `finapp-console` (and `finapp-<environment>-console`), under the same two
+  policies. Nothing signs it yet: finapp-admin-panel builds it, and neither this repository's image job nor `admission-check.sh` does, so
+  until its release path signs and attests it every console pod is refused here - the safe direction;
 - the edge's Traefik passes by its one pinned digest (`finapp-edge-traefik`), the only exception;
 - anything else is refused (`no-match-policy: deny`), and so is everything while the controller cannot answer
   (`failurePolicy: Fail`).

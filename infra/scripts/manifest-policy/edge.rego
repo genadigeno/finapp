@@ -1,6 +1,7 @@
 # The edge's policies (P15-TSK-011, ADR-0120 decision 6).
 #
-# Run by infra/scripts/edge-check.sh, conftest with --combine over one overlay's application stream and edge stream together, under
+# Run by infra/scripts/edge-check.sh, conftest with --combine over one overlay's application stream and edge stream together (and, since
+# X-TSK-020, the Operator Console's stream beside them: deploy/console, which the operator edge routes /console to), under
 # this file's package. Every message begins with [rule-id], and edge-check.sh plants a violation of every rule id here and requires the id
 # back; EdgeManifestsTest requires that list to be this file's.
 #
@@ -354,9 +355,11 @@ router_marks_its_surface(router) if {
 	"edge-headers" in main.list_of(router, "middlewares")
 }
 
+# Every router but the operator file's console router (X-TSK-020), which reaches no replica of the application: [edge-console-routes] holds it.
 deny contains msg if {
 	some prefix in route_config_prefixes
 	some name, router in main.section(yaml.unmarshal(config_map_with_prefix(prefix).data["routes.yaml"]), "http").routers
+	not is_the_console_router(prefix, router)
 	not router_marks_its_surface(router)
 	msg := sprintf("[edge-surface] %s router %s does not run edge-headers, so its requests reach the application unmarked or marked by the client", [prefix, name])
 }
@@ -472,13 +475,16 @@ denies_everything(policy) if {
 	count(main.list_of(policy.spec, "egress")) == 0
 }
 
-default_denied if {
+# In the namespace asked about (X-TSK-020): the application's own default-deny, in finapp, rendered in the same stream, says nothing of the
+# edge's namespace or the console's.
+default_denied(ns) if {
 	some policy in main.of_kind("NetworkPolicy")
+	main.namespace_of(policy) == ns
 	denies_everything(policy)
 }
 
 deny contains "[edge-network] no NetworkPolicy denies every pod in the edge's namespace in both directions" if {
-	not default_denied
+	not default_denied(edge_namespace)
 }
 
 operator_network_is_internal if {
@@ -500,21 +506,260 @@ deny contains "[edge-network] the operator controller's TLS listener is not limi
 # ------------------------------------------------------------------------------------------- the quota (P16-TSK-004)
 
 # THREAT_MODEL.md section 6 item 43 (c), decided 2026-11-12: one quota in finapp-edge, equal to the namespace's worst moment in pods, CPU and
-# memory, counted by finapp.rego's worst_moment (its comment says how, and why finapp's own formula does not hold here).
+# memory, counted by finapp.rego's worst_moment (its comment says how, and why finapp's own formula does not hold here). The console's namespace
+# (X-TSK-020) is counted the same way, by the same rules.
 edge_namespace := "finapp-edge"
 
+quota_namespaces := {edge_namespace, console_namespace}
+
 deny contains sprintf("[edge-quota] %s", [msg]) if {
-	some msg in main.quota_presence_findings(edge_namespace)
+	some ns in quota_namespaces
+	some msg in main.quota_presence_findings(ns)
 }
 
 deny contains sprintf("[edge-quota-sizing] %s", [msg]) if {
-	some msg in main.quota_sizing_findings(edge_namespace)
+	some ns in quota_namespaces
+	some msg in main.quota_sizing_findings(ns)
 }
 
 deny contains sprintf("[edge-quota-pods] %s", [msg]) if {
-	some msg in main.quota_pods_findings(edge_namespace)
+	some ns in quota_namespaces
+	some msg in main.quota_pods_findings(ns)
 }
 
 deny contains sprintf("[edge-quota-compute] %s", [msg]) if {
-	some msg in main.quota_compute_findings(edge_namespace)
+	some ns in quota_namespaces
+	some msg in main.quota_compute_findings(ns)
+}
+
+# ------------------------------------------------------------------------------------------- the Operator Console (X-TSK-020)
+
+# finapp-admin-panel P17-TSK-004, ADR-0131 decision 4. The operator edge serves the console's static assets same-origin, from a workload in a
+# namespace of its own, under headers of its own; the public edge never serves them. The policy below is a copy of the console's one definition
+# (finapp-admin-panel config/console-headers.mjs, CONSOLE_CSP); ConsoleHostingManifestsTest holds the committed files to the same string.
+console_namespace := "finapp-console"
+
+console_service := "finapp-console"
+
+console_csp := "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'"
+
+api_csp := "default-src 'none'; frame-ancestors 'none'"
+
+# As EdgeRoutes generates it: GET on the bare path (nginx's redirect to the slash) and under the slash, nothing beside the prefix.
+console_rule := "(Method(`GET`) && Path(`/console`)) || (Method(`GET`) && PathPrefix(`/console/`))"
+
+console_middlewares := ["console-headers", "internal-only", "body-cap"]
+
+routers_of(prefix) := main.section(main.section(yaml.unmarshal(config_map_with_prefix(prefix).data["routes.yaml"]), "http"), "routers")
+
+sends_to_the_console(router) if {
+	object.get(router, "service", "") == console_service
+}
+
+is_the_console_router(prefix, router) if {
+	prefix == "finapp-edge-operator-routes-"
+	sends_to_the_console(router)
+}
+
+# [edge-console-routes] The public host never serves the console: no router of its file names the console's service or path, and its edge file
+# defines no console service a router could name.
+deny contains msg if {
+	some name, router in routers_of("finapp-edge-public-routes-")
+	sends_to_the_console(router)
+	msg := sprintf("[edge-console-routes] public router %s sends to the console: /console is the operator host's alone", [name])
+}
+
+deny contains "[edge-console-routes] the public routes name /console: the console is the operator host's alone" if {
+	contains(public_routes, "/console")
+}
+
+public_edge_defines_the_console if {
+	main.stated(main.section(main.section(edge_file("finapp-edge-public-routes-"), "http"), "services"), console_service)
+}
+
+deny contains "[edge-console-routes] the public edge defines the console's service" if {
+	public_edge_defines_the_console
+}
+
+console_router_names := {name |
+	some name, router in routers_of("finapp-edge-operator-routes-")
+	sends_to_the_console(router)
+}
+
+deny contains msg if {
+	count(console_router_names) != 1
+	msg := sprintf("[edge-console-routes] the operator routes hold %d routers to the console: exactly one", [count(console_router_names)])
+}
+
+console_router_holds(router) if {
+	router.rule == console_rule
+	main.list_of(router, "middlewares") == console_middlewares
+}
+
+deny contains msg if {
+	some name, router in routers_of("finapp-edge-operator-routes-")
+	sends_to_the_console(router)
+	not console_router_holds(router)
+	msg := sprintf("[edge-console-routes] %s is not exactly GET /console and /console/**, behind console-headers, internal-only and body-cap alone", [name])
+}
+
+# The console's headers on an application route would loosen its policy from default-src 'none' to the console's.
+deny contains msg if {
+	some prefix in route_config_prefixes
+	some name, router in routers_of(prefix)
+	not sends_to_the_console(router)
+	"console-headers" in main.list_of(router, "middlewares")
+	msg := sprintf("[edge-console-routes] %s router %s runs console-headers: the application's routes keep default-src 'none'", [prefix, name])
+}
+
+# [edge-console-headers] The console's policy, exactly, with HSTS and its siblings, and no Cache-Control: the console's nginx sets that per path
+# (index.html no-cache, the content-hashed assets immutable), and a value here would overwrite both.
+console_headers := edge_file("finapp-edge-operator-routes-").http.middlewares["console-headers"].headers
+
+console_headers_hold if {
+	console_headers.contentSecurityPolicy == console_csp
+	console_headers.frameDeny == true
+	console_headers.contentTypeNosniff == true
+	console_headers.referrerPolicy == "no-referrer"
+	console_headers.stsSeconds >= 31536000
+	console_headers.customRequestHeaders.Upgrade == ""
+}
+
+deny contains "[edge-console-headers] console-headers is not the console's policy exactly, with HSTS, nosniff, frameDeny, no-referrer and Upgrade removed" if {
+	not console_headers_hold
+}
+
+sets_cache_control if {
+	some name, _ in main.section(console_headers, "customResponseHeaders")
+	lower(name) == "cache-control"
+}
+
+deny contains "[edge-console-headers] console-headers sets Cache-Control: the console's nginx sets it per path, and the edge would overwrite both" if {
+	sets_cache_control
+}
+
+# [edge-api-csp] Every application route keeps the strict policy on both hosts: the console's never widens it.
+api_csp_holds(prefix) if {
+	edge_file(prefix).http.middlewares["edge-headers"].headers.contentSecurityPolicy == api_csp
+}
+
+deny contains msg if {
+	some prefix in route_config_prefixes
+	not api_csp_holds(prefix)
+	msg := sprintf("[edge-api-csp] %s: edge-headers' policy is not %s", [prefix, api_csp])
+}
+
+# [edge-console-network] The console's namespace denies everything; its pods admit the operator controller alone, on their one port, and open no
+# connection; the public controller cannot reach them; and no console pod carries the role the application admits to its port.
+deny contains "[edge-console-network] no NetworkPolicy denies every pod in the console's namespace in both directions" if {
+	not default_denied(console_namespace)
+}
+
+operator_peer := {
+	"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": edge_namespace}},
+	"podSelector": {"matchLabels": {"app.kubernetes.io/name": "finapp-edge-operator"}},
+}
+
+console_policy_holds(policy) if {
+	{type | some type in policy.spec.policyTypes} == {"Ingress", "Egress"}
+	count(main.list_of(policy.spec, "egress")) == 0
+	count(policy.spec.ingress) > 0
+	every rule in policy.spec.ingress {
+		rule.from == [operator_peer]
+		rule.ports == [{"protocol": "TCP", "port": 8080}]
+	}
+}
+
+console_is_admitted_by_its_policy if {
+	some policy in main.of_kind("NetworkPolicy")
+	main.namespace_of(policy) == console_namespace
+	policy.spec.podSelector.matchLabels["app.kubernetes.io/name"] == "finapp-console"
+	console_policy_holds(policy)
+}
+
+deny contains "[edge-console-network] the console's policy does not admit the operator controller alone on 8080 with no egress" if {
+	not console_is_admitted_by_its_policy
+}
+
+# Any other policy in the console's namespace may only deny: a second policy's rule would add to the first's.
+deny contains msg if {
+	some policy in main.of_kind("NetworkPolicy")
+	main.namespace_of(policy) == console_namespace
+	some direction in {"ingress", "egress"}
+	some rule in main.list_of(policy.spec, direction)
+	not console_policy_holds(policy)
+	msg := sprintf("[edge-console-network] %s holds an %s rule beside the console's one flow", [main.label(policy), direction])
+}
+
+reaches_the_console(policy) if {
+	some rule in main.list_of(policy.spec, "egress")
+	some peer in main.list_of(rule, "to")
+	peer.namespaceSelector.matchLabels["kubernetes.io/metadata.name"] == console_namespace
+}
+
+operator_reaches_the_console if {
+	some policy in main.of_kind("NetworkPolicy")
+	policy.metadata.name == "finapp-edge-operator"
+	some rule in policy.spec.egress
+	rule.to == [{
+		"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": console_namespace}},
+		"podSelector": {"matchLabels": {"app.kubernetes.io/name": "finapp-console"}},
+	}]
+	rule.ports == [{"protocol": "TCP", "port": 8080}]
+}
+
+deny contains "[edge-console-network] the operator controller's egress does not reach the console on 8080: /console would answer 504" if {
+	not operator_reaches_the_console
+}
+
+deny contains msg if {
+	some policy in main.of_kind("NetworkPolicy")
+	policy.metadata.name != "finapp-edge-operator"
+	main.namespace_of(policy) != console_namespace
+	reaches_the_console(policy)
+	msg := sprintf("[edge-console-network] %s reaches the console's namespace: the operator controller alone does", [main.label(policy)])
+}
+
+deny contains msg if {
+	some [doc, _] in main.workloads
+	main.namespace_of(doc) == console_namespace
+	doc.spec.template.metadata.labels["finapp/role"] == "ingress-controller"
+	msg := sprintf("[edge-console-network] %s carries finapp/role: ingress-controller, which finapp-app-ingress admits to the application's port", [main.label(doc)])
+}
+
+# [edge-console-workload] The console runs as rendered: at least two replicas, in its own namespace, from an image the platform's admission
+# policies name (finapp-console, or finapp-<environment>-console in an environment's registry), its scratch space in memory.
+console_rendered if {
+	some doc in main.of_kind("Deployment")
+	doc.metadata.name == "finapp-console"
+	main.namespace_of(doc) == console_namespace
+	object.get(doc.spec, "replicas", 0) >= 2
+}
+
+deny contains "[edge-console-workload] finapp-console is not rendered in its namespace with at least two replicas" if {
+	not console_rendered
+}
+
+console_image(image) if {
+	regex.match(`^([a-z0-9.:-]+/)*finapp-([a-z0-9-]+-)?console@sha256:[0-9a-f]{64}$`, image)
+}
+
+deny contains msg if {
+	some [doc, _, container] in main.all_containers
+	main.namespace_of(doc) == console_namespace
+	not console_image(object.get(container, "image", ""))
+	msg := sprintf("[edge-console-workload] %s container %s runs %v: the console's namespace runs the console's image by digest alone", [main.label(doc), container.name, object.get(container, "image", "no image")])
+}
+
+memory_backed(volume) if {
+	volume.emptyDir.medium == "Memory"
+	main.stated(volume.emptyDir, "sizeLimit")
+}
+
+deny contains msg if {
+	some [doc, spec] in main.workloads
+	main.namespace_of(doc) == console_namespace
+	some volume in main.list_of(spec, "volumes")
+	not memory_backed(volume)
+	msg := sprintf("[edge-console-workload] %s volume %s is not a sized, memory-backed emptyDir: the console holds no data", [main.label(doc), object.get(volume, "name", "(unnamed)")])
 }

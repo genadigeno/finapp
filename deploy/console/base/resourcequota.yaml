@@ -1,0 +1,21 @@
+# The console's namespace quota (X-TSK-020), counted as finapp-edge's is (deploy/edge/base/resourcequota.yaml says why finapp's own formula does
+# not hold where no Deployment states minReadySeconds). Every overlay renders the same Deployment, so no overlay patches it.
+#
+# THE ARITHMETIC, held equal by manifest-policy/edge.rego against the rendered stream (finapp.rego's worst_moment):
+#   a rollout: old and new together, 2 x 2 replicas                                              4
+#   one more evicted outside it, its PodDisruptionBudget's maxUnavailable                        1
+#                                                                                     pods       5
+#   requests.cpu       5 x 50m                                                                 250m
+#   limits.cpu         5 x 200m                                                                   1
+#   memory, both       5 x 128Mi                                                              640Mi
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: finapp-console
+spec:
+  hard:
+    pods: "5"
+    requests.cpu: 250m
+    requests.memory: 640Mi
+    limits.cpu: "1"
+    limits.memory: 640Mi

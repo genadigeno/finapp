@@ -1,0 +1,131 @@
+# The Operator Console's static server (X-TSK-020). The image is finapp-admin-panel's Dockerfile: nginx-unprivileged, uid 101, serving
+# /console/ from /usr/share/nginx/html/console with index.html and deep links no-cache and /console/assets/ immutable (its deploy/nginx.conf).
+# The security headers are not nginx's: the operator edge's console-headers middleware sets them, so they are stated once.
+#
+# Stateless: every replica is the same bytes and any replica serves any asset. A release is a new digest; a browser picks it up on its next
+# load of index.html, and an asset name is its content's hash, so an old index.html never fetches a new asset under an old name.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: finapp-console
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finapp-console
+spec:
+  replicas: 2
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-console
+  template:
+    metadata:
+      # NOT finapp/role: ingress-controller. That label is what finapp-app-ingress admits to the application's port; this pod calls nothing.
+      labels:
+        app.kubernetes.io/name: finapp-console
+        app.kubernetes.io/component: operator-console
+        app.kubernetes.io/part-of: finapp
+    spec:
+      serviceAccountName: finapp-console
+      automountServiceAccountToken: false
+      # No variable naming another Service: this pod reaches nothing, and its NetworkPolicy lets it reach nothing.
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-console
+      containers:
+        - name: console
+          # By digest in every overlay (sixty-four zeros until a release names one, as the application's are); admitted by the platform's
+          # two policies, signature and attestations (deploy/admission), like finapp-app and finapp-migrator.
+          image: finapp-console
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
+          # The page itself: nginx answering index.html is everything this pod does.
+          startupProbe:
+            httpGet: {path: /console/, port: http}
+            periodSeconds: 2
+            failureThreshold: 15
+          livenessProbe:
+            httpGet: {path: /console/, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /console/, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Measured on the image (2026-11-14, read-only root, 12 CPUs, so 12 workers): 10 MiB resident. nginx's worker_processes is auto,
+          # one per CPU of the node, so a larger node is more workers: 128Mi leaves room for that and the 16Mi /tmp below.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # nginx-unprivileged keeps its pid and every temp and cache path under /tmp (client, proxy, fastcgi, uwsgi, scgi): the one writable
+        # path under a read-only root, measured on the image. Memory-backed and sized, so it counts against the limit above and never the
+        # node's disk; a GET carries no body, so nothing but the pid is written here in practice.
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: finapp-console
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-console
+---
+# Addressed by the operator edge's file provider (operator-edge.yaml's finapp-console service) by its cluster name. ClusterIP, never a load
+# balancer or a node port: the operator edge is the only way in.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-console
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: finapp-console
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

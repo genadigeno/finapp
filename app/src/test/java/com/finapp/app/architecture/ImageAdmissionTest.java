@@ -57,7 +57,8 @@ class ImageAdmissionTest {
     private static final String PIN_CHECK = "infra/scripts/check-pinned-images.sh";
     private static final String WORKFLOW = ".github/workflows/ci.yml";
     private static final String OPT_IN = "policy.sigstore.dev/include";
-    private static final Set<String> OPTED_IN = Set.of("finapp", "finapp-edge");
+    /** finapp-console since X-TSK-020: the Operator Console's static server, an image of ours, admitted by both platform policies. */
+    private static final Set<String> OPTED_IN = Set.of("finapp", "finapp-edge", "finapp-console");
     private static final Set<String> PLATFORM_POLICIES = Set.of("finapp-images-signed", "finapp-images-attested");
     private static final String EXCEPTION = "finapp-edge-traefik";
     private static final Set<String> WORKLOAD_KINDS = Set.of("Deployment", "Job", "StatefulSet", "DaemonSet", "ReplicaSet", "Pod", "CronJob");
@@ -109,9 +110,10 @@ class ImageAdmissionTest {
                 .as("an image matched by no policy is refused (no-match-policy: deny), one matched by the wrong ones is let in by the"
                         + " wrong rule: the platform images must meet both platform policies, and Traefik only its exception")
                 .isEmpty();
-        assertThat(matched.keySet()).as("both platform images and the proxy are among them")
+        assertThat(matched.keySet()).as("the three platform images and the proxy are among them")
                 .anySatisfy(image -> assertThat(image).contains("finapp-app@sha256:"))
                 .anySatisfy(image -> assertThat(image).contains("finapp-migrator@sha256:"))
+                .anySatisfy(image -> assertThat(image).startsWith("finapp-console@sha256:"))
                 .anySatisfy(image -> assertThat(image).contains("traefik@sha256:"));
         assertThat(testOnly).as("the kind overlay's test-only copies match no policy: a cluster enforcing admission would refuse them,"
                         + " so the kind rehearsal, which runs them, never installs the controller")
@@ -156,6 +158,21 @@ class ImageAdmissionTest {
                             + " so would every rollout and every rollback be", name)
                     .isEqualTo(PLATFORM_POLICIES);
         }
+    }
+
+    @Test
+    @DisplayName("the Operator Console's image, in every name it goes by, meets both platform policies, and a look-alike meets none (X-TSK-020)")
+    void theConsolesImageIsHeldToBothPlatformPolicies() {
+        String digest = "@sha256:" + "b".repeat(64);
+        for (String reference : List.of("finapp-console" + digest, "account.registry.example/finapp-staging-console" + digest,
+                "account.registry.example/finapp-production-console" + digest, "registry.kind:5000/finapp-console" + digest)) {
+            assertThat(matchingPolicies(reference)).as("%s: signed and attested, or refused", reference).isEqualTo(PLATFORM_POLICIES);
+        }
+        for (String reference : List.of("finapp-console:latest", "nginxinc/nginx-unprivileged" + digest, "finapp-consoles" + digest)) {
+            assertThat(matchingPolicies(reference)).as("%s matches no policy, so no-match-policy: deny refuses it", reference).isEmpty();
+        }
+        assertThat(EvidenceCitations.read(root.resolve("deploy/console/base/console.yaml"))).as("the console's base names the image the policies name")
+                .containsPattern("(?m)^\\s+image: finapp-console$");
     }
 
     @Test
@@ -285,7 +302,7 @@ class ImageAdmissionTest {
         Map<String, Object> attested = policies.get("finapp-images-attested");
         assertThat(globs(signed))
                 .containsExactlyInAnyOrder("**/finapp-app@sha256:*", "**/finapp-migrator@sha256:*", "**/finapp-*-app@sha256:*",
-                        "**/finapp-*-migrator@sha256:*")
+                        "**/finapp-*-migrator@sha256:*", "**/finapp-console@sha256:*", "**/finapp-*-console@sha256:*")
                 .as("both platform policies match the same images, so both apply to each").isEqualTo(globs(attested));
 
         Map<String, Object> signer = single(authorities(signed));
