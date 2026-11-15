@@ -273,6 +273,16 @@ public class SettlementBeans {
         return composedSettlementSources(paymentRails);
     }
 
+    /**
+     * The counterparty chart's startup refusal (`P9-TSK-010`, ADR-0078 section 4), over the ledger's two adapters built here.
+     * A {@code @Component} that built them itself until {@code P15-REM-001}: a store adapter is the wiring's to construct.
+     */
+    @Bean
+    CounterpartyChartGuard counterpartyChartGuard(DataSource dataSource) {
+        return new CounterpartyChartGuard(
+                dataSource, new com.finapp.ledger.JdbcCounterpartyStore(), new com.finapp.ledger.JdbcLedgerAccountStore());
+    }
+
     /** Nonces for the file cipher — its own instance, the payments randomness precedent. */
     @Bean
     SecureRandom settlementRandomness() {

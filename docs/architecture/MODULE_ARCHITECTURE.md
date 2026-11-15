@@ -35,7 +35,7 @@ Distribution is a Phase 16 question, answered with measurement, not anticipation
      │  identity  party  kyc  consent  accounts  ledger             │
      │  transfers  payments  paymentmethods  merchant  checkout     │
      │  settlement  reconciliation  fx  crossborder  credit         │
-     │  lending  bnpl  risk  accounting  notification               │
+     │  lending  bnpl  risk  accounting  notification*              │
      │  creditmath (Phase 12: pure engines, sharedkernel only)      │
      └──────────────────────────────┬──────────────────────────────┘
                                     │
@@ -51,6 +51,8 @@ Distribution is a Phase 16 question, answered with measurement, not anticipation
                     │      (no Spring, no JPA)      │
                     └───────────────────────────────┘
 ```
+
+*\* `notification` is declared and has never been built: deferred to the phase that adds a channel notifier (§4; `P15-REM-001`, 2026-11-15).*
 
 Dependency direction is strictly downward and acyclic.
 
@@ -120,7 +122,7 @@ evidence says otherwise.
 | 21 | Fraud | `risk` | 13 | **Merged.** See M3 — synchronous fraud decisioning in the caller's transaction, latency-bounded; its rules are rows of Risk's policy versions (ADR-0107, ADR-0108) |
 | 22 | AML / Transaction Monitoring | `risk` | 13 | **Merged.** See M3 — asynchronous, retrospective, a leaderless sweep over the ledger journal; the regulatory report an artefact distinct from the case (ADR-0107, ADR-0111) |
 | 23 | Case Management | `risk` | 13 | Added by this task. See M6 — the one case model for fraud, ATO, merchant abuse, AML and collections (owner decision C3), every downstream action a keyed command through the owning domain (ADR-0107, ADR-0110, ADR-0112) |
-| 24 | Notifications | `notification` | 1+ | |
+| 24 | Notifications | `notification` | deferred | **Deferred, never built** (`P15-REM-001`, 2026-11-15): declared for Phase 1 onward, built by no phase of the programme (`ROADMAP.md` §Phase Sequence ends at Phase 16), and no notifier exists (`PHASE_16_PLAN.md`'s dependency matrix: "None exist"); kept, not struck, because a decision already waits on it - `DECISIONS.md` §Deferred "Changing the verified contact channel" is the phase that adds a channel notifier (C15). See §4 *(this row read "1+" with no note until then)* |
 | 25 | Accounting / General Ledger | `accounting` | 14 | Distinct from `ledger`. See M9 |
 | 26 | Audit | `platform` | 0 | **Merged.** See M4 |
 | 27 | Reporting | `accounting` | 14 | **Merged.** See M5 |
@@ -290,7 +292,7 @@ read both entries against the code as built through `P12-TSK-028`.)*
 - **Security:** authentication at the edge and the TLS termination boundary. It makes **no** business authorization decisions — those belong to each module's published interface, so that a second caller (a job, an operator tool) cannot bypass them.
 - **Operations:** liveness, readiness and build-info endpoints (`P0-TSK-027`, ADR-0016), startup success, request-level telemetry. Liveness depends on nothing external; readiness includes PostgreSQL and treats Kafka as transport rather than truth, failing only while the broker refuses a consumer (`kafkaConsumers`, `P15-TSK-026`); nothing uses Redis. All three are unversioned, because an orchestrator's configuration is deployment-scoped rather than a contract.
 - **Note:** `app` may depend on every module; no module may depend on `app`.
-- **Also hosts:** the platform-wide ArchUnit rules — `ModuleBoundaryRulesTest` (module boundaries), `NoFloatingPointMoneyRulesTest` (`INV-MON-01`), their shared coverage derivation `ProductionModules`, and `ArchitectureRulesAreDocumentedTest`, which holds §6 of this document and the enforced rule set to each other. They live here because `app` is the only module that sees every other one, and enforcing a boundary requires observing both sides of it.
+- **Also hosts:** the platform-wide ArchUnit rules — `ModuleBoundaryRulesTest` (module boundaries, and `INV-LED-04`'s static half since `P15-REM-001`), `NoFloatingPointMoneyRulesTest` (`INV-MON-01`), their shared coverage derivation `ProductionModules`, and `ArchitectureRulesAreDocumentedTest`, which holds §6 of this document and the enforced rule set to each other. They live here because `app` is the only module that sees every other one, and enforcing a boundary requires observing both sides of it.
 
 ### `sharedkernel` — Phase 0
 - **Responsibility:** framework-free value types shared by every module.
@@ -797,7 +799,8 @@ transition.)*
 - **Transaction:** Flyway's, one per migration; the bootstrap's one. No atomicity is claimed across schemas: a stopped run resumes at the first pending migration.
 - **Failure:** exit codes a Job can act on; a lock not granted within its bound retries, then fails rather than queues.
 
-### `notification` — Phase 1 onward
+### `notification` — deferred, never built
+*(`P15-REM-001`, 2026-11-15: this heading read "Phase 1 onward" until then. ADR-0006's coupling review found the module declared and never built. It is deferred, not struck: no phase of the programme builds it, and `DECISIONS.md` §Deferred "Changing the verified contact channel" waits on the channel notifier it would be. The entry below is the design contract that phase must satisfy, not a description of code; no module emits to it, and no rule or test names it.)*
 - **Responsibility:** telling people things. Never part of a money-moving decision.
 - **Owns:** notification records and delivery state.
 - **Transaction:** own. **Never inside a money-moving transaction** — a failed email must not roll back a payment.
@@ -850,7 +853,7 @@ is what found the `Instalment` conflict below.
 | BNPL Terms Version, BNPL Application, BNPL Offer, BNPL Agreement, BNPL Acceptance Evidence, BNPL Purchase, Merchant Financing, Customer Repayment Obligation, **BNPL Schedule**, **BNPL Instalment**, BNPL Instalment Billing, BNPL Interest Accrual, BNPL Repayment, BNPL Allocation, BNPL Collection Attempt, BNPL Condition, BNPL Late Fee, BNPL Refund, Refund Adjustment, BNPL Dispute, BNPL Payoff Quote, BNPL Waiver, BNPL Repayment Reversal | `bnpl` | Every obligation figure is a balance of a per-obligation `ledger` account (`OwnerKind.BNPL_OBLIGATION`) and the merchant discount `BNPL_MERCHANT_FEE_INCOME`'s, derived from postings, never stored; the merchant payable is `ledger`'s position credited by bnpl's financing entry; the BNPL fee pin and every payout are `merchant`'s, the session and the order `checkout`'s, the decision's consumption `credit`'s row written only by credit's port, and `LENDING_CAPITAL` lending's account read through a port. References `merchant`, `checkout`, `credit` and `lending` by id; owns none of them *(planned by the Phase 11 → 12 transition, 2026-10-16, built by `P12-TSK-002`…`-028` and read against the code by `P12-DOC-001`, 2026-10-22; this row read "BNPL Agreement, Instalment Plan, BNPL Instalment, Merchant Financing record, Refund Adjustment, Late Fee" and "References `merchant` and `lending` by id; owns neither" until then)* |
 | Risk Signal, Risk Policy Version (with its Rules), Risk Assessment (with its Risk Score, Risk Decision and Transaction Risk Profile), Decision Override, Velocity Window, Customer Risk Profile, Monitored Transaction and the monitoring watermark, Alert, Case, Investigator Action, Risk Action, Screening List Version and the rescreening permit, Regulatory Report *(planned by the Phase 12 → 13 transition, 2026-10-22, ADR-0107; built by `P13-TSK-001`…`-025` and read against the code by `P13-DOC-001`, 2026-10-27; this row read "Signal, Rule Set, Risk Assessment, Risk Score, Risk Decision, Limit, Velocity Counter, Alert, Case, Case Action" until then)* | `risk` | `credit` records the rating it was given in a decision's snapshot (a copy, never a second owner — seam version 2 from `P13-TSK-007`); the movement's outcome a risk decision changes is the owning domain's own row (`transfers`' `FAILED(RISK_REFUSED)`, payments' `HELD`), never risk's; a monitored transaction references the ledger's journal entry and copies no balance; the effect of a risk action is the owning domain's command, keyed `risk.action:<id>` *(Risk Score moved here from `credit` by the Phase 9 → 10 transition, 2026-10-07)* |
 | GL Account and GL Mapping Version, Accounting Period with its Close Run, Period Close and Close Checks, Report Run, Valuation Rate Set, Accounting Break, Prior-Period Adjustment record, the Posting Rule register, Regulatory Obligation and Submission *(planned by the Phase 13 → 14 transition, 2026-10-29, ADR-0113; this row read "GL Account, GL Mapping Rule, Accounting Period, Trial Balance snapshot, Report Run" until then)* | `accounting` | Derived read model over the journal — **no balance stored, no write access to ledger tables** (except the frozen amounts of a report run's content and of a regulatory submission, copied from FINAL runs: `regulatory_submission.content`, `regulatory_submission_line.minor_units`, accounting `V010:205,355`; *corrected by `P14-DOC-001`, the Phase 14 exit review, 2026-11-06: the row named no exception, and Close Run was missing from the first column*); the posting cutoff is the ledger's row, moved only by the ledger's API; a prior-period adjustment's entry is the ledger's (origin `ACCOUNTING`), the record linking it to the closed period accounting's |
-| Notification record, delivery state | `notification` | — |
+| Notification record, delivery state | `notification` | Deferred, never built (§4, `P15-REM-001`): nothing owns or stores either today |
 
 ### Ownership conflicts found and resolved
 
@@ -913,23 +916,51 @@ would violate `INV-BAL-01`.
 ### Module boundary
 
 **Package convention.** A module's root package is `com.finapp.<module>`. Everything under
-`com.finapp.<module>.internal` is private to that module; everything else in the module root
-is its published surface. The ArchUnit rules depend on this convention, so a module that
-ignores it is not protected by them.
+`com.finapp.<module>.internal` is private to that module, and so is **every class of a
+business module that executes SQL** (prepares or uses a JDBC statement or result set, or uses
+Spring's JDBC; converting a `Timestamp` or reading an `SQLException` is not executing SQL) - its
+adapter over its own tables, with the classes nested in it; everything else in the module root
+is its published surface. *(The second clause is `P15-REM-001`, 2026-11-15. ADR-0006's coupling
+review found that no module has an internal package - every module is a flat package of public
+types, ADR-0033's `internal/jdbc` layout never adopted - so the rule that read only the package
+read nothing. It now also reads what a module's private state is, found from the bytecode
+rather than from a layout anyone must remember.)* The ArchUnit rules depend on this
+convention, so a module that ignores it is not protected by them.
 
 **What enforces what.** Gradle enforces dependency direction structurally; the ArchUnit
 suites in `app` enforce the rest on every build. Every claim of mechanical enforcement below
 names the rule that makes it true, and `ArchitectureRulesAreDocumentedTest` fails the build if
 that naming and the rule set stop agreeing. Anything marked *(review)* has no mechanical check.
 
-- Each module owns a package root; internals are not accessible across modules.
-  *(ArchUnit: `moduleInternalsArePrivateToTheirModule`)*
+- Each module owns a package root; internals are not accessible across modules. Three
+  readings: nothing reaches another module's internal package; **no business module names
+  another business module's class that executes SQL**, published service or not (a module
+  reaches another through its ports, values and SQL-free services); and **`app` names a store
+  adapter - a class that executes SQL and implements a port a business module declares - only
+  in its `@Configuration` wiring**, which constructs it to hand its port to the code that uses
+  it. A module's service that runs its own statements (`TrialBalance`, `TransferExecution`) is
+  its published API, and `app`, its caller, may call it. `platform`'s JDBC classes (outbox,
+  inbox, idempotency, audit) are the infrastructure every module builds on and are not held.
+  Two reaches the rule found when it gained the SQL readings were removed in the same change:
+  `CheckoutService` built payments' two store adapters itself and `CounterpartyChartGuard`
+  ledger's two; each now takes the ports from its wiring. *(ArchUnit:
+  `moduleInternalsArePrivateToTheirModule`)*
+- Only the ledger appends to the journal: no class outside `com.finapp.ledger` calls
+  `JournalEntryStore.append`, on the port or an implementation, by a call or a method
+  reference - `INV-LED-04`'s static half, which rested on the dependency direction alone until
+  `P15-REM-001`; the database half (ledger `V004`'s triggers) is unchanged.
+  *(ArchUnit: `onlyTheLedgerAppendsToTheJournal`)*
 - Every production class sits under `com.finapp.<module>`, never directly in `com.finapp`.
   The rules are scoped by the module a class belongs to, so a class with no module would be
   silently exempt from all of them. *(ArchUnit: `productionClassesLiveInAModulePackage`)*
 - A module exposes a published interface (commands, queries) and integration events. *(review)*
 - No cross-module entity or ORM-relationship references. References are typed
-  identifiers. *(ArchUnit: `entitiesAreNotReferencedAcrossModules`)*
+  identifiers. *(No rule since `P15-REM-001`, 2026-11-15: the rule that stood here,
+  `entitiesAreNotReferencedAcrossModules`, read JPA `@Entity`, and there is no object-relational
+  mapper (ADR-0033, held by `NoObjectRelationalMapperTest`), so it passed over empty data and was
+  retired. What can cross in an entity's place is a store, and a store crosses as its port - the
+  published surface - while its adapter is held by the internals rule above. A reference by
+  typed identifier is what every module does; that half is review.)*
 - Dependency direction is acyclic and enforced. *(Gradle, plus ArchUnit as defence in
   depth: `sharedkernelDependsOnNoOtherModule`, `platformDependsOnlyOnSharedkernel`,
   `nothingDependsOnApp`)*
@@ -1401,9 +1432,59 @@ test in the same class, not an ArchUnit rule, so it is named here in prose. *(te
 ### Data boundary
 - Schema per module in one PostgreSQL database (ADR-0006).
 - **No foreign keys across module schemas.** Referential integrity across contexts is a
-  domain concern, enforced at the boundary, not by the database.
+  domain concern, enforced at the boundary, not by the database. Every `REFERENCES` in every
+  migration names a table of its own module's schema, qualified, comments, strings and
+  privileges aside and dollar-quoted bodies read too. *(Test: `NoForeignKeyCrossesASchemaTest`;
+  `P15-REM-001` - until then only per-migration checks held it.)*
 - One writer per table. Cross-module reads go through the owning module's API, not by
-  querying its tables.
+  querying its tables: **every module's SQL names its own schema only**, and a module with no
+  schema names none. *(Test: `SchemaReadsArePinnedTest#everyModuleNamesItsOwnSchemaOnly`.)*
+- **The one exception, `app`'s direct reads** (`P15-REM-001`, ADR-0006's data boundary given it
+  in words). The composition root owns no schema, and some reads belong to no one context: a
+  regulatory or phase report across products, accounting's reads of the journal, credit's
+  exposure census over lending and bnpl, risk's monitored ledger, the readiness read of every
+  schema's applied version. Each was declared where it was built (ADR-0107, ADR-0113, the
+  task its class's header names), runs on one snapshot, and no business module could host it
+  without depending on its siblings. So `app` reads module schemas directly - **only through
+  the adapters below, only the schemas each row names, and `SELECT` only**: no write, DDL or
+  sequence advance names a module schema, no statement naming one takes a row lock, and every
+  function it calls there is declared `STABLE` or `IMMUTABLE` in every migration that defines
+  it, which PostgreSQL makes a function that cannot write. The database's half is
+  `finapp_app`'s grants; this table is the code's. A new direct read is a new row here, with
+  its reason, in the change that adds it; a read removed takes its row with it. *(Tests:
+  `SchemaReadsArePinnedTest#everyAppReadIsPinned`, `#appReadsOnly`.)* Paths are under
+  `app/src/main/java/com/finapp/app/`:
+
+| Adapter | Schemas read | Declared by |
+|---|---|---|
+| `accounting/AccountingCloseRecordReads.java` | `accounting` | `P14-TSK-016` |
+| `accounting/FinalTrialBalanceReader.java` | `accounting` | `P14-TSK-011` |
+| `accounting/FxReferenceValuationRates.java` | `fx` | `P14-TSK-014`, ADR-0116 |
+| `accounting/LedgerCounterpartyPositionReads.java` | `ledger` | `P14-TSK-017` |
+| `accounting/LedgerFlooredPostings.java` | `ledger`, `platform` | `P14-TSK-011` |
+| `accounting/LedgerJournalCensusWalk.java` | `ledger` | `P15-TSK-035` |
+| `accounting/LedgerJournalReads.java` | `ledger` | `P14-TSK-007`, ADR-0113 |
+| `accounting/LedgerJournalShapes.java` | `ledger` | `P14-TSK-010`, ADR-0117 |
+| `accounting/LedgerPriorPeriodCorrections.java` | `accounting`, `ledger` | `P14-TSK-013` |
+| `accounting/LedgerPurposeChart.java` | `ledger` | `P14-TSK-003`, ADR-0113 |
+| `accounting/LedgerTrialBalanceReads.java` | `accounting`, `ledger` | `P14-TSK-009`, ADR-0113, ADR-0115 |
+| `accounting/LendingFundedAsOfCutoffReads.java` | `ledger`, `lending` | `P14-TSK-019`, ADR-0096 |
+| `accounting/ProductReconciliationDisclosure.java` | `ledger` | `P14-TSK-011` |
+| `accounting/ProductSourceProofs.java` | `ledger` | `P14-TSK-010`, ADR-0117 |
+| `accounting/ReconciliationMonthReads.java` | `reconciliation`, `settlement` | `P14-TSK-017` |
+| `bnpl/BnplFlowScope.java` | `bnpl` | `P12-TSK-026` |
+| `bnpl/JdbcBnplReportReads.java` | `bnpl`, `ledger` | `P12-TSK-026`, ADR-0103 |
+| `credit/BnplCreditExposure.java` | `bnpl`, `ledger`, `lending` | `P12-TSK-012`, ADR-0104 |
+| `credit/ExposureCensus.java` | `bnpl`, `credit`, `ledger`, `lending` | `P11-TSK-013`, ADR-0091 |
+| `credit/LendingCreditExposure.java` | `ledger`, `lending` | `P11-TSK-013`, ADR-0091 |
+| `credit/Phase10Reports.java` | `credit` | `P10-TSK-020` |
+| `database/JdbcAppliedSchemaVersions.java` | `platform` | ADR-0139 |
+| `fx/Phase9Reports.java` | `crossborder`, `fx`, `ledger`, `payments`, `reconciliation`, `settlement` | `P9-TSK-027`, ADR-0072 |
+| `lending/LendingReports.java` | `ledger`, `lending` | `P11-TSK-030`, ADR-0072 |
+| `reconciliation/ReconciliationExplanationController.java` | `reconciliation` | `P8-TSK-011`, ADR-0068 |
+| `risk/JdbcCreditAgreementParties.java` | `bnpl`, `lending` | `P13-TSK-025` |
+| `risk/LedgerMonitoredLedger.java` | `ledger` | `P13-TSK-019`, ADR-0111 |
+| `risk/PlatformJudgedCommands.java` | `crossborder`, `ledger`, `paymentmethods`, `payments`, `transfers` | `P13-TSK-023` |
 
 ### Transaction boundary
 - A transaction never spans a call to an external provider.

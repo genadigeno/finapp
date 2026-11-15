@@ -34,6 +34,14 @@ replace that enforcement, or ADR-0001 is not a viable decision.
   concern enforced at the boundary.
 - One writer per table. Cross-module data is read through the owning module's API, never by
   querying its tables.
+- **The one exception: `app`'s direct reads** *(added by `P15-REM-001`, 2026-11-15, after the
+  Phase 15 coupling review below found it practised and unstated)*. The composition root owns no
+  schema, and a read that belongs to no one context - a report across products, accounting's
+  reads of the journal, credit's exposure census, risk's monitored ledger, the readiness read of
+  every schema's applied version - may read module schemas directly, on one snapshot, **only
+  through an adapter `MODULE_ARCHITECTURE.md` §6 "Data boundary" pins with the schemas it reads,
+  and `SELECT` only**: no write, DDL or sequence advance; no row lock; and a function called there
+  only if declared `STABLE` or `IMMUTABLE`. No business module may do the same, and none does.
 
 **Additional enforced rules:**
 - No `float`/`double` in monetary code paths (`INV-MON-01`).
@@ -124,3 +132,19 @@ another module's schema. Four things the decision says are not what the build ho
 
 Each is `BACKLOG.md` `P15-REM-001`, `PLANNED`, before any service extraction is decided (ADR-0001's revisit point, Phase 16).
 This ADR's decision is unchanged.
+
+*(Done by `P15-REM-001`, 2026-11-15; every rule below was seen to fail on a planted violation, in-suite, `MUTATION_TESTING.md` §2.)*
+1. **The internals rule reads the code.** `moduleInternalsArePrivateToTheirModule` keeps the internal package and adds what a
+   module's private state is: a business module's class that executes SQL, found from the bytecode. No business module names
+   another's - published service or not - and `app` names a store adapter (an SQL class implementing a module's port) only in its
+   `@Configuration` wiring. It found two reaches, `CheckoutService` and `CounterpartyChartGuard`, each building another module's
+   adapters itself; both now take the ports from their wiring. **The entity rule is retired**: there is no mapper to have an
+   entity (ADR-0033), and a store crosses as its port, its adapter held by the internals rule.
+2. **`onlyTheLedgerAppendsToTheJournal`**: no class outside `com.finapp.ledger` calls `JournalEntryStore.append`, by a call or
+   a method reference, on the port or an implementation.
+3. **The exception is in the decision above**, and `SchemaReadsArePinnedTest` holds it: `app`'s twenty-eight adapters and the
+   schemas each reads (fifty-one pairs over thirteen schemas) equal to `MODULE_ARCHITECTURE.md` §6's table both ways, `SELECT`
+   only, the three functions it calls each `STABLE`; and every module's SQL naming its own schema only.
+4. **`NoForeignKeyCrossesASchemaTest`** reads every `REFERENCES` in every migration of every module - 467 of them, dollar-quoted
+   bodies included - and refuses one that names another module's schema, or none.
+

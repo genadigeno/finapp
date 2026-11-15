@@ -845,7 +845,7 @@ violation of the multi-instance rule, it raises a remediation task and the exit 
 | Item 44 (a): the restore's lending and BNPL proofs over a source holding a loan and a BNPL obligation, in the post-recovery verification drill | 2026-11-12 | `P16-TSK-024` |
 | Item 44 (b): `trivy config` at HIGH and CRITICAL over every rendered overlay, in the `manifests` job | 2026-11-12, first wave | `P16-TSK-004` (wave A) |
 | `P15-REM-004`: guards that hold less than they are named for | Horizon "Phase 16's first wave" | `P16-TSK-002` (wave A) |
-| `P15-REM-001`: ADR-0006's boundary rules made to hold | Horizon "before any service extraction is decided" | A dependency of `P16-TSK-030` (the extraction evaluation); stays `P15-REM-001`, scheduled by the owner before it |
+| `P15-REM-001`: ADR-0006's boundary rules made to hold | Horizon "before any service extraction is decided" | A dependency of `P16-TSK-030` (the extraction evaluation); stays `P15-REM-001`, scheduled by the owner before it *(`COMPLETE` 2026-11-15, on the owner's word; `P16-TSK-030` `READY` at its gate)* |
 | Item 42 (a): break-age counts | 2026-11-12, "in Phase 16 before any environment holds parked value" | `P16-TSK-029` |
 | Item 42 (b): a migration outside a transaction, measured | 2026-11-12, "Phase 16's load characterisation measures that" | `P16-TSK-008` |
 | Item 42 (h): the socket timeout | 2026-11-12, "Phase 16's failover drill" | `P16-TSK-022` |

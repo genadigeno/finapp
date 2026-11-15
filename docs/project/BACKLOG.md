@@ -28845,8 +28845,8 @@ open. The owner's postponements PI-004, PI-023 and PI-024 are not repeated here 
 `P15-REM-005` before its guard run, as the owner's acceptance G asked, and added `P15-REM-006` and `-007` from its MINOR findings
 G-2 and G-3, under the same terms.*
 
-**P15-REM-001 — ADR-0006's boundary rules made to hold what they say** — `PLANNED` — **before any service extraction is
-decided** (ADR-0001's revisit point, Phase 16)
+**P15-REM-001 — ADR-0006's boundary rules made to hold what they say** — `COMPLETE` (2026-11-15; designed, built and gated straight through on the owner's "Start P15-REM-001", branch `P15-REM-001` from `71fdcb5c` (`P16-TST-001`, unmerged); no migration, no ADR - ADR-0006 amended in its decision and Follow-up, a dated note on ADR-0033; two production reaches removed; marks `P16-TSK-030` `READY`) *(read "`PLANNED` — **before any service extraction is
+decided** (ADR-0001's revisit point, Phase 16)" until its gate)*
 - Objective: the coupling review (ADR-0006's Follow-up, done by the exit review) found the Gradle graph exactly the declared
   one and no foreign key across schemas, and four rules weaker than the ADR says: (a) the internals rule reads `.internal`
   packages and no module has one - every module is a flat package of public types - so give each module's private stores and
@@ -28863,6 +28863,35 @@ decided** (ADR-0001's revisit point, Phase 16)
   also least-privilege rules.
 - Testing: each rule with a planted violation seen red (ADR-0006's own verification rule), recorded in `MUTATION_TESTING.md`
   §2 for (c) under `INV-LED-04`. DoD: `DOD-ARCH`, `DOD-TEST`, `DOD-DOC`. Risk: Low. Cx: M ((a) touches every module's layout).
+- **As built (2026-11-15, gate `COMPLETE`; no migration; documents, guards and two production reaches).** **(a)** No module's layout
+  moved: `moduleInternalsArePrivateToTheirModule` keeps the internal package and adds what a module's private state is, found from
+  the bytecode - a business module's class that executes a statement (prepares or uses a JDBC statement or result set, or uses
+  Spring's jdbc), with its nested classes. No
+  business module names another's (published service or not), and `app` names a store adapter (an SQL class implementing a port a
+  business module declares) only in its `@Configuration` wiring; a module's service that runs its own statements is its API and
+  `app` its caller - the rule's first form, every SQL class private from `app` too, was seen red 503 times over 44 such services
+  and narrowed; `platform`'s JDBC infrastructure is not held. It found two reaches, both removed: `CheckoutService` built payments'
+  `JdbcPaymentIntentStore` and `JdbcPaymentAttemptStore` itself (now taken through `CheckoutBeans`), and `CounterpartyChartGuard`
+  ledger's `JdbcCounterpartyStore` and `JdbcLedgerAccountStore` (no longer a `@Component`: a `SettlementBeans` bean hands it the
+  ports; its static `verify` takes them). **(b)** `entitiesAreNotReferencedAcrossModules` retired with a dated note in §6: no mapper
+  (ADR-0033), and a store crosses as its port, its adapter held by (a). **(c)** `onlyTheLedgerAppendsToTheJournal`: no class
+  outside `com.finapp.ledger` calls `JournalEntryStore.append`, by a call or a method reference, on the port or an implementation.
+  **(d)** `NoForeignKeyCrossesASchemaTest` over `MigrationLint.foreignKeys`: every `REFERENCES` in every migration of every module
+  (467) names its own module's schema, qualified; the tokeniser's reading, so comments, strings and privileges pass, and every
+  dollar-quoted body is read too. **(e)** `SchemaReadsArePinnedTest`: `app`'s 28 adapters and the schemas each reads (51 pairs over
+  13 schemas) equal to `MODULE_ARCHITECTURE.md` §6 "Data boundary"'s new table both ways; no write, DDL, sequence advance or row lock
+  names a module schema from `app`; each of the three functions it calls there (`platform.applied_migration_versions`,
+  `lending.business_date`, `bnpl.business_date`) `STABLE` in every definition (`MigrationLint.volatilities`); and every module's SQL
+  names its own schema only. ADR-0006's data boundary states the exception in words. **(f)** `notification` deferred, not struck
+  (§2, §3 row 24, §4, §5): no phase builds it, and `DECISIONS.md` §Deferred "Changing the verified contact channel" waits on its
+  notifier. **Demonstrations**: in-suite probes for every rule (`MUTATION_TESTING.md` §2, four rows, `INV-LED-04`'s among them) and
+  six recorded plants on the real tree at the gate, caught in two rounds. **The gate's two findings, fixed**: "executes SQL" read
+  any `java.sql` access, so a class converting a `Timestamp` would have been a module's state - it now reads statement-level JDBC
+  (a statement prepared or used, a result set, Spring's jdbc); and the schema reader saw SQL only by its upper-case words, so a
+  lower-case statement passed unread - a run opening with an SQL word in any case is now SQL too (opening only, so prose is not).
+  Each has its in-suite case. **Multi-instance**: `PASS` - static rules; nothing runs. **Not run**:
+  `databaseTest` and `kafkaTest` (the owner's standing word), so `CounterpartyChartDatabaseTest`, whose calls changed shape, is
+  compiled and owed to PI-023's pass.
 
 **P15-REM-002 — An audit record tested for every auditable route** — `PLANNED` — **before production use**
 - Objective: `PHASE_GATES.md` §5 Phase 15 criterion 5's last clause, "every route in the permission register whose act is
@@ -31084,7 +31113,7 @@ on none:
   reduced to the columns they read, the binds typed as the driver sends them, the index used.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-030 — The service-extraction evaluation (ADR-0001's revisit)** — `PLANNED`
+**P16-TSK-030 — The service-extraction evaluation (ADR-0001's revisit)** — `READY` (2026-11-15; marked by `P15-REM-001`'s completion gate: `-008`, `-014` and `P15-REM-001` `COMPLETE`) *(read "`PLANNED`" until then)*
 - **Objective**: decide from the phase's measurements whether any module should leave the monolith. This covers the risk module's M3
   split triggers, the reconciliation intake rules held in `app`, and `DECISIONS.md` §Deferred "Service extraction". The decision is
   recorded as an ADR, which may say "none".

@@ -185,14 +185,14 @@ public class CheckoutService {
     /**
      * Stateless, like every JDBC store on this platform — held as a field rather than built
      * twice, because the branch that creates an intent and the branch that re-establishes its
-     * payer must be reading the same table through the same predicate.
+     * payer must be reading the same table through the same predicate. The port, handed in by
+     * the wiring: payments' adapter is the composition root's to construct, not this service's
+     * ({@code moduleInternalsArePrivateToTheirModule}, P15-REM-001).
      */
-    private final com.finapp.payments.PaymentIntentStore<Connection> intents =
-            new com.finapp.payments.JdbcPaymentIntentStore();
+    private final com.finapp.payments.PaymentIntentStore<Connection> intents;
 
     /** Stateless, the same reasoning: the payer's rendering reads the attempt's handle. */
-    private final com.finapp.payments.PaymentAttemptStore<Connection> attempts =
-            new com.finapp.payments.JdbcPaymentAttemptStore();
+    private final com.finapp.payments.PaymentAttemptStore<Connection> attempts;
 
     private final PaymentService payments;
     private final PaymentParticipants<Connection> instruments;
@@ -226,8 +226,12 @@ public class CheckoutService {
             TransactionTemplate transactions,
             DataSource dataSource,
             com.finapp.identity.MfaEnrolmentStore<Connection> enrolments,
-            CheckoutDoorStepUp stepUp) {
+            CheckoutDoorStepUp stepUp,
+            com.finapp.payments.PaymentIntentStore<Connection> intents,
+            com.finapp.payments.PaymentAttemptStore<Connection> attempts) {
         this.stepUp = Objects.requireNonNull(stepUp, "stepUp must not be null");
+        this.intents = Objects.requireNonNull(intents, "intents must not be null");
+        this.attempts = Objects.requireNonNull(attempts, "attempts must not be null");
         this.checkout = Objects.requireNonNull(checkout, "checkout must not be null");
         this.meters = Objects.requireNonNull(meters, "meters must not be null");
         this.settlement = Objects.requireNonNull(settlement, "settlement must not be null");

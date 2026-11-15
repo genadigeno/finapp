@@ -111,7 +111,9 @@ balance or reconciliation is trustworthy.
 modules request postings through the ledger's command API.
 **Why:** Multiple writers means multiple sets of accounting rules and no single authority.
 **Enforce:** `STATIC` (boundary test) + `DB-PRIVILEGE` where module-level roles exist.
-**Verify:** Architecture test.
+**Verify:** Architecture test - the module isolation tests (the dependency direction) and, since `P15-REM-001` (2026-11-15),
+`ModuleBoundaryRulesTest`'s `onlyTheLedgerAppendsToTheJournal`: no class outside `com.finapp.ledger` calls
+`JournalEntryStore.append`, so a module that depends on the ledger cannot write past its command API.
 **Phase:** 3
 
 ### INV-LED-05 — Every posting is attributable
