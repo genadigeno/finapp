@@ -87,6 +87,19 @@ class SessionBeans {
     }
 
     /**
+     * {@code GET /v1/operator/me}'s reads (`X-TSK-019`), on the session's template: the session row and the factor read in
+     * one transaction of their own.
+     */
+    @Bean
+    OperatorSelfQueries operatorSelfQueries(
+            SessionStore<Connection> sessionStore,
+            com.finapp.identity.MfaEnrolmentStore<Connection> mfaEnrolmentStore,
+            org.springframework.transaction.support.TransactionTemplate sessionTransactions,
+            javax.sql.DataSource dataSource) {
+        return new OperatorSelfQueries(sessionStore, mfaEnrolmentStore, sessionTransactions, dataSource);
+    }
+
+    /**
      * The error contract's recorder of an operation's own step-up refusals (`P15-TSK-021`), on the
      * session's {@code REQUIRES_NEW} template: the record commits whatever the handler's work did.
      */

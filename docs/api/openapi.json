@@ -24287,6 +24287,40 @@
         },
         "type": "object"
       },
+      "OperatorSelf": {
+        "properties": {
+          "assurance": {
+            "type": "string"
+          },
+          "factorEnrolled": {
+            "type": "boolean"
+          },
+          "identityId": {
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sessionAbsoluteExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sessionIdleExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "OrganisationRegistrationRequest": {
         "properties": {
           "name": {
@@ -42506,6 +42540,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LoanWriteOffReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/me": {
+      "get": {
+        "operationId": "describeSelf",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorSelf"
                 }
               }
             },

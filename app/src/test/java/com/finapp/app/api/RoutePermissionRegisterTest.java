@@ -3,6 +3,7 @@ package com.finapp.app.api;
 import static java.util.Map.entry;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.session.RequiresAnyRole;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import java.util.Map;
@@ -39,6 +40,11 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  * served to any customer's session. The edge keeps that prefix off the public host by path as well as by permission
  * ({@code EdgeAllowListTest}). {@link #everyOperatorRouteIsPermissionGuarded} refuses the route itself by prefix, over the
  * same handler mapping, and {@link #anUnguardedOperatorRouteIsCaught} proves the rule can fail.
+ *
+ * <p><strong>Or any role, where the register says so</strong> (`X-TSK-019`). An operator's read about themselves -
+ * {@code GET /v1/operator/me} - is for every role holder, so no one permission fits it. It declares
+ * {@code @RequiresAnyRole}, which the interceptor enforces as it enforces a permission (no live role, {@code 403}, recorded),
+ * and {@link #ANY_ROLE_REGISTER} pins which routes carry it, so a new one is a reviewed line here, as a permission is.
  */
 @Tag("slice")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
@@ -713,6 +719,33 @@ class RoutePermissionRegisterTest {
         }
     }
 
+    /**
+     * Every {@code @RequiresAnyRole} route (`X-TSK-019`): the routes any live role reaches. An operator's reads about
+     * themselves, and nothing that acts on anything else - that declares the permission it needs.
+     */
+    static final java.util.Set<String> ANY_ROLE_REGISTER = new java.util.TreeSet<>(java.util.Set.of(
+            // The console's who-am-I (finapp-admin-panel P17-TSK-003, owner decision D-12): no step-up, so the console can
+            // ask it right after a password sign-in.
+            "GET /v1/operator/me"));
+
+    @Test
+    @DisplayName("the any-role routes are exactly the register, each under /v1/operator and declaring no permission (X-TSK-019)")
+    void everyAnyRoleRouteIsRegistered() {
+        Map<String, HandlerMethod> served = served();
+        java.util.Set<String> declared = new java.util.TreeSet<>();
+        served.forEach((route, handler) -> {
+            if (handler.getMethodAnnotation(RequiresAnyRole.class) != null
+                    || handler.getBeanType().getAnnotation(RequiresAnyRole.class) != null) {
+                declared.add(route);
+            }
+        });
+        assertThat(declared).as("a route any role reaches is a reviewed decision: change the register with it")
+                .isEqualTo(ANY_ROLE_REGISTER);
+        assertThat(declared).allMatch(RoutePermissionRegisterTest::isOperatorRoute);
+        assertThat(declared).as("one rule per route: a permission already demands a role")
+                .noneMatch(REGISTER::containsKey);
+    }
+
     /** The path prefix of the operator surface (C9's internal ingress). */
     static final String OPERATOR_PREFIX = "/v1/operator";
 
@@ -724,8 +757,8 @@ class RoutePermissionRegisterTest {
                 .as("the census: the operator surface was read")
                 .isGreaterThan(100);
         assertThat(unguardedOperatorRoutes(served))
-                .as("a route under %s answers an operator's act: it declares @RequiresPermission, or it is not an"
-                        + " operator route", OPERATOR_PREFIX)
+                .as("a route under %s answers an operator's act: it declares @RequiresPermission (or, registered,"
+                        + " @RequiresAnyRole), or it is not an operator route", OPERATOR_PREFIX)
                 .isEmpty();
     }
 
@@ -741,15 +774,21 @@ class RoutePermissionRegisterTest {
         planted.put("GET /v1/me/planted", new HandlerMethod(new Planted(), Planted.class.getMethod("sessionOnly")));
         planted.put("GET /v1/operator/class-guarded",
                 new HandlerMethod(new PlantedGuarded(), PlantedGuarded.class.getMethod("inherits")));
+        planted.put("GET /v1/operator/any-role", new HandlerMethod(new Planted(), Planted.class.getMethod("anyRole")));
         assertThat(unguardedOperatorRoutes(planted)).containsExactly("GET /v1/operator/planted", "POST /v1/operator");
     }
 
-    /** Routes under {@link #OPERATOR_PREFIX} whose handler declares no permission, on the method or its class. */
+    /**
+     * Routes under {@link #OPERATOR_PREFIX} whose handler declares neither a permission nor any role, on the method or its
+     * class. Which routes may declare any role is {@link #ANY_ROLE_REGISTER}'s.
+     */
     static java.util.List<String> unguardedOperatorRoutes(Map<String, HandlerMethod> routes) {
         return routes.entrySet().stream()
                 .filter(route -> isOperatorRoute(route.getKey()))
                 .filter(route -> route.getValue().getMethodAnnotation(RequiresPermission.class) == null
-                        && route.getValue().getBeanType().getAnnotation(RequiresPermission.class) == null)
+                        && route.getValue().getBeanType().getAnnotation(RequiresPermission.class) == null
+                        && route.getValue().getMethodAnnotation(RequiresAnyRole.class) == null
+                        && route.getValue().getBeanType().getAnnotation(RequiresAnyRole.class) == null)
                 .map(Map.Entry::getKey)
                 .sorted()
                 .toList();
@@ -783,6 +822,9 @@ class RoutePermissionRegisterTest {
 
         @RequiresPermission(PermissionName.LEDGER_ADJUST)
         public void guarded() {}
+
+        @RequiresAnyRole
+        public void anyRole() {}
     }
 
     /** A planted controller guarded at its class. */

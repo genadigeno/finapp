@@ -1041,6 +1041,8 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/identities/{id}/roles/{role}",
                         // P15-TSK-039: the check of the holdings the factor rule found standing.
                         ApiVersion.CURRENT_PREFIX + "/operator/access-review/factorless-holdings",
+                        // X-TSK-019: an operator's own identity, roles, permissions and session (any live role).
+                        ApiVersion.CURRENT_PREFIX + "/operator/me",
                         // P1-TSK-030. Declared by the plan for the whole phase and owned by no
                         // task until the review found it.
                         ApiVersion.CURRENT_PREFIX + "/me",

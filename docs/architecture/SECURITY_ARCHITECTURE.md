@@ -323,7 +323,16 @@ without it is refused and audited) could not see: the Phase 6 review found that 
 another permission the same role holds passed every test. *(Added at the Phase 6 review,
 `P6-DOC-001`.)* **Every route under `/v1/operator` declares a permission** (`P15-TSK-021`, `THREAT_MODEL.md` T31):
 `RoutePermissionRegisterTest#everyOperatorRouteIsPermissionGuarded` refuses one that declares only a session, which
-both earlier guards admitted. Who may hold which role, the propose/approve partition of role holdings and break-glass
+both earlier guards admitted. **One declaration stands beside the permission there: any live role** (`X-TSK-019`, 2026-11-13;
+ADR-0031's dated note). An operator's read about themselves - `GET /v1/operator/me`, which the Operator Console needs to
+build its navigation - is for every role holder, so no one permission fits it. It declares `@RequiresAnyRole`: the
+interceptor reads the roles with the session as at an operator act, types the actor by them, and refuses an identity
+holding none `403 api.Forbidden`, recorded (`identity.AuthorizationDenied`, `requirement=ANY_ROLE`); no session is `401`.
+It is not a route exempted by name: deny-by-default still refuses an undeclared handler, the declaration is refused beside
+`@Unauthenticated`, `@RequiresMerchantKey` or `@RequiresPermission` (`EveryEndpointDeclaresARuleTest`, and the interceptor
+at run time), and which routes carry it is pinned like a permission
+(`RoutePermissionRegisterTest#everyAnyRoleRouteIsRegistered`, one route). It is for reads about oneself only; an act on
+anything else declares the permission it needs. Who may hold which role, the propose/approve partition of role holdings and break-glass
 are [`PRIVILEGED_ACCESS_REVIEW.md`](PRIVILEGED_ACCESS_REVIEW.md); its registers are held by
 `PrivilegedAccessReviewTest`.
 

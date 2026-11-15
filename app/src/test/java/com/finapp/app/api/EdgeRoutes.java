@@ -1,6 +1,7 @@
 package com.finapp.app.api;
 
 import com.finapp.app.merchant.RequiresMerchantKey;
+import com.finapp.app.session.RequiresAnyRole;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.app.session.Unauthenticated;
 import java.lang.annotation.Annotation;
@@ -18,7 +19,7 @@ import org.springframework.web.method.HandlerMethod;
  * The route register's surface column, and the two allow-lists rendered from it (`P15-TSK-011`, ADR-0120 decision 6,
  * {@code THREAT_MODEL.md} T3, T31).
  *
- * <p><strong>Which surface is derived, never declared.</strong> A route an operator permission guards, or any route under
+ * <p><strong>Which surface is derived, never declared.</strong> A route an operator permission or any role guards, or any route under
  * {@code /v1/operator} whatever it declares (T31's by-path note), is the operator surface's. Everything else is public.
  * A second list stating which is which would be a hand-kept copy of the register, which is the defect this class exists to
  * avoid.
@@ -123,7 +124,9 @@ final class EdgeRoutes {
     }
 
     static Surface surface(String template, HandlerMethod handler) {
-        return declares(handler, RequiresPermission.class) || isOperatorPath(template) ? Surface.OPERATOR : Surface.PUBLIC;
+        // A route any live role reaches (X-TSK-019) is staff's as a permission's is, wherever its path is.
+        return declares(handler, RequiresPermission.class) || declares(handler, RequiresAnyRole.class) || isOperatorPath(template)
+                ? Surface.OPERATOR : Surface.PUBLIC;
     }
 
     /** By the path, as well as by the permission: T31's routed note. */

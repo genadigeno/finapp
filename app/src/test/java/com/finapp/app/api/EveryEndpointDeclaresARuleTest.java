@@ -2,6 +2,7 @@ package com.finapp.app.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.session.RequiresAnyRole;
 import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.merchant.RequiresMerchantKey;
 import com.finapp.app.session.RequiresPermission;
@@ -56,7 +57,10 @@ class EveryEndpointDeclaresARuleTest {
                     // route shipped with no rule at all. Two controls blind in different
                     // directions - and this task proved it, because teaching only the
                     // interceptor left this one red.
-                    RequiresMerchantKey.class);
+                    RequiresMerchantKey.class,
+                    // X-TSK-019, the sixth: any live role, for an operator's reads about themselves. Taught here, to the
+                    // interceptor and to RoutePermissionRegisterTest together, for the fifth's reason above.
+                    RequiresAnyRole.class);
 
     /**
      * The MVC mapping specifically.
@@ -75,7 +79,7 @@ class EveryEndpointDeclaresARuleTest {
         assertThat(undeclaredHandlers())
                 .as("a rule's absence is never a grant (ADR-0031, INV-IDN-04). Annotate the handler"
                         + " with @Unauthenticated, @RequiresSession, @RequiresAssurance,"
-                        + " @RequiresPermission or @RequiresMerchantKey - being public must be a"
+                        + " @RequiresPermission, @RequiresMerchantKey or @RequiresAnyRole - being public must be a"
                         + " decision somebody wrote"
                         + " down, not something nobody said")
                 .isEmpty();
@@ -135,7 +139,8 @@ class EveryEndpointDeclaresARuleTest {
                         RequiresSession.class,
                         RequiresAssurance.class,
                         RequiresPermission.class,
-                        RequiresMerchantKey.class);
+                        RequiresMerchantKey.class,
+                        RequiresAnyRole.class);
     }
 
     // -----------------------------------------------------------------
@@ -170,13 +175,18 @@ class EveryEndpointDeclaresARuleTest {
             boolean isProtected =
                     declares(handler, RequiresSession.class)
                             || declares(handler, RequiresAssurance.class)
-                            || declares(handler, RequiresPermission.class);
+                            || declares(handler, RequiresPermission.class)
+                            || declares(handler, RequiresAnyRole.class);
+            // X-TSK-019: any role beside a permission is one rule written twice - the permission already demands a
+            // role - and the two registers would each claim the route. The interceptor refuses it too.
+            boolean anyRoleBesidePermission =
+                    declares(handler, RequiresAnyRole.class) && declares(handler, RequiresPermission.class);
             // P6-TSK-002: a merchant route beside ANY other rule is the same defect, and
             // worse in effect - the handler would be reachable by a customer's session AND a
             // counterparty's key. Mirrors the interceptor's own check, stated here because a
             // static sweep and a runtime check cannot share a predicate (the comment above).
             boolean isMerchant = declares(handler, RequiresMerchantKey.class);
-            if ((isPublic && isProtected) || (isMerchant && (isPublic || isProtected))) {
+            if ((isPublic && isProtected) || (isMerchant && (isPublic || isProtected)) || anyRoleBesidePermission) {
                 contradictory.add(
                         handler.getBeanType().getName() + "." + handler.getMethod().getName());
             }

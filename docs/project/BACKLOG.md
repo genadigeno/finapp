@@ -32194,6 +32194,96 @@ entry, the plan and `CURRENT_STATE.md` until numbered here)*
   - the three suites and the whole `:settlement:databaseTest` green from a fresh run, read from the JUnit XML, with
     `:settlement:test` and `:settlement:architectureTest`.
 
+**X-TSK-019 — `GET /v1/operator/me`: an operator's own identity, roles, permissions and session** — `COMPLETE`
+*(2026-11-13, on branch `P17-TSK-003` from master `ce1abd2e`; cross-referenced **finapp-admin-panel `P17-TSK-003`**
+(`PHASE_17_PLAN.md` §15 there, G-01), under **owner decision D-12 (2026-11-13)**: the console's milestone M1 completes now,
+ahead of the Phase 16 → 17 transition, this backend task included. Cross-cutting: no milestone, no Phase 16 item, marks no
+task `READY`, and leaves `CURRENT_STATE.md` to the Phase 16 coordinator)*
+- **Context**: `identity` (authorization, ADR-0031) and `app` (the session interceptor, the operator surface). `GET /v1/me`
+  is a customer's profile, served on the public host only, and the sign-in response carries no roles, so the Operator
+  Console cannot build a permission-aware navigation. `INV-IDN-03`, `INV-IDN-04`, `INV-AUD-03`; ADR-0030, ADR-0031,
+  ADR-0120 decision 6; `THREAT_MODEL.md` T31.
+- **Objective**: a signed-in operator learns, from the server, who they are, which live roles they hold, the permissions
+  those roles grant, how strongly their session is proven and when it ends.
+- **Scope**: `GET /v1/operator/me` answering the new schema `OperatorSelf` - `identityId`, `roles` (sorted), `permissions`
+  (sorted, the union of `RoleName`'s grants for the live roles), `assurance` (`PASSWORD` | `MULTI_FACTOR` | `STRONG`),
+  `factorEnrolled`, `sessionIdleExpiresAt`, `sessionAbsoluteExpiresAt`; a sixth authorization declaration,
+  `@RequiresAnyRole`, enforced by the session interceptor and known to every guard that knows the other five; the operator
+  allow-list and the published contract regenerated.
+- **Exclusions**: any other identity; any write; the login identifier, names or any other PII; a build or version member
+  (the console plan's `build` is not part of this contract); a step-up requirement (the console asks this right after a
+  password sign-in to decide whether to prompt for one); the public host.
+- **Design** (decided by the console's brief; recorded):
+  - **Who may call**: a session whose identity holds at least one live role, read from `identity.role_assignment` per
+    request, in the session's own transaction, by the read an operator act's permission is decided from
+    (`Authorization.standingOf`). No live role: `403 api.Forbidden`, recorded as `identity.AuthorizationDenied`
+    (`requirement=ANY_ROLE`) in a transaction of its own before it is answered; no session: `401 api.Unauthenticated`. The
+    actor is `EMPLOYEE` for an admitted call, `CUSTOMER` for a refused one - the same typing as every operator act.
+  - **Why a declaration, not a permission or an exemption**: every operator may ask, so no single `PermissionName` fits; a
+    permission every role carries would grant nothing, and exempting the route by name from
+    `RoutePermissionRegisterTest#everyOperatorRouteIsPermissionGuarded` would be a list-of-one hole. `@RequiresAnyRole` is
+    as explicit as a permission: deny-by-default still holds (an undeclared handler is refused), the declaration implies a
+    session, it is refused beside `@Unauthenticated`, `@RequiresMerchantKey` or `@RequiresPermission` (a permission already
+    implies a role), and the routes carrying it are pinned (`RoutePermissionRegisterTest#ANY_ROLE_REGISTER`, one route).
+  - **The same read**: the roles reported are the ones the interceptor read to admit the request, handed to the handler as
+    a request attribute (`SessionAuthenticationInterceptor.CURRENT_STANDING`), never a second read that could disagree.
+    The session's bounds and the factor are read in one transaction after it: the session row is re-read because the
+    interceptor extended its idle bound after reading it; a session ended in between answers `401`.
+  - **Audit**: the read is a self-description and is not audited (`AUDITABLE_ACTIONS.md` §3, identity); its refusal is.
+- **Tests**: `OperatorSelfDatabaseTest` (database, HTTP against the real interceptor and tables) - the positive answer equal
+  to `RoleName`'s mapping, the assurance and the factor, the bounds equal to the row the request left; no session `401`; a
+  customer `403 api.Forbidden` with its record; the admitted read writes no record; a revoked role gone and a granted one
+  present on the next request with the same token; the last role revoked through the domain `401`; a suspended operator
+  `401`; and the declaration on planted probes - a holder of any role admitted, a declaration beside a permission refused
+even to the permission's holder. The guards:
+  `EveryEndpointDeclaresARuleTest`, `RoutePermissionRegisterTest`, `EdgeAllowListTest`, `OpenApiContractTest`.
+- **Accept**:
+  - the response's permissions equal `RoleName`'s mapping for the held roles, sorted, and nothing else about the person;
+  - a customer's session is refused `403 api.Forbidden` and recorded; no session `401`;
+  - the route is on the operator allow-list and not on the public one, both files generated, never hand-edited;
+  - `docs/api/openapi.json` carries the operation and `OperatorSelf`, generated by `OpenApiContractTest`;
+  - the new declaration is enforced at run time and by the build, and removing it from the route fails a guard.
+- **DoD**: `DOD-API`, `DOD-SEC`.
+- **As built** (2026-11-13): `@RequiresAnyRole` (`app/.../session`), enforced by `SessionAuthenticationInterceptor`
+  (`requireAnyRole`, after the permission; the roles read with the session as at an operator act and left for the handler
+  as `CURRENT_STANDING`; a contradiction beside `@Unauthenticated`, `@RequiresMerchantKey` or `@RequiresPermission` refused);
+  `Authorization.recordRoleRequiredDenial` (`identity.AuthorizationDenied`, `requirement=ANY_ROLE`; no new action);
+  `OperatorSelfController` and `OperatorSelfQueries` (the session row and the factor re-read in one `sessionTransactions`
+  transaction, the answer built inside it so no `Session` value is held - `NoProcessLocalSessionStateTest` refused the first
+  draft's `Read(Optional<Session>)` record, correctly). Guards taught the declaration: `EveryEndpointDeclaresARuleTest`
+  (vocabulary, contradictions), `RoutePermissionRegisterTest` (`ANY_ROLE_REGISTER`, `everyAnyRoleRouteIsRegistered`, the
+  operator-route rule admitting a registered any-role route, the planted case), `EdgeRoutes` (an any-role route is operator
+  surface wherever its path is) and `EdgeAllowListTest#anAnyRoleRouteIsOperator`. Generated, never hand-edited:
+  `deploy/edge/base/operator-routes.yaml` (one clause, `GET` `Path(/v1/operator/me)`; the public file unchanged) and
+  `docs/api/openapi.json` (`OperatorSelf` and the path, every difference `COMPATIBLE`), both copied from what
+  `EdgeAllowListTest` and `OpenApiContractTest` wrote to `app/build/`. Documented in ADR-0031 (dated note),
+  `SECURITY_ARCHITECTURE.md` §Who may act, `PRIVILEGED_ACCESS_REVIEW.md` §3 and `AUDITABLE_ACTIONS.md` §3 (identity).
+  **Not done here, deliberately**: no application-level refusal of this route on a `public`-marked request - no operator act
+  has one (P15-TSK-042's surface rule governs the doors that issue or strengthen a session); the edge's generated list is the
+  control, held by `EdgeAllowListTest`. `THREAT_MODEL.md` T31's wording ("declares a permission") is left to the Phase 16
+  coordinator; its cited tests still exist and pass. No second application context is started for the "another replica"
+  case: every answer is read per request from the tables, and the same-token cases are what a second replica would see.
+  - **Baseline** (master `ce1abd2e`, untouched branch, fresh): the 31 guard classes reading the files this task changes
+    (or run beside them) 212 tests, 0 failed - none of master's red guard classes is among them.
+  - **Verified** (fresh, read from the JUnit XML): `:app:databaseTest` for `OperatorSelfDatabaseTest` 9,
+    `DenyByDefaultDatabaseTest` 11, `IdentityAdministrationDatabaseTest` 33, `SessionEndpointDatabaseTest` 18,
+    `ProfileEndpointDatabaseTest` 6 - 77, 0 failed; `:identity:test` 205 across 25, 0 failed; `:app:test` over the guards and
+    `com.finapp.app.session.*` 249 across 35, 0 failed. That last run set `FINAPP_DB_URL` to a closed loopback port: a
+    PostgreSQL another session started on `127.0.0.1:5432` mid-run (compose, unmigrated) made the hermetic slice context
+    connect to it and fail `CounterpartyChartGuard` (`42P01`) in 39 tests on the run before - environmental, not this change.
+    Own-container suites, `build` and `kafkaTest` not run.
+  - **Probes, two of two caught**, each restored byte-identical (sha256): M1 `@RequiresAnyRole` removed from the handler -
+    `EveryEndpointDeclaresARuleTest#everyHandlerDeclaresSomething`,
+    `RoutePermissionRegisterTest#everyOperatorRouteIsPermissionGuarded` and `#everyAnyRoleRouteIsRegistered` red; M2 the
+    interceptor's `requireAnyRole` call skipped - `OperatorSelfDatabaseTest#aCustomerIsRefusedAndTheRefusalIsRecorded` and
+    `#theDeclarationIsEnforcedByTheInterceptor` red.
+  - **Multi-instance: PASS.** No cache and no instance state: the roles are read per request in the session's
+    transaction, the session row and the factor per request after it, and the response is built from those reads alone;
+    the interceptor and the queries hold only stateless collaborators (`NoProcessLocalSessionStateTest` green). Ten
+    instances answering at once read the same committed rows; a grant, revocation, suspension or sign-out committed on one
+    is the next request's answer on every other, as the same-token cases show. The read writes nothing but the session's
+    existing idle touch (a conditional, monotonic `UPDATE`, ADR-0030); a refusal writes one audit row per request.
+
 ---
 
 # Phases 11–16 — Epics
