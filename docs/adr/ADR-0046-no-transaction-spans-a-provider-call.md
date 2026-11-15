@@ -88,7 +88,8 @@ needed its per-aggregate lock for *ordering*; resolution has no ordering to prot
   `PROCESSING` is a real, queryable state, and the API contract carries the
   asynchronous-outcome shape Phase 4 already established.
 - Structural assertion owed by the implementation: **no connection is held during the
-  call** (the `P1-TSK-026` discipline, asserted rather than described).
+  call** (the `P1-TSK-026` discipline, asserted rather than described). *(Made for every module by `X-TSK-020`, 2026-11-15:
+  see the follow-up below.)*
 
 ## Alternatives rejected
 
@@ -113,3 +114,10 @@ needed its per-aggregate lock for *ordering*; resolution has no ordering to prot
   **stranded-authorization** leg that chains the capture of an `AUTHORIZED` attempt nothing
   captured within the bound. Both close the gap `P6-DOC-001` recorded against Phase 5. A zero
   bound is refused at construction, and a resolver that loses the race records nothing.
+- *`X-TSK-020` (2026-11-15)*: the structural assertion is a hermetic guard,
+  `app/src/test/java/com/finapp/app/architecture/NoTransactionSpansAProviderCallTest.java`. Read from the compiled classes, every
+  method that runs while a transaction or a connection is held - handed a `TransactionStatus` or a `Connection`, `@Transactional`, or
+  turning auto-commit off itself - and everything it calls, through interfaces, lambdas and the functional values it is handed or holds,
+  must reach no `OutboundExchange.send`. Until then the payments database suite asserted it at the wire for payments alone, and the
+  Phase 16 audit (`DISTRIBUTED_EXECUTION.md` §4b, question 5) found the rule held by review for the rest. Measured first: no violation;
+  this decision's shape - transactions made beside the call, holding nothing - seen in 77 methods.

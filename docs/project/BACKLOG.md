@@ -32362,6 +32362,56 @@ branch `claude/project-progress-status-1498c8` after `P16-TSK-026`'s commit; cro
   then the whole `:app:architectureTest`, 1,202 tests, 0 failed. `databaseTest` and `kafkaTest` not run, by the owner's word.
 - **Risk**: Low. **Cx**: S.
 
+**X-TSK-020 — Guard: no transaction spans a provider call** — `COMPLETE` *(2026-11-15; found by `P16-TSK-031`'s audit -
+`DISTRIBUTED_EXECUTION.md` §4b, question 5, read the rule "from the code and its review, not held by a test" - and done on the owner's
+word, "Do this task here"; branch `X-TSK-020` from `32c27525` (`P16-TSK-031`, unmerged); cross-cutting, no milestone, marks no task
+`READY`)*
+- **Context**: ADR-0046 §1 and ADR-0008 forbid a transaction around a provider call - it pins a connection for the provider's worst
+  latency, buys an atomicity the provider's effect cannot join, and a rollback erases the record that anything was asked - and ADR-0046's
+  consequences owed "a structural assertion: no connection is held during the call". Payments' database suite asserts it at the wire for
+  its own flows (owed under PI-023); nothing held it for the other modules that call a provider, nor on any hermetic tier. It fails
+  quietly: a call moved one line, into the lambda beside it, compiles and passes every functional test.
+- **Scope**: one hermetic guard over the compiled production classes, its two planted probe classes, and the records. No production code,
+  no migration, no ADR: ADR-0046's owed assertion, made.
+- **Design** (`HeldConnectionCalls`, ASM, not ArchUnit - ArchUnit attributes a lambda's calls to the method that declares it, so it cannot
+  tell a transaction's body from the call ADR-0046 puts beside it). **Held**: every method handed a transaction or a connection
+  (`TransactionStatus`, `Connection`, a statement or a result set as a parameter: Spring's callbacks, every module's
+  `inTransaction(Function<Connection, R>)` body, every store method on the caller's connection), every `@Transactional` method (none
+  exists; ADR-0033), every method that turns auto-commit off itself - and everything those call. **Calls**: the class hierarchy over
+  production code, plus every lambda or method reference implementing a production interface (kyc's screening provider among them, wired in a bean method); making a lambda counts as calling it. **Functional values** from the JDK are followed to
+  where they were made, by ASM's source analysis: a held scope's functional parameter to the lambdas its callers pass, through their
+  parameters in turn (a module's runner body runs whatever work it is handed); a functional field to what is stored in it, through
+  constructors and `@Bean` methods; `requireNonNull`, the JDK's combinators and production methods' returns traced through. What cannot
+  be followed is listed, never passed. **The network**: `HttpClient.send`, which only `OutboundExchange.send` calls
+  (`OutboundCallsAreBoundedTest`). Test fixtures (`-test-fixtures.jar`) are not production and are left out.
+- **Measured on the real tree first**: 7,079 scopes (7,066 handed a handle, 13 opening their own), 25,631 methods held, 329 reaching the
+  network - **no violation**. 77 methods make a transaction body and call a provider beside it, holding nothing: ADR-0046's shape, seen
+  (`PaymentConfirmation#confirm`, `PaymentSweeper#resolveRefund` among them). One value is not followable: `Payoffs#quote` hands
+  `projection` a function taken out of an `Optional`; read - `LoanServicing#periodsOf` maps the accrual start through `periods`, whose one
+  function reads the loan's statement terms - and named as a stand-in, which the guard checks exists and reaches no provider.
+- **Acceptance**, each a member of `NoTransactionSpansAProviderCallTest` (6 tests): (1) no held code reaches the network, the path printed
+  when one does; (2) the unfollowed values are exactly the reviewed stand-ins, and those reach no provider; (3) twenty operations of
+  ADR-0008's ports (card, push and corridor rails, FX and its rate source, payouts and their tokenisation, card tokenisation, screening,
+  verification, credit data, the settlement collector, the audit archive) are each seen reaching the network, and the counts stay at or
+  above today's floors; (4) ADR-0046's shape is seen in at least 70 methods, and a planted copy (`DispatchBeforeCallProbe#confirm`)
+  reaches the network, holds nothing, has both bodies held and is no violation; (5) planted beside production, eight ways to hold a
+  connection around a call are each found through production's adapters to `OutboundExchange#send` - Spring's template, a module's
+  runner, a lambda handed to held code, a functional field, a row being read, auto-commit off, `@Transactional`, a port a lambda
+  implements - and the one other violation is payments' runner body, running the work the probe hands it; (6) a value planted where the
+  guard cannot follow it (a function taken from a map) is listed.
+- **Probes** (recorded, `MUTATION_TESTING.md` §2): `PaymentSweeper#resolveRefund`'s provider query moved into its transaction - red, the
+  path `PaymentSweeper#lambda$resolveRefund$4 -> SimulatedCardPspAdapter#query -> PspWireClient#query -> PspWireClient#fetch ->
+  OutboundExchange#send`, and payments' runner body beside it; restored byte-identical (sha256 `b551fb5d…ed2ecffe`). The guard's
+  following of functional values switched off - red, `runsWhileHeld` and `throughAField` no longer found; restored byte-identical.
+- **Limits, stated not hidden**: reflection and method handles built at runtime are beyond a class file (no provider is reached so);
+  a function taken out of a container is listed, not followed; the class hierarchy over-approximates, so a path no runtime takes could be
+  flagged (none is today); Kafka publishing is the outbox relay's, not a provider call, and is not in scope.
+- **Multi-instance**: `PASS` - a test; no production code changed. What it keeps true matters at ten: a connection pinned per in-flight
+  provider call on every replica is the pool budget ADR-0134 sized spent on waiting.
+- **Verified** (fresh): the guard, 6 tests, green; then the whole `:app:architectureTest`, 1,242 tests, 0 failed. `databaseTest` and `kafkaTest` not run,
+  by the owner's word.
+- **Risk**: Low. **Cx**: M.
+
 ---
 
 # Phases 11–16 — Epics

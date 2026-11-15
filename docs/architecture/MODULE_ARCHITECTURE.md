@@ -1490,7 +1490,11 @@ test in the same class, not an ArchUnit rule, so it is named here in prose. *(te
 | `risk/PlatformJudgedCommands.java` | `crossborder`, `ledger`, `paymentmethods`, `payments`, `transfers` | `P13-TSK-023` |
 
 ### Transaction boundary
-- A transaction never spans a call to an external provider.
+- A transaction never spans a call to an external provider, and no connection is held during one (ADR-0046). Held since `X-TSK-020`
+  by `NoTransactionSpansAProviderCallTest`, a JUnit test reading the compiled classes rather than an ArchUnit rule - ArchUnit
+  attributes a lambda's calls to the method declaring it, and cannot tell a transaction's body from the call beside it: everything
+  that runs while a transaction or connection is held (every body handed a `TransactionStatus` or a `Connection`, every method that
+  opens its own, and all they call, functional values followed) must reach no `OutboundExchange.send`.
 - A transaction never spans two modules' authoritative state **except** where a documented
   ADR justifies it — currently registration (`party` plus `identity`, ADR-0029),
   transfer-plus-posting and resolution-plus-adjustment, all three of which are the explicit
