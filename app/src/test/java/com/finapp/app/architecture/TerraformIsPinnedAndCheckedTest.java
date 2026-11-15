@@ -46,6 +46,11 @@ import org.junit.jupiter.api.Test;
  * test} proves that with the real inventory in each root, and {@link #theInventoryHasNoCopyUnderTerraform} refuses a second list
  * of it. {@link #noPolicyHoldsAWildcardActionOnASecretOrAKey} and {@link #nothingGrantsClusterAccessOrRotatesOnASchedule} read the
  * whole tree, where a module's own test reads only that module's policies.
+ *
+ * <p>Production's recovery region ({@code P16-TSK-026}, ADR-0150) is a third root, {@code production-recovery}, that is
+ * production's site: {@link #ENVIRONMENT_OF_ROOT} names it production for its conventions and its state key, and
+ * {@link #providerAgreementViolations} lets it require fewer providers than production, never another or another version.
+ * Its residency set is an open decision like the audit archive's lock.
  */
 @Tag("architecture")
 @DisplayName("the Terraform is pinned, locked and checked without a credential or a backend (P15-TSK-013)")
@@ -58,8 +63,15 @@ class TerraformIsPinnedAndCheckedTest {
     private static final String WORKFLOW = ".github/workflows/ci.yml";
     private static final String LOCK_FILE = ".terraform.lock.hcl";
 
-    /** ADR-0121's environments: a root module each. */
-    private static final Set<String> ENVIRONMENT_ROOTS = Set.of("staging", "production");
+    /**
+     * Each environment root and the environment it builds: ADR-0121's two, a root module each, and production's recovery region
+     * ({@code P16-TSK-026}, ADR-0150), a root of its own that is production's site, so it names, tags and keys its state as
+     * production. Until 2026-11-14 this read {@code Set.of("staging", "production")}, each root its environment's name.
+     */
+    static final Map<String, String> ENVIRONMENT_OF_ROOT =
+            Map.of("staging", "staging", "production", "production", "production-recovery", "production");
+
+    private static final Set<String> ENVIRONMENT_ROOTS = ENVIRONMENT_OF_ROOT.keySet();
 
     /** An exact version: {@code 6.72.0} or {@code = 6.72.0}, never a range. */
     private static final Pattern EXACT = Pattern.compile("^=?\\s*(\\d+\\.\\d+\\.\\d+)$");
@@ -95,8 +107,8 @@ class TerraformIsPinnedAndCheckedTest {
             "sasl_aws_access_key", "sasl_aws_secret_key", "sasl_aws_token");
 
     /** Variables whose value is a decision nobody has taken yet: a default would take it silently. */
-    private static final Set<String> OPEN_DECISIONS =
-            Set.of("audit_archive_lock", "kafka_provisioning_stage", "provisioning_stage", "human_users");
+    private static final Set<String> OPEN_DECISIONS = Set.of(
+            "audit_archive_lock", "kafka_provisioning_stage", "provisioning_stage", "human_users", "residency_regions");
 
     private static final String INVENTORY = "docs/architecture/SECRET_MANAGEMENT.md";
 
@@ -147,8 +159,8 @@ class TerraformIsPinnedAndCheckedTest {
     }
 
     @Test
-    @DisplayName("every environment root pins Terraform to the checking image's version and every provider exactly,"
-            + " the same in every root")
+    @DisplayName("every environment root pins Terraform to the checking image's version and every provider exactly: staging"
+            + " the same as production, and production's recovery root nothing production does not pin, at its version")
     void everyRootPinsTerraformAndEveryProviderExactly() {
         assertThat(roots()).as("ADR-0121's environment roots").isEqualTo(new TreeSet<>(ENVIRONMENT_ROOTS));
         String terraform = pinned("TERRAFORM_VERSION");
@@ -163,9 +175,10 @@ class TerraformIsPinnedAndCheckedTest {
         assertThat(providersByRoot.values())
                 .as("every root's providers were read")
                 .allSatisfy(providers -> assertThat(providers).isNotEmpty());
-        assertThat(new TreeSet<>(providersByRoot.values().stream().map(Map::toString).toList()))
-                .as("staging rehearses production's providers at production's versions: %s", providersByRoot)
-                .hasSize(1);
+        assertThat(providerAgreementViolations(providersByRoot))
+                .as("staging rehearses production's providers at production's versions, and a recovery root needs no other: %s",
+                        providersByRoot)
+                .isEmpty();
     }
 
     @Test
@@ -186,7 +199,8 @@ class TerraformIsPinnedAndCheckedTest {
     void everyModuleLockFileHoldsTheRootsVersions() {
         // terraform-check.sh runs every init with -lockfile=readonly, so a module requiring a provider needs a lock
         // file; held at the roots' version so that its tests run against the provider the roots use.
-        Map<String, String> pinned = requiredProviders(terraformFiles(ENVIRONMENTS + "/" + roots().iterator().next()));
+        // Production's root pins every provider any module uses; a recovery root pins only what it needs (P16-TSK-026).
+        Map<String, String> pinned = requiredProviders(terraformFiles(ENVIRONMENTS + "/production"));
         List<String> violations = new ArrayList<>();
         int modules = 0;
         for (String directory : directories()) {
@@ -209,7 +223,7 @@ class TerraformIsPinnedAndCheckedTest {
         Set<String> keys = new TreeSet<>();
         for (String environment : roots()) {
             String directory = ENVIRONMENTS + "/" + environment;
-            violations.addAll(backendViolations(directory, environment, terraformFiles(directory), keys));
+            violations.addAll(backendViolations(directory, ENVIRONMENT_OF_ROOT.getOrDefault(environment, environment), terraformFiles(directory), keys));
         }
         files.forEach((path, text) -> {
             if (path.endsWith(".tf")) {
@@ -301,7 +315,10 @@ class TerraformIsPinnedAndCheckedTest {
                 .containsEntry("backup-copy-unconditioned", "terraform")
                 .containsEntry("inventory-row-no-entry", "terraform")
                 .containsEntry("registry-mutable", "terraform")
-                .containsEntry("registry-no-scan", "terraform");
+                .containsEntry("registry-no-scan", "terraform")
+                .containsEntry("region-copy-in-region", "terraform")
+                .containsEntry("ring-not-replicated", "terraform")
+                .containsEntry("recovery-site-in-primary-region", "terraform");
     }
 
     @Test
@@ -355,7 +372,7 @@ class TerraformIsPinnedAndCheckedTest {
         List<String> violations = new ArrayList<>();
         for (String environment : roots()) {
             String directory = ENVIRONMENTS + "/" + environment;
-            violations.addAll(conventionViolations(directory, environment, terraformFiles(directory)));
+            violations.addAll(conventionViolations(directory, ENVIRONMENT_OF_ROOT.getOrDefault(environment, environment), terraformFiles(directory)));
         }
         assertThat(violations).as("a root that names or tags itself outside the conventions").isEmpty();
     }
@@ -450,7 +467,8 @@ class TerraformIsPinnedAndCheckedTest {
                 violations.addAll(defaultViolations(file.getKey(), file.getValue()));
             }
         }
-        assertThat(read).as("the two roots and two modules declaring these were read").isGreaterThanOrEqualTo(6);
+        // Until 2026-11-14 the floor read 6, for two roots and two modules; the two production roots' residency sets add two.
+        assertThat(read).as("the roots and modules declaring these were read").isGreaterThanOrEqualTo(8);
         assertThat(violations).as("a default that takes a decision no one has taken").isEmpty();
     }
 
@@ -498,6 +516,16 @@ class TerraformIsPinnedAndCheckedTest {
                 }
                 """)).as("a provider locked that no root requires").isNotEmpty();
 
+        Map<String, String> aws = Map.of("hashicorp/aws", "6.72.0");
+        Map<String, String> awsAndKafka = Map.of("hashicorp/aws", "6.72.0", "mongey/kafka", "0.13.2");
+        assertThat(providerAgreementViolations(Map.of("production", awsAndKafka, "staging", aws,
+                "production-recovery", Map.of("hashicorp/aws", "6.71.0", "hashicorp/random", "3.7.2"))))
+                .as("staging without production's Kafka provider; a recovery root on another version, and on a provider production does not pin")
+                .hasSize(3);
+        assertThat(providerAgreementViolations(Map.of("production", awsAndKafka, "staging", awsAndKafka, "production-recovery", aws)))
+                .as("staging as production, and a recovery root needing only some of production's providers")
+                .isEmpty();
+
         Map<String, String> moduleRequires = Map.of("hashicorp/aws", ">= 6.72.0");
         Map<String, String> rootsPin = Map.of("hashicorp/aws", "6.72.0");
         assertThat(moduleLockViolations("plant", moduleRequires, rootsPin, null))
@@ -534,6 +562,15 @@ class TerraformIsPinnedAndCheckedTest {
                   }
                 }
                 """), new TreeSet<>())).as("unencrypted, unlocked, and a credential").hasSize(3);
+        assertThat(backendViolations("plant", "production", Map.of("backend.tf", """
+                terraform {
+                  backend "s3" {
+                    key          = "finapp/production-recovery/terraform.tfstate"
+                    encrypt      = true
+                    use_lockfile = true
+                  }
+                }
+                """), new TreeSet<>())).as("a recovery root's state keyed outside its environment's").hasSize(1);
         assertThat(credentialViolations("plant.tf", """
                 provider "aws" {
                   profile = "operator"
@@ -876,6 +913,36 @@ class TerraformIsPinnedAndCheckedTest {
             if (version == null || !EXACT.matcher(unquoted(version)).matches()) {
                 violations.add(directory + ": provider " + name + " is not pinned exactly: " + version);
             }
+        });
+        return violations;
+    }
+
+    /**
+     * Staging rehearses production's providers at production's versions, exactly; a root that is another environment's site (a
+     * recovery root) requires no provider that environment's root does not pin, and each at that root's version.
+     */
+    static List<String> providerAgreementViolations(Map<String, Map<String, String>> providersByRoot) {
+        List<String> violations = new ArrayList<>();
+        Map<String, String> production = providersByRoot.getOrDefault("production", Map.of());
+        providersByRoot.forEach((root, providers) -> {
+            String environment = ENVIRONMENT_OF_ROOT.getOrDefault(root, root);
+            if (root.equals("production")) {
+                return;
+            }
+            if (environment.equals(root)) {
+                if (!providers.equals(production)) {
+                    violations.add(root + " does not rehearse production's providers at production's versions: " + providers
+                            + ", production " + production);
+                }
+                return;
+            }
+            Map<String, String> pinned = providersByRoot.getOrDefault(environment, Map.of());
+            providers.forEach((source, version) -> {
+                if (!version.equals(pinned.get(source))) {
+                    violations.add(root + " requires " + source + " " + version + ", which " + environment + " pins at "
+                            + pinned.get(source));
+                }
+            });
         });
         return violations;
     }

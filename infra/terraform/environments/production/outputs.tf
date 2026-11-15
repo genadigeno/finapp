@@ -52,3 +52,8 @@ output "database_endpoint" {
   description = "Production's database address, for the store's URL entries at first fill and the bootstrap step: never for a file in this repository."
   value       = module.postgres.endpoint
 }
+
+output "residency_regions" {
+  description = "The residency rule production was planned under: the recovery-region root must be given the same set (OPERATIONS_RUNBOOK.md section 11.65)."
+  value       = var.residency_regions
+}

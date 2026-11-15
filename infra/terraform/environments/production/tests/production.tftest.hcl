@@ -109,15 +109,21 @@ mock_provider "aws" {
 mock_provider "kafka" {}
 
 # The lock's mode and period below are test inputs and decide nothing: the audit class's period is OPEN
-# until a real jurisdiction is chosen.
+# until a real jurisdiction is chosen. Nor do the residency set and the recovery region: no jurisdiction is chosen.
 variables {
   region                         = "eu-central-1"
   account_id                     = "222222222222"
   availability_zones             = ["eu-central-1a", "eu-central-1b", "eu-central-1c"]
   database_backup_copy_vault_arn = "arn:aws:backup:eu-central-1:999999999999:backup-vault:finapp-copies"
-  audit_archive_lock             = { mode = "GOVERNANCE", days = 42 }
-  kafka_provisioning_stage       = "enforced"
-  other_environment_account_ids  = ["111111111111"]
+  recovery_region = {
+    region                  = "eu-west-1"
+    database_copy_vault_arn = "arn:aws:backup:eu-west-1:222222222222:backup-vault:finapp-production-database-region-copies"
+    field_keys_kms_key_arn  = "arn:aws:kms:eu-west-1:222222222222:key/bbbbbbbb-0000-0000-0000-000000000002"
+  }
+  residency_regions             = ["eu-central-1", "eu-west-1"]
+  audit_archive_lock            = { mode = "GOVERNANCE", days = 42 }
+  kafka_provisioning_stage      = "enforced"
+  other_environment_account_ids = ["111111111111"]
   human_users = {
     alice = { roles = ["read-only", "break-glass"] }
     bob   = { roles = ["read-only"] }
@@ -435,6 +441,63 @@ run "a_backup_copy_in_another_environments_account_is_refused" {
   }
 
   expect_failures = [var.database_backup_copy_vault_arn]
+}
+
+# The recovery region (ADR-0150): the daily snapshot copied out of production's region as well as across the account, and every
+# ring version replicated there under that region's key, the credentials not at all.
+run "production_copies_the_database_and_replicates_the_rings_to_its_recovery_region" {
+  command = plan
+
+  assert {
+    condition = module.postgres.backup_copy_vault_arns == toset([
+      "arn:aws:backup:eu-central-1:999999999999:backup-vault:finapp-copies",
+      "arn:aws:backup:eu-west-1:222222222222:backup-vault:finapp-production-database-region-copies",
+    ])
+    error_message = "Production's daily snapshot is not copied both across the account and to the recovery region's vault."
+  }
+
+  assert {
+    condition     = alltrue([for vault in module.postgres.backup_copy_vault_arns : split(":", vault)[3] != var.region || split(":", vault)[4] != var.account_id])
+    error_message = "A copy of production's snapshot stays in production's account and region, under the database's own key."
+  }
+
+  # One replica per ring version the inventory delivers: every field-encryption-key row, each its own entry.
+  assert {
+    condition = length(module.security.field_key_replicas) == length(regexall("(?m)^\\| `[A-Z0-9_]+` \\|[^|]*\\| field-encryption-key \\|", file("../../../../docs/architecture/SECRET_MANAGEMENT.md"))) && alltrue([
+      for replicas in values(module.security.field_key_replicas) :
+      replicas == [{ region = "eu-west-1", kms_key_id = "arn:aws:kms:eu-west-1:222222222222:key/bbbbbbbb-0000-0000-0000-000000000002" }]
+    ])
+    error_message = "A ring version the inventory names is not replicated to the recovery region under that region's key."
+  }
+
+  assert {
+    condition     = module.security.replicated_credential_entries == []
+    error_message = "A credential is replicated to the recovery region: a recovery generates every credential again."
+  }
+}
+
+run "a_region_copy_vault_outside_the_recovery_region_is_refused" {
+  command = plan
+
+  variables {
+    recovery_region = {
+      region                  = "eu-west-1"
+      database_copy_vault_arn = "arn:aws:backup:eu-north-1:222222222222:backup-vault:finapp-production-database-region-copies"
+      field_keys_kms_key_arn  = "arn:aws:kms:eu-west-1:222222222222:key/bbbbbbbb-0000-0000-0000-000000000002"
+    }
+  }
+
+  expect_failures = [var.recovery_region]
+}
+
+run "a_recovery_region_outside_the_residency_rule_is_refused" {
+  command = plan
+
+  variables {
+    residency_regions = ["eu-central-1"]
+  }
+
+  expect_failures = [var.residency_regions]
 }
 
 run "the_other_environment_cannot_be_left_unnamed" {

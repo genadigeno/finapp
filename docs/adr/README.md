@@ -185,6 +185,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0147](ADR-0147-security-under-scale-and-failure.md) | Security under scale and failure: a probe in every experiment, every check fails closed, four eyes and the audit trail read across each fault | Proposed | 16 | Platform · Identity · the API surface · the `kind` rehearsal |
 | [0148](ADR-0148-the-objectives-judged-under-load-and-break-age-counts.md) | The objectives judged under load, never recalibrated by a run; a real burn by shedding; the break-age counts | Proposed | 16 | Platform observability · Reconciliation |
 | [0149](ADR-0149-the-disaster-recovery-plan-what-survives-what-is-regenerated.md) | The disaster-recovery plan: what survives outside the environment, what is regenerated, and the recovered platform proven before any role logs in | Proposed | 16 | Platform · every module (recovered) · Ledger · Reconciliation |
+| [0150](ADR-0150-the-recovery-regions-standing-site.md) | The recovery region's standing site: the database's region copy, the rings replicated under the region's own key, no multi-region key, and promotion only after the fence | Proposed | 16 | Platform · infrastructure (Terraform) · Ledger (one writer) |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch
@@ -271,6 +272,7 @@ objectives and the post-recovery gate) and ADR-0129 (availability and the multi-
 *(`P16-TSK-015`, 2026-11-13, wrote ADR-0145 (capacity calibration and no role split), `Proposed`, the number the coordinator reserved for it in wave F.)*
 *(`P16-TSK-028`, 2026-11-13, wrote ADR-0147 (security under scale and failure), `Proposed`, the number the coordinator reserved for it in wave F.)*
 *(`P16-TSK-025`, 2026-11-13, wrote ADR-0149 (the disaster-recovery plan), `Proposed`, the number the coordinator reserved for it in wave F.)*
+*(`P16-TSK-026`, 2026-11-14, wrote ADR-0150 (the recovery region's standing site), `Proposed`, the next free number; wave G reserved none.)*
 *(2026-11-13: the partitioning half of the Phase 16 row is decided by
 ADR-0142, no table partitioned, the decision derived and its overturning measurement built and owed under `POSTPONED_ISSUES.md`
 PI-025. The row stays for the service-extraction decision.)*

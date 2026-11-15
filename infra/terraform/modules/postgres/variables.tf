@@ -148,6 +148,22 @@ variable "backup_copy_vault_arn" {
   }
 }
 
+variable "backup_region_copy_vault_arn" {
+  description = "A second vault each daily snapshot is copied to, in another region: the recovery region's copy, which survives the loss of the database's whole region (ADR-0128 tier 4, ADR-0150). Null where no recovery region is kept (staging). The account copy above stays in the same region by the owner's decision (THREAT_MODEL.md section 6 item 23 (a)), so it is lost with the region."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.backup_region_copy_vault_arn == null || can(regex("^arn:aws:backup:[a-z]{2}(-[a-z]+)+-[0-9]:[0-9]{12}:backup-vault:[A-Za-z0-9_-]+$", var.backup_region_copy_vault_arn))
+    error_message = "The region copy's destination is a backup vault's ARN: arn:aws:backup:<region>:<account>:backup-vault:<name>."
+  }
+
+  validation {
+    condition     = var.backup_region_copy_vault_arn == null || try(split(":", var.backup_region_copy_vault_arn)[3], "") != var.region
+    error_message = "The region copy's destination is in the database's own region, so it would be lost with the region it is meant to outlive."
+  }
+}
+
 variable "snapshot_retention_days" {
   description = "How long the daily snapshot and its copy are kept, in days. Operational, a reference value; a duty's period is a jurisdiction's and is not set here."
   type        = number

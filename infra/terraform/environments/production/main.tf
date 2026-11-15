@@ -75,6 +75,8 @@ module "postgres" {
   backup_kms_key_arn    = module.security.kms_key_arns["database_backup"]
   secrets_kms_key_arn   = module.security.kms_key_arns["secrets"]
   backup_copy_vault_arn = var.database_backup_copy_vault_arn
+  # The recovery region's copy (ADR-0150): the same daily snapshot, also copied out of production's region.
+  backup_region_copy_vault_arn = var.recovery_region.database_copy_vault_arn
 
   backup_retention_days   = 35
   snapshot_retention_days = 35
@@ -135,8 +137,13 @@ module "security" {
   workload_identity_issuer       = module.kubernetes.workload_identity_issuer
   master_user_secret_arn         = module.postgres.master_user_secret_arn
   database_backup_copy_vault_arn = var.database_backup_copy_vault_arn
-  human_users                    = var.human_users
-  bootstrap_role_enabled         = var.bootstrap_role_enabled
+  # Every ring version replicated to the recovery region under that region's key, and nothing else (ADR-0150).
+  recovery_region = {
+    region                 = var.recovery_region.region
+    field_keys_kms_key_arn = var.recovery_region.field_keys_kms_key_arn
+  }
+  human_users            = var.human_users
+  bootstrap_role_enabled = var.bootstrap_role_enabled
 }
 
 module "registry" {

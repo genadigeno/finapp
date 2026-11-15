@@ -133,6 +133,11 @@ class ImageAdmissionTest {
         Path environments = root.resolve("infra/terraform/environments");
         for (String environment : environments.toFile().list()) {
             String main = EvidenceCitations.read(environments.resolve(environment).resolve("main.tf"));
+            if (!main.contains("module \"registry\"")) {
+                // A root that builds no registry names no repository to admit: production's recovery region (P16-TSK-026,
+                // ADR-0150) holds a vault and two keys. The floor below still requires staging's and production's names.
+                continue;
+            }
             Matcher declared = Pattern.compile("module \"conventions\" \\{[^}]*environment\\s*=\\s*\"([a-z0-9-]+)\"").matcher(main);
             assertThat(declared.find()).as("%s declares its environment to the conventions", environment).isTrue();
             Matcher overlay = Pattern.compile("deploy/overlays/([a-z0-9-]+)/kustomization\\.yaml").matcher(main);
