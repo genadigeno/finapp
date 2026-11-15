@@ -31395,7 +31395,7 @@ parts are `POSTPONED_ISSUES.md` PI-026 and PI-027.*
   and the checkpointed read's three account-taking methods are classified in `OwnershipIsScopedTest`.
 - **Risk**: High (a schema change on the hottest table). **Cx**: L.
 
-**P16-REM-002 — A lost database answered `503 api.TemporarilyUnavailable` with `Retry-After` (`THREAT_MODEL.md` §6 item 61)** — `PLANNED`
+**P16-REM-002 — A lost database answered `503 api.TemporarilyUnavailable` with `Retry-After` (`THREAT_MODEL.md` §6 item 61)** — `READY` (2026-11-15; scheduled by the owner's "Start P16-REM-002", marked at `X-TSK-021`'s gate) *(read "`PLANNED`" until then)*
 - **Objective**: a money-moving command that cannot reach the database - the driver's connection failure, or the pool's wait ending
   because no connection could be made - answers `503 api.TemporarilyUnavailable` with a `Retry-After`, the same `Idempotency-Key`
   safe to send again, in one mapping the error contract states, as the owner decided (item 61 (i), 2026-11-13). Today it answers
@@ -32457,8 +32457,10 @@ word, "Do this task here"; branch `X-TSK-020` from `32c27525` (`P16-TSK-031`, un
   by the owner's word.
 - **Risk**: Low. **Cx**: M.
 
-**X-TSK-021 — The payable read's checkpoints proven against the whole fold: a census among the source proofs** — `READY`
-*(2026-11-15; found by `P16-REM-001`'s gate and marked by the owner's word, "Start X-TSK-021", during it; cross-cutting, no milestone)*
+**X-TSK-021 — The payable read's checkpoints proven against the whole fold: a census among the source proofs** — `COMPLETE`
+*(2026-11-15; found by `P16-REM-001`'s gate and marked `READY` by the owner's word, "Start X-TSK-021", during it; run straight
+through, branch `X-TSK-021` from `a3fef30e` (`P16-REM-001`, unmerged); cross-cutting, no milestone; marks `P16-REM-002` `READY`
+on the owner's word, "Start P16-REM-002") (read "`READY`" until its gate)*
 - **Context**: `P16-REM-001` answers `GET /v1/merchant/payable` from a commit-order checkpoint and the lines since. A checkpoint row is
   the application role's to write, and each new one is built on the one before, so a row forged with that credential, or stored wrong
   by a defect the version fingerprint does not catch, shows a merchant a wrong payable and carries the error into every later
@@ -32473,6 +32475,27 @@ word, "Do this task here"; branch `X-TSK-020` from `32c27525` (`P16-TSK-031`, un
   stores nothing on the read-only snapshot; the wiring rule refuses any other class naming the checkpointed read; the existing proofs'
   readings unchanged; `THREAT_MODEL.md` §5's T14 residual struck to what remains.
 - **Probe**: the census's comparison made to pass always - the planted wrong checkpoint is not named, red.
+- **As built (2026-11-15, gate `COMPLETE`).** **The proof**: `SourceProofs.Proof.PAYABLE_CHECKPOINT`, on the `MERCHANT_PAYABLE`
+  source; the catalogue `source-proofs:v2` (`SourceCompleteness.CATALOGUE_VERSION` 2, its rule "raised when a proof is added"); a
+  break's identity reads its evidence, never its version, so no open break churns. The projection close check keeps its own
+  `source-proofs:v1`: the one proof it reads is unchanged. **The census**: one pass over the merchants on the proofs' `READ ONLY`
+  snapshot - each payable read twice, from the whole fold (`MERCHANT_PAYABLE`'s terms) and as the API reads it
+  (`CheckpointedPositionBreakdown.readingOnly()`, the same read that never stores), compared record for record, position and every
+  term; another length is a disagreement. Evidence one fixed string, `checkpointAgreesWithTheWholeFold=false`, no amount.
+  `PayableCheckpointCensus`, a `@Configuration` (the module boundary's store rule), makes the two reads as one bean,
+  `ProductSourceProofs.PayableReads`; the wiring rule admits it beside `MerchantBeans`, `theProofsTakeTheCensussReads` holds the
+  proofs' wiring on that bean, and `onlyTheCensusMakesThePayableReads` refuses a pair made anywhere else (a whole fold compared with
+  itself would pass every checkpoint). `ReportingNeverWritesTest`'s term readers name the census's `equals`: both drill-downs are
+  classified alike in one instant, so no closed month's verdict moves with a term. `RestoreVerification` counts the new proof.
+  **Tests**: `PayableCheckpointCensusTest` (agree, a forged term, another length, both proofs from one reading),
+  `CheckpointedPositionBreakdownTest#theCensussReadNeverStores`, the accounting catalogue's tests at version 2, the wiring rules' teeth.
+  **Probes** (recorded, each on the final bytes): the comparison made to pass always - red; the proofs wired to the whole fold
+  alone - `theProofsTakeTheCensussReads` red; and in-suite, a pair made outside the census refused.
+  **Database**: `PositionCheckpointDatabaseTest#theCensusNamesAWrongCheckpoint` written - a real checkpoint planted wrong named on a
+  read-only snapshot, the other not, nothing stored - and not run: the owner's standing skip, the exception being `P16-REM-001`'s
+  alone; owed under PI-023, with the two database tests whose pins moved to `v2`. **What remains of T14's residual**: a wrong
+  checkpoint shows a merchant a wrong figure until the next source-completeness run names it, and an operator retires it
+  (`OPERATIONS_RUNBOOK.md` 11.48). **Multi-instance**: `PASS` - a read on each run's snapshot, nothing written, nothing held.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Low. **Cx**: M.
 
 ---

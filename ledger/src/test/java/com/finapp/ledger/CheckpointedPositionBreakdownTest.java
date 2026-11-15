@@ -309,6 +309,25 @@ class CheckpointedPositionBreakdownTest {
     }
 
     @Test
+    @DisplayName("the census's read (X-TSK-021) reads the checkpoint exactly as the API does, and never stores one, however far past"
+            + " the threshold")
+    void theCensussReadNeverStores() {
+        Script script = new Script();
+        script.checkpoint = List.of(stored("CREDIT", 90_000, FACING_CLEARING));
+        script.lines = new java.util.ArrayList<>();
+        for (int line = 0; line < CheckpointedPositionBreakdown.DEFAULT_THRESHOLD + 5; line++) {
+            script.lines.add(line("CREDIT", 1, FACING_CLEARING, true));
+        }
+
+        PositionBreakdown.Breakdown breakdown = CheckpointedPositionBreakdown.readingOnly().breakdown(script.connection(), ACCOUNT,
+                PRECEDENCE, List.of());
+
+        assertThat(breakdown.position()).isEqualTo(Money.ofPersisted(90_000 + CheckpointedPositionBreakdown.DEFAULT_THRESHOLD + 5, EUR, 2));
+        assertThat(script.since.get(6)).as("from the checkpoint, as the API reads").isEqualTo("500");
+        assertThat(script.journal).doesNotContain("store", "bucket");
+    }
+
+    @Test
     @DisplayName("without a unit of work to hold a savepoint, no checkpoint is read or stored, and the whole history is folded")
     void withoutASavepointTheWholeHistoryIsFolded() {
         Script script = new Script();

@@ -1322,10 +1322,17 @@ accounting class and adapter added since. *(Corrected by `P14-DOC-001`, the Phas
   the ledger's `PostingService` stands for the package refusal - or the rule above guards nothing.
   *(ArchUnit: `theReportingGuardSeesTheAccountingModule`)*
 - **A checkpoint never verifies itself** (`P16-REM-001`; ADR-0133 decision 3): no class but the payable query's wiring
-  (`MerchantBeans`) and the checkpointed read itself depends on `CheckpointedPositionBreakdown`, so every proof
+  (`MerchantBeans`), the census beside the proofs (`PayableCheckpointCensus`, `X-TSK-021`, which compares the API's read with the
+  whole fold and never stores) and the checkpointed read itself depends on `CheckpointedPositionBreakdown`, so every proof
   (`ProductSourceProofs`, the BNPL three-way) folds the whole history through `JdbcPositionBreakdown`. Proven able to fail by a
-  planted proof's wiring that names the checkpointed read; a proof wired to the whole history and the wiring itself pass.
+  planted proof's wiring that names the checkpointed read; a proof wired to the whole history and the two permitted classes pass.
   *(ArchUnit: `onlyThePayableQueryReadsACheckpoint`)*
+- **Every checkpoint is compared** (`X-TSK-021`): the source proofs' wiring (`AccountingBreakBeans`) takes the census's
+  `ProductSourceProofs.PayableReads` - the whole fold and the API's checkpointed read - so the `PAYABLE_CHECKPOINT` proof compares
+  each API read with the whole fold on every run. Proven able to fail by the proofs wired to the whole fold alone (recorded,
+  `MUTATION_TESTING.md` §2). *(ArchUnit: `theProofsTakeTheCensussReads`)*
+- And no class but the census (`PayableCheckpointCensus`, a `@Configuration`) makes the two reads, so no pair can compare the whole
+  fold with itself. Proven able to fail by a planted class making one. *(ArchUnit: `onlyTheCensusMakesThePayableReads`)*
 - A report run's content never depends on a JDK's currency table (`P14-TSK-015`, `INV-ACC-04`, ADR-0003): no report class
   depends on `java.util.Currency` or reaches `CurrencyCode.minorUnits`, by a call or a method reference, so a JDK's data changing
   cannot change a FINAL run's regeneration - scales are the data's own and the reporting minor unit is

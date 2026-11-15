@@ -396,7 +396,7 @@ class AccountingChecksTest {
         CheckOutcome second = checks.run(MARCH, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation());
 
         assertThat(first.raised()).isEqualTo(1);
-        assertThat(first.judgedBy()).isEqualTo("source-proofs:v1");
+        assertThat(first.judgedBy()).isEqualTo("source-proofs:v" + SourceCompleteness.CATALOGUE_VERSION);
         assertThat(second.raised()).isZero();
         assertThat(second.knownOpen()).isEqualTo(1);
         assertThat(store.rows()).singleElement().satisfies(row -> {
@@ -447,7 +447,7 @@ class AccountingChecksTest {
         CheckOutcome outcome = checks.run(MARCH, CloseCheckCode.SOURCE_COMPLETENESS, Actor.SYSTEM, correlation());
         assertThat(outcome.findings()).isZero();
         assertThat(outcome.result()).isEqualTo(CheckOutcome.Result.FAILED);
-        assertThat(outcome.failures()).containsExactly("UNAVAILABLE:MERCHANT_PAYABLE");
+        assertThat(outcome.failures()).containsExactly("UNAVAILABLE:MERCHANT_PAYABLE", "UNAVAILABLE:PAYABLE_CHECKPOINT");
     }
 
     // ------------------------------------------------------------------ the callable's edges

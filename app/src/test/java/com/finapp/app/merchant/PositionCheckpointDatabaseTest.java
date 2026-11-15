@@ -241,6 +241,32 @@ class PositionCheckpointDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("the census beside the source proofs names a payable whose checkpoint is wrong, on a read-only snapshot, and no other"
+            + " (X-TSK-021)")
+    void theCensusNamesAWrongCheckpoint() throws Exception {
+        LedgerAccount wrong = payable();
+        post(wrong, Direction.CREDIT, 5_000);
+        plantWrong(wrong, CheckpointedPositionBreakdown.CLASSIFICATION_VERSION, cluster());
+        LedgerAccount right = payable();
+        post(right, Direction.CREDIT, 5_000);
+
+        List<com.finapp.app.accounting.ProductSourceProofs.PayableTerms> terms;
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            app.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+            app.setReadOnly(true);
+            terms = com.finapp.app.accounting.ProductSourceProofs.merchantPayables(
+                    new com.finapp.app.accounting.PayableCheckpointCensus().payableReads()).apply(app);
+            app.commit();
+        }
+        assertThat(terms).filteredOn(term -> term.merchant().equals(wrong.ownerRef().orElseThrow()))
+                .singleElement().satisfies(term -> assertThat(term.checkpointAgrees()).as("the planted checkpoint is named").isFalse());
+        assertThat(terms).filteredOn(term -> term.merchant().equals(right.ownerRef().orElseThrow()))
+                .singleElement().satisfies(term -> assertThat(term.checkpointAgrees()).isTrue());
+        assertThat(checkpoints(right)).as("the census stores nothing").isZero();
+    }
+
     // ------------------------------------------------------------------------------------------------- helpers
 
     private void compareInOneSnapshot(CheckpointedPositionBreakdown checkpointed, LedgerAccount payable) throws SQLException {

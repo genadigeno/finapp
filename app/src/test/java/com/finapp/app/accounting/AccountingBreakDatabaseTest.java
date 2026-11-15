@@ -214,7 +214,7 @@ class AccountingBreakDatabaseTest {
 
         assertThat(first.raised()).isEqualTo(1);
         assertThat(second.raised()).isZero();
-        assertThat(first.judgedBy()).isEqualTo("source-proofs:v1");
+        assertThat(first.judgedBy()).isEqualTo("source-proofs:v2");
         String breakId = breakOf("LOAN_SUBLEDGER:" + loan);
         assertThat(column("SELECT break_type FROM accounting.accounting_break WHERE id = '" + breakId + "'"))
                 .isEqualTo("SOURCE_DISCREPANCY");

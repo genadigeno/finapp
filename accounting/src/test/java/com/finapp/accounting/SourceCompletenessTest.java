@@ -9,9 +9,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Source completeness (`P14-TSK-010`; ADR-0117 decision 2; {@code INV-ACC-12}, {@code INV-REC-02}): each proof's
- * finding one {@code SOURCE_DISCREPANCY} on {@code <PROOF>:<subject>}, judged by {@code source-proofs:v1}; a proof the
+ * finding one {@code SOURCE_DISCREPANCY} on {@code <PROOF>:<subject>}, judged by {@code source-proofs:v2}; a proof the
  * answer omits, answers twice or answers incomplete - and a source that could not be read - unavailable, never passing.
- * Hermetic; the adapter over the nine real proofs is {@code ProductSourceProofsTest}'s.
+ * Hermetic; the adapter over the ten real proofs is {@code ProductSourceProofsTest}'s.
  */
 @DisplayName("source completeness: the product proofs' findings, never a false pass (P14-TSK-010)")
 class SourceCompletenessTest {
@@ -19,16 +19,19 @@ class SourceCompletenessTest {
     private final SourceCompleteness judge = new SourceCompleteness();
 
     @Test
-    @DisplayName("the catalogue is the entry's nine proofs over seven sources, each proof on one source")
-    void theCatalogueIsTheNineProofs() {
+    @DisplayName("the catalogue is the entry's nine proofs and the payable checkpoint's census, over seven sources, each proof on one"
+            + " source, at version 2 (X-TSK-021)")
+    void theCatalogueIsTheTenProofs() {
         assertThat(Arrays.stream(SourceProofs.Proof.values()).map(Enum::name).toList()).containsExactly(
                 "LOAN_SUBLEDGER", "LOAN_REPLAY", "LENDING_CAPITAL", "BNPL_SUBLEDGER", "BNPL_THREE_WAY", "FX_BOOKS",
-                "POSITION", "MERCHANT_PAYABLE", "PROJECTION");
+                "POSITION", "MERCHANT_PAYABLE", "PAYABLE_CHECKPOINT", "PROJECTION");
         assertThat(Arrays.stream(SourceProofs.Source.values()).flatMap(source -> source.proofs().stream()).toList())
                 .containsExactly(SourceProofs.Proof.values());
         assertThat(SourceProofs.Source.LENDING.proofs())
                 .containsExactly(SourceProofs.Proof.LOAN_SUBLEDGER, SourceProofs.Proof.LOAN_REPLAY);
-        assertThat(SourceCompleteness.JUDGED_BY).isEqualTo("source-proofs:v1");
+        assertThat(SourceProofs.Source.MERCHANT_PAYABLE.proofs())
+                .containsExactly(SourceProofs.Proof.MERCHANT_PAYABLE, SourceProofs.Proof.PAYABLE_CHECKPOINT);
+        assertThat(SourceCompleteness.JUDGED_BY).isEqualTo("source-proofs:v2");
     }
 
     @Test
@@ -45,7 +48,7 @@ class SourceCompletenessTest {
             assertThat(finding.type()).isEqualTo(BreakType.SOURCE_DISCREPANCY);
             assertThat(finding.subject()).isEqualTo("LOAN_SUBLEDGER:loan-7");
             assertThat(finding.evidence()).contains("proof=LOAN_SUBLEDGER").contains("fails=[LOAN_PRINCIPAL]");
-            assertThat(finding.judgedBy()).isEqualTo("source-proofs:v1");
+            assertThat(finding.judgedBy()).isEqualTo("source-proofs:v2");
         });
     }
 

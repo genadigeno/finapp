@@ -51,7 +51,8 @@ import lombok.extern.slf4j.Slf4j;
  * <h2>Never the proofs'</h2>
  *
  * <p>{@code ProductSourceProofs} and the BNPL three-way read {@link JdbcPositionBreakdown}, the whole history, so a checkpoint never
- * verifies itself; only the merchant API's payable query is wired with this class ({@code PositionCheckpointsAreTheApisAloneTest}).
+ * verifies itself; only the merchant API's payable query is wired with this class ({@code PositionCheckpointsAreTheApisAloneTest}),
+ * and the census beside the proofs reads it {@link #readingOnly()} to compare it with the whole fold (`X-TSK-021`).
  */
 @Slf4j
 public final class CheckpointedPositionBreakdown implements PositionBreakdown<Connection> {
@@ -105,6 +106,7 @@ public final class CheckpointedPositionBreakdown implements PositionBreakdown<Co
     private static final String THE_BEGINNING = "0";
 
     private final int threshold;
+    private final boolean stores;
 
     public CheckpointedPositionBreakdown() {
         this(DEFAULT_THRESHOLD);
@@ -112,10 +114,24 @@ public final class CheckpointedPositionBreakdown implements PositionBreakdown<Co
 
     /** @param threshold the lines past a checkpoint that make a read store a new one; positive */
     public CheckpointedPositionBreakdown(int threshold) {
+        this(threshold, true);
+    }
+
+    private CheckpointedPositionBreakdown(int threshold, boolean stores) {
         if (threshold < 1) {
             throw new IllegalArgumentException("a checkpoint's threshold must be positive: " + threshold);
         }
         this.threshold = threshold;
+        this.stores = stores;
+    }
+
+    /**
+     * The read exactly as the merchant API makes it, from the latest valid checkpoint and the lines since, that never stores one
+     * (`X-TSK-021`): the census among the source proofs reads with it on their {@code READ ONLY} snapshot, to compare it with the
+     * whole fold, and a census that wrote what it judges would judge its own writing.
+     */
+    public static CheckpointedPositionBreakdown readingOnly() {
+        return new CheckpointedPositionBreakdown(DEFAULT_THRESHOLD, false);
     }
 
     /** A stored checkpoint: the lines it folded, the watermark below which it folded them, and its buckets. */
@@ -166,7 +182,7 @@ public final class CheckpointedPositionBreakdown implements PositionBreakdown<Co
                         + " left the representable range (INV-MON-06)");
             }
             Breakdown breakdown = JdbcPositionBreakdown.settled(answer, account, terms);
-            if (settled >= threshold && watermark != null) {
+            if (stores && settled >= threshold && watermark != null) {
                 long lines = from.map(Checkpoint::lines).orElse(0L) + settled;
                 store(unitOfWork, account, precedence, keyPrefixes, watermark, lines, next);
             }

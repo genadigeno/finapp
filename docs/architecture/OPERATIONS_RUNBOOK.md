@@ -5861,6 +5861,16 @@ past 1,000 settled lines stores a new one in a savepoint that never fails it. Th
 - **Retiring every checkpoint** (a suspicion, or a classification change shipped without its version bump): as the migrator,
   `DELETE FROM ledger.position_checkpoint_bucket; DELETE FROM ledger.position_checkpoint;`. No figure changes, only the next reads'
   cost. The application role cannot do it: it may read and add, never change or remove.
+- **A `PAYABLE_CHECKPOINT` break** (`X-TSK-021`). The source proofs' census found a merchant's payable, as the API reads it from its
+  checkpoint, differing from the whole fold. The books are right - the proofs read the whole fold - but the merchant has been shown a
+  wrong figure. The subject is `PAYABLE_CHECKPOINT:<merchant>:<currency>`; the account is `SELECT id FROM ledger.ledger_account WHERE
+  owner_ref = '<merchant>' AND purpose = 'MERCHANT_PAYABLE' AND currency = '<currency>'`. Retire its checkpoints as the migrator:
+  `DELETE FROM ledger.position_checkpoint_bucket WHERE checkpoint_id IN (SELECT id FROM ledger.position_checkpoint WHERE
+  ledger_account_id = '<account>'); DELETE FROM ledger.position_checkpoint WHERE ledger_account_id = '<account>';`. The next read
+  folds the whole history and stores a fresh one; the next source-completeness run finds the payable agreeing. Acknowledge the break
+  through its four-eyes door, naming the retirement: it needs no correcting entry, since no figure of the books was wrong. Then find
+  why - a checkpoint stored wrong by the code is a defect to fix (the classification's version, the watermark), and one written with
+  the application's credential is an incident (T15).
 - **Before `V038` runs on a large journal.** Its `ADD COLUMN` is a catalogue change, but its index build holds `SHARE` on
   `ledger.journal_line` and blocks every posting while it reads the table. Build it first by hand, outside a transaction:
   `CREATE INDEX CONCURRENTLY journal_line_by_account_and_transaction ON ledger.journal_line (ledger_account_id, txid);` - the

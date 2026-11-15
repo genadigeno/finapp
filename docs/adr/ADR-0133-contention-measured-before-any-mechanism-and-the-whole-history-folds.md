@@ -144,3 +144,8 @@ journal. Deleting every checkpoint changes no figure, only the read's cost.
   `BucketFold`; `CLASSIFICATION_VERSION` 1 pinned by `PositionClassificationIsVersionedTest`; the proofs on the whole fold, held by
   `PositionCheckpointsAreTheApisAloneTest`). Its database cases ran green on PostgreSQL 18.6 before any merge. The decision path's fold
   is untouched, for its own ADR after E38; E30 and E52 again, E38 and E39 measure what the bound and the index cost (PI-025).
+- *2026-11-15*: the gate of decision 3's build found that a checkpoint row is the application role's to write and each is built on the
+  last, so one stored wrong would persist unseen behind the proofs' whole fold. `X-TSK-021` added the census: the source proofs'
+  `PAYABLE_CHECKPOINT` compares the API's checkpointed drill-down with the whole fold on every source-completeness run (catalogue
+  `source-proofs:v2`, ADR-0117's note), reading without storing; a difference is an accounting break, and an operator retires the
+  account's checkpoints (`OPERATIONS_RUNBOOK.md` 11.48).

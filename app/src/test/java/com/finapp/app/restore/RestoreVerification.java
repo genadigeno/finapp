@@ -64,7 +64,7 @@ import org.springframework.context.ConfigurableApplicationContext;
  * <p><strong>The checks are the platform's, never restated here</strong>: the ledger's {@link TrialBalance}; GL = ledger for every
  * accounting period, {@link GeneralLedger#balances} under the version {@link GlPins#forPeriod} reads (a locked period's pin) judged by
  * {@link GlEqualsLedger}; the projection check and every product proof through the wired {@link SourceProofs}
- * ({@code ProductSourceProofs} over the nine proofs, {@code ProjectionVerification} among them), one call per
+ * ({@code ProductSourceProofs} over the ten proofs, {@code ProjectionVerification} among them), one call per
  * {@link SourceProofs.Source}; the source-join census, {@link SourceCensus}'s own walk and judgement over the whole journal from its
  * floor; and (`P16-TSK-024`, ADR-0128 decision 5) the evidence's key versions, every column the startup guard lists
  * ({@code KeyRingRetirementGuard.STAMPED_COLUMNS}) read for the versions its rows stand under, against the versions each ring of this
@@ -246,6 +246,10 @@ public final class RestoreVerification {
                 counted.put(SourceProofs.Proof.MERCHANT_PAYABLE, Subjects.of(ProductSourceProofs.merchantPayables(
                         new MerchantPayable(new JdbcLedgerAccountStore(), new JdbcPositionBreakdown())).apply(connection).size(),
                         "merchant payables"));
+                counted.put(SourceProofs.Proof.PAYABLE_CHECKPOINT, Subjects.of(
+                        com.finapp.app.accounting.ProductSourceProofs.merchantPayables(
+                                new com.finapp.app.accounting.PayableCheckpointCensus().payableReads()).apply(connection).size(),
+                        "merchant payables read from their checkpoints"));
                 counted.put(SourceProofs.Proof.PROJECTION, Subjects.of(count(connection, "SELECT count(*) FROM (SELECT ledger_account_id"
                         + " FROM ledger.journal_line UNION SELECT ledger_account_id FROM ledger.account_balance) accounts"), "ledger accounts"));
                 return null;

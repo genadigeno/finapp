@@ -22,8 +22,11 @@ import java.util.Objects;
  */
 public final class SourceCompleteness {
 
-    /** The catalogue of proofs read - {@link SourceProofs.Proof}'s nine. Raised when a proof is added or withdrawn. */
-    public static final int CATALOGUE_VERSION = 1;
+    /**
+     * The catalogue of proofs read - {@link SourceProofs.Proof}'s ten. Raised when a proof is added or withdrawn: 2 since `X-TSK-021`
+     * added {@code PAYABLE_CHECKPOINT} (read "1" and "nine" until 2026-11-15).
+     */
+    public static final int CATALOGUE_VERSION = 2;
 
     /** The register version every source finding is judged by. */
     public static final String JUDGED_BY = "source-proofs:v" + CATALOGUE_VERSION;

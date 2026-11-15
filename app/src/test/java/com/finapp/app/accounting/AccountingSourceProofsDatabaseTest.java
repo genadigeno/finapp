@@ -47,7 +47,7 @@ class AccountingSourceProofsDatabaseTest {
 
     @Test
     @DisplayName("SOURCE_COMPLETENESS over the wired ProductSourceProofs on the real snapshot: no UNAVAILABLE outcome -"
-            + " every one of the nine proofs answered, findings tolerated")
+            + " every one of the ten proofs answered, findings tolerated (the census of the payable checkpoints among them, X-TSK-021)")
     void everyRealSourceAnswersOnTheReadOnlySnapshot() {
         YearMonth month = YearMonth.of(2097 + RANDOM.nextInt(3), 1 + RANDOM.nextInt(12));
 
@@ -58,7 +58,7 @@ class AccountingSourceProofsDatabaseTest {
                 .as("a proof that locks, writes or needs a read-write transaction is UNAVAILABLE on the read-only"
                         + " snapshot")
                 .noneMatch(failure -> failure.startsWith(CheckOutcome.UNAVAILABLE));
-        assertThat(outcome.judgedBy()).isEqualTo("source-proofs:v1");
-        assertThat(SourceProofs.Proof.values()).hasSize(9);
+        assertThat(outcome.judgedBy()).isEqualTo("source-proofs:v2");
+        assertThat(SourceProofs.Proof.values()).hasSize(10);
     }
 }
