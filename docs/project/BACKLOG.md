@@ -30929,10 +30929,10 @@ on none:
   post-recovery gate; a region that returns never promoted back), its count row "no account". `RESILIENCE_EXPERIMENTS.md` D04 noted.
   **Not composed**: the existing modules in the recovery root at need - item 72 (recommended (i): production's state replicated and a site
   qualifier, with the first real environment); where the site belongs, production's account (as built) or the backup account's second
-  region - item 72 (a), beside item 71. **Not run**: anything against an account. **Found, not this task's**: three hermetic guards red on master (`StoredBoundsAreTheDatabasesTest`, `ArchitectureRulesAreDocumentedTest`, `HandlerSetCatalogueTest`), each reading only files this task left unchanged - fixed by `X-TSK-019` the same day.
+  region - item 72 (a), beside item 71. **Not run**: anything against an account. **Found, not this task's**: three hermetic guards red on master (`StoredBoundsAreTheDatabasesTest`, `ArchitectureRulesAreDocumentedTest`, `HandlerSetCatalogueTest`), each reading only files this task left unchanged - fixed by `X-TSK-022` the same day.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-027 — Financial correctness under failure: the fifteen scenarios** — `COMPLETE` (2026-11-14; designed, built and gated straight through on the owner's "Start next task", branch `P16-TSK-027` from `e63dc338` (`P16-TSK-026` and `X-TSK-019`, unmerged, PR #20); no migration, no production code, no ADR; **built and contract-tested, every cluster run owed under `POSTPONED_ISSUES.md` PI-025**, scenario 8's database case owed to PI-023's pass; marks `P16-TST-001` `READY`) *(read "`READY` (2026-11-14; marked by `P16-TSK-026`'s completion gate)" and before that "`PLANNED`" until its gate)*
+**P16-TSK-027 — Financial correctness under failure: the fifteen scenarios** — `COMPLETE` (2026-11-14; designed, built and gated straight through on the owner's "Start next task", branch `P16-TSK-027` from `e63dc338` (`P16-TSK-026` and `X-TSK-022`, unmerged, PR #20); no migration, no production code, no ADR; **built and contract-tested, every cluster run owed under `POSTPONED_ISSUES.md` PI-025**, scenario 8's database case owed to PI-023's pass; marks `P16-TST-001` `READY`) *(read "`READY` (2026-11-14; marked by `P16-TSK-026`'s completion gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: each of `PHASE_16_PLAN.md` §13's fifteen scenarios executed end to end on `kind` under load, with the seven checks
   counted and recorded. This is the phase's most important task.
 - **Affected components**: every money-moving module; the harness.
@@ -31239,7 +31239,7 @@ on none:
   (fence, check, promote alone, move the Service, the journal compared) called from the soak's schedule. E05 leaves one server and
   no standby, so in a soak it is the last database fault, or the standby is rebuilt after it.
 
-**P16-TST-002 — The exit pass: the mandatory experiments' quick forms on the final tree** — `COMPLETE` (2026-11-15; designed, run and gated straight through on the owner's "Start P16-TST-002", branch `P16-TST-002` from `8f20d7c3` (`X-TSK-020`, unmerged); **the hermetic half run once on the final tree, one stale guard found and fixed, every quick form owed under `POSTPONED_ISSUES.md` PI-025**; no production code, no migration, no ADR; marks no task `READY`: the phase's remaining items wait on the owner's word) *(read "`READY` (2026-11-15; marked by `P16-TSK-031`'s completion gate)" and before that "`PLANNED`" until its gate)*
+**P16-TST-002 — The exit pass: the mandatory experiments' quick forms on the final tree** — `COMPLETE` (2026-11-15; designed, run and gated straight through on the owner's "Start P16-TST-002", branch `P16-TST-002` from `8f20d7c3` (`X-TSK-023`, unmerged); **the hermetic half run once on the final tree, one stale guard found and fixed, every quick form owed under `POSTPONED_ISSUES.md` PI-025**; no production code, no migration, no ADR; marks no task `READY`: the phase's remaining items wait on the owner's word) *(read "`READY` (2026-11-15; marked by `P16-TSK-031`'s completion gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: once, on the final tree, re-run the quick forms of the mandatory experiments, and run the named guard classes. Then
   run the database and Kafka fleet tiers as the owner decides under C2 and C11.
   - The quick forms: the demonstration load with invariants during load, E01, E05, E09, the restore with its verification, and
@@ -32447,8 +32447,6 @@ entry, the plan and `CURRENT_STATE.md` until numbered here)*
   - the three suites and the whole `:settlement:databaseTest` green from a fresh run, read from the JUnit XML, with
     `:settlement:test` and `:settlement:architectureTest`.
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 **X-TSK-019 — `GET /v1/operator/me`: an operator's own identity, roles, permissions and session** — `COMPLETE`
 *(2026-11-13, on branch `P17-TSK-003` from master `ce1abd2e`; cross-referenced **finapp-admin-panel `P17-TSK-003`**
 (`PHASE_17_PLAN.md` §15 there, G-01), under **owner decision D-12 (2026-11-13)**: the console's milestone M1 completes now,
@@ -32538,7 +32536,7 @@ even to the permission's holder. The guards:
     instances answering at once read the same committed rows; a grant, revocation, suspension or sign-out committed on one
     is the next request's answer on every other, as the same-token cases show. The read writes nothing but the session's
     existing idle touch (a conditional, monotonic `UPDATE`, ADR-0030); a refusal writes one audit row per request.
-=======
+
 **X-TSK-020 — The Operator Console served on the operator edge: its own workload, router and headers** — `COMPLETE`
 *(2026-11-14, on branch `P17-TSK-004` from master `e56d1e69`; cross-referenced **finapp-admin-panel `P17-TSK-004`**
 (`PHASE_17_PLAN.md` §15 there, G-02), under **owner decision D-12 (2026-11-13)**: the console's milestone M1 completes now,
@@ -32659,9 +32657,8 @@ same place in this file, so whichever merges second takes the other's entry abov
     the pods open no connection. The edge's controllers are unchanged in shape (one more router, one more service, one more
     middleware, all in the one hash-named ConfigMap, so every controller holds the same routes after its rollout). Nothing is
     arbitrated; the API's correctness is the application's, untouched.
->>>>>>> P17-TSK-004
-=======
-**X-TSK-019 — Three architecture guards red on master since Phase 15 and 16 merges** — `COMPLETE` *(2026-11-14; found by
+
+**X-TSK-022 — Three architecture guards red on master since Phase 15 and 16 merges** — `COMPLETE` *(numbered `X-TSK-019` until 2026-11-16, when this repository's duplicate pair was renumbered: the operator console's `X-TSK-019` and `X-TSK-020`, a day older and cited from their own repository, kept theirs; the branch and the commit kept the old number)* *(2026-11-14; found by
 `P16-TSK-026`'s gate, which ran the whole `:app:architectureTest` fresh, and done on the owner's word, "Do this task here"; on
 branch `claude/project-progress-status-1498c8` after `P16-TSK-026`'s commit; cross-cutting, no milestone, marks no task `READY`)*
 - **Context**: `app`'s architecture tier. Each guard read only files the merge that broke it changed, and each of those merges ran a
@@ -32688,9 +32685,8 @@ branch `claude/project-progress-status-1498c8` after `P16-TSK-026`'s commit; cro
 - **Verified** (fresh): the three guards and `OnePrimaryServesEveryDoorTest`, `HandlerSetDiffTest`, `DeadLetterWiringTest` - 55 tests, green;
   then the whole `:app:architectureTest`, 1,202 tests, 0 failed. `databaseTest` and `kafkaTest` not run, by the owner's word.
 - **Risk**: Low. **Cx**: S.
->>>>>>> e097d1ac2f57e9211e00d5e9ed79f3841b26fa57
 
-**X-TSK-020 — Guard: no transaction spans a provider call** — `COMPLETE` *(2026-11-15; found by `P16-TSK-031`'s audit -
+**X-TSK-023 — Guard: no transaction spans a provider call** — `COMPLETE` *(numbered `X-TSK-020` until 2026-11-16, when this repository's duplicate pair was renumbered: the operator console's `X-TSK-019` and `X-TSK-020`, a day older and cited from their own repository, kept theirs; the branch and the commit kept the old number)* *(2026-11-15; found by `P16-TSK-031`'s audit -
 `DISTRIBUTED_EXECUTION.md` §4b, question 5, read the rule "from the code and its review, not held by a test" - and done on the owner's
 word, "Do this task here"; branch `X-TSK-020` from `32c27525` (`P16-TSK-031`, unmerged); cross-cutting, no milestone, marks no task
 `READY`)*

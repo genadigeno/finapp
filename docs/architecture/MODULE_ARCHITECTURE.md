@@ -1432,7 +1432,7 @@ annotation placement. *(review)*
 
 ### One primary serves every door (`P16-TSK-012`; ADR-0142; ADR-0129 decision 7)
 
-*(Documented 2026-11-14 by `X-TSK-019`: `P16-TSK-012` built these rules and they ran on every build, but this section did not name
+*(Documented 2026-11-14 by `X-TSK-022`: `P16-TSK-012` built these rules and they ran on every build, but this section did not name
 them, so `ArchitectureRulesAreDocumentedTest` was red on master from that merge until this entry.)* No read replica is routed, so no
 money-moving door, balance check or once-ness check can read one. A second server could be reached four ways, and each is refused
 (`OnePrimaryServesEveryDoorTest`; the fourth's own probe is a planted transfer door wired to the reporting pool, refused):
@@ -1515,7 +1515,7 @@ test in the same class, not an ArchUnit rule, so it is named here in prose. *(te
 | `risk/PlatformJudgedCommands.java` | `crossborder`, `ledger`, `paymentmethods`, `payments`, `transfers` | `P13-TSK-023` |
 
 ### Transaction boundary
-- A transaction never spans a call to an external provider, and no connection is held during one (ADR-0046). Held since `X-TSK-020`
+- A transaction never spans a call to an external provider, and no connection is held during one (ADR-0046). Held since `X-TSK-023`
   by `NoTransactionSpansAProviderCallTest`, a JUnit test reading the compiled classes rather than an ArchUnit rule - ArchUnit
   attributes a lambda's calls to the method declaring it, and cannot tell a transaction's body from the call beside it: everything
   that runs while a transaction or connection is held (every body handed a `TransactionStatus` or a `Connection`, every method that
