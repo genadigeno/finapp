@@ -31859,8 +31859,8 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   money-moving send protocols. **Cx**: M. **DoD**: `DOD-DOMAIN`, `DOD-FIN` (the renewals on
   money-moving rails), `DOD-TEST`
 
-**X-TSK-007 — Session liveness on the database clock, stamps and judgement both** — `IN_PROGRESS`
-*(designed, approved and implemented 2026-09-27; the completion gate is next. See **Result**)*
+**X-TSK-007 — Session liveness on the database clock, stamps and judgement both** — `COMPLETE`
+*(2026-11-16: its completion gate run on the owner's "do all x-tsks", branch `X-TSK-007` from `chore-x-tsk-renumber`; read "`IN_PROGRESS`" and "designed, approved and implemented 2026-09-27; the completion gate is next. See **Result**" until then)*
 - **Context**: `identity` (`JdbcSessionStore`, `SessionStore`, `Session`, `SessionIssue`,
   `SessionRotation`, a new `V016`) and `app` (`SessionAuthenticationInterceptor`,
   `SessionQueries`, `IdentityMetrics`). Owner-directed, 2026-09-27. ADR-0014, ADR-0030. The
@@ -31940,6 +31940,7 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   - **Branch**: implemented on master's base. Moving this worktree onto the main line was refused
     as a shared-resource change, so the merge with `claude/audit-context-efficiency-50b206` is the
     owner's. Check its identity migrations for a `V016` before merging.
+- **Gate (2026-11-16, `COMPLETE`)**: the implementation is on master since `bb861869` and has run in every build since. Each criterion, read against the tree: (1) `SessionTimeIsTheDatabasesTest` holds `SessionStore`'s signatures and `JdbcSessionStore`'s SQL - no method decides or stamps time from a caller's instant, and liveness is one predicate on the database's `now()`; (2) and (3) the skew, rotation and touch cases are `SessionClockSkewDatabaseTest`, `SessionClockSkewEndpointDatabaseTest`, `SessionLifecycleDatabaseTest` and `SessionRotationDatabaseTest`, run green at the implementation (2026-09-27, the Result above); their fresh run is owed under `POSTPONED_ISSUES.md` PI-023 with every database case; (4) `V016` adds `live_from` with the database's `now()` as default, backfills it from `issued_at` and moves the bounds' `CHECK` to it, so a row written before it and an old version's insert both stand; (5) the eleven mutations are `MUTATION_TESTING.md` §2's `INV-IDN-03` rows; ADR-0030's amendment, the `identity.session` columns' comments and `JdbcSessionStore`'s javadoc say what the code does. Since September the operator's own read (`X-TSK-019`) joined the interceptor and keeps the rule: the build rule is green over it. **Findings**: none CRITICAL or IMPORTANT; MINOR - the database cases' fresh run is PI-023's. **Fresh**: identity's unit and architecture tiers and app's session and register guards with --rerun (2026-11-16, 08:44-08:48 UTC): identity 203 unit and 2 architecture, app 96 architecture in 17 classes (`SessionTimeIsTheDatabasesTest`, `NoProcessLocalSessionStateTest` among them), 0 failed; the database cases not run (PI-023). **Multi-instance**: `PASS` - both sides of every session comparison are the database's clock, so ten instances skewed any way judge one session alike.
 
 **X-TSK-008 — Time decided across instances, beyond the session** — `PLANNED`
 - **Context**: `identity` (recovery requests, contact channels), `checkout`, `merchant` (fee
