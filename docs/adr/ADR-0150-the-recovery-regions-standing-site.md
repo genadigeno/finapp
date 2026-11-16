@@ -1,6 +1,6 @@
 # ADR-0150 — The recovery region's standing site: the database's region copy, the rings replicated under the region's own key, no multi-region key, and promotion only after the fence
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code; no correction needed)
 Date: 2026-11-14
 Phase: 16
 Context: Platform · infrastructure (Terraform) · Ledger (one writer) · every module holding field-level evidence

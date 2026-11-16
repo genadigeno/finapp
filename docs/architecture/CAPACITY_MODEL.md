@@ -2,7 +2,7 @@
 
 *Written 2026-11-12 by Phase 16's first task, from `PHASE_16_PLAN.md` §4, §6.2 and §14 (ADR-0126, `Proposed`), on master
 `6981c167`. This is the one place Phase 16 measures into. It states what the platform is asked to carry and where each number
-comes from. The measured columns are empty until `P16-TSK-007` fills them. Nothing here is a capacity statement about a real
+comes from. The measured columns are empty until `P16-TSK-007` fills them *(filled 2026-11-13 at three replicas, §3.4; every run at seven or ten is owed under PI-025)*. Nothing here is a capacity statement about a real
 environment, and nothing here calls the platform ready for production.*
 
 **How to read a number here.** Every number is one of three kinds, and the kind is always named:

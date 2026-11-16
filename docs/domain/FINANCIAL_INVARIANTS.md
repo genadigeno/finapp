@@ -283,6 +283,7 @@ one financial effect and returns the original outcome.
 HTTP filter.
 **Verify:** Concurrent-duplicate integration tests.
 **Phase:** 0 (kernel), 4 (transfers), 5 (payments)
+*(Dated note, the Phase 16 exit review, 2026-11-16: since the idempotency records' sweep (ADR-0141; `THREAT_MODEL.md` §6 item 63, decided by the owner on 2026-11-13 at (i)), the effect's once-ness has two reaches. A posting's is for ever: one journal entry per posting scope, unique in the journal. A transfer's or a card checkout's rests on its command record alone, which lives its 24-hour expiry plus the sweep's 30-day grace, so a retry under the same key after that is a new command. Their second arbiter is `POSTPONED_ISSUES.md` PI-027's, after the phases.)*
 
 ### INV-IDEM-02 — Scheduled financial processes are idempotent per period
 **Statement:** Re-running an accrual, fee assessment, settlement or close process for the

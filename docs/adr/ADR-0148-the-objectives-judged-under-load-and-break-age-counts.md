@@ -1,6 +1,6 @@
 # ADR-0148 — The objectives judged under load, never recalibrated by a run; a real burn by shedding; the break-age counts
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code; no correction needed)
 Date: 2026-11-13
 Phase: 16
 Context: Platform observability (the SLI rules, the burn alerts, the load and experiments harness) · Reconciliation's read side (breaks,

@@ -1168,7 +1168,7 @@ wave F, and accept all nine recommendations"); each item's decision follows its 
 added on 2026-11-13 by the contention measurement and awaits the owner.** **Item 63 was added on 2026-11-13 by the idempotency
 records' sweep and awaits the owner.**" until the owner's decision of 2026-11-13.)* **Item 66 was added on 2026-11-13 by the data
 tier's availability task, and the owner decided it on 2026-11-14, accepting its recommendations** ("yes"); its decision follows its
-options. **Item 67 was added on 2026-11-13 by the capacity calibration and awaits the owner.** **Item 70 was added on 2026-11-13 by the objectives' validation under load and awaits the owner.**
+options. **Item 67 was added on 2026-11-13 by the capacity calibration and awaits the owner.** **Items 68 and 69 were added on 2026-11-13, by the instance and node failures' build and by security under scale and failure, and await the owner** *(missing from this list until the Phase 16 exit review, 2026-11-16)*. **Item 70 was added on 2026-11-13 by the objectives' validation under load and awaits the owner.**
 **Item 71 was added on 2026-11-13 by the disaster-recovery plan and awaits the owner.**
 **Item 72 was added on 2026-11-14 by the multi-region assessment and awaits the owner.**
 
@@ -1387,7 +1387,7 @@ options. **Item 67 was added on 2026-11-13 by the capacity calibration and await
    *(2026-11-13: the partitioning half of that schedule is ruled. No table is partitioned at the target (ADR-0142, `Proposed`), by
    derivation, because a time key would split the idempotency claim's and the inbox's arbiters and open a drop no history guard sees.
    The reading that would overturn it is owed under `PI-025`. The audit archive needs none: it is built by segment, not by
-   partition (ADR-0135). The idempotency sweep, the uniqueness before it and the grant's revoke stay this item's, as above.)*
+   partition (ADR-0135). The idempotency sweep, the uniqueness before it and the grant's revoke stay this item's, as above.)* *(Read so until its third part closed on 2026-11-13 with ADR-0141: the item is closed. Noted by the Phase 16 exit review, 2026-11-16.)*
 
 ---
 

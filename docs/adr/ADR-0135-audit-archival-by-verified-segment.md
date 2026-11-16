@@ -1,6 +1,6 @@
 # ADR-0135 — Audit archival by verified segment, and the session sweep
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 
 Date: 2026-11-13
 
@@ -12,7 +12,7 @@ partitions; `THREAT_MODEL.md` §6 item 18 (decided 2026-11-09) scheduled the bui
 Three facts shape the build:
 
 - **Partitioning is not decided.** It is `P16-TSK-012`'s, by measurement and an ADR (`PHASE_16_PLAN.md` §6.5), and the plan
-  says the archival is built regardless. A design that starts from closed partitions cannot be built now.
+  says the archival is built regardless. A design that starts from closed partitions cannot be built now. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: decided since by ADR-0142 decision 1: no table is partitioned, the audit trail among them, and the archive stays by segment.)*
 - **A position over the audit table is a position a clock or a writer can choose.** `audit_id` is a UUIDv7 minted on an
   instance's clock and `occurred_at` is that instance's business time; a transaction can commit long after it began. A cursor
   over either can pass a row that commits behind it, for good and with no signal.
@@ -106,4 +106,4 @@ The real bucket's signing and credential, and the read path's door and its own a
 by the owner on 2026-11-13: the SDK's clients with the first real environment, the door before any row may leave the table, a copy
 that differs re-keyed by a reviewed change with a second approver; `POSTPONED_ISSUES.md` PI-026); the
 archive's lock period and mode (item 23 (b)); partitioning and whether archived partitions may ever be detached (`P16-TSK-012`, and
-item 23 (b)'s period before any deletion); the runs on `kind` (E44–E46, PI-025).
+item 23 (b)'s period before any deletion); the runs on `kind` (E44–E46, PI-025). *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: `P16-TSK-012` decided no partition (ADR-0142); whether archived rows may ever leave the table now waits on item 23 (b)'s period alone.)*

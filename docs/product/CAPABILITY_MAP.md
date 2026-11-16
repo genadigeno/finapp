@@ -372,7 +372,7 @@ section's capabilities.)*
   one telemetry egress, one payment traced end to end, platform runbooks rehearsed, a readiness review per unit
 - Not claimed: compliance with, or certification under, any standard; a production environment carrying real funds
 
-## Scale, resilience and recovery *(Phase 16, planned at the Phase 15 → 16 transition, 2026-11-12 — `PHASE_16_PLAN.md`; nothing of it is built)*
+## Scale, resilience and recovery *(Phase 16, planned at the Phase 15 → 16 transition, 2026-11-12 — `PHASE_16_PLAN.md`; nothing of it is built)* *(the Phase 16 exit review, 2026-11-16: built and held by contract tests; four experiments ran at three replicas on 2026-11-13, and every other run is owed under `POSTPONED_ISSUES.md` PI-025, so nothing below is claimed as measured beyond them)*
 - Capacity — planned: documented capacity limits per operation, measured on `kind` under named workloads, a proposed production
   target derived from stated assumptions, the first bottleneck named with evidence
 - Resilience — planned: load shedding before any financial effect, sweeps that survive a poisoned row, every retry safe with

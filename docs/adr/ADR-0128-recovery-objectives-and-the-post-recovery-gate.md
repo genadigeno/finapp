@@ -1,18 +1,18 @@
 # ADR-0128 — Recovery objectives and the post-recovery financial gate: RTO and RPO by tier, and no money moves until the books are proven
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-12
 Phase: 16
 Context: Platform · Ledger · Reconciliation · every module (recovered)
 Rests on: ADR-0005, ADR-0010, ADR-0120, ADR-0121, ADR-0123, ADR-0124; `OPERATIONS_RUNBOOK.md` §11.35 and §11.40;
-`THREAT_MODEL.md` §6 items 21 (a), 38 and 44 (a); owner decisions C4 and C9 of `PHASE_16_PLAN.md` §2.2 (proposed, awaiting the
-owner); `DELIVERY_PLAN.md` §Phase 16 §13; `PHASE_GATES.md` §5 Phase 16's third and fourth criteria.
+`THREAT_MODEL.md` §6 items 23 (a), 38 and 44 (a) *(read "21 (a)" until `P16-DOC-001`, 2026-11-16: a numbering slip; item 21 is the namespace policies)*; owner decisions C4 and C9 of `PHASE_16_PLAN.md` §2.2 (decided at their recommendations by the owner,
+2026-11-12; *read "proposed, awaiting the owner" until then*); `DELIVERY_PLAN.md` §Phase 16 §13; `PHASE_GATES.md` §5 Phase 16's third and fourth criteria.
 
 ## Context
 
 The Terraform for the reference cloud declares a Multi-AZ database with a synchronous standby, automated backups kept for 7 to
 35 days, and a daily copy to a vault in another account or region (`infra/terraform/modules/postgres/`, never applied). The
-dedicated backup account was decided on 2026-11-09 (item 21 (a)). Locally, a logical backup and restore exists, together with
+dedicated backup account was decided on 2026-11-09 (item 23 (a); *read "21 (a)" until `P16-DOC-001`, 2026-11-16, a numbering slip*). Locally, a logical backup and restore exists, together with
 the platform's own verification (`infra/scripts/restore-rehearsal.sh`, `RestoreVerification`). Its first rule is that no money
 moves on a restored database until the verification passes, and that rule is enforced by keeping the roles' logins locked
 until then. There is no point-in-time restore anywhere local, no failover anywhere, and the lending and BNPL proofs have only
@@ -26,7 +26,7 @@ ever judged empty data. No recovery objective is written. The owner's brief forb
    minutes to money movement (synchronous standby). Tier 2, logical corruption or deletion: RPO at most 5 minutes before the
    bad write, RTO 4 hours (point-in-time restore, the verification, the reconciliation window). Tier 3, the production account
    lost: RPO 24 hours, RTO 24 hours (the backup account's daily copy, infrastructure rebuilt from code). Tier 4, a region lost:
-   the same as tier 3 until cross-region replication is bought (ADR-0129). Kafka has no RPO of financial truth: it is rebuilt
+   the same as tier 3 until cross-region replication is bought (ADR-0129). *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: the backup account's copy is in production's own region, so a region's loss takes it too. Tier 4's recovery point is the standing site's region copy of the same daily snapshot (ADR-0150 decision 2), designed only and never applied. The objectives are unchanged.)* Kafka has no RPO of financial truth: it is rebuilt
    and refilled from the outbox inside the inbox's dedupe window.
 2. **A failover is not a restore.** With a synchronous standby nothing acknowledged is lost, so readiness returning on every
    replica and the continuous correctness signals staying silent are the check (§11.40). A restore loses everything after its
@@ -40,7 +40,7 @@ ever judged empty data. No recovery objective is written. The owner's brief forb
 4. **Restoration is tested, not merely backup creation.** The local drills restore and verify: a logical restore, a
    point-in-time restore from archived WAL to a named instant before a planted bad write, and a cluster rebuilt from the
    repository and a backup. Each records its durations and its restore rate per GiB, so the RTO's restore term is a measured
-   rate at the local size. The managed restores and failovers are designed only, until an account exists (C4).
+   rate at the local size. The managed restores and failovers are designed only, until an account exists (C4). *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: built - the failover drill (ADR-0139), the logical and point-in-time drills with the hold and the release (ADR-0140), and the rebuild from the repository and the vault (ADR-0149) - and none has run: E05, E59, E60, E61 and E87 are owed under `POSTPONED_ISSUES.md` PI-025. No restore rate, duration or recovery time is measured, so every RTO and RPO in decision 1 is an objective, not a result.)*
 5. **Keys are on the recovery's critical path.** A restored database is useful only with the key versions that encrypted its
    evidence. The drill proves that a restore with the same key ring reads the evidence, and that a restore with a version
    missing refuses it.

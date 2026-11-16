@@ -1,7 +1,7 @@
 # Phase 16 — Scale, Resilience, High Availability and Disaster Recovery
 
 *Written by the Phase 15 → 16 transition (2026-11-12), as documents only: nothing in this plan is implemented until
-`P16-TSK-001` lands. Decided in ADR-0126…ADR-0129 (`Proposed`); the exit criteria in `PHASE_GATES.md` §5 Phase 16, made
+`P16-TSK-001` lands. Decided in ADR-0126…ADR-0129 (`Proposed`; *`Accepted` with the phase's sixteen other ADRs by the Phase 16 exit review, 2026-11-16*); the exit criteria in `PHASE_GATES.md` §5 Phase 16, made
 measurable by this transition; the backlog in [`BACKLOG.md`](BACKLOG.md) §Phase 16. Where this plan and an earlier
 document disagree, this plan is right and the earlier document carries a dated note saying so. Where this plan and what a
 task measures disagree, the task's record is right and this plan gains an erratum.*
@@ -145,6 +145,8 @@ decides after the merge. The first task depends on none of them. A task whose de
 | C11 | **PI-023 and PI-024 as prerequisites** (§19.3) | (A) A narrow pre-flight before the ten-instance drill: the `databaseTest` and `kafkaTest` suites of `platform`, `ledger`, `transfers` and `payments` and the Phase 15 arbiters' ten-way cases run once (`-014`'s first step); the `incidents` steps of PI-024 that Phase 16's experiments repeat (the broker outage, the database restart, one instance down, the poisoned row) run as those experiments, closing those parts of PI-024; the rest of PI-023 and PI-024 stays postponed; (B) keep both postponed whole; the exit says the load census is black-box evidence over arbiters whose own cases never ran; (C) run PI-023 whole first | **(A).** A load result that rests on arbiters whose ten-way cases never ran could be built on a defect those cases would show; the pre-flight is bounded to what the drill exercises. (B) is the owner's standing choice and stays honest if recorded | **(A)**, the owner, 2026-11-12 ("accept recommendations") |
 | C12 | **Automatic rail availability** (`DECISIONS.md` §Deliberately Deferred, re-dated to Phase 16) | (A) Measure failure rates per rail in `-018`'s provider experiments and write the decision: automation, if built, writes the same audited availability fact an operator writes, under four eyes or a bounded automatic suspension an operator confirms; (B) build it now; (C) keep it manual and re-date it | **(A)**: decide on measured failure rates, as the row says; building it is `-018`'s only if the measurement and the owner's word on the ADR support it | **(A)**, the owner, 2026-11-12 ("accept recommendations") |
 
+*(Dated note, the Phase 16 exit review, 2026-11-16. **What became of C1-C12.** The owner's word of 2026-11-13 (`POSTPONED_ISSUES.md` PI-025) postponed every `kind` run after it, so C1's "not postponed", C2's experiments on their own stack, C4's "local analogue executed and recorded" and C11's pre-flight were met only by the four runs made before it (E01, E27, E28 and E30, each at three replicas). At the exit the owner accepted the result ("accept all"): the postponements as Phase 16's recorded deviations; D01-D06 of `RESILIENCE_EXPERIMENTS.md` §5 as designed-only, their analogues owed; C12 waiting for the first real rail's measured failure rates, since `kind` can measure only a simulator; `P15-TST-001` kept under PI-004. C9's "item 21 (a)" reads item 23 (a), the slip ADR-0150 names. C3, C5, C6, C8 and C10 stand as decided; C7's pair is built as a test-only manifest the experiments scope applies, not in the overlay. `reviews/PHASE_16_REVIEW.md` rules each.)*
+
 **Not decisions** (already decided, carried without a question): item 43 (b), (c)'s quota, (f) and (g); item 44 (a) and (b);
 acceptance B (ten instances at load); `P15-REM-004` in the first wave; item 18's three tables in Phase 16; item 42 (a), (h)
 and (i) in Phase 16. Their placement is §17.
@@ -177,6 +179,8 @@ recorded result; **Planned** means written and never applied; **Absent** means n
 | Load and stress tooling | Absent (HTTP); Implemented (in-process) | No HTTP load tool. In-process storms exist, own-container tier, each with its census: `BnplStormDatabaseTest`, `LendingStormDatabaseTest`, `SettlementReconciliationStormDatabaseTest`, `MultiRailConservationStormDatabaseTest`, `MerchantConservationStormDatabaseTest`, `FxCrossBorderStormDatabaseTest`, `CreditDecisionStormDatabaseTest`, `RiskStormTest`; `SustainedConcurrentPostingDatabaseTest` (`INV-BAL-02` under sustained posting) | k6 (C5, `-006`); the storms stay PI-004's |
 | Fault injection | Absent | Only the rehearsal's own steps (a pod kill, a database restart, a broker scaled to zero — the last two never run, PI-024) | Toxiproxy and primitives (C6, `-019`) |
 | Multi-region | Absent | ADR-0121's follow-up: "Phase 16 adds the multi-AZ and multi-region variants and cross-region backup" | `-026`, designed-only |
+
+*(Dated note, the Phase 16 exit review, 2026-11-16: this table is master `3d5089d9`'s, kept. Since, every row named a Phase 16 task has been built and held by its contract tests - the load harness (k6), the failure-injection toolkit (Toxiproxy), the test-only standby, three brokers in the experiments and load scopes, the connection budget at ten (`kind` at 13 instances and 116 connections), load shedding, the socket timeout, point-in-time recovery, the DR rebuild and the recovery region's Terraform (never applied). What ran on a cluster is four experiments at three replicas on 2026-11-13; the rest is owed under `POSTPONED_ISSUES.md` PI-025.)*
 
 ---
 
@@ -943,13 +947,13 @@ disk) is recorded as an environment limit with its numbers.
 Named test classes only: the changed classes' tests, the guards that read the changed files, and the harness's contract tests
 (`KindRehearsalContractTest`, `PlatformRehearsalContractTest`, and the new experiments scope's) — no whole-module task, no
 `:app:architectureTest`, no package filter. An experiment's run is the task's evidence and is run in the task; it is not a
-"test" in the owner's rule's sense but the phase's substance (C1).
+"test" in the owner's rule's sense but the phase's substance (C1). *(Changed by the owner's word of 2026-11-13, `POSTPONED_ISSUES.md` PI-025: no experiment's run was made in its task after it. Noted by the Phase 16 exit review, 2026-11-16.)*
 
 ### 19.3 What depends on PI-023 and PI-024
 
 - **PI-024** — the `incidents` steps (broker outage §11.6, database restart §11.40, one instance down §11.8, the poisoned row
   §11.39) are E09, E06, E01 and `-017`'s experiment: Phase 16 runs them as its own experiments and, under C11 (A), records which
-  parts of PI-024 they close. The `signals` scope, the delivery's unseen steps and the release scope on the final tree stay PI-024's.
+  parts of PI-024 they close. The `signals` scope, the delivery's unseen steps and the release scope on the final tree stay PI-024's. *(the Phase 16 exit review, 2026-11-16: the poisoned row ran as E28 on 2026-11-13; "one instance down" is E04, not E01; E09, E06 and E04 are owed under PI-025, and the pre-flight never ran.)*
 - **PI-023** — the ten-way database cases of Phase 15's arbiters (the window counter, the retention sweeps, the source census, the
   dead-letter doors) and every Phase 15 database case: the ten-instance drill exercises those arbiters through HTTP and judges them
   by the census, black-box. C11 (A) runs a narrow pre-flight of the suites the drill exercises before `-014`.
@@ -1058,7 +1062,7 @@ ADR-0127 the failure-injection method (scripted primitives and Toxiproxy on `kin
 boundary) · ADR-0128 recovery objectives and the post-recovery financial gate (the RTO/RPO tiers and their basis) · ADR-0129
 availability and the multi-region stance (one writer, multi-AZ active-passive, no active-active writes, financial-operation
 availability separate from service availability, read replicas never authoritative). The next free number after the transition is
-ADR-0130. Decisions a task makes by measurement (a hot-account mechanism, partitioning, the pooler, a replica route, an extraction)
+ADR-0130. *(the Phase 16 exit review, 2026-11-16: the phase wrote twenty - ADR-0126…0129, 0133…0137, 0139…0142, 0144, 0145 and 0147…0151 - all `Accepted` there; 0130…0132, 0138, 0143 and 0146 were never written; the next free number is ADR-0152.)* Decisions a task makes by measurement (a hot-account mechanism, partitioning, the pooler, a replica route, an extraction)
 are written by that task as an ADR before anything is built.
 
 ## 25. What Phase 16 must NOT implement
@@ -1085,7 +1089,7 @@ certification. A reviewer finding any of it refuses the change.
 
 ## 27. The first task
 
-**`P16-TSK-001` — The capacity model, the experiment register and its guard** — `READY`, marked by this transition. It writes
+**`P16-TSK-001` — The capacity model, the experiment register and its guard** — `READY`, marked by this transition *(gated 2026-11-12; read as the transition wrote it)*. It writes
 `docs/architecture/CAPACITY_MODEL.md` (§4's three workloads, W1–W8 with their derivation, the per-operation table with its resource
 columns left for `-007`, §14's strategies, §6.2's budget arithmetic) and `docs/architecture/RESILIENCE_EXPERIMENTS.md` (§9.2's
 experiments and §13's scenarios as a register: every field per experiment, result and remediation slots empty), a guard test holding

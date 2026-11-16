@@ -1,6 +1,6 @@
 # ADR-0137 — Load shedding before the financial effect: a door in front of every borrow, per-class bounds, never after a claim
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code; no correction needed)
 Date: 2026-11-13
 Phase: 16
 Context: Platform · the API surface (`app`), every money-moving door; checkout's create

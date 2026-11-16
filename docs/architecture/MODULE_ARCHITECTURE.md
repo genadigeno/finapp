@@ -19,7 +19,7 @@ Bounded contexts are domain boundaries. They are *not* an automatic list of micr
 recover once lost: the ability to make a state change and its accounting posting atomic in a
 single database transaction.
 
-Distribution is a Phase 16 question, answered with measurement, not anticipation.
+Distribution is a Phase 16 question, answered with measurement, not anticipation. *(Answered: no module leaves the monolith, ADR-0151, its reopening runs owed under PI-025; noted by the Phase 16 exit review, 2026-11-16.)*
 
 ---
 

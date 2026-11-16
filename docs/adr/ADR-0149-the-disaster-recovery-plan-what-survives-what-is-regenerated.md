@@ -1,12 +1,12 @@
 # ADR-0149 — The disaster-recovery plan: what survives outside the environment, what is regenerated, and the recovered platform proven before any role logs in
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-13
 Phase: 16
 Context: Platform · every module (recovered) · Ledger · Reconciliation
 Rests on: ADR-0128 (tiers 1-4, decisions 3, 4 and 5); ADR-0140 (the hold, the release); ADR-0123 (secrets and key rings); ADR-0121
 (infrastructure as code); ADR-0122 (images by digest); ADR-0129 (one region, active-passive); `OPERATIONS_RUNBOOK.md` §11.35, §11.55
-and §11.64; `THREAT_MODEL.md` T32 and T42, §6 items 1, 21 (a), 38 and 62; owner decisions C4 and C9 of `PHASE_16_PLAN.md` §2.2.
+and §11.64; `THREAT_MODEL.md` T32 and T42, §6 items 1, 23 (a), 38 and 62 *(read "21 (a)" here and in decision 2 until `P16-DOC-001`, 2026-11-16: the numbering slip ADR-0150 names)*; owner decisions C4 and C9 of `PHASE_16_PLAN.md` §2.2.
 
 ## Context
 
@@ -25,7 +25,7 @@ its image (T42, accepted by the owner until 2027-06-30 and re-owned to this phas
    database's backup and its manifest, encrypted, each with its digest; an escrow of every version of every field-level key ring,
    encrypted under a key apart from the backup's, with each listed version's check value; the release record (the digests the
    fleet ran); the image set the release needs; the configuration fingerprint the fleet ran. Locally the vault is a directory
-   outside the cluster; in a real environment it is the dedicated backup account (item 21 (a)) and a registry and key store there.
+   outside the cluster; in a real environment it is the dedicated backup account (item 23 (a)) and a registry and key store there.
 2. **Credentials are regenerated; key-ring versions are recovered; nothing else is carried.** Every password, broker credential,
    certificate, provider and callback key and the abuse key is generated again in the rebuilt environment and never restored from
    any copy, so a compromised account's credentials die with it; a provider's shared secret is issued again with that provider. A
@@ -44,7 +44,7 @@ its image (T42, accepted by the owner until 2027-06-30 and re-owned to this phas
 5. **Every tier's objective names its evidence or its owed run.** The targets are ADR-0128's; a local drill measures the
    procedure's durations at the local size, never a managed service's, and no recovery time or loss window is claimed until its
    run is made (`POSTPONED_ISSUES.md` PI-025). Tier 1: E05; tier 2: E59, E60 and E61; tier 3: E87; tier 4: designed only, its
-   local analogue E87; Kafka: E09 and E87's broker step.
+   local analogue E87 *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: since ADR-0150, 2026-11-14, tier 4 has a standing site in production's recovery region, holding the database's daily region copy and every ring version, checked with mock providers and never applied; its rebuild and run stay designed only, `THREAT_MODEL.md` §6 item 72)*; Kafka: E09 and E87's broker step.
 
 ## Alternatives Considered
 

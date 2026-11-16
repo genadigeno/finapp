@@ -1,6 +1,6 @@
 # ADR-0151 — No module leaves the monolith: the service-extraction evaluation, each criterion read against the evidence, and what would reopen it
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-15
 Phase: 16
 Context: every module (the deployment topology) · Platform · Risk · Reconciliation and Settlement · Payment Methods
@@ -69,7 +69,7 @@ saturate is the one an extraction does not divide.
 | `paymentmethods` | The instrument read and the payment intent's creation on one unit of work (`PaymentParticipants<Connection>`): a detached or replaced instrument can no longer be refused in the same transaction that would have used it |
 | `ledger` | Every posting with its domain state and its outbox event (`INV-EVT-01`; `INV-LED-04`'s sole writer): every money-moving command becomes a saga with compensations |
 | `settlement`, `reconciliation` | A file's acceptance with its batch run and items (`ReconciliationIntake`, on the acceptance's own connection), and every recognition or resolution with its posting |
-| `accounting` | A report run's reproducibility from one snapshot of the journal, and the posting cutoff moved by the ledger's API against the journal's own lock (ADR-0113) |
+| `accounting` | A report run's reproducibility from one snapshot of the journal, and the posting cutoff moved by the ledger's API against the journal's own lock (ADR-0113, ADR-0114; *the cutoff's ADR added by `P16-DOC-001`, 2026-11-16*) |
 | `identity` with `party` | Registration: `app` sequencing the party, the customer and the identity in one transaction (`P1-TSK-006`) |
 
 **3. The measured limit is answered without an extraction.** The single writer's CPU is answered by a larger server (ADR-0134), then
@@ -155,8 +155,8 @@ they hold, and stays unbuilt because nothing measured demands it.
 
 ## Follow-up
 
-- `P16-TSK-031` (the distributed-system audit and the operational review) reads this decision beside its own.
+- `P16-TSK-031` (the distributed-system audit and the operational review) reads this decision beside its own. *(2026-11-16, `P16-DOC-001`: `P16-TSK-031` is `COMPLETE` and wrote no ADR; its audit, `DISTRIBUTED_EXECUTION.md` §4b, rules all eleven questions `PASS` by construction, every ten-replica run owed under PI-025.)*
 - Each owed run, when it runs (PI-025's; PI-004's storm), is read against decision 4; a trigger fired is an ADR before any change.
 - `MODULE_ARCHITECTURE.md` §7 and M3, ADR-0001's Follow-up, ADR-0107 decision 4, `DECISIONS.md` §Deferred "Service extraction",
   `SECRET_MANAGEMENT.md`'s per-service identity row and `CURRENT_STATE.md`'s two debt rows carry this decision as dated notes.
-- **Acceptance**: `Proposed` until the Phase 16 exit review (`P16-DOC-001`) reads it against the evidence on record then.
+- **Acceptance**: `Proposed` until the Phase 16 exit review (`P16-DOC-001`) reads it against the evidence on record then. *(Read 2026-11-16 and accepted, corrected in two places; its reopening runs E38, E39 and E77 stay owed under PI-025.)*

@@ -1,6 +1,6 @@
 # ADR-0140 — The post-recovery hold and point-in-time recovery: the role lock held through the window, the window acting as the application's role, a person's recorded release
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-13
 Phase: 16
 Context: Platform · Settlement · Reconciliation · every module (recovered)
@@ -32,7 +32,7 @@ recovers to an instant from archived WAL, which no local server did.
 4. **The release is a person's, recorded.** The roles are released in one transaction with the database's instant read. The record
    names the person, the reason, the instant and the SHA-256 of each report the release rests on. In a real recovery it belongs in the
    incident's record (§11.12); the drill writes it beside its artefacts. A record in the restored database's own audit trail is item
-   62 (a)'s, for the owner.
+   62 (a)'s, for the owner. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: decided by the owner on 2026-11-13 at (ii): the release is also written into the restored database's own trail, built with the first real environment's managed restore rehearsal (item 38 (a)) and held by `POSTPONED_ISSUES.md` PI-026; until then the incident's record, as built.)*
 5. **Point-in-time recovery, locally.** The drill's source archives every WAL segment, encrypted with its ciphertext's digest beside
    it, into a store of the run's own, from a base backup written into `openssl`. A recovery lays the base backup down before its server
    first starts, with the platform's roles refused in `pg_hba.conf`, recovers to an instant, is promoted, makes the roles `NOLOGIN`
@@ -80,4 +80,4 @@ of §11.35 never relaxed between the restore and the release.
 ## Follow-up
 
 The drills are owed (`POSTPONED_ISSUES.md` PI-025: E59, E60, E61). Item 62 holds the release's record in the database's trail, the
-window on a managed instance and the archive's integrity for the owner. The managed restore itself is item 38 (a)'s.
+window on a managed instance and the archive's integrity for the owner. The managed restore itself is item 38 (a)'s. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: item 62 was decided on 2026-11-13: (a) at (ii) and (b) in the managed restore rehearsal, both held by PI-026; (c) at (i), digest-only integrity accepted for the local drill.)*

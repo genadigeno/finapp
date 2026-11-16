@@ -1,11 +1,11 @@
 # ADR-0129 — Availability and the multi-region stance: one writer, multi-AZ active-passive, no active-active writes, financial-operation availability stated apart
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-12
 Phase: 16
 Context: Platform · Ledger · every module (availability)
 Rests on: ADR-0001, ADR-0005, ADR-0009, ADR-0014, ADR-0016, ADR-0041, ADR-0120, ADR-0121, ADR-0124, ADR-0128; owner decision
-C10 of `PHASE_16_PLAN.md` §2.2 (proposed, awaiting the owner); `PHASE_GATES.md` §5 Phase 16's sixth criterion.
+C10 of `PHASE_16_PLAN.md` §2.2 (decided at its recommendation by the owner, 2026-11-12; *read "proposed, awaiting the owner" until then*); `PHASE_GATES.md` §5 Phase 16's sixth criterion.
 
 ## Context
 
@@ -66,7 +66,7 @@ Financial impact: none on the books. Availability gives way to correctness where
 ## Follow-up
 
 `P16-TSK-012` decides the replica question and its guard. `P16-TSK-023` writes the availability matrix. `P16-TSK-026` writes the
-assessment and the Terraform variants (never applied).
+assessment and the Terraform variants (never applied). *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: decision 6 is `AVAILABILITY.md`'s matrix (ADR-0144), its walks owed under `POSTPONED_ISSUES.md` PI-025. Since `P16-REM-002` (2026-11-15) a lost database is answered `503 api.TemporarilyUnavailable` with `Retry-After`, where it was `500`. Decision 7 is ADR-0142's: no replica is routed, and the first branch of `PHASE_GATES.md` §5 Phase 16's sixth criterion is held by `OnePrimaryServesEveryDoorTest`.)*
 
 *(2026-11-14: the assessment is `SYSTEM_ARCHITECTURE.md` §Multi-Region Assessment; what decision 5's "made available in the recovery
 region before they are needed" holds - the database's region copy, the rings replicated under the region's own key, no multi-region key - and

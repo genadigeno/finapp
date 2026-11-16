@@ -5448,6 +5448,71 @@ so it is `CONFIDENTIAL`, served to an operator under `ACCOUNTING_READ` and read 
 | `regulatory_provider_answer` | `recorded_order` | `INTERNAL` | A place in the order the answers were recorded in (`V014`): a position, no money and no one's data |
 | `regulatory_provider_answer` | `correlation_id` | `INTERNAL` | The flow |
 
+### Phase 16's derived and operational tables - *added by `P16-DOC-001`, the Phase 16 exit review*
+
+Seven tables and one column that Phase 16's migrations added without a row here (ledger `V038`, accounting `V017`, payments `V040`,
+merchant `V016`, reconciliation `V025`), found by the exit review on 2026-11-16 and written by hand against their DDL; the
+database's comparison, `ColumnClassificationTest`, is owed with `POSTPONED_ISSUES.md` PI-023's pass. The checkpoints are derived
+data - deleting every row changes no figure - but a checkpoint's sums are the journal's sums, so they carry
+`account_balance`'s ceiling. The sweep and rematch tables are operational state, counts and class names only (`INV-AUD-02`).
+
+| Table | Column | Level | Basis |
+|---|---|---|---|
+| `journal_line` | `txid` | `INTERNAL` | The inserting transaction, stamped by trigger from the entry's own (`ledger V038`), as `journal_entry.txid` |
+| `position_checkpoint` | `id` | `INTERNAL` | A generated identifier |
+| `position_checkpoint` | `ledger_account_id` | `INTERNAL` | `journal_line.ledger_account_id`'s reasoning |
+| `position_checkpoint` | `classification_version` | `INTERNAL` | A version number of the fold |
+| `position_checkpoint` | `precedence` | `INTERNAL` | The caller's counterparty purposes, platform-declared names |
+| `position_checkpoint` | `namespaces` | `INTERNAL` | Posting-key namespaces, platform-declared names |
+| `position_checkpoint` | `cluster_identity` | `INTERNAL` | The database cluster's system identifier, a number with no meaning outside it |
+| `position_checkpoint` | `watermark` | `INTERNAL` | A commit-order position, as `journal_entry.txid` |
+| `position_checkpoint` | `lines` | `INTERNAL` | A count of journal lines |
+| `position_checkpoint_bucket` | `checkpoint_id` | `INTERNAL` | The checkpoint |
+| `position_checkpoint_bucket` | `bucket` | `INTERNAL` | The bucket's key: a side, a namespace and an origin, platform-declared |
+| `position_checkpoint_bucket` | `direction` | `INTERNAL` | An enumeration of two values |
+| `position_checkpoint_bucket` | `counterparty` | `INTERNAL` | What the lines faced: a platform-declared purpose |
+| `position_checkpoint_bucket` | `reconciliation_attributed` | `INTERNAL` | A flag |
+| `position_checkpoint_bucket` | `accounting_origin` | `INTERNAL` | A flag |
+| `position_checkpoint_bucket` | `namespace` | `INTERNAL` | A posting-key namespace |
+| `position_checkpoint_bucket` | `amount_minor` | `RESTRICTED-FINANCIAL` | **A folded position.** `account_balance.posted_minor`'s reasoning: an account's lines summed |
+| `position_checkpoint_bucket` | `currency` | `INTERNAL` | An ISO 4217 code |
+| `position_checkpoint_bucket` | `scale` | `INTERNAL` | Precision metadata of the amount |
+| `opening_checkpoint` | `id` | `INTERNAL` | A generated identifier |
+| `opening_checkpoint` | `period_id` | `INTERNAL` | The accounting period |
+| `opening_checkpoint` | `period_locked_at` | `INTERNAL` | `accounting_period.locked_at`'s value: the lock the checkpoint was folded under |
+| `opening_checkpoint` | `latest_created` | `CONFIDENTIAL` | The latest creation instant of the entries it folds: `journal_entry.created_at`'s reasoning |
+| `opening_checkpoint` | `written_at` | `INTERNAL` | When it was written, on the database's clock |
+| `opening_checkpoint_group` | `checkpoint_id` | `INTERNAL` | The checkpoint |
+| `opening_checkpoint_group` | `shape` | `INTERNAL` | An enumeration of three values |
+| `opening_checkpoint_group` | `purpose` | `INTERNAL` | A platform-declared account purpose |
+| `opening_checkpoint_group` | `owner_kind` | `INTERNAL` | An enumeration |
+| `opening_checkpoint_group` | `counterparty` | `INTERNAL` | A counterparty's platform-declared code, as `counterparty.code` |
+| `opening_checkpoint_group` | `currency` | `INTERNAL` | An ISO 4217 code |
+| `opening_checkpoint_group` | `scale` | `INTERNAL` | Precision metadata of the total |
+| `opening_checkpoint_group` | `direction` | `INTERNAL` | An enumeration of two values |
+| `opening_checkpoint_group` | `total` | `RESTRICTED-FINANCIAL` | **A folded total of amounts**, in minor units: the trial balance's figures before a day |
+| `opening_checkpoint_group` | `lines` | `INTERNAL` | A count of journal lines |
+| `payments.sweep_row_failure` | `leg` | `INTERNAL` | An enumeration: the listing the row failed in |
+| `payments.sweep_row_failure` | `row_id` | `INTERNAL` | The swept row's identifier |
+| `payments.sweep_row_failure` | `failures` | `INTERNAL` | A count |
+| `payments.sweep_row_failure` | `first_failed_at` | `INTERNAL` | A time on the database's clock |
+| `payments.sweep_row_failure` | `last_failed_at` | `INTERNAL` | A time on the database's clock |
+| `payments.sweep_row_failure` | `retry_at` | `INTERNAL` | A time on the database's clock |
+| `payments.sweep_row_failure` | `last_failure` | `INTERNAL` | A failure's class name and nothing else, held by its `CHECK` |
+| `merchant.sweep_row_failure` | `leg` | `INTERNAL` | An enumeration: the listing the row failed in |
+| `merchant.sweep_row_failure` | `row_id` | `INTERNAL` | The swept row's identifier |
+| `merchant.sweep_row_failure` | `failures` | `INTERNAL` | A count |
+| `merchant.sweep_row_failure` | `first_failed_at` | `INTERNAL` | A time on the database's clock |
+| `merchant.sweep_row_failure` | `last_failed_at` | `INTERNAL` | A time on the database's clock |
+| `merchant.sweep_row_failure` | `retry_at` | `INTERNAL` | A time on the database's clock |
+| `merchant.sweep_row_failure` | `last_failure` | `INTERNAL` | A failure's class name and nothing else, held by its `CHECK` |
+| `rematch_fault` | `external_item_id` | `INTERNAL` | `external_item.id`: a record identifier |
+| `rematch_fault` | `faults` | `INTERNAL` | A count |
+| `rematch_fault` | `first_faulted_at` | `INTERNAL` | A time on the database's clock |
+| `rematch_fault` | `last_faulted_at` | `INTERNAL` | A time on the database's clock |
+| `rematch_fault` | `retry_at` | `INTERNAL` | A time on the database's clock |
+| `rematch_fault` | `last_fault` | `INTERNAL` | A fault's class name and nothing else, held by its `CHECK` |
+
 ### Free text, classified at its ceiling
 
 `audit_record.reason`, `audit_record.change_summary`, `idempotency_record.response_body`,

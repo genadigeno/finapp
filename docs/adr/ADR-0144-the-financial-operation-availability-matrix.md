@@ -1,6 +1,6 @@
 # ADR-0144 — The financial-operation availability matrix: derived from where the record lives, held to the served routes, walked by the experiments
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-13
 Phase: 16
 Context: Platform · every module that serves a route
@@ -49,7 +49,7 @@ Three facts shape the answer:
    each edge answer in the fault's window to its operation, and compares: no success where `REFUSED`, a success where `QUEUED` or
    `AVAILABLE` once any answer was seen. A mismatch fails the experiment; a row claiming service whose window exercised nothing could not
    show itself and fails too; an operation the workload did not send is recorded as not exercised, never passed. E05 and E06 walk the
-   database's loss (A01), E09 every broker's (A06), E72 and E73 their own (A14, A11). The guard holds that the walks the harness makes
+   database's loss (A01), E09 every broker's (A06), E72 and E73 their own (A14, A11). *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: since `P16-TSK-020`, E01, E03 and E04 also walk A07, E02 walks A08 and E25 walks A09: ten walks, every run owed under PI-025.)* The guard holds that the walks the harness makes
    are exactly the ones the document declares. The entry's probe is run-time: the run's own copy claims transfers available while the
    database is away (`REHEARSAL_PROBE=matrix-mismatch`, with E06), and the walk must fail.
 5. **No automatic refusal on a correctness signal - proposed, for the owner** (item 66 (a)). *(2026-11-14: decided by the owner at
@@ -100,4 +100,4 @@ PostgreSQL is the only financial truth (`CLAUDE.md` rule 12). `INV-EVT-01`, `INV
 - The owner decides `THREAT_MODEL.md` §6 item 66: (a) automatic refusal on a correctness signal; (b) the rails no simulator serves.
   *(Decided 2026-11-14 by the owner ("yes"): (a) none, the freeze a person's act; (b) designed-only for this phase.)*
 - The ten-replica runs and E25's walk of row A09 are the instance-failure task's; validating the objectives E74 reads is the SLO
-  validation task's.
+  validation task's. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: built since by `P16-TSK-020` and `P16-TSK-029` (ADR-0148); every run owed under PI-025.)*

@@ -1,6 +1,6 @@
 # ADR-0134 — The connection budget at ten replicas: a larger server, no smaller pool, no transaction-mode pooler yet
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-13
 Phase: 16
 Context: Platform · every module (operated at scale)
@@ -60,14 +60,14 @@ pools saturated only because the database did. Nothing was measured at seven or 
    server**, `max_connections` 116 in the overlay's one literal, which the Terraform root reads into the parameter group
    (`db.m7g.2xlarge`, 32 GiB, holds 116 backends with room; the module admits 20 to 5000), applied and the instance rebooted before
    the application rolls (`OPERATIONS_RUNBOOK.md` §11.14's order). Raising the ceiling waits for the ten-instance runs (E41, and E26 of
-   `P16-TSK-014`, owed under PI-025) and the HPA's calibration (`P16-TSK-015`): `THREAT_MODEL.md` §6 item 56 puts it to the owner.
+   `P16-TSK-014`, owed under PI-025) and the HPA's calibration (`P16-TSK-015`): `THREAT_MODEL.md` §6 item 56 puts it to the owner. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: the ten-instance runs are E41 and E26, E69 and E70 of `P16-TSK-014`, all owed under PI-025. The owner decided item 56 on 2026-11-13: production's ceiling stays seven until those runs and the HPA's calibration are made.)*
    *(2026-11-13: decided by the owner at item 56 (i), as this decision says: seven until those runs and that calibration, the
    declared `max_connections` raised first; no pooler until isolation is set inside each transaction.)*
    *Derived, not measured*: at the target's peak, about 2.4 times the engineering workload, the replicas would use about 1.25 cores,
    which the HPA's target of 70% of 500m a pod answers with about four replicas, so seven is not what the target meets first; the
-   single writer's CPU is.
+   single writer's CPU is. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: the calibration (`CAPACITY_MODEL.md` §4a, ADR-0145) takes 1.37 cores from the per-operation costs, the larger of its two readings: still four replicas.)*
 4. **No smaller pool.** Nine of 21 connections held at most would fit a pool of 5 (13 × 6 = 78 ≤ 88), but each replica's pool also
-   carries its share of the 37 schedules and the consumers, and the run's own defect (the source-join census starved of the pool at
+   carries its share of the 37 schedules (39 since the session and idempotency sweeps; *corrected by `P16-DOC-001`, 2026-11-16*) and the consumers, and the run's own defect (the source-join census starved of the pool at
    the break, routed to `P16-TSK-016`) shows the correctness monitors already short of it there. Past the break more connections would
    only queue more work inside a CPU-bound database, so a larger pool is no answer either. 7 + 1 stays.
 5. **No transaction-mode pooler now, and none in a deployed overlay without its own ADR.** Adopting one first needs: isolation set
@@ -117,5 +117,5 @@ advisory lock and setting transaction-scoped; no money moves differently.
 
 ## Follow-up
 
-The owed runs (E41 at ten; E26); item 56 (decided 2026-11-13); the HPA's targets from measurement (`P16-TSK-015`); the pooler only through the steps in
+The owed runs (E41 at ten; E26); item 56 (decided 2026-11-13); the HPA's targets from measurement (`P16-TSK-015`; *derived from costs measured at three replicas, its confirming runs E70 and E75 owed under PI-025: corrected by `P16-DOC-001`, 2026-11-16*); the pooler only through the steps in
 decision 5 and an ADR of its own.

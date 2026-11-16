@@ -52,7 +52,7 @@ Testing:
 - AssertJ
 - Testcontainers
 - WireMock
-- Load tooling: Phase 16
+- Load tooling: Phase 16 *(built: k6 2.3.0 and Toxiproxy 2.13.0, pinned by digest, run as containers outside the build graph, ADR-0126 and ADR-0127; noted by the Phase 16 exit review, 2026-11-16)*
 
 API:
 - REST / OpenAPI

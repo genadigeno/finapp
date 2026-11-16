@@ -1,6 +1,6 @@
 # ADR-0133 — Contention measured before any mechanism, and the whole-history folds bounded by a commit-order checkpoint
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-13
 Phase: 16
 Context: Ledger · Merchant · Platform (operated under load)
@@ -114,7 +114,7 @@ it is measured.
 Negative: until the owner places item 55 the payable read stays linear in history *(2026-11-13: placed at (i); it stays so until
 `P16-REM-001` is built)* *(2026-11-15: built; the read folds a checkpoint and the lines since, and E30 again measures it,
 owed under PI-025)*. E30's first limit stands, and each merchant's read
-grows. The soak (E39) leaves the payable read out for that reason.
+grows. The soak (E39) leaves the payable read out for that reason. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: read "each merchant's read grows" as true until `P16-REM-001` bounded it, 2026-11-15. The soak, the integrated soak and the concurrent-financial profile still leave the payable read out, on the reason that held before the bound, so only E30 run again with E52 measures the bounded read under load; `P16-REM-004` holds that run, owed under `POSTPONED_ISSUES.md` PI-025.)*
 
 Operational impact: the `kind` overlay's test-only server preloads `auto_explain`, inert until a run opens its window. The runs set
 logging on the run's own server by `ALTER SYSTEM`. No deployed overlay changes.

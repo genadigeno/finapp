@@ -3624,7 +3624,7 @@ about anybody:
 and a node agent reading the kubelet's files is refused by Pod Security `restricted`; they are the reference back ends, and a real
 environment's back ends bring their own (`THREAT_MODEL.md` section 6 item 37 (a), item 47 (a)). `kubectl logs` reads them.
 
-**What this does not cover.** A real environment's load balancer or WAF in front of the edge (item 32 (b)); a controller lost or rolled
+**What this does not cover.** A real environment's load balancer or WAF in front of the edge (item 22 (b); *read "item 32 (b)" until the Phase 16 exit review, 2026-11-16: the slip `PHASE_16_PLAN.md`'s erratum names*); a controller lost or rolled
 under traffic (`P16-TSK-005`; the loss is E25, §11.61); the edge's SLO of its own, which `-029` decides with the load model.
 
 **The correlation id at the edge, measured** (2026-11-13 19:59-20:01Z, `THREAT_MODEL.md` §6 item 47 (e); containers on this machine, no
@@ -6130,8 +6130,8 @@ routes, to the register of experiments and to that rule on every build.
 
 **Reading the matrix in an incident** (§11.12). Find the failure's row and read the client's answers from it before writing any message:
 the database away (A01) refuses everything at the edge with `503`, or `500 api.InternalError` from a replica before readiness falls
-(`THREAT_MODEL.md` §6 item 61, decided by the owner on 2026-11-13: `503 api.TemporarilyUnavailable` with `Retry-After` once
-`P16-REM-002` is built; read "(`THREAT_MODEL.md` §6 item 61)" alone until that decision), and a retry under the same key is a first attempt; every broker away (A06) answers every command with its
+(`THREAT_MODEL.md` §6 item 61, decided by the owner on 2026-11-13: `503 api.TemporarilyUnavailable` with `Retry-After`, built by
+`P16-REM-002` on 2026-11-15, so a replica answers that where it answered `500 api.InternalError`; *read "once `P16-REM-002` is built" until the Phase 16 exit review, 2026-11-16*; read "(`THREAT_MODEL.md` §6 item 61)" alone until that decision), and a retry under the same key is a first attempt; every broker away (A06) answers every command with its
 record and holds its events in the outbox, so money moves and the events follow; a provider lost (A10 to A13) leaves its rail's movements
 `UNKNOWN` or refused openly, concluded by its sweep's inquiry, never resent. A correctness page (A19) refuses nothing by itself: freezing
 money movement is the incident lead's recorded decision with the financial controller (§11.20), and no flow refuses automatically,

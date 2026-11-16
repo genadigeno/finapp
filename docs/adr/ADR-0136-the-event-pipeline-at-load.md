@@ -1,6 +1,6 @@
 # ADR-0136 — The event pipeline at load: the relay drains while its batch is full, and three test-only brokers where the experiments run
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-13
 Phase: 16
 Context: Platform (the outbox relay, the inbox) · the `kind` rehearsal
@@ -56,7 +56,7 @@ bootstrap (`P16-TSK-019`'s routed note): the experiments' proxy needs one hop pe
    registered runs E47 (the pipeline at the target's checkout peak and after a burst: lag, drain, the relay's ceiling, skew), E48 (the
    fleet scaled 3 → 7 → 3 under load) and E49 (the run's day replayed through the audited door) are steps of the harness held by
    `PipelineRehearsalContractTest`; none has run (the owner's word of 2026-11-13, PI-025). Decisions 1 and 2 are measured by E47 at
-   three and at seven replicas when it runs.
+   three and at seven replicas when it runs. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: the same task built E68, the poison-record burst, and `P16-TSK-014` added E71, the pipeline scaled 3 → 10 → 3 on three brokers; both owed under PI-025.)*
 
 ## Alternatives Considered
 

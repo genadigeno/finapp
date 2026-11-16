@@ -214,7 +214,7 @@ operational intervention.
 
 # Phases 5–16
 
-Status: `PLANNED`. Elaborated to **epic** level; capabilities at each phase's entry gate.
+Status: `PLANNED`. Elaborated to **epic** level; capabilities at each phase's entry gate. *(the Phase 16 exit review, 2026-11-16: this register's statuses are its first elaboration's. Phases 0-15 are `COMPLETE` and Phase 16 is `IN_REVIEW`; `BACKLOG.md` and `CURRENT_STATE.md` hold the statuses.)*
 
 | Phase | Scope |
 |---|---|
