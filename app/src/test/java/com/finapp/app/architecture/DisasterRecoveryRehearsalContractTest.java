@@ -382,8 +382,8 @@ class DisasterRecoveryRehearsalContractTest {
         for (String id : List.of("E87", "E88", "E89")) {
             Matcher row = Pattern.compile("(?m)^\\| " + id + " \\|.*$").matcher(register);
             assertThat(row.find()).as("%s registered", id).isTrue();
-            assertThat(row.group()).as("%s runs in the dr scope and is not run", id).contains("REHEARSAL_SCOPE=dr").contains("`P16-TSK-025`")
-                    .contains("N/A: not run");
+            assertThat(row.group()).as("%s runs in the dr scope and is owed, not run (P16-REM-005's form)", id)
+                    .contains("REHEARSAL_SCOPE=dr").contains("`P16-TSK-025`").contains("| OWED under PI-025 (");
         }
         assertThat(read("docs/architecture/OPERATIONS_RUNBOOK.md")).contains("\n### 11.64 ");
         assertThat(read("docs/project/POSTPONED_ISSUES.md")).contains("**`P16-TSK-025`**");

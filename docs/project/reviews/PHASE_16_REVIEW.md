@@ -94,7 +94,7 @@ scope's uniqueness, and adds no money movement. The review hunted where the phas
   postponement as the reason, and the guard admits any `N/A` with a reason, though §1.2 keeps `N/A` for an experiment that does not
   apply. ADR-0127's note said the guard refuses an unrun experiment once its runners finish; it refuses only an empty cell.
   **ADR-0127 corrected; the guard is `P16-REM-005`'s**, with the runbook count's "Phase 16 drill" reason, which reads at the exit as a
-  drill still to come.
+  drill still to come. *(Built since by `P16-REM-005`, 2026-11-16, on its branch.)*
 - **`P16-REM-002`'s client-answer paragraph sits in §11.35 (the restore)**, not beside the failover it describes. Recorded; moving
   it is the next change to either section.
 - **The FX hot rows have no profile.** `FX_POSITION` and `FX_SPREAD_REVENUE` are hot rows of `PHASE_16_PLAN.md` §6.4 that no load

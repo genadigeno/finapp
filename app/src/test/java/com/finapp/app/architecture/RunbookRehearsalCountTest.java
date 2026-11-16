@@ -41,10 +41,12 @@ import org.junit.jupiter.api.Test;
  * before the gate as after it, and from the gate no cell may read {@code pending}. The entry's status must be read as one this
  * test knows: an entry missing, or a header it cannot read, fails rather than leaving {@code pending} allowed for good.
  *
- * <p><strong>The owner's postponement.</strong> The closed list holds one reason that is not a fact about the procedure: the
- * owner postponed the platform rehearsals' remaining cluster runs ({@code POSTPONED_ISSUES.md} PI-024, 2026-11-12). It is the one
- * reason a §1-§10 row may stand without a rehearsed sample, and it is admissible only while the register holds PI-024
- * {@code POSTPONED}: the item fixed, every row giving it must be filled from the runs again.
+ * <p><strong>The owner's postponements.</strong> The closed list holds two reasons that are not facts about the procedure: the
+ * owner postponed the platform rehearsals' remaining cluster runs ({@code POSTPONED_ISSUES.md} PI-024, 2026-11-12), and Phase
+ * 16's cluster runs (PI-025, 2026-11-13). Each is admissible only while the register holds its issue {@code POSTPONED}: the
+ * item fixed, every row giving it must be filled from the runs again. PI-024's is the one reason a §1-§10 row may stand
+ * without a rehearsed sample. <em>Phase 16 drill</em>, the reason a §11 section waited on that phase's drills, left the list at
+ * the phase's exit: its sections' runs are PI-025's ({@code P16-REM-005}).
  *
  * <p><strong>The floor.</strong> A procedure is counted by the section's own words; what this test holds under that count is
  * the section's sub-headings one level down: a row may not count fewer procedures than its section has sub-headings, so a
@@ -73,11 +75,18 @@ class RunbookRehearsalCountTest {
     /** The owner's postponement of the remaining cluster runs (PI-024, 2026-11-12): the one reason that admits a domain row at nought. */
     private static final String POSTPONED = "postponed by the owner (PI-024)";
 
-    /** The register's own row for that postponement, read as still standing. */
-    private static final Pattern STILL_POSTPONED = Pattern.compile("(?m)^\\| PI-024 \\| `POSTPONED` \\|");
+    /** The owner's postponement of Phase 16's cluster runs (PI-025, 2026-11-13), which its drills' sections wait on. */
+    private static final String POSTPONED_PHASE_16 = "postponed by the owner (PI-025)";
+
+    /** Each postponement reason and the issue whose standing admits it. */
+    private static final Map<String, String> POSTPONEMENTS = Map.of(POSTPONED, "PI-024", POSTPONED_PHASE_16, "PI-025");
+
+    /** A postponed issue's row in the register's own table, with its status. */
+    private static final Pattern ISSUE_ROW = Pattern.compile("(?m)^\\| (PI-\\d{3}) \\| `([A-Z_]+)` \\|");
 
     /** Why a section may stand unrehearsed, the closed list section 11.38 states. */
-    private static final Set<String> REASONS = Set.of("no account", "Phase 16 drill", "real provider", "real person", POSTPONED);
+    private static final Set<String> REASONS =
+            Set.of("no account", "real provider", "real person", POSTPONED, POSTPONED_PHASE_16);
 
     /** Where a rehearsal may run (criterion 4: on {@code kind} or compose; the containers of the checks and the restore). */
     private static final Set<String> PLACES = Set.of("kind", "compose", "containers");
@@ -100,7 +109,7 @@ class RunbookRehearsalCountTest {
     private static Set<String> modules;
     private static String status;
     private static boolean complete;
-    private static boolean stillPostponed;
+    private static Set<String> standing;
 
     /** One row of the count, as written. */
     private record Row(String section, String owner, String rehearsed, String read, String procedures, String where, String date,
@@ -147,7 +156,13 @@ class RunbookRehearsalCountTest {
         }
         status = EvidenceCitations.backlogStatuses(root.resolve(BACKLOG)).get(TASK);
         complete = "COMPLETE".equals(status);
-        stillPostponed = STILL_POSTPONED.matcher(EvidenceCitations.read(root.resolve(REGISTER))).find();
+        standing = new TreeSet<>();
+        Matcher issue = ISSUE_ROW.matcher(EvidenceCitations.read(root.resolve(REGISTER)).replace("\r\n", "\n"));
+        while (issue.find()) {
+            if ("POSTPONED".equals(issue.group(2))) {
+                standing.add(issue.group(1));
+            }
+        }
     }
 
     @Test
@@ -241,13 +256,16 @@ class RunbookRehearsalCountTest {
     }
 
     @Test
-    @DisplayName("the owner's postponement is a reason only while the register holds PI-024 postponed")
+    @DisplayName("an owner's postponement is a reason only while the register holds its issue postponed (PI-024, PI-025)")
     void thePostponementStandsOnlyWhileTheRegisterHoldsIt() {
-        List<String> giving = rows.values().stream().filter(row -> POSTPONED.equals(row.reason())).map(Row::section).toList();
-        if (!giving.isEmpty()) {
-            assertThat(stillPostponed).as("§§%s give PI-024 as their reason: %s holds it POSTPONED, or they are filled from the runs",
-                    giving, REGISTER).isTrue();
-        }
+        assertThat(standing).as("the register's table was read: the issues it holds POSTPONED").isNotEmpty();
+        POSTPONEMENTS.forEach((reason, issue) -> {
+            List<String> giving = rows.values().stream().filter(row -> reason.equals(row.reason())).map(Row::section).toList();
+            if (!giving.isEmpty()) {
+                assertThat(standing).as("§§%s give %s as their reason: %s holds it POSTPONED, or they are filled from the runs",
+                        giving, issue, REGISTER).contains(issue);
+            }
+        });
     }
 
     @Test

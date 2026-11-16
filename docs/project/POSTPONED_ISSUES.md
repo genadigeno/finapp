@@ -604,7 +604,7 @@ commit and the date; do not delete the entry.
   each on the commit it ran on. Each task lists below the runs it owes: the experiment, profile, replica count, drill or
   cluster probe, and the runbook section that would carry its record.
 - **Consequence until it runs:** a measurement, limit, recovery time or verdict that rests on an owed run is not claimed. The
-  experiment's register entry reads not run, and its runbook record stays empty. `THREAT_MODEL.md`'s rows that would have rested
+  experiment's register entry reads not run *(since `P16-REM-005`, 2026-11-16: `OWED under PI-025 (<date>)`, held while this item stands `POSTPONED` and names it below)*, and its runbook record stays empty. `THREAT_MODEL.md`'s rows that would have rested
   on such a run read `GAP | PI-025`. A mutation demonstration that needs a cluster is listed here, not recorded as performed in
   `MUTATION_TESTING.md` §2. Phase 16's exit criteria that rest on runs (`PHASE_GATES.md`, `PHASE_16_PLAN.md`) are met only in
   part, and the exit review names this item as the reason.
