@@ -215,6 +215,78 @@ class PaymentMethodEndpointDatabaseTest {
     }
 
     @Test
+    @DisplayName("a provider token another party holds live is never converged onto: each party"
+            + " attaching it gets its own row, and each retry converges on its own (X-TSK-002)")
+    void anotherPartysLiveTokenIsNeverConvergedOnto() throws Exception {
+        // One provider token for every exchange: both parties hold the SAME token, each in
+        // their own (party, token) slot of the one-live index.
+        providerTokenises("tok_shared-" + suffix());
+        String ownerLogin = someLogin();
+        assertThat(register(ownerLogin).statusCode()).isEqualTo(201);
+        String ownerToken = tokenFrom(authenticate(ownerLogin).body());
+        String strangerLogin = someLogin();
+        assertThat(register(strangerLogin).statusCode()).isEqualTo(201);
+        String strangerToken = tokenFrom(authenticate(strangerLogin).body());
+
+        HttpResponse<String> owners = attach(ownerToken, "ctok_shared-" + suffix());
+        assertThat(owners.statusCode()).isEqualTo(201);
+        String ownersMethod = field(owners.body(), "id");
+        HttpResponse<String> strangers = attach(strangerToken, "ctok_shared-" + suffix());
+        assertThat(strangers.statusCode()).isEqualTo(201);
+        String strangersMethod = field(strangers.body(), "id");
+        assertThat(strangersMethod)
+                .as("the stranger's attach is a new row of their own, never the owner's")
+                .isNotEqualTo(ownersMethod);
+
+        // Each retry meets its own slot in the index and re-reads the committed winner. Holds
+        // party_id = ? in findLive's statement (issued through findLiveBy): without it both
+        // re-reads answer the same first row of the token, and one party is handed the other's.
+        HttpResponse<String> ownersRetry = attach(ownerToken, "ctok_shared-" + suffix());
+        HttpResponse<String> strangersRetry = attach(strangerToken, "ctok_shared-" + suffix());
+        assertThat(ownersRetry.statusCode()).isEqualTo(201);
+        assertThat(field(ownersRetry.body(), "id")).isEqualTo(ownersMethod);
+        assertThat(strangersRetry.statusCode()).isEqualTo(201);
+        assertThat(field(strangersRetry.body(), "id")).isEqualTo(strangersMethod);
+
+        assertThat(paymentMethodRowsOf(partyOf(ownerLogin))).containsExactly("ACTIVE");
+        assertThat(paymentMethodRowsOf(partyOf(strangerLogin))).containsExactly("ACTIVE");
+        assertThat(auditRecords("paymentmethods.PaymentMethodAttached", ownersMethod))
+                .as("only the creating call is an act")
+                .hasSize(1);
+        assertThat(auditRecords("paymentmethods.PaymentMethodAttached", strangersMethod))
+                .hasSize(1);
+    }
+
+    @Test
+    @DisplayName("the list shows only the caller's own instruments: each of two customers sees"
+            + " their method and never the other's (X-TSK-002)")
+    void theListShowsOnlyTheCallersOwnInstruments() throws Exception {
+        providerTokenises("tok_list-" + suffix());
+        String firstLogin = someLogin();
+        assertThat(register(firstLogin).statusCode()).isEqualTo(201);
+        String firstToken = tokenFrom(authenticate(firstLogin).body());
+        String secondLogin = someLogin();
+        assertThat(register(secondLogin).statusCode()).isEqualTo(201);
+        String secondToken = tokenFrom(authenticate(secondLogin).body());
+
+        HttpResponse<String> firsts = attach(firstToken, "ctok_list-" + suffix());
+        assertThat(firsts.statusCode()).isEqualTo(201);
+        String firstsMethod = field(firsts.body(), "id");
+        HttpResponse<String> seconds = attach(secondToken, "ctok_list-" + suffix());
+        assertThat(seconds.statusCode()).isEqualTo(201);
+        String secondsMethod = field(seconds.body(), "id");
+
+        // Holds party_id = ? in listLiveFor's statement: without it each list carries the other
+        // customer's live instrument too.
+        HttpResponse<String> firstsList = get("/v1/me/payment-methods", firstToken);
+        assertThat(firstsList.statusCode()).isEqualTo(200);
+        assertThat(firstsList.body()).contains(firstsMethod).doesNotContain(secondsMethod);
+        HttpResponse<String> secondsList = get("/v1/me/payment-methods", secondToken);
+        assertThat(secondsList.statusCode()).isEqualTo(200);
+        assertThat(secondsList.body()).contains(secondsMethod).doesNotContain(firstsMethod);
+    }
+
+    @Test
     @DisplayName("a provider outage is the honest 503 with nothing written")
     void aProviderOutageIsA503WithNothingWritten() throws Exception {
         provider.isUnavailable(SimulatedTokenisationAdapter.TOKENISATIONS_PATH);

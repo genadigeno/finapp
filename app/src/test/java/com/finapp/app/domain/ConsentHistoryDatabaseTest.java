@@ -257,6 +257,65 @@ class ConsentHistoryDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // INV-AUD-03: a party's history answers for that party alone
+
+    @Test
+    @DisplayName("one party's current grant is never another party's basis")
+    void onePartysGrantIsNeverAnotherPartysBasis() throws SQLException {
+        UUID granting = IDS.next();
+        UUID withNoHistory = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            int version = store.currentTextFor(app, ConsentPurpose.KYC_PROCESSING).version();
+            store.append(
+                    app,
+                    ConsentRecord.grant(
+                            IDS, CLOCK, granting, ConsentPurpose.KYC_PROCESSING, version));
+            assertThat(store.hasCurrentBasis(app, granting, ConsentPurpose.KYC_PROCESSING))
+                    .isTrue();
+
+            // Holds hasCurrentBasis's r.party_id = ?: without it the newest KYC_PROCESSING fact
+            // of any party - the grant just appended - would be this party's basis.
+            assertThat(store.hasCurrentBasis(app, withNoHistory, ConsentPurpose.KYC_PROCESSING))
+                    .as("a basis is party-scoped - another party's grant proves nothing about this"
+                            + " one (INV-CNS-01)")
+                    .isFalse();
+        }
+    }
+
+    @Test
+    @DisplayName("the latest record is the party's own: another party's later grant is never answered,"
+            + " and a party with no history has none")
+    void theLatestRecordIsThePartysOwn() throws SQLException {
+        UUID earlier = IDS.next();
+        UUID later = IDS.next();
+        UUID withNoHistory = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            int version = store.currentTextFor(app, ConsentPurpose.SCREENING).version();
+            ConsentRecord earliersGrant =
+                    ConsentRecord.grant(IDS, CLOCK, earlier, ConsentPurpose.SCREENING, version);
+            ConsentRecord latersGrant =
+                    ConsentRecord.grant(IDS, CLOCK, later, ConsentPurpose.SCREENING, version);
+            store.append(app, earliersGrant);
+            store.append(app, latersGrant); // the higher seq: the newest SCREENING fact of any party
+
+            // Holds latestFor's party_id = ?: without it the newest SCREENING row - the later
+            // party's - would answer for every party asked.
+            assertThat(store.latestFor(app, earlier, ConsentPurpose.SCREENING))
+                    .hasValueSatisfying(
+                            latest -> {
+                                assertThat(latest.id()).isEqualTo(earliersGrant.id());
+                                assertThat(latest.partyId()).isEqualTo(earlier);
+                            });
+            assertThat(store.latestFor(app, later, ConsentPurpose.SCREENING))
+                    .hasValueSatisfying(
+                            latest -> assertThat(latest.id()).isEqualTo(latersGrant.id()));
+            assertThat(store.latestFor(app, withNoHistory, ConsentPurpose.SCREENING))
+                    .as("another party's history is never this party's latest record")
+                    .isEmpty();
+        }
+    }
+
+    // -----------------------------------------------------------------
     // INV-CNS-04: the pin
 
     @Test

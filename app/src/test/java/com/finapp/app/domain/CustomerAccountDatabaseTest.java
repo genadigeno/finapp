@@ -451,6 +451,43 @@ class CustomerAccountDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName(
+            "a customer's live wallet is that customer's own: the live read answers A's"
+                    + " agreement for A and B's for B, never the other's (X-TSK-002; INV-AUD-03)")
+    void theLiveReadAnswersOnlyTheCustomersOwnWallet() throws Exception {
+        UUID first = IDS.next();
+        UUID second = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            CustomerAccount firsts =
+                    accounts.openOrConverge(
+                                    app,
+                                    CustomerAccount.open(IDS, CLOCK, first, ProductType.WALLET))
+                            .account();
+            CustomerAccount seconds =
+                    accounts.openOrConverge(
+                                    app,
+                                    CustomerAccount.open(IDS, CLOCK, second, ProductType.WALLET))
+                            .account();
+            app.commit();
+
+            // Holds customer_id = ? in findLive's statement: without it both reads answer the
+            // same first live WALLET, so at least one customer is handed another's agreement.
+            CustomerAccount readForFirst =
+                    accounts.findLive(app, first, ProductType.WALLET).orElseThrow();
+            CustomerAccount readForSecond =
+                    accounts.findLive(app, second, ProductType.WALLET).orElseThrow();
+            assertThat(readForFirst.id()).isEqualTo(firsts.id());
+            assertThat(readForFirst.customerId()).isEqualTo(first);
+            assertThat(readForSecond.id()).isEqualTo(seconds.id());
+            assertThat(readForSecond.customerId()).isEqualTo(second);
+            assertThat(readForFirst.id())
+                    .as("two customers, two agreements - never one shared")
+                    .isNotEqualTo(readForSecond.id());
+        }
+    }
+
     // ------------------------------------------------------------------
     // Fixtures and counters
     // ------------------------------------------------------------------

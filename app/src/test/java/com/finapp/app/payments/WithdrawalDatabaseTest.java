@@ -830,6 +830,44 @@ class WithdrawalDatabaseTest {
     }
 
     @Test
+    @DisplayName("a client key is each customer's own: two customers withdrawing under the SAME"
+            + " Idempotency-Key each get their own withdrawal, neither converging onto the"
+            + " other's (X-TSK-002)")
+    void aClientKeyIsEachCustomersOwn() throws Exception {
+        Fixture first = fundedFixture("20.00");
+        Fixture second = fundedFixture("20.00");
+        schemeAccepts("sch-shared-" + suffix(), "C1");
+        String shared = someKey();
+
+        // The same amount on purpose: a takeover that found the other's row would see no
+        // differing facts to refuse, and would converge onto it silently.
+        HttpResponse<String> one =
+                withdraw(first.token(), body(first.methodId(), "5.00", "USD"), shared);
+        HttpResponse<String> two =
+                withdraw(second.token(), body(second.methodId(), "5.00", "USD"), shared);
+
+        assertThat(one.statusCode()).isEqualTo(201);
+        // Holds customer_id = ? in findByDispatchKey's statement: without it the second
+        // customer's dispatch finds the first's row under the shared key and takes it over.
+        assertThat(two.statusCode())
+                .as("the claim's scope carries the customer: no cross-customer 409")
+                .isEqualTo(201);
+        assertThat(field(two.body(), "id"))
+                .as("the second customer's own withdrawal, never the first's")
+                .isNotEqualTo(field(one.body(), "id"));
+        assertThat(count("SELECT count(*) FROM payments.withdrawal WHERE customer_id = '"
+                        + first.customerId() + "'::uuid AND dispatch_key = '" + shared + "'"))
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM payments.withdrawal WHERE customer_id = '"
+                        + second.customerId() + "'::uuid AND dispatch_key = '" + shared + "'"))
+                .isEqualTo(1);
+        assertThat(get("/v1/me/withdrawals/" + field(two.body(), "id"), second.token())
+                        .statusCode())
+                .as("the answer the second customer got is a withdrawal they own")
+                .isEqualTo(200);
+    }
+
+    @Test
     @DisplayName("INV-REV-03: the reversal is refused from the DECLARATION with zero"
             + " transactions, zero wire calls and nothing written - and no reversal route"
             + " exists on the surface")

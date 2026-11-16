@@ -170,6 +170,33 @@ class KycCaseDatabaseTest {
     }
 
     @Test
+    @DisplayName("another customer's open case is never found: a customer with none finds nothing, and each"
+            + " customer finds its own")
+    void anotherCustomersOpenCaseIsNeverFound() throws Exception {
+        UUID holder = IDS.next();
+        UUID other = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            KycCase holders = store.openOrConverge(app, KycCase.open(IDS, CLOCK, holder, KycCaseKind.KYC)).kycCase();
+            app.commit();
+
+            // Holds findOpenFor's customer_id = ?: without it any customer's open case - the
+            // holder's at least - would answer for a customer who has none.
+            assertThat(store.findOpenFor(app, other))
+                    .as("the holder's open case is not the other customer's")
+                    .isEmpty();
+
+            KycCase others = store.openOrConverge(app, KycCase.open(IDS, CLOCK, other, KycCaseKind.KYC)).kycCase();
+            app.commit();
+            assertThat(others.id()).isNotEqualTo(holders.id());
+            assertThat(store.findOpenFor(app, other))
+                    .hasValueSatisfying(open -> assertThat(open.id()).isEqualTo(others.id()));
+            assertThat(store.findOpenFor(app, holder))
+                    .hasValueSatisfying(open -> assertThat(open.id()).isEqualTo(holders.id()));
+        }
+    }
+
+    @Test
     @DisplayName("a status outside the machine is physically unwritable")
     void anUnknownStatusIsUnwritable() throws Exception {
         try (Connection app = DatabaseRoles.application()) {

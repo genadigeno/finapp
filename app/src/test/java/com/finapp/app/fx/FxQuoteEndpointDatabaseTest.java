@@ -202,6 +202,32 @@ class FxQuoteEndpointDatabaseTest {
     }
 
     @Test
+    @DisplayName("the cap is each owner's own: an owner holding five refuses nobody else - a stranger's five issue beside"
+            + " them, only the stranger's sixth is 429, and the owner is still at the cap")
+    void theCapIsEachOwnersOwn() throws Exception {
+        String owner = verifiedCustomer();
+        String stranger = verifiedCustomer();
+        for (int i = 0; i < 5; i++) {
+            assertThat(post("/v1/me/fx/quotes", quoteBody("EUR", "USD", "FIXED_SOURCE", "100.00"), owner, someKey())
+                            .statusCode())
+                    .isEqualTo(201);
+        }
+        // liveCount's owner_party_id = ?: without it the owner's five live quotes refuse the stranger's first.
+        for (int i = 0; i < 5; i++) {
+            HttpResponse<String> created = post("/v1/me/fx/quotes", quoteBody("EUR", "USD", "FIXED_SOURCE", "100.00"),
+                    stranger, someKey());
+            assertThat(created.statusCode()).as("the stranger's quote %d: %s", i + 1, created.body()).isEqualTo(201);
+        }
+        HttpResponse<String> refused = post("/v1/me/fx/quotes", quoteBody("EUR", "USD", "FIXED_SOURCE", "100.00"),
+                stranger, someKey());
+        assertThat(refused.statusCode()).isEqualTo(429);
+        assertThat(refused.body()).contains("fx.TooManyOpenQuotes");
+        HttpResponse<String> stillCapped = post("/v1/me/fx/quotes", quoteBody("EUR", "USD", "FIXED_SOURCE", "100.00"),
+                owner, someKey());
+        assertThat(stillCapped.statusCode()).as("the owner's five stayed live throughout").isEqualTo(429);
+    }
+
+    @Test
     @DisplayName("another owner's quote is absent - read and cancel alike - and so is a malformed id; an"
             + " ineligible customer is refused; no session is 401")
     void theQuoteIsItsOwners() throws Exception {

@@ -530,6 +530,19 @@ class CreditDecisionDatabaseTest {
         assertThat(sequenceOf(loan)).as("nothing reserved, nothing moved: the first snapshot decides").isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("another party's approval reserves nothing for this one: the reservation is read by the party it was decided"
+            + " for (X-TSK-002)")
+    void anotherPartysApprovalReservesNothingForThisOne() throws Exception {
+        UUID party = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+        UUID line = evaluated(other, CreditProduct.CREDIT_LINE, eur(200_000), WEEK);
+        assertThat(decide(deciding(), line)).isEqualTo(Decider.Decided.DECIDED);
+        // Holds JdbcReservedExposure.reservedFor's party_id = ?: without it the other party's 2,000.00 is this one's too.
+        assertThat(reserved(other)).as("the other party's approval reserves for the other party").isEqualTo(eur(200_000));
+        assertThat(reserved(party)).as("and nothing for this one").isEqualTo(eur(0));
+    }
+
     // ------------------------------------------------------------------ the event
 
     @Test

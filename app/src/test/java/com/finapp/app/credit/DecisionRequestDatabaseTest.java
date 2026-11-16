@@ -144,6 +144,29 @@ class DecisionRequestDatabaseTest {
                 customer.party())).isEqualTo(2);
     }
 
+    @Test
+    @DisplayName("another party's open request neither refuses a submission nor is named: the 409"
+            + " credit.DecisionRequestOpen names the party's own open request, never the stranger's")
+    void anotherPartysOpenRequestIsNeverNamed() throws Exception {
+        CreditTestClient.Customer stranger = client.consentingCustomer();
+        CreditTestClient.Customer owner = client.consentingCustomer();
+        HttpResponse<String> strangers = client.submit(stranger, loan("10000.00", 36), key());
+        assertThat(strangers.statusCode()).as(strangers.body()).isEqualTo(202);
+        String strangersId = field(strangers.body(), "requestId");
+        HttpResponse<String> first = client.submit(owner, loan("10000.00", 36), key());
+        assertThat(first.statusCode()).as("the stranger's open request is not the owner's slot: " + first.body())
+                .isEqualTo(202);
+        String id = field(first.body(), "requestId");
+        // Holds openFor's party_id = ?: without it the 409 would name the first open PERSONAL_LOAN request of any
+        // party - the stranger's, submitted earlier.
+        HttpResponse<String> second = client.submit(owner, loan("10000.00", 36), key());
+        assertThat(second.statusCode()).as(second.body()).isEqualTo(409);
+        assertThat(second.body()).contains("credit.DecisionRequestOpen").contains(id).doesNotContain(strangersId);
+        assertThat(count("SELECT count(*) FROM credit.decision_request WHERE party_id = ?", stranger.party()))
+                .as("the stranger's one request, nothing added").isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM credit.decision_request WHERE party_id = ?", owner.party())).isEqualTo(1);
+    }
+
     // ------------------------------------------------------------------ the refusals, each writing nothing
 
     @Test

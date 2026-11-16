@@ -194,6 +194,55 @@ class BankAccountRegistrationDatabaseTest {
     }
 
     @Test
+    @DisplayName("a destination another party holds live is never converged onto: each party"
+            + " registering it gets its own row, and each re-registration converges on its own"
+            + " (X-TSK-002)")
+    void anotherPartysLiveDestinationIsNeverConvergedOnto() throws Exception {
+        // One destination for every exchange: both parties link the SAME account, each in
+        // their own (party, destination) slot of the one-live index.
+        schemeExchanges("dest-shared-" + suffix(), "match");
+        String ownerLogin = someLogin();
+        assertThat(register(ownerLogin).statusCode()).isEqualTo(201);
+        String ownerToken = tokenFrom(authenticate(ownerLogin).body());
+        String strangerLogin = someLogin();
+        assertThat(register(strangerLogin).statusCode()).isEqualTo(201);
+        String strangerToken = tokenFrom(authenticate(strangerLogin).body());
+
+        HttpResponse<String> owners =
+                registerBankAccount(ownerToken, "blg-shared-" + suffix(), false, UUID.randomUUID());
+        assertThat(owners.statusCode()).isEqualTo(201);
+        String ownersMethod = field(owners.body(), "id");
+        HttpResponse<String> strangers =
+                registerBankAccount(
+                        strangerToken, "blg-shared-" + suffix(), false, UUID.randomUUID());
+        assertThat(strangers.statusCode()).isEqualTo(201);
+        String strangersMethod = field(strangers.body(), "id");
+        assertThat(strangersMethod)
+                .as("the stranger's register is a new row of their own, never the owner's")
+                .isNotEqualTo(ownersMethod);
+
+        // A fresh grant under a NEW key re-exchanges onto the same destination: the insert meets
+        // its own slot and re-reads the committed winner. Holds party_id = ? in
+        // findLiveByDestination's statement (issued through findLiveBy): without it both re-reads
+        // answer the same first row of the destination, and one party is handed the other's.
+        HttpResponse<String> ownersAgain =
+                registerBankAccount(ownerToken, "blg-again-" + suffix(), false, UUID.randomUUID());
+        HttpResponse<String> strangersAgain =
+                registerBankAccount(
+                        strangerToken, "blg-again-" + suffix(), false, UUID.randomUUID());
+        assertThat(ownersAgain.statusCode()).isEqualTo(201);
+        assertThat(field(ownersAgain.body(), "id")).isEqualTo(ownersMethod);
+        assertThat(strangersAgain.statusCode()).isEqualTo(201);
+        assertThat(field(strangersAgain.body(), "id")).isEqualTo(strangersMethod);
+
+        assertThat(paymentMethodRowsOf(partyOf(ownerLogin))).containsExactly("ACTIVE");
+        assertThat(paymentMethodRowsOf(partyOf(strangerLogin))).containsExactly("ACTIVE");
+        assertThat(auditRecords("paymentmethods.PaymentMethodAttached", ownersMethod)).hasSize(1);
+        assertThat(auditRecords("paymentmethods.PaymentMethodAttached", strangersMethod))
+                .hasSize(1);
+    }
+
+    @Test
     @DisplayName("an unacknowledged NO_MATCH is refused ON THE RECORD - 409, nothing stored,"
             + " the refusal replayed - and the acknowledged register carries the audit reason")
     void theNoMatchConsentGateHolds() throws Exception {
