@@ -16,7 +16,7 @@
 
 # The builder: a JDK only to run the Spring Boot jar's own extractor. The jar is built by Gradle outside the image,
 # so no build tool and no source ever enter a stage.
-FROM eclipse-temurin:21.0.13_9-jdk-noble@sha256:114cabb73033ca4ce7ceec3deb62396bc1b716282bae051ed3c1d82e38fcab2d AS builder
+FROM eclipse-temurin:21.0.13_9-jdk-noble@sha256:06c1f157dacf6b68198bd9a4186dd4c34ef24e65d7bbbe2a0cf8e62571ad38c9 AS builder
 ARG JAR
 ARG SOURCE_DATE_EPOCH
 WORKDIR /workspace
