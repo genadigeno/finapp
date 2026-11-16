@@ -421,7 +421,7 @@ return dated by the batch — takes `posting_date = accepted_on` from the stored
 clock again; the value date is the evidence's own. Because a posting's fingerprint binds its
 dates, a date read from the clock at each attempt would make a later-day replay conflict; a date
 read once and stored makes it converge (`INV-SET-04`). The Phase 5–7 flows that read their posting
-dates from the clock at completion are reconciled with this section by `X-TSK-011`. *(Added at
+dates from the clock at completion are reconciled with this section by `X-TSK-011`. *(Reconciled 2026-11-16: fourteen flows - Phases 3 to 9 - read today's date at completion, each safe only because it posts once inside a conditional transition committed with the posting, so none can be replayed on a later day; a new poster takes both dates from a stored row. `LEDGER_MODEL.md`, "The practice as built", names each and the two deviations found.)* *(Added at
 the Phase 8 exit review, `P8-DOC-001`, 2026-10-01.)*
 
 Posting date and value date become concrete types when the ledger exists (Phase 3). Phase 0
