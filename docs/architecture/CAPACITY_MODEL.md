@@ -2,7 +2,7 @@
 
 *Written 2026-11-12 by Phase 16's first task, from `PHASE_16_PLAN.md` §4, §6.2 and §14 (ADR-0126, `Proposed`), on master
 `6981c167`. This is the one place Phase 16 measures into. It states what the platform is asked to carry and where each number
-comes from. The measured columns are empty until `P16-TSK-007` fills them. Nothing here is a capacity statement about a real
+comes from. The measured columns are empty until `P16-TSK-007` fills them *(filled 2026-11-13 at three replicas, §3.4; every run at seven or ten is owed under PI-025)*. Nothing here is a capacity statement about a real
 environment, and nothing here calls the platform ready for production.*
 
 **How to read a number here.** Every number is one of three kinds, and the kind is always named:
@@ -343,6 +343,10 @@ The first does it on every call; the second does it under the account's row lock
 core per read per day of a merchant's history, so about 60 ms a read after a month and 0.73 s after a year, against 5.56 payable reads a
 second in the busiest hour. The read was **measured** as E30's first limit (§3.4). Its bound is ADR-0133 decision 3, and its build
 was placed by the owner on 2026-11-13 (`THREAT_MODEL.md` §6 item 55 (i)): `P16-REM-001`, its database cases run before it merges.
+**Built 2026-11-15** (ledger `V038`, its database cases green): a read folds the latest checkpoint and the lines since, so its cost
+is the lines posted since a read last stored one - at most about 1,000 settled lines, the store's threshold, plus the traffic since -
+not the merchant's age. **Derived**, not measured: at W4 that is a bounded read for every merchant, whatever its history; E30 again
+with E52 measures it, owed under `POSTPONED_ISSUES.md` PI-025, and E38 and E39 the new index's cost on every line posted.
 *(Read "proposed, and its build is the owner's to place" until the owner's decision of 2026-11-13.)* The decision path's fold is
 measured by E38's pair.
 
@@ -414,6 +418,15 @@ generation bound (`finapp.accounting.report.generation-timeout`) once the journa
 three. E65 fits that rate from seven runs over the soak's growing journal (`load/reports-reading.txt`): a statement's milliseconds a million
 lines, and the lines at the bound. Measured: —. The bound is `THREAT_MODEL.md` §6 item 64, placed by the owner on 2026-11-13 at (i):
 an opening checkpoint for each locked month, built by `P16-REM-003`. *(Read "the owner's to place" until that decision.)*
+
+**Bounded since 2026-11-15** (`P16-REM-003`, accounting `V017`). Every opening starts from the latest locked month's checkpoint and
+folds only the lines dated after that month, so a statement's lines are the months since the latest lock, not the journal's life.
+**Derived**: a report on the month in progress folds that month's lines (≈ 42 million at the target's 0.5 billion a year), and two
+months' (≈ 84 million) in the days between a month's end and its lock. The four-minute bound then holds above ≈ 0.35 million lines a
+second at any age of the journal, where it needed ≈ 2.1 million within the first year and more every year after. The writer pays one
+month's fold per lock, once, on the writer's pool, after the lock commits (≈ 42 million lines a month), and the first deployment pays a
+backfill: every month already locked, oldest first, one a checks-poll (30 s), the first from inception. A move back costs the reads
+one month more until the month locks again. Measured: —, E65's to fit on the final tree (PI-025).
 
 ---
 
@@ -700,3 +713,30 @@ Each one confirmed becomes an ADR before any change.
 - `P16-TSK-015` writes §4a's calibration from §2, §3.1 and §3.4. A changed W2, W3 or R6, a changed per-operation cost or a run of E75–E77
   changes the row that cites it, by a dated note; `PerSourceLimitsAreCalibratedTest` and `KubernetesManifestsTest` read W2, W3 and R6 here,
   so a changed assumption turns them red until the limits or the windows are derived again.
+
+---
+
+## 7. The model at the phase's end (`P16-TSK-031`, 2026-11-15)
+
+The model is complete in the sense its own §6 sets: every cell is **measured** with its named run, **derived** from W1–W8 and the cells
+above it, or **read** from the code or the schema - each saying which - and every measured cell no run has filled names the run that
+fills it, owed under `POSTPONED_ISSUES.md` PI-025 (the owner, 2026-11-13). No production capacity is claimed: the production target is
+proposed, never measured, and a `kind` figure is never presented as production's (§1).
+
+| Part | At the phase's end | What fills the rest |
+|---|---|---|
+| §1 The three workloads | Defined; never confused in a cell | — |
+| §2 W1–W8 | Assumptions, the owner's to change (§6) | — |
+| §3.1 Rates, the proposed target | Derived from W1–W8; the objectives proposed, none adopted (`SLOS.md` §6, §7) | E84 to E86 judge them under load |
+| §3.2, §3.3 Events per flow, what each group reads | Read from the code (master `6981c167`) | A changed flow, by a dated note |
+| §3.4 Cost per operation | **Measured** at three replicas: E30 (the stress profile, its first limit the database's CPU at its fourth step) and the isolation run, 2026-11-13; credit, lending and BNPL not drivable on `kind` (no bureau, the owner's decision of 2026-11-13) | The runs at seven and ten, the normal, peak and sustained profiles (E69, E70), the slow statement's plant |
+| §3.5 Contention | Read and derived; every measured cell `—` | E38, E39, E40; the posting scope's cost and builds E62 to E64 |
+| §3.6 Growth, partitioning, replicas | Derived and read; ADR-0142: nothing partitioned, no replica routed | E65, riding E39 |
+| §4 The connection budget at ten | Derived; ADR-0134: a larger server, every pool kept, no pooler | E41 |
+| §4a The calibration | Derived from §2, §3.1 and §3.4; ADR-0145: the autoscaler on CPU, no role split | E75 to E77; E69, E70, E39, E52 as §4a.6 names |
+| §5 The strategy | Decided: vertical writes first, no partition, no replica route, no role split, **no module extracted** (ADR-0151, `P16-TSK-030`) | Each overturned only by its ADR's named measurement |
+
+**What the phase measured, in one line**: at three replicas on the reference machine the target's mix was carried at 0.39 of its peak
+within every objective, and the first limit was the single writer's CPU, its largest consumer the merchant API's whole-history payable
+read (bounded by ADR-0133, its build `P16-REM-001`). **What it did not**: anything at ten, any contention, growth or endurance figure, and
+any credit-product operation. `DISTRIBUTED_EXECUTION.md` §4b reads the multi-instance rule against the same evidence.

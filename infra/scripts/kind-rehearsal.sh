@@ -59,6 +59,10 @@
 # for the event pipeline's experiments E08, E09, E22, E23, E49 and E68 (OPERATIONS_RUNBOOK.md section 11.51). Every experiment carries
 # P16-TSK-028's security probe (OPERATIONS_RUNBOOK.md section 11.62): no protected request answered without its check while a fault is on,
 # no held session lost, four eyes and the audit trail unchanged; its E81 and E82 run at REHEARSAL_EXPERIMENTS_REPLICAS.
+# P16-TSK-027's fifteen scenarios F01-F15 count the seven checks (OPERATIONS_RUNBOOK.md section 11.66). P16-TST-001's integrated soak,
+# REHEARSAL_SOAK=1 at REHEARSAL_EXPERIMENTS_REPLICAS=10 (OPERATIONS_RUNBOOK.md section 11.67; E90): the integrated-soak profile eight hours
+# beside a schedule of faults (REHEARSAL_SOAK_SCHEDULE), E05 inside a declared fault window, the heap, the tables and the lag judged at its
+# end; its probe soak-unbalanced plants one unbalanced journal line at minute 300, which the next census sample must refuse.
 #
 # `dr` (P16-TSK-025, ADR-0149, OPERATIONS_RUNBOOK.md section 11.64): the disaster-recovery exercise, tier 3's local analogue. Release N alone
 # at three replicas, a workload, the backup and everything else a recovery needs kept in a vault outside the cluster, a further window of
@@ -168,6 +172,9 @@ EXPERIMENTS_AT_A_COUNT="$EXPERIMENTS_AT_A_COUNT E81 E82"
 # P16-TSK-027's three scenarios at ten (OPERATIONS_RUNBOOK.md section 11.66): two instances capturing one payment (F07), releasing one hold
 # (F08), and a redeploy with transactions in flight (F14), each refusing to start below ten.
 EXPERIMENTS_AT_A_COUNT="$EXPERIMENTS_AT_A_COUNT F07 F08 F14"
+# P16-TST-001's integrated soak admits its five at its ten (kind-rehearsal/experiments.sh's SOAK_EXPERIMENTS): each reads three or more ready
+# replicas or the run's count, and the soak requires all ten back after each. Only with REHEARSAL_SOAK: alone, E05, E08 and E17 stay at three.
+[ -z "$SOAK" ] || EXPERIMENTS_AT_A_COUNT="$EXPERIMENTS_AT_A_COUNT $SOAK_EXPERIMENTS"
 # fleet_resolve (P16-TSK-014): the run's count refused before anything is built unless it is three to the kind overlay's ceiling, read from the
 # overlay, and a count other than three refused wherever the steps are written for three: the release's probes (their quota and timings are
 # three's), every experiment but those of EXPERIMENTS_AT_A_COUNT, and every other scope. The load scope's count is load_preflight's too.
@@ -1025,7 +1032,18 @@ PG_POD=finapp-postgres-0
 
 psql_query() {
     # The superuser over the pod's own socket: the census and the seed read and write what no application role may.
-    kube -n finapp exec -i "$PG_POD" -c postgres -- psql -q -X -A -t -U finapp -d finapp "$@"
+    kube -n finapp exec -i "$(pg_primary)" -c postgres -- psql -q -X -A -t -U finapp -d finapp "$@"
+}
+
+# pg_primary: the pod the primary runs in. PG_POD in this shell; but a background reader (the load's census sampler, the soak's sampler)
+# was forked before E05 moved it, so E05 also writes the promoted pod to $WORK/primary, which wins when present (P16-TST-001: a failover
+# inside the soak, the samplers then reading the promoted server rather than the fenced one).
+pg_primary() {
+    if [ -s "$WORK/primary" ]; then
+        cat "$WORK/primary"
+    else
+        printf '%s\n' "$PG_POD"
+    fi
 }
 
 kafka_admin() {

@@ -181,6 +181,12 @@ finapp:
   # handler - before any idempotency claim - so a shed request did nothing and its retry under the same key is a first attempt. Set from
   # the writer pool's arithmetic (7 connections, a 5 s borrow wait), not from a measurement: PI-025's runs (E50-E52) calibrate them.
   # The pool's size and wait are read from the pool itself, and these are refused at start when they do not fit it.
+  api:
+    database-unreachable:
+      # Retry-After on a request that could not reach the database (P16-REM-002, item 61 (i)), 503 api.TemporarilyUnavailable: this,
+      # plus a random 0 to the spread, whole seconds, so clients refused together by an outage do not return together.
+      retry-after: ${FINAPP_API_DATABASE_UNREACHABLE_RETRY_AFTER:PT5S}
+      retry-after-spread: ${FINAPP_API_DATABASE_UNREACHABLE_RETRY_AFTER_SPREAD:PT5S}
   shedding:
     # A public request is shed while this many threads already wait for a writer connection: about one pool's worth of queue.
     pool-waiters: ${FINAPP_SHEDDING_POOL_WAITERS:7}

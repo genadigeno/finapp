@@ -3284,6 +3284,7 @@ latest; the run, as its record names it.
 | §11.64 | `platform` | 0 | 11 | 11 | — | — | — | — | Phase 16 drill |
 | §11.65 | `platform` | 0 | 4 | 4 | — | — | — | — | no account |
 | §11.66 | `platform`, `payments`, `reconciliation` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
+| §11.67 | `platform` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -3623,7 +3624,7 @@ about anybody:
 and a node agent reading the kubelet's files is refused by Pod Security `restricted`; they are the reference back ends, and a real
 environment's back ends bring their own (`THREAT_MODEL.md` section 6 item 37 (a), item 47 (a)). `kubectl logs` reads them.
 
-**What this does not cover.** A real environment's load balancer or WAF in front of the edge (item 32 (b)); a controller lost or rolled
+**What this does not cover.** A real environment's load balancer or WAF in front of the edge (item 22 (b); *read "item 32 (b)" until the Phase 16 exit review, 2026-11-16: the slip `PHASE_16_PLAN.md`'s erratum names*); a controller lost or rolled
 under traffic (`P16-TSK-005`; the loss is E25, §11.61); the edge's SLO of its own, which `-029` decides with the load model.
 
 **The correlation id at the edge, measured** (2026-11-13 19:59-20:01Z, `THREAT_MODEL.md` §6 item 47 (e); containers on this machine, no
@@ -4081,6 +4082,10 @@ suspect issuer is no fix.
 
 **The probe** (20:58-21:09 UTC, the same head, on the run's kept cluster with the common prefix deployed again and `roll-edge` alone): red, exit 1, at `edge roll roll-edge-to: 15 failed requests through the edge`, its first failure; 64 requests succeeded beside them, four of the 15 on the operator host, each a connection refused or timed out; the ready controllers fell to none on both surfaces, for 13 consecutive samples, about 26 s. The entry's own form of the break, `maxUnavailable` alone with no slow start, was not run, and what it would do is a prediction only: the new controllers were ready within seconds in every green leg, inside the old ones' 10 s accept grace, during which kube-proxy still sends a node port's traffic to a terminating controller that serves, so no request is expected to fail; the slow start is the case `maxUnavailable: 0` exists for.
 
+*(2026-11-15, `P16-REM-002`: a request that cannot reach the database is now answered `503 api.TemporarilyUnavailable` with a
+`Retry-After`, not `500 api.InternalError`; the record above is the build it ran on, and the database roll reads the new answer on its
+next run, owed under `POSTPONED_ISSUES.md` PI-025.)*
+
 **What it found.** Two defects of the harness, fixed before the recorded run: the database leg's retries were bounded below the sweep that concludes a payment caught mid-call (they are now bounded past twice its dispatched age, read from the code), and the simulator served no card inquiry, so such a payment could never be concluded on `kind` (it now answers `GET /operations/{reference}` as the payout rail's inquiry does). Two observations of the platform, routed to the database failover drill (`P16-TSK-022`'s entry): a lost database connection answers `500 api.InternalError` rather than a `503` a client reads as temporary, and a card payment caught mid-call waits the sweep's ten minutes for its conclusion. The run's own count of payments the sweep concluded read top-ups alone (one per leg); its artefacts show the checkout too, and that log line now counts both (changed after the run; no assertion reads it).
 
 **What this does not mean.** One node, three replicas, the test-only copies of a managed database and broker: a managed minor upgrade (a provider's own restart and endpoint) never ran, and is `THREAT_MODEL.md` section 6 item 43 (f)'s with the first real environment. A controller lost under traffic is experiment E25's. The numbers are from a loaded development machine.
@@ -4315,6 +4320,14 @@ The product proofs have no plant of their own here: each is the platform's check
 | plant | `journal-line-removed`, one wallet line of a transfer's entry: refused by the row counts (`ledger.journal_line` 1890 against 1889), the trial balance, the projection check and the census, by no other check, and never released |
 
 **What this does not mean.** One machine, containers and a `kind` cluster, a journal of 854 entries at most: no measured recovery time or recovery point (Phase 16), and no managed instance (item 38 (a)). The lending and BNPL proofs judged no subject in either record, because neither source then had a flow that wrote one; the subjects each proof reports say so on every run. *(2026-11-13: the seeded source now holds one loan account and one obligation, and its source verification judged each of the four proofs over them with every check passing, on a run that stopped after the source (section 11.55's record); the same verdicts on its restores are owed with the drill, PI-025.)* No period was locked in either record, because the first period is the database's current month and a period locks only after `LockGrace` past its end on the database's own date, so "GL = ledger per locked period" ran on the open period, through the same `GlPins.forPeriod`; a locked period's pin is held by `GlPinsTest`, one the verification cannot read refuses the restore (`RestoreVerdictsTest`), and a restore over a locked period is item 38 (c). An open period with a GL finding, or any proof finding, refuses a restore of that database: the verification is strict, and a person decides from the break register. A census finding recorded before the backup is disclosed rather than refused, because nothing ever closes one. GL = ledger reads the months that have an accounting period; a month with entries and no period is read by the trial balance and the census only. A sequence's value is outside every snapshot, so the comparison is "at or past", never "equal": a value the source drew after the snapshot, for a row the dump does not hold, leaves a gap, as a rolled-back insert does in ordinary running. The broker's step 6 is a procedure and has run nowhere: neither record restored into a fleet with a broker. The backup's integrity is a SHA-256 digest beside it, which finds a damaged file and not a deliberate one: the work directory is the run's own and lives as long as the run. The seed's parties, identities and customers are written by SQL, as the database suites write them; every entry and balance is the platform's own, and the `kind` source's are the rehearsal's own traffic.
+
+**What a client sees while the primary is away** (`P16-REM-002`). From the moment the old primary goes until the promoted one
+serves, a request that reaches the database is answered `503 api.TemporarilyUnavailable` with a `Retry-After` of 5 to 10 seconds
+(`finapp.api.database-unreachable.retry-after` and its spread): the driver's lost connection (`08…`), the server's shutdown (`57P01`) or
+"cannot connect now" (`57P03`), or the pool's wait ending with no connection made. A client retries the same request under the same
+`Idempotency-Key`, and gets either the committed command's replay or a first attempt. The instance logs one `WARN` per such request,
+naming the route, never the cause's text. A `500` in that window is a failure the classification does not know: read its log line.
+An exhausted pool while the database is up is not this answer but `api.Overloaded`, shed before the handler (§11.52).
 
 ### 11.55 Point-in-time recovery and the post-recovery gate: recover to an instant, reconcile the window with money held, release by a person (`P16-TSK-024`, ADR-0128, ADR-0140)
 
@@ -4609,6 +4622,59 @@ its recovery and census still run. Exactly-once is not claimed: a pass shows eff
   the page.
 - **A scenario that could not run** (`??`): its reason is the line; nothing is claimed for it.
 - **The probe**: the inbox's dedupe turned off on a throwaway branch must turn F05 red with a second effect counted (owed under PI-025).
+
+### 11.67 The integrated soak: eight hours at ten replicas under a schedule of faults, and reading what it leaves (`P16-TST-001`)
+
+*(Written by `P16-TST-001`, 2026-11-14, from `infra/scripts/kind-rehearsal/experiments.sh`'s soak section, `load.sh`'s declared fault
+window and `load/integrated-soak.json`. Not run: by the owner's word of 2026-11-13 the run is owed (`POSTPONED_ISSUES.md` PI-025;
+`RESILIENCE_EXPERIMENTS.md` E90), and no soak's verdict is claimed here. Each procedure below is read, not rehearsed: section 11.38's
+reason "Phase 16 drill".)*
+
+**What the soak is.** Phase 16's substance in one run (owner decision C1): the target's mix held eight hours at the engineering workload,
+at ten replicas, with faults drawn from the register injected during it and the census sampled every 30 s throughout. Every scheduled
+fault is its own experiment of section 11.46, run under the load with its own criteria, security probe and census through its window;
+after each the fleet must be back at its ten. It is the machine's endurance as much as the platform's: it needs the room the ten-instance
+runs need (section 11.58) for eight hours.
+
+#### Running the soak
+
+1. `REHEARSAL_SCOPE=experiments REHEARSAL_SOAK=1 REHEARSAL_EXPERIMENTS_REPLICAS=10 infra/scripts/kind-rehearsal.sh`. The profile is
+   `integrated-soak` (soak.json's mix without the load scope's own database readings, which are E39's); naming another, or naming
+   `REHEARSAL_EXPERIMENTS`, is refused before anything is built.
+2. The schedule is `REHEARSAL_SOAK_SCHEDULE`, minute:experiment after the load began, ascending; its default
+   (`SOAK_SCHEDULE_DEFAULT`) kills a replica each hour (E01 at 45, 105, 165, 225, 285, 345, 405), loses a broker (E08 at 150), rolls the
+   fleet (E82 at 240), takes a provider away (E17 at 315) and fails the database over last (E05 at 440). The soak admits E01, E05, E08,
+   E17 and E82; E05 must be the last fault (it leaves one server and no standby), and the last fault no later than minute 450.
+3. The probe: add `REHEARSAL_PROBE=soak-unbalanced`. At minute 300 one journal line is raised by one minor unit as the superuser with
+   replication role, behind the safety boundary's context check; the next sample's trial balance must fail the soak. A run with the
+   probe is red by design and proves nothing else: run it apart from the soak whose record counts.
+
+#### Reading the soak's record
+
+- `load/samples.tsv`: every 30-second sample. `OUTAGE` appears only inside E05's declared window and only for a sample whose census
+  could not be read; a census that was read and failed is `FAIL` there too. `experiments/soak/windows.tsv` holds the window, its outage
+  samples and the first sample after it, which must be `PASS`.
+- `experiments/soak/schedule.tsv`: each scheduled entry, its planned minute, when it started and ended, and its verdict;
+  `experiments/<id>/record.tsv` each fault's own record (an experiment scheduled twice keeps its last run's directory).
+- `experiments/soak/heap-lag.tsv` and `tables.tsv`: the soak's own samples every 15 minutes - the kind Prometheus keeps six hours, so the
+  first hour's figures exist only here - and `growth.tsv`, each named table's bytes per journal entry in the first and last thirds.
+- The end: the heap after collection in the last hour at most 1.25 times the first hour's and at most 0.8 of the largest heap; every
+  table's growth per entry at most 1.5 times its first third's; the inbox's lag after the last fault at most 1000 (`InboxLagHigh`'s
+  threshold), and the full census after the load. A bound with nothing to read fails the soak.
+
+#### When the soak is red
+
+- **A census sample failed**: the sample's line names the clause. Outside the window, or inside it with the census read, it is the
+  platform's: section 11.66's reading of (a) and (b) applies, and the soak stays red until the defect's task lands.
+- **A scheduled fault FAILED**: its own section says how to read it (11.46 for E01, 11.51 for E08, 11.53 for E17, 11.62 for E82, 11.54
+  for E05). A fleet not back at ten after it is the same finding as E01's replacement not ready.
+- **The heap grew past its bound**: compare `heap-lag.tsv` hour by hour. A steady climb across replacements (E01 and E82 replace pods) is a
+  leak in what every replica builds; take a heap dump of a replica of the last hour before the cluster goes (keep it with
+  `REHEARSAL_KEEP`), and open a task.
+- **A table's growth per entry rose**: `growth.tsv` names it. A table that grows faster than the work it records holds something the work
+  does not explain - a retry's leftovers, an unswept record, a duplicate. A task of its own; never a retention change to make it pass.
+- **The lag stayed high after the last fault**: a group that did not catch up within the load's last half hour (section 11.1.1's lag
+  reading). Read which module's lag in `heap-lag.tsv`'s neighbours (Prometheus's own series, for the last six hours).
 
 ### 11.33 Rotations rehearsed on kind: running them, reading them, the last record (`P15-TSK-020`)
 
@@ -5797,6 +5863,35 @@ in `payments.sweep_row_failure` or `merchant.sweep_row_failure` and backed off. 
 2026-11-13), and the first run of each writes its record here with its commit, its artefacts and, for E38, the explanation of every
 deadlock it found.
 
+**The payable read's checkpoint** (`P16-REM-001`; ADR-0133 decision 3; ledger `V038`). `GET /v1/merchant/payable` answers from the latest
+valid checkpoint of the merchant payable account (`ledger.position_checkpoint` and its buckets) and the lines posted since, and a read
+past 1,000 settled lines stores a new one in a savepoint that never fails it. The proofs never read a checkpoint.
+
+- **What you see.** Nothing, when it works. A `WARN` "the position checkpoint of … could not be read" or "… could not be stored" when
+  one could not be: the read answered from the lines, at the cost of the history since the last good checkpoint, its figure unchanged.
+  Many of them at once is a grant, a read-only routing or a database fault to find, never a wrong figure.
+- **After a logical restore.** Every restored checkpoint names the old cluster (`cluster_identity`, `pg_control_system()`'s
+  `system_identifier`) and is never read. Each merchant's first payable read folds its whole history and stores a new checkpoint: expect
+  those reads to be slow once. Nothing to do; deleting the restored rows only saves the space.
+- **Retiring every checkpoint** (a suspicion, or a classification change shipped without its version bump): as the migrator,
+  `DELETE FROM ledger.position_checkpoint_bucket; DELETE FROM ledger.position_checkpoint;`. No figure changes, only the next reads'
+  cost. The application role cannot do it: it may read and add, never change or remove.
+- **A `PAYABLE_CHECKPOINT` break** (`X-TSK-021`). The source proofs' census found a merchant's payable, as the API reads it from its
+  checkpoint, differing from the whole fold. The books are right - the proofs read the whole fold - but the merchant has been shown a
+  wrong figure. The subject is `PAYABLE_CHECKPOINT:<merchant>:<currency>`; the account is `SELECT id FROM ledger.ledger_account WHERE
+  owner_ref = '<merchant>' AND purpose = 'MERCHANT_PAYABLE' AND currency = '<currency>'`. Retire its checkpoints as the migrator:
+  `DELETE FROM ledger.position_checkpoint_bucket WHERE checkpoint_id IN (SELECT id FROM ledger.position_checkpoint WHERE
+  ledger_account_id = '<account>'); DELETE FROM ledger.position_checkpoint WHERE ledger_account_id = '<account>';`. The next read
+  folds the whole history and stores a fresh one; the next source-completeness run finds the payable agreeing. Acknowledge the break
+  through its four-eyes door, naming the retirement: it needs no correcting entry, since no figure of the books was wrong. Then find
+  why - a checkpoint stored wrong by the code is a defect to fix (the classification's version, the watermark), and one written with
+  the application's credential is an incident (T15).
+- **Before `V038` runs on a large journal.** Its `ADD COLUMN` is a catalogue change, but its index build holds `SHARE` on
+  `ledger.journal_line` and blocks every posting while it reads the table. Build it first by hand, outside a transaction:
+  `CREATE INDEX CONCURRENTLY journal_line_by_account_and_transaction ON ledger.journal_line (ledger_account_id, txid);` - the
+  migration's `IF NOT EXISTS` then keeps it. A failed concurrent build leaves an `INVALID` index under that name: drop it and build
+  again before the migration runs.
+
 ### 11.49 The connection budget at ten replicas, the autoscaler's metric on `kind`, and a pooler refused (`P16-TSK-009`, ADR-0134)
 
 **What it is.** Owner decision C3 decided by ADR-0134. The `kind` overlay states the connection budget for ten replicas exactly
@@ -6038,8 +6133,8 @@ routes, to the register of experiments and to that rule on every build.
 
 **Reading the matrix in an incident** (§11.12). Find the failure's row and read the client's answers from it before writing any message:
 the database away (A01) refuses everything at the edge with `503`, or `500 api.InternalError` from a replica before readiness falls
-(`THREAT_MODEL.md` §6 item 61, decided by the owner on 2026-11-13: `503 api.TemporarilyUnavailable` with `Retry-After` once
-`P16-REM-002` is built; read "(`THREAT_MODEL.md` §6 item 61)" alone until that decision), and a retry under the same key is a first attempt; every broker away (A06) answers every command with its
+(`THREAT_MODEL.md` §6 item 61, decided by the owner on 2026-11-13: `503 api.TemporarilyUnavailable` with `Retry-After`, built by
+`P16-REM-002` on 2026-11-15, so a replica answers that where it answered `500 api.InternalError`; *read "once `P16-REM-002` is built" until the Phase 16 exit review, 2026-11-16*; read "(`THREAT_MODEL.md` §6 item 61)" alone until that decision), and a retry under the same key is a first attempt; every broker away (A06) answers every command with its
 record and holds its events in the outbox, so money moves and the events follow; a provider lost (A10 to A13) leaves its rail's movements
 `UNKNOWN` or refused openly, concluded by its sweep's inquiry, never resent. A correctness page (A19) refuses nothing by itself: freezing
 money movement is the incident lead's recorded decision with the financial controller (§11.20), and no flow refuses automatically,
@@ -6487,6 +6582,32 @@ runs and its bytes, first and last, per live row and per movement. Multiply a fi
   the URL. An environment variable's form arrives lower-cased, which the driver ignores, so it is refused.
 
 Never point either pool at a replica to relieve the primary. ADR-0142 decision 2 says what must exist first.
+
+**The opening checkpoint: the bound, and what a move back costs** (`P16-REM-003`, accounting `V017`, `THREAT_MODEL.md` §6 item 64).
+Every report's opening - the trial balance's and its ledger windows, the balance sheet's, the GL activity's, the purpose reports' and the
+safeguarding position's - starts from the latest locked month's checkpoint still under the lock it was folded under, and folds only
+the lines dated after that month (`CAPACITY_MODEL.md` §3.6). The figures are the whole fold's; the proofs and the close's GL = ledger
+check never read a checkpoint.
+- **Who writes it.** `AccountingCloseSchedule`'s openings leg, at the checks' poll (`finapp.accounting.close.checks-poll`, 30 s), one
+  month a tick, oldest first, after the lock commits - never in the lock's transaction, which holds every posting behind the cutoff's
+  key. Ten instances fold a month once: the leg's transaction takes a try-lock (namespace 14, key `opening-checkpoint`) and an
+  instance that does not get it skips the tick. The first deployment backfills every month already locked, the first from inception.
+- **Is every locked month checkpointed?** In a read-only session:
+  `SELECT period.period_start, period.status, checkpoint.written_at FROM accounting.accounting_period period LEFT JOIN accounting.opening_checkpoint checkpoint ON checkpoint.period_id = period.id AND checkpoint.period_locked_at = period.locked_at WHERE period.status <> 'OPEN' ORDER BY period.period_start;`
+  A month with no `written_at` more than a minute after its lock: the leg is failing - `finapp.accounting.close.leg.failed{leg="openings"}`
+  and `AccountingCloseLegFailing` on its second failure, its class in the log. Nothing is wrong meanwhile: a read starts from the
+  checkpoint before it, or from inception, and only takes longer. A fold runs on the writer's pool, bounded by its five-minute socket
+  timeout (`spring.datasource.hikari.data-source-properties.socketTimeout`): each month's fold is that month's lines from the month before's checkpoint, but the first is every line dated
+  through the first locked month's end - all history before accounting's first period. A fold past the bound fails each tick the same
+  way; that is a capacity finding for E65, not a figure at risk.
+- **A move back.** An unlock or a reopen clears the month's `locked_at`, so its checkpoint is never read again - nothing to do by hand.
+  Until the month locks again, a read after it starts from the month before's checkpoint and folds one month more; the relock gets a
+  new checkpoint within a tick. The voided one stays, as evidence of what was read under that lock.
+- **A checkpoint suspected wrong.** The application role can only read and add (`V017`'s grants). A FINAL run's regeneration
+  (`POST /v1/operator/accounting/report-runs/{id}/regeneration`) compares a fresh generation with the stored bytes: a run generated
+  before the checkpoint existed and regenerating not identical after it names one. To discard every checkpoint, as the migrator, in one
+  transaction: `DELETE FROM accounting.opening_checkpoint_group; DELETE FROM accounting.opening_checkpoint;` - no figure changes, the
+  leg writes them again oldest first, and the reads fold from inception meanwhile.
 
 **The record.** Empty: E65 has not run. It is owed under `POSTPONED_ISSUES.md` PI-025 (the owner's word of 2026-11-13), and its first
 run writes its record here with its commit, its artefacts, the fit and each table's reading against ADR-0142.

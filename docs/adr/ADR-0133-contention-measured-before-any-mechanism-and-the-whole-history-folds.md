@@ -1,6 +1,6 @@
 # ADR-0133 — Contention measured before any mechanism, and the whole-history folds bounded by a commit-order checkpoint
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-13
 Phase: 16
 Context: Ledger · Merchant · Platform (operated under load)
@@ -54,7 +54,10 @@ pair's waits read against the pair's growing history.
    balance mutated outside a posting, a weaker isolation for money and a cache in front of a decision.
 3. **The whole-history folds are bounded by a commit-order checkpoint.** This is proposed here, and its build is the owner's to place
    (`THREAT_MODEL.md` §6 item 55). *(2026-11-13: placed by the owner at item 55 (i), for the payable read: built in a task of its own,
-   `P16-REM-001`, with its database cases run before it merges, ahead of any real environment.)* A checkpoint is the fold of one account's lines (for the breakdown, its buckets) over every line whose
+   `P16-REM-001`, with its database cases run before it merges, ahead of any real environment.)* *(2026-11-15: built by
+   `P16-REM-001` - ledger `V038`, `CheckpointedPositionBreakdown` over `BucketFold`, the merchant API's payable query its one reader -
+   and its database cases run green that day on the owner's word, the two probes below each seen red: the watermark above the
+   snapshot's `xmin`, and the cluster check removed.)* A checkpoint is the fold of one account's lines (for the breakdown, its buckets) over every line whose
    entry's commit-order position (`txid`, ledger `V034`) lies below a watermark *W*. *W* is `pg_snapshot_xmin` of the snapshot that read
    them, so every transaction below *W* has finished and every committed line below it was visible to that read. No line can ever be
    added below *W* afterwards, and no clock or writer can choose *W*. A read is then the latest valid checkpoint's buckets plus every
@@ -109,8 +112,9 @@ limit has a bounded design with its hazards named, the restore's above all. The 
 it is measured.
 
 Negative: until the owner places item 55 the payable read stays linear in history *(2026-11-13: placed at (i); it stays so until
-`P16-REM-001` is built)*. E30's first limit stands, and each merchant's read
-grows. The soak (E39) leaves the payable read out for that reason.
+`P16-REM-001` is built)* *(2026-11-15: built; the read folds a checkpoint and the lines since, and E30 again measures it,
+owed under PI-025)*. E30's first limit stands, and each merchant's read
+grows. The soak (E39) leaves the payable read out for that reason. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: read "each merchant's read grows" as true until `P16-REM-001` bounded it, 2026-11-15. The soak, the integrated soak and the concurrent-financial profile still leave the payable read out, on the reason that held before the bound, so only E30 run again with E52 measures the bounded read under load; `P16-REM-004` holds that run, owed under `POSTPONED_ISSUES.md` PI-025.)*
 
 Operational impact: the `kind` overlay's test-only server preloads `auto_explain`, inert until a run opens its window. The runs set
 logging on the run's own server by `ALTER SYSTEM`. No deployed overlay changes.
@@ -136,3 +140,12 @@ journal. Deleting every checkpoint changes no figure, only the read's cost.
 - The owner places item 55. The recommendation: build decision 3 in its own task, with its database cases run before it merges, ahead
   of any real environment that would hold a merchant's months of history. *(2026-11-13: placed so by the owner; the task is
   `P16-REM-001`.)*
+- *2026-11-15*: decision 3 built for the payable read by `P16-REM-001` (ledger `V038`; `CheckpointedPositionBreakdown`,
+  `BucketFold`; `CLASSIFICATION_VERSION` 1 pinned by `PositionClassificationIsVersionedTest`; the proofs on the whole fold, held by
+  `PositionCheckpointsAreTheApisAloneTest`). Its database cases ran green on PostgreSQL 18.6 before any merge. The decision path's fold
+  is untouched, for its own ADR after E38; E30 and E52 again, E38 and E39 measure what the bound and the index cost (PI-025).
+- *2026-11-15*: the gate of decision 3's build found that a checkpoint row is the application role's to write and each is built on the
+  last, so one stored wrong would persist unseen behind the proofs' whole fold. `X-TSK-021` added the census: the source proofs'
+  `PAYABLE_CHECKPOINT` compares the API's checkpointed drill-down with the whole fold on every source-completeness run (catalogue
+  `source-proofs:v2`, ADR-0117's note), reading without storing; a difference is an accounting break, and an operator retires the
+  account's checkpoints (`OPERATIONS_RUNBOOK.md` 11.48).

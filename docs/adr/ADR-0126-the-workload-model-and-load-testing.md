@@ -1,11 +1,11 @@
 # ADR-0126 — The workload model and load testing: three named workloads, k6 outside the build, invariants read during load
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-12
 Phase: 16
 Context: Platform · every module (operated under load)
 Rests on: ADR-0001, ADR-0014, ADR-0025, ADR-0026, ADR-0120, ADR-0124; owner decisions C1, C2, C5 and C8 of `PHASE_16_PLAN.md`
-§2.2 (proposed, awaiting the owner); `DELIVERY_PLAN.md` §Phase 16 §11; `PHASE_GATES.md` §5 Phase 16's first criterion.
+§2.2 (decided at their recommendations by the owner, 2026-11-12; *read "proposed, awaiting the owner" until then*); `DELIVERY_PLAN.md` §Phase 16 §11; `PHASE_GATES.md` §5 Phase 16's first criterion.
 
 ## Context
 
@@ -74,4 +74,4 @@ a failed run, never a slow pass.
 ## Follow-up
 
 `P16-TSK-001` writes the capacity model. `P16-TSK-006` builds the harness. `P16-TSK-007` measures the baseline. `P16-TSK-014` and
-`P16-TST-001` run it at ten replicas.
+`P16-TST-001` run it at ten replicas. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: built as decided - k6 2.3.0 pinned by digest outside the build graph, a sample every 30 s. Three runs were made before the owner's word of 2026-11-13, each at three replicas: E27 (`7231d298`, `PASSED`), E30 (`89b8fc60`, `FAILED` at its fourth step, the database's CPU the first limit) and the isolation profile (`f021383f`, green). Every other run is owed under `POSTPONED_ISSUES.md` PI-025 - E29, E30 at seven and E31; E41 at ten; E26, E69, E70 and E71; the soak E90 - so no figure at seven or ten replicas is measured.)*

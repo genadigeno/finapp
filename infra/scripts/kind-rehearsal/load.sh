@@ -287,7 +287,8 @@ load_expected() {
 
 pg_admin() {
     # The superuser in the server's maintenance database, where pg_stat_statements lives: the finapp database gains no object.
-    kube -n finapp exec -i finapp-postgres-0 -c postgres -- psql -q -X -A -t -U finapp -d postgres "$@"
+    # The primary's pod (pg_primary, P16-TST-001): after E05's promotion the standby's, for a reader forked before it as for this shell.
+    kube -n finapp exec -i "$(pg_primary)" -c postgres -- psql -q -X -A -t -U finapp -d postgres "$@"
 }
 
 load_prom() {
@@ -456,9 +457,16 @@ load_sample() {
         [ "$s_verdict" = UNREADABLE ] || s_verdict=FAIL
         s_detail="$s_detail; census: $s_failed"
     fi
+    # A declared fault window (P16-TST-001: the soak's database failover, P16-TSK-022's routed note): while $WORK/load-fault-window holds
+    # "<experiment> <from epoch>", a sample whose census could not be read at all is the outage's, OUTAGE, recorded and not failed; the load
+    # is not stopped. A census that was read and holds a FAIL line stays FAIL inside the window too, and the soak requires a PASS after it.
+    if [ "$s_verdict" != PASS ] && [ -s "$WORK/load-fault-window" ] && [ "$s_verdicts" != "$LOAD_CLAUSES" ]; then
+        s_verdict=OUTAGE
+        s_detail="$s_detail; inside the declared fault window of $(cut -d' ' -f1 "$WORK/load-fault-window")"
+    fi
     printf '%s\t%s\t%s\t%s\t%s/%s\t%s\t%s\n' "$1" "$s_epoch" "$(date -u -d "@$s_epoch" +%H:%M:%S 2>/dev/null || echo -)" "$s_verdict" \
         "${s_up:--}" "${s_ready:--}" "$s_verdicts" "${s_detail:--}" >> "$LOAD_ART/samples.tsv"
-    if [ "$s_verdict" != PASS ]; then
+    if [ "$s_verdict" != PASS ] && [ "$s_verdict" != OUTAGE ]; then
         printf 'sample %s %s: %s\n' "$1" "$s_verdict" "$s_detail" >> "$WORK/load-sample-failed"
     fi
 }

@@ -1,6 +1,6 @@
 # ADR-0147 — Security under scale and failure: a probe in every experiment, every check fails closed, four eyes and the audit trail read across each fault
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-13
 Phase: 16
 Context: Platform · Identity · the API surface (`app`) · the `kind` rehearsal's experiments scope
@@ -55,7 +55,7 @@ after its point**, while the post-recovery gate (ADR-0140) reconciles only provi
    repeated through its door at the release (`OPERATIONS_RUNBOOK.md` §11.55).
 8. **What §18 leaves to others is named**: key availability, backup confidentiality and the restore's row counts are the restore drills'
    (E59-E61, ADR-0140); secrets regenerated in a disaster recovery are `P16-TSK-025`'s; a WAF and DDoS service are designed-only
-   (`THREAT_MODEL.md` §6 item 32 (b)), sized by `P16-TSK-015`.
+   (`THREAT_MODEL.md` §6 item 22 (b); *read "item 32 (b)" until `P16-DOC-001`, 2026-11-16: the slip `PHASE_16_PLAN.md`'s erratum of 2026-11-13 names - item 32 (b) is credit's key ring*), sized by `P16-TSK-015`.
 
 ## Alternatives Considered
 

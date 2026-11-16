@@ -87,6 +87,8 @@ class ProductSourceProofsTest {
         assertThat(subjects(found, SourceProofs.Proof.POSITION)).containsExactly("SETTLEMENT_CLEARING:EUR",
                 "SUSPENSE_UNMATCHED:EUR", "CASH_AT_BANK:EUR", "unattributed:CASH_AT_BANK");
         assertThat(subjects(found, SourceProofs.Proof.MERCHANT_PAYABLE)).containsExactly(merchant + ":EUR");
+        assertThat(subjects(found, SourceProofs.Proof.PAYABLE_CHECKPOINT)).as("X-TSK-021").containsExactly(merchant + ":EUR");
+        assertThat(found.get(SourceProofs.Proof.PAYABLE_CHECKPOINT).get(0).evidence()).isEqualTo("checkpointAgreesWithTheWholeFold=false");
         assertThat(subjects(found, SourceProofs.Proof.PROJECTION)).containsExactly(account.toString());
         found.values().stream().flatMap(List::stream).forEach(discrepancy -> assertThat(discrepancy.evidence())
                 .as("never an amount").doesNotContain("123").doesNotContain("1.23").doesNotContain("4567"));
@@ -408,7 +410,7 @@ class ProductSourceProofsTest {
                 List.of(new PositionProof.CashVerdict(EUR, amount, other, 3, holding, holding)));
 
         List<ProductSourceProofs.PayableTerms> payables =
-                List.of(new ProductSourceProofs.PayableTerms(merchant, "EUR", holding));
+                List.of(new ProductSourceProofs.PayableTerms(merchant, "EUR", holding, holding));
         ProductSourceProofs.Projections projections =
                 new ProductSourceProofs.Projections(holding ? List.of() : List.of(account), inFlight);
 

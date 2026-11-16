@@ -159,8 +159,13 @@ class ReportingNeverWritesTest {
     static final Set<String> LEDGER_WRITERS = Set.of(PostingService.class.getName(), ReversalService.class.getName(),
             AdjustmentService.class.getName(), HoldService.class.getName(), ProjectionRebuilds.class.getName());
 
-    /** What a report port's adapter may call of a store or of {@code CloseRuns}: reads, on the snapshot it is handed. */
-    static final Set<String> ADAPTER_STORE_READS = Set.of("find", "view", "content", "rates", "approvedFor", "countByStatus", "proposedOf");
+    /**
+     * What a report port's adapter may call of a store or of {@code CloseRuns}: reads, on the snapshot it is handed. {@code latest} since
+     * `P16-REM-003`: the opening reads' {@code OpeningCheckpointStore.latest}, two {@code SELECT}s; its writes are the openings leg's alone
+     * ({@code OpeningCheckpointsAreTheReportsAloneTest}).
+     */
+    static final Set<String> ADAPTER_STORE_READS = Set.of("find", "view", "content", "rates", "approvedFor", "countByStatus", "proposedOf",
+            "latest");
 
     @ArchTest
     static void noReportingClassReachesAWriter(JavaClasses imported) {
@@ -279,6 +284,9 @@ class ReportingNeverWritesTest {
      * A FINAL of a closed month cannot move for a merchant's term (`P14-TSK-022`, the owner's ruling (q); {@code INV-ACC-04}; its review, M-4): classifying a line by its origin moved value between {@code accountingCorrections} and {@code captured}, {@code refunded}, {@code chargedBack} and {@code other}, so
      * <strong>every</strong> accessor of {@code MerchantPayable.Payable} is held to an exact list of readers, by call or by method reference. A merchant's own response reads each term; the {@code MERCHANT_PAYABLE} proof reads the sum; {@code BNPL_THREE_WAY} reads the sum and the four keyed BNPL terms, which no
      * adjustment can reach. A report definition, a port adapter and a close check read none, so regenerating an earlier month reads nothing that changed. The accessors come from the record, so a new term with no line here fails.
+     * Since `X-TSK-021` the {@code PAYABLE_CHECKPOINT} census compares two drill-downs of one payable with {@code equals} - the API's, from its checkpoint, and the
+     * whole fold's - and that is its only reading: both are classified by the same rules in the same instant, so whether they agree never depends on how a term
+     * is classified, and nothing of either is kept.
      */
     @ArchTest
     static void noStoredFigureReadsAMerchantsTerm(JavaClasses imported) {
@@ -296,6 +304,7 @@ class ReportingNeverWritesTest {
         }
         expected.put("position", Set.of(response, proof, threeWay));
         expected.put("terms", Set.of(proof, threeWay));
+        expected.put("equals", Set.of(proof));
         for (String keyed : List.of("bnplFinanced", "bnplFees", "bnplRefunded", "bnplFeesReturned")) {
             expected.put(keyed, Set.of(response, threeWay));
         }

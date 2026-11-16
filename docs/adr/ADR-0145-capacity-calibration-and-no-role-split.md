@@ -1,6 +1,6 @@
 # ADR-0145 — Capacity calibration: the autoscaler on CPU alone, a burst never scaled, the per-source limits kept by derivation, and no role split
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-13
 Phase: 16
 Context: Platform (the deployment, the edge, the public doors' limits) · every module (operated at scale)
@@ -54,7 +54,7 @@ bounded per relay (ADR-0136). The census starved at the break because it shared 
    schedule's competitors cut to the worker count. **Reopened by an ADR** if E77 shows the background roles raising request latency on
    the replicas' own resources (their CPU throttled or their threads exhausted) while the database is below its limit, if E52 shows the
    monitors starved with the door in place, or if E69 and E70 show claim contention at ten harming requests.
-10. **The autoscaler's own signals are decided and not built** (item 67 (b)): a ticket once the count has stood at the ceiling for 30
+10. **The autoscaler's own signals are decided and not built** (item 67 (b); *building them awaits the owner since 2026-11-13: corrected by `P16-DOC-001`, 2026-11-16*): a ticket once the count has stood at the ceiling for 30
     minutes, and the autoscaler's failed reads of its metric from the cluster watcher's event stream. The platform's rules read only
     series captured from the pinned images, and these never were; capturing them takes a cluster.
 
@@ -86,7 +86,7 @@ Rejected for the reasons in decision 9; it remains the answer if E77 overturns t
 - A changed W2, W3 or R6 turns those guards red until the windows and the limits are derived again.
 - The runs that confirm all of it are built and owed (PI-025): E75 (a burst never scales the fleet, no door refuses it), E76 (the entry's
   probe), E77 (the role split's reading); with E69, E70, E39 and E52, which other tasks built.
-- Production's ceiling stays the owner's (item 56).
+- Production's ceiling stays the owner's (item 56). *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: decided by the owner on 2026-11-13, item 56 (i): it stays seven until the ten-instance runs (E41, E26, E69, E70) and this calibration's confirming runs are made, all owed under PI-025, and the declared `max_connections` is raised first.)*
 
 ## Revisit
 

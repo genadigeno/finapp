@@ -199,6 +199,17 @@ EXPERIMENTS=${REHEARSAL_EXPERIMENTS:-E01}
 # P16-TSK-020: a load profile run beside the experiments (OPERATIONS_RUNBOOK.md section 11.61): the sustained one for the instance, node and
 # edge failures at ten; none by default, and every other experiment runs without one.
 EXPERIMENTS_LOAD=${REHEARSAL_EXPERIMENTS_LOAD:-}
+# P16-TST-001: the integrated soak (OPERATIONS_RUNBOOK.md section 11.67), REHEARSAL_SOAK=1 at ten replicas: its experiments are its schedule's,
+# minute:experiment after the load began, the integrated-soak profile beside them; the experiments it admits at ten under the load, each
+# reading three or more ready replicas or the run's count, the soak requiring all ten back after each.
+SOAK=${REHEARSAL_SOAK:-}
+SOAK_EXPERIMENTS="E01 E05 E08 E17 E82"
+SOAK_SCHEDULE_DEFAULT="45:E01 105:E01 150:E08 165:E01 225:E01 240:E82 285:E01 315:E17 345:E01 405:E01 440:E05"
+SOAK_SCHEDULE=${REHEARSAL_SOAK_SCHEDULE:-$SOAK_SCHEDULE_DEFAULT}
+if [ -n "$SOAK" ]; then
+    EXPERIMENTS=$(printf '%s\n' $SOAK_SCHEDULE | cut -d: -f2 | awk '!seen[$0]++' | tr '\n' ' ')
+    EXPERIMENTS_LOAD=${REHEARSAL_EXPERIMENTS_LOAD:-integrated-soak}
+fi
 # The experiments written to run under that load: their census is the load's samples through their window, and the full one after the load.
 EXPERIMENTS_UNDER_LOAD="E01 E02 E03 E04 E25"
 # P16-TSK-027: the three scenarios at ten may run under the engineering workload too (their checks (a) and (b) then read the load's window).
@@ -1508,17 +1519,23 @@ experiments_scope() {
     if [ -n "$EXPERIMENTS_LOAD" ]; then
         step experiments-load
         experiments_load_begin
+        [ -z "$SOAK" ] || soak_begin
         experiments_load_peak
     fi
-    for id in $EXPERIMENTS; do
-        if wanted "$id"; then
-            command -v "${id}_fault" >/dev/null 2>&1 || cannot "no experiment $id in this toolkit"
-            experiment_run "$id"
-        fi
-    done
+    if [ -n "$SOAK" ]; then
+        soak_run
+    else
+        for id in $EXPERIMENTS; do
+            if wanted "$id"; then
+                command -v "${id}_fault" >/dev/null 2>&1 || cannot "no experiment $id in this toolkit"
+                experiment_run "$id"
+            fi
+        done
+    fi
     # The load run to its end, then judged whole, its shed requests censused, each experiment's window read from the generators' own
     # series, and the full census taken with every count.
     [ -z "$EXPERIMENTS_LOAD_ON" ] || experiments_load_end
+    [ -z "$SOAK" ] || soak_end
     [ "$PROBE" != guard-off ] || fail "PROBE guard-off: no plant was refused, and the run went on"
     pass "the experiments ran behind $EXPERIMENTS_GUARDS passes of the whole safety boundary - at each steady state and before each fault put on - and its context read again before each kill"
 }
@@ -2408,6 +2425,8 @@ E05_observe() {
     printf '%s\tmoved\tservice/finapp-postgres to finapp-postgres-standby-0\n' "$(date -u +%H:%M:%S)" >> "$EXP_ART/faults.log"
     PG_POD=finapp-postgres-standby-0
     printf '%s' "$PG_POD" > "$EXP_DIR/primary"
+    # Every background reader of the run too (psql_query's pg_primary): the load's census sampler and the soak's were forked before this.
+    printf '%s\n' "$PG_POD" > "$WORK/primary"
     promoted_ip=$(kube -n finapp get pod finapp-postgres-standby-0 -o jsonpath='{.status.podIP}')
     endpoints=""
     deadline=$(( $(date +%s) + 60 ))
@@ -5854,13 +5873,14 @@ E73_recover() {
 # three without one; the budget's probe without E02; and an experiment that sends straight to a replica through the edge's probe pod named
 # after E04, whose worker may carry that bare pod away.
 experiments_load_resolve() {
+    soak_resolve
     lr_after=""
     for lr_id in $EXPERIMENTS; do
         case " $EXPERIMENTS_NEED_LOAD " in
             *" $lr_id "*) [ -n "$EXPERIMENTS_LOAD" ] || { echo "?? $lr_id runs under a load profile: name one in REHEARSAL_EXPERIMENTS_LOAD (sustained; OPERATIONS_RUNBOOK.md section 11.61)" >&2; exit 2; } ;;
         esac
         if [ -n "$EXPERIMENTS_LOAD" ]; then
-            case " $EXPERIMENTS_UNDER_LOAD " in
+            case " $EXPERIMENTS_UNDER_LOAD ${SOAK:+$SOAK_EXPERIMENTS} " in
                 *" $lr_id "*) ;;
                 *) echo "?? $lr_id is not written to run under a load: its census is the full one, which a load in flight cannot pass; REHEARSAL_EXPERIMENTS_LOAD runs $EXPERIMENTS_UNDER_LOAD" >&2; exit 2 ;;
             esac
@@ -7997,4 +8017,206 @@ F15_recover() {
 F15_rerun() {
     SCENARIO_RERUN="the scenario's transfer sent again under its key after every group replayed from its earliest offset"
     scenario_rerun_transfer
+}
+
+# ---------------------------------------------------------------------------------------------------
+# THE INTEGRATED SOAK (P16-TST-001; PHASE_16_PLAN.md section 2.2's C1; RESILIENCE_EXPERIMENTS.md E90; OPERATIONS_RUNBOOK.md section 11.67).
+# REHEARSAL_SOAK=1 in the experiments scope, at ten replicas (REHEARSAL_EXPERIMENTS_REPLICAS=10): the integrated-soak profile beside the
+# experiments - soak.json's mix and length, the target's mix eight hours at the engineering workload, without the load scope's own database
+# readings - and a schedule of faults drawn from the register injected during it, each at its minute after the load began
+# (REHEARSAL_SOAK_SCHEDULE, minute:experiment, ascending; SOAK_SCHEDULE_DEFAULT below): a replica killed each hour (E01), a broker lost
+# (E08), a rolling deploy (E82), a provider outage (E17) and, last, the database failover (E05), which leaves one server and no standby.
+# Each scheduled fault is its experiment, run by experiment_run under the load: its own criteria, its security probe, its census through its
+# window; then the fleet back at its ten before the next. The census is sampled every 30 s throughout; E05 runs inside a declared fault
+# window (load.sh's load_sample: a sample whose census cannot be read is the outage's, never a census FAIL), and the first sample after the
+# window must PASS. Every 15 minutes the soak's own sampler reads the fleet's heap after collection, the inbox's lag and the named tables'
+# sizes, because the kind Prometheus keeps six hours and the soak runs eight; at its end the growth, the leaks and the lag are judged
+# against their bounds (soak_end). Its probe, REHEARSAL_PROBE=soak-unbalanced, raises one journal line by one minor unit at minute 300 as
+# the superuser with replication role: the next sample's trial balance must fail the soak. Built and contract-tested (SoakContractTest);
+# the run is owed under POSTPONED_ISSUES.md PI-025, so no soak's verdict is claimed.
+# ---------------------------------------------------------------------------------------------------
+
+SOAK_PLANT_MINUTE=300
+# The heap's bound: the fleet's largest live data after collection in the soak's last hour, against its first hour's, and against the largest
+# heap the collector may grow to.
+SOAK_HEAP_GROWTH=1.25
+SOAK_HEAP_SHARE=0.8
+# The tables' bound: each named table's bytes per journal entry in the soak's last third, against its first third's.
+SOAK_TABLE_GROWTH=1.5
+# The inbox's lag bound after the last fault: the platform's own InboxLagHigh threshold (infra/prometheus/rules/platform.yml).
+SOAK_LAG_BOUND=1000
+SOAK_TABLES="ledger.journal_entry ledger.journal_line platform.outbox_event platform.audit_record platform.idempotency_record transfers.transfer payments.payment_attempt merchant.merchant_payout"
+
+# soak_resolve: before anything is built, what does not go together refused - the soak outside the experiments scope or at another count than
+# ten, another profile, experiments named apart from the schedule, a schedule out of order, an experiment the soak does not admit, a database
+# fault after E05, or a fault later than the load can carry; and its probe without the soak.
+soak_resolve() {
+    [ "$PROBE" != soak-unbalanced ] || [ -n "$SOAK" ] || { echo "?? PROBE soak-unbalanced plants into the soak: set REHEARSAL_SOAK=1" >&2; exit 2; }
+    [ -n "$SOAK" ] || return 0
+    [ "$SCOPE" = experiments ] || { echo "?? the soak runs in the experiments scope: REHEARSAL_SCOPE=experiments" >&2; exit 2; }
+    [ "$FLEET_REPLICAS" = 10 ] || { echo "?? the soak runs at ten replicas: REHEARSAL_EXPERIMENTS_REPLICAS=10" >&2; exit 2; }
+    [ "$EXPERIMENTS_LOAD" = integrated-soak ] || { echo "?? the soak runs beside the integrated-soak profile, not '$EXPERIMENTS_LOAD'" >&2; exit 2; }
+    [ -z "${REHEARSAL_EXPERIMENTS:-}" ] || { echo "?? the soak's experiments are its schedule's: set REHEARSAL_SOAK_SCHEDULE, not REHEARSAL_EXPERIMENTS" >&2; exit 2; }
+    sr_last=-1
+    sr_after=""
+    for sr_entry in $SOAK_SCHEDULE; do
+        sr_minute=${sr_entry%%:*}
+        sr_id=${sr_entry#*:}
+        case $sr_minute in '' | *[!0-9]*) echo "?? the soak's schedule entry '$sr_entry' is minute:experiment" >&2; exit 2 ;; esac
+        [ "$sr_minute" -gt "$sr_last" ] || { echo "?? the soak's schedule is in ascending minutes: '$sr_entry' follows minute $sr_last" >&2; exit 2; }
+        case " $SOAK_EXPERIMENTS " in *" $sr_id "*) ;; *) echo "?? the soak admits $SOAK_EXPERIMENTS, not $sr_id" >&2; exit 2 ;; esac
+        [ -z "$sr_after" ] || { echo "?? E05 leaves one server and no standby: it is the soak's last fault, and $sr_id follows it" >&2; exit 2; }
+        [ "$sr_id" != E05 ] || sr_after=E05
+        [ "$PROBE" != soak-unbalanced ] || [ "$sr_minute" != "$SOAK_PLANT_MINUTE" ] \
+            || { echo "?? the probe plants at minute $SOAK_PLANT_MINUTE, where $sr_id is scheduled: move it" >&2; exit 2; }
+        sr_last=$sr_minute
+    done
+    [ "$sr_last" -ge 0 ] || { echo "?? the soak's schedule is empty" >&2; exit 2; }
+    # Every fault inside the load with half an hour to spare: an experiment that outlives the load is judged on no samples.
+    [ "$sr_last" -le 450 ] || { echo "?? the soak's last fault at minute $sr_last leaves the eight-hour load less than half an hour to recover in" >&2; exit 2; }
+}
+
+# soak_begin: the soak's own record and sampler, once the load beside the experiments has started.
+soak_begin() {
+    mkdir -p "$EXP_ART/soak"
+    printf 'entry\tplanned minute\tstarted\tended\tverdict\n' > "$EXP_ART/soak/schedule.tsv"
+    printf 'epoch\tlive after gc\tlargest heap\tinbox lag\n' > "$EXP_ART/soak/heap-lag.tsv"
+    printf 'epoch\ttable\tbytes\tjournal entries\n' > "$EXP_ART/soak/tables.tsv"
+    : > "$EXP_ART/soak/windows.tsv"
+    SOAK_LAST_END=""
+    soak_sampler &
+    BACKGROUND="$BACKGROUND $!"
+    log "the soak: $(printf '%s\n' $SOAK_SCHEDULE | grep -c .) faults scheduled ($SOAK_SCHEDULE)${PROBE:+, the probe $PROBE at minute $SOAK_PLANT_MINUTE}"
+}
+
+# soak_sampler: every 15 minutes while the load runs, the fleet's live data after collection and its largest heap, the inbox's largest lag,
+# and each named table's size beside the journal's entries. A reading the database or Prometheus cannot answer (E05's window) is skipped,
+# never invented. Never calls fail: it runs in the background.
+soak_sampler() {
+    set +e
+    while [ ! -f "$WORK/load-stop" ]; do
+        at=$(date +%s)
+        live=$(load_prom 'max(jvm_gc_live_data_size_bytes{job="finapp"})' | sed -n 's/.*"value":\[[^,]*,"\([0-9.e+]*\)"\].*/\1/p')
+        most=$(load_prom 'max(jvm_gc_max_data_size_bytes{job="finapp"})' | sed -n 's/.*"value":\[[^,]*,"\([0-9.e+]*\)"\].*/\1/p')
+        lag=$(load_prom 'max(finapp_inbox_lag)' | sed -n 's/.*"value":\[[^,]*,"\([0-9.e+]*\)"\].*/\1/p')
+        printf '%s\t%s\t%s\t%s\n' "$at" "${live:--}" "${most:--}" "${lag:--}" >> "$EXP_ART/soak/heap-lag.tsv"
+        entries=$(psql_query -c "SELECT count(*) FROM ledger.journal_entry" 2>/dev/null | tr -d '[:space:]')
+        case $entries in '' | *[!0-9]*) ;; *)
+            for table in $SOAK_TABLES; do
+                bytes=$(psql_query -c "SELECT pg_total_relation_size('$table')" 2>/dev/null | tr -d '[:space:]')
+                case $bytes in '' | *[!0-9]*) ;; *) printf '%s\t%s\t%s\t%s\n' "$at" "$table" "$bytes" "$entries" >> "$EXP_ART/soak/tables.tsv" ;; esac
+            done ;;
+        esac
+        while [ "$(date +%s)" -lt $((at + 900)) ] && [ ! -f "$WORK/load-stop" ]; do
+            sleep 5
+        done
+    done
+}
+
+# soak_wait_until <epoch> <next>: the load carried to that instant, its settlement file delivered when due, and the soak failed the moment a
+# sample fails between two faults.
+soak_wait_until() {
+    while [ "$(date +%s)" -lt "$1" ]; do
+        load_generating || cannot "the soak's load ended before $2 was due"
+        [ ! -s "$WORK/load-sample-failed" ] || fail "the soak: a census sample failed before $2: $(tr '\n' ' ' < "$WORK/load-sample-failed" | cut -c1-600)see load/samples.tsv"
+        experiments_load_tick
+        sleep 5
+    done
+}
+
+# soak_window_open <experiment>: the declared fault window load.sh's load_sample reads, opened before the experiment that takes the database
+# away. soak_window_close <experiment>: closed after it, and the first sample after it required to PASS within three samples' time.
+soak_window_open() {
+    printf '%s %s\n' "$1" "$(date +%s)" > "$WORK/load-fault-window"
+}
+
+soak_window_close() {
+    from=$(cut -d' ' -f2 "$WORK/load-fault-window")
+    rm -f "$WORK/load-fault-window"
+    closed=$(date +%s)
+    outage=$(awk -F'\t' -v from="$from" -v to="$closed" 'NR > 1 && $2 >= from && $2 <= to && $4 == "OUTAGE"' "$LOAD_ART/samples.tsv" | grep -c . || true)
+    deadline=$((closed + 120))
+    after=""
+    while [ -z "$after" ] && [ "$(date +%s)" -lt "$deadline" ]; do
+        after=$(awk -F'\t' -v at="$closed" 'NR > 1 && $2 > at {print $4; exit}' "$LOAD_ART/samples.tsv")
+        [ -n "$after" ] || sleep 5
+    done
+    printf '%s\t%s\t%s\t%s outage samples\tfirst after: %s\n' "$1" "$(iso "$from")" "$(iso "$closed")" "$outage" "${after:-none}" >> "$EXP_ART/soak/windows.tsv"
+    [ "$after" = PASS ] || fail "the soak: the first census sample after $1's declared fault window was ${after:-never taken}: see load/samples.tsv"
+    pass "the soak: $1's declared fault window held $outage outage samples, and the first sample after it PASS"
+}
+
+# soak_plant: PROBE soak-unbalanced - one journal line raised by one minor unit, as the superuser with replication role so no trigger refuses
+# it, behind the safety boundary's context check. The next sample's trial balance must fail the soak.
+soak_plant() {
+    experiments_context_check || fail "the safety boundary refused before the soak's plant: $EXP_REASON"
+    psql_query -c "SET session_replication_role = replica; UPDATE ledger.journal_line SET amount_minor = amount_minor + 1
+        WHERE id = (SELECT id FROM ledger.journal_line WHERE direction = 'CREDIT' ORDER BY id DESC LIMIT 1)" >> "$EXP_ART/soak/plant.log" 2>&1 \
+        || cannot "PROBE soak-unbalanced: the plant could not be written: see experiments/soak/plant.log"
+    log "PROBE soak-unbalanced: one journal line raised by one minor unit at minute $SOAK_PLANT_MINUTE; the next census sample must fail the soak"
+}
+
+# soak_run: the schedule, each entry at its minute after the load began; the probe's plant among them when asked for.
+soak_run() {
+    schedule=$SOAK_SCHEDULE
+    [ "$PROBE" != soak-unbalanced ] || schedule=$(printf '%s\n' $SOAK_SCHEDULE "$SOAK_PLANT_MINUTE:PLANT" | sort -t: -k1,1n | tr '\n' ' ')
+    for entry in $schedule; do
+        minute=${entry%%:*}
+        id=${entry#*:}
+        soak_wait_until $((LOAD_STARTED + minute * 60)) "$id"
+        started=$(date +%s)
+        case $id in
+            PLANT) soak_plant ;;
+            E05) soak_window_open E05; experiment_run E05; soak_window_close E05 ;;
+            *) experiment_run "$id" ;;
+        esac
+        if [ "$id" != PLANT ]; then
+            ready_fleet 900 || fail "the soak: the fleet did not return to its $FLEET_REPLICAS ready replicas after $id"
+            SOAK_LAST_END=$(date +%s)
+        fi
+        printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$minute" "$(iso "$started")" "$(iso "$(date +%s)")" "$([ "$id" = PLANT ] && echo planted || echo PASSED)" \
+            >> "$EXP_ART/soak/schedule.tsv"
+    done
+    pass "the soak: every scheduled fault ran and recovered within its experiment's criteria, the fleet back at $FLEET_REPLICAS after each"
+}
+
+# soak_end: once the load has ended and its full census passed - the leaks, the growth and the lag, each against its bound, from the soak's own
+# samples. A bound with nothing to read is a failure: the soak claims nothing it did not see.
+soak_end() {
+    s=$LOAD_STARTED
+    e=${LOAD_ENDED:-$(date +%s)}
+    # Heap: the largest live data after collection in the first hour against the last hour's, and the last hour's against the largest heap.
+    read -r first last most <<EOF
+$(awk -F'\t' -v s="$s" -v e="$e" 'NR > 1 && $2 != "-" {
+        if ($1 < s + 3600 && $2 + 0 > f) f = $2 + 0
+        if ($1 >= e - 3600 && $2 + 0 > l) l = $2 + 0
+        if ($3 != "-" && $3 + 0 > m) m = $3 + 0 }
+    END { print f + 0, l + 0, m + 0 }' "$EXP_ART/soak/heap-lag.tsv")
+EOF
+    [ "$first" != 0 ] && [ "$last" != 0 ] && [ "$most" != 0 ] || fail "the soak: the heap after collection was not read in its first or last hour: see experiments/soak/heap-lag.tsv"
+    heap=$(awk -v f="$first" -v l="$last" -v m="$most" -v g="$SOAK_HEAP_GROWTH" -v s="$SOAK_HEAP_SHARE" \
+        'BEGIN { print (l <= f * g && l <= m * s) ? "held" : "exceeded" }')
+    log "the soak's heap: live after collection $first bytes in its first hour, $last in its last, of $most at most"
+    [ "$heap" = held ] || fail "the soak: the heap after collection grew past its bound - $last bytes in the last hour against $first in the first (at most x$SOAK_HEAP_GROWTH) and $most at most (at most x$SOAK_HEAP_SHARE)"
+    # Lag: the inbox's largest lag after the last fault's recovery.
+    lag=$(awk -F'\t' -v from="${SOAK_LAST_END:-$s}" 'NR > 1 && $1 >= from && $4 != "-" && $4 + 0 > m {m = $4 + 0} END {print m + 0}' "$EXP_ART/soak/heap-lag.tsv")
+    readings=$(awk -F'\t' -v from="${SOAK_LAST_END:-$s}" 'NR > 1 && $1 >= from && $4 != "-"' "$EXP_ART/soak/heap-lag.tsv" | grep -c . || true)
+    [ "$readings" -ge 1 ] || fail "the soak: the inbox's lag was not read after the last fault: see experiments/soak/heap-lag.tsv"
+    [ "$lag" -le "$SOAK_LAG_BOUND" ] || fail "the soak: the inbox's lag reached $lag after the last fault, past InboxLagHigh's $SOAK_LAG_BOUND"
+    # Tables: bytes per journal entry over the first third and over the last third, per table.
+    third=$(( (e - s) / 3 ))
+    awk -F'\t' -v s="$s" -v a="$((s + third))" -v b="$((e - third))" -v e="$e" -v bound="$SOAK_TABLE_GROWTH" 'NR > 1 {
+            t = $2
+            if ($1 <= a) { if (!(t in f0)) { f0[t] = $3; n0[t] = $4 } f1[t] = $3; n1[t] = $4 }
+            if ($1 >= b) { if (!(t in l0)) { l0[t] = $3; m0[t] = $4 } l1[t] = $3; m1[t] = $4 }
+            seen[t] = 1 }
+        END { for (t in seen) {
+                early = (n1[t] > n0[t]) ? (f1[t] - f0[t]) / (n1[t] - n0[t]) : -1
+                late = (m1[t] > m0[t]) ? (l1[t] - l0[t]) / (m1[t] - m0[t]) : -1
+                verdict = (early < 0 || late < 0) ? "unread" : (late <= early * bound || late <= 0 ? "held" : "exceeded")
+                printf "%s\t%.1f\t%.1f\t%s\n", t, early, late, verdict } }' "$EXP_ART/soak/tables.tsv" | sort > "$EXP_ART/soak/growth.tsv"
+    [ "$(grep -c . "$EXP_ART/soak/growth.tsv" || true)" -ge 1 ] || fail "the soak: no table's growth was read: see experiments/soak/tables.tsv"
+    off=$(awk -F'\t' '$4 != "held" {printf "%s (%s: %s -> %s bytes per entry) ", $1, $4, $2, $3}' "$EXP_ART/soak/growth.tsv")
+    [ -z "$off" ] || fail "the soak: a table's growth per journal entry rose past x$SOAK_TABLE_GROWTH from its first third to its last, or was not read: ${off}see experiments/soak/growth.tsv"
+    pass "the soak ended: no census sample failed, the heap after collection held (x$SOAK_HEAP_GROWTH, x$SOAK_HEAP_SHARE), every table's growth per entry held (x$SOAK_TABLE_GROWTH), the inbox's lag $lag after the last fault (at most $SOAK_LAG_BOUND)"
 }

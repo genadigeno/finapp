@@ -1,11 +1,11 @@
 # ADR-0127 — The failure-injection method: scripted experiments on `kind`, registered with their stop conditions, never against anything the run did not create
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-12
 Phase: 16
 Context: Platform · every module (operated under failure)
 Rests on: ADR-0016, ADR-0025, ADR-0026, ADR-0120, ADR-0124, ADR-0126; owner decisions C1, C2, C4, C6 and C7 of `PHASE_16_PLAN.md`
-§2.2 (proposed, awaiting the owner); `PHASE_GATES.md` §5 Phase 16's second criterion.
+§2.2 (decided at their recommendations by the owner, 2026-11-12; *read "proposed, awaiting the owner" until then*); `PHASE_GATES.md` §5 Phase 16's second criterion.
 
 ## Context
 
@@ -73,14 +73,14 @@ census.
 ## Follow-up
 
 `P16-TSK-001` writes the register and its guard. `P16-TSK-019` builds the toolkit. `P16-TSK-020`…`-023` and `P16-TSK-027` run the
-experiments.
+experiments. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: those tasks, with `-010`, `-013`, `-016`, `-018` and `-024`, built and contract-tested their experiments. One failure experiment has run: E01 at three replicas (`a6fee3a1`, `PASSED`, before the owner's word of 2026-11-13). Every other run, E01 at ten among them, is owed under `POSTPONED_ISSUES.md` PI-025.)*
 
 *(Dated note, 2026-11-12: the register as built, decisions 2 and 7 unchanged. `docs/architecture/RESILIENCE_EXPERIMENTS.md` holds
 `PHASE_16_PLAN.md` §9.2's experiments `E01`…`E26`, one experiment per §13 scenario, `F01`…`F15`, and the designed-only rows `D01`…`D05`,
 each with its local analogue. Every experiment also states its replica count and the tasks that run it, and a result also names the
 replica count it ran at. `ResilienceExperimentsAreRegisteredTest` holds it: besides decision 2's fields, evidence and live remediation,
 it refuses an unrun experiment whose runners have all finished, a scenario with no registered experiment, a cited test in the wrong
-tier, and an endpoint or a credential in the register.)*
+tier, and an endpoint or a credential in the register.)* *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: "an unrun experiment" is one whose result reads `—`. Since PI-025 an owed run's result reads `N/A: not run (<date>)` with its postponement, which the guard admits as it admits any `N/A` with a reason, so the owed runs are held by PI-025's list, not by this rule. `P16-REM-005` teaches the guard to tell an owed run from one that does not apply.)*
 
 *(Dated note, 2026-11-13: the toolkit as built, decisions 1, 3, 4 and 5 unchanged in substance. The `experiments` scope of the `kind`
 harness (`infra/scripts/kind-rehearsal/experiments.sh`, `OPERATIONS_RUNBOOK.md` §11.46) makes a cluster of one control plane and three
@@ -88,7 +88,7 @@ workers, each worker a zone, and restores the base's `DoNotSchedule` zone rule i
 on the application's three hops by `hostAliases` in that copy alone: the clients' URLs, bootstrap servers and `verify-full` are unchanged,
 the migrator and the harness never pass through it, and its admin API listens on its pod's loopback. The synchronous standby is
 PostgreSQL's own (a base backup at `verify-full` through a slot, then `FIRST 1` set on the primary at run time), in another zone; its
-promotion and the Service's move are E05's. Decision 4's three brokers are the event pipeline's task, not this one's. None of it is in
+promotion and the Service's move are E05's. Decision 4's three brokers are the event pipeline's task, not this one's. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: built by `P16-TSK-013` (ADR-0136): the experiments and load scopes run three brokers at replication 3 and `min.insync.replicas` 2; every other scope stays at one broker until PI-024's and PI-025's runs (`THREAT_MODEL.md` §6 item 58 (a)).)* None of it is in
 `deploy/`: the standby, the proxy and their policies are harness-applied test-only manifests, so the manifest policy's `kind` flows stand.
 Decision 5 as checks read from the cluster, whole at each steady state and before each fault put on, the context again just before a
 kill that follows a whole pass by seconds - the node's labels, its own context and server, the API's nodes against

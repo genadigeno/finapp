@@ -551,6 +551,7 @@ commit and the date; do not delete the entry.
 - **Fix:** run the pass as `P15-TST-002` describes, on the tree as it then stands; classify each red as a test defect (repaired) or a
   production defect (fixed in a task of its own); close PI-012, PI-014 and PI-015 or postpone them again by the owner.
 - **Owner of the fix:** the owner, after the project's phases; the coordinator reminds the owner at each phase exit, with the storms.
+- **Phase 16's cases, owed with this pass** *(added by the Phase 16 exit review, 2026-11-16)*: the database cases Phase 16's tasks wrote and did not run - `PostingScopeUniquenessDatabaseTest` (`#tenWritersOfOneScopeLeaveOneEntry` among them), `HoldDatabaseTest#tenConcurrentReleasesOfOneHoldReleaseOnce`, `AuditArchivalDatabaseTest`, `RetentionSweepDatabaseTest`, `SessionSweepDatabaseTest`, `InstalmentBillingDatabaseTest`'s re-keyed cases and `PositionCheckpointDatabaseTest#theCensusNamesAWrongCheckpoint` - and `ColumnClassificationTest` over Phase 16's ten migrations, whose rows the exit review wrote by hand against the DDL (`DATA_CLASSIFICATION.md`). Two Phase 16 classes ran on the owner's word before their merges, green on PostgreSQL 18.6 (2026-11-15): `PositionCheckpointDatabaseTest`'s other cases and `OpeningCheckpointDatabaseTest`.
 
 ## PI-024 — The platform rehearsals not run whole on `kind` (`P15-TSK-032`)
 
@@ -561,7 +562,7 @@ commit and the date; do not delete the entry.
   red: dev1 to dev6 on 2026-11-12, the last of them reaching `OPERATIONS_RUNBOOK.md` §6.1. Not run on a cluster at all:
   - **every `incidents` step**: the broker outage and the refused credential (§11.6, §11.21, §11.8's freshness burn), the poison
     record and the abandoned event (§11.6, §11.20), the compromised callback key (§11.29), one instance down and the fleet blind
-    (§11.8, §11.27), retention and abuse (§11.15, §11.30), the poisoned row (§11.39), break-glass under an incident with the
+    (§11.8, §11.27), retention and abuse (§11.15, §11.30), the poisoned row (§11.39) *(its substance run since as Phase 16's E28, `PASSED` on 2026-11-13 at three replicas, commit `e9cdbb3a`, on the card sweep - not the `incidents` scope's own step, which stays owed; noted by the Phase 16 exit review, 2026-11-16)*, break-glass under an incident with the
     broker brought to a position and the API server's audit log read (§11.25, §11.12, §11.35 step 6, §11.1.1's new group), the two
     raw writes to the books (§11.27, §11.20) and the database's unclean stop (§11.40);
   - **`signals` from §6.1's clearing on**: `CreditPolicyMissing` resolving after §6.1 (the rule's defect the run found is fixed and
@@ -832,6 +833,24 @@ commit and the date; do not delete the entry.
     connections releasing one ledger hold at a barrier), written and compiled, is owed to PI-023's pass with the database tier, which the owner
     asked this task not to run. Nothing ran before the word. What ran instead, on 2026-11-14, without a cluster: `sh -n` over the changed
     scripts and `ScenarioExperimentsContractTest` with its two probes (`MUTATION_TESTING.md` §2).
+  - **`P16-TST-001`** (the integrated soak; `OPERATIONS_RUNBOOK.md` §11.67, whose record is empty; `RESILIENCE_EXPERIMENTS.md` E90): **E90**, the
+    soak at ten replicas (`REHEARSAL_SCOPE=experiments REHEARSAL_SOAK=1 REHEARSAL_EXPERIMENTS_REPLICAS=10`), eight hours of the integrated-soak
+    profile under the default schedule (E01 hourly, E08, E82, E17, E05 last inside its declared fault window), its heap, tables and lag judged
+    at its end; and **its probe** apart (`REHEARSAL_PROBE=soak-unbalanced`, one journal line raised by one minor unit at minute 300, which the
+    next sample's trial balance must refuse), with its `MUTATION_TESTING.md` §2 row then. Nothing ran before the word. What ran instead, on
+    2026-11-14, without a cluster: `sh -n` over the changed scripts, the profile parsed as JSON and compared with soak.json, and
+    `SoakContractTest` with its two probes (`MUTATION_TESTING.md` §2).
+  - **`P16-TST-002`** (the exit pass; `RESILIENCE_EXPERIMENTS.md` E27, E01, E05, E09, E59, E61, F01, F14, E30 and E52): once, on the
+    final tree, with the record of each in its row: **the demonstration load** with the census at every sample (`REHEARSAL_SCOPE=load`,
+    the default `demonstration` profile) at three replicas and at ten (`REHEARSAL_LOAD_REPLICAS=10`); **E01, E09 and E05** at three
+    (`REHEARSAL_SCOPE=experiments REHEARSAL_EXPERIMENTS="E01 E09 E05"`, E05 last, as it promotes the standby); **the restore with its
+    verification**, E59's logical restore drill (`infra/scripts/restore-rehearsal.sh`, `OPERATIONS_RUNBOOK.md` §11.35) and E61's
+    post-recovery gate on what it restores (§11.55); **scenarios 1 and 14**, F01 at three (`REHEARSAL_EXPERIMENTS=F01`) and F14 at ten
+    (`REHEARSAL_EXPERIMENTS=F14 REHEARSAL_EXPERIMENTS_REPLICAS=10`); and **E30 again with E52**, the stress profile at three
+    (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=stress`), its result appended to both rows - E30's standing `FAILED` held meanwhile by
+    `P16-REM-001` *(then by `P16-DOC-001` from `P16-REM-001`'s gate, and by `P16-REM-004`, `PLANNED`, from the Phase 16 exit review, 2026-11-16)*. The database and Kafka fleet tiers the task named are PI-023's. Nothing ran. What ran instead, on 2026-11-15,
+    without a cluster: every module's `unitTest`, `sliceTest` and `architectureTest`, fresh on the code of commit `8f20d7c3`
+    (7,000 unit, 299 slice and 1,299 architecture tests across 25 modules, 0 failed, after the one red it found was fixed and platform's two tiers and app's architecture tier re-run on the fix).
 
 ## PI-026 — The first real environment's managed-service decisions: the audit archive's bucket and read door, the restore's release and window
 

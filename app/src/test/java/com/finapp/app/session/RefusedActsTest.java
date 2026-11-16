@@ -99,7 +99,7 @@ class RefusedActsTest {
 
     private MockMvc door(RefusedActs recorder, HandlerInterceptor interceptor) {
         return MockMvcBuilders.standaloneSetup(new Door())
-                .setControllerAdvice(new ApiErrorHandler(absent(StepUpRefusals.class)), new RefusedActAdvice(present(recorder)))
+                .setControllerAdvice(new ApiErrorHandler(absent(StepUpRefusals.class), new org.springframework.beans.factory.support.StaticListableBeanFactory().getBeanProvider(com.finapp.app.api.DatabaseUnreachableAnswer.class)), new RefusedActAdvice(present(recorder)))
                 .addInterceptors(interceptor)
                 .build();
     }

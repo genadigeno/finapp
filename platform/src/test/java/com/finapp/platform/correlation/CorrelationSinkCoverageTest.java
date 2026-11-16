@@ -120,7 +120,35 @@ class CorrelationSinkCoverageTest {
                     //
                     // Correlation reaches the audit RECORD, which is where the two meet, and that
                     // is asserted under "audit" above.
-                    "security");
+                    "security",
+                    // The five below arrived in Phases 15 and 16 unclassified; the Phase 16 exit pass
+                    // (`P16-TST-002`, 2026-11-15) ran this module's tier and classified them.
+                    //
+                    // A correlation sink: a parked inbox record carries the correlation_id of the
+                    // flow that produced its event, NOT NULL (platform V011), or one generated for a
+                    // record that could not be read, and the parking's audit record carries the same.
+                    // Without it an operator releasing a dead letter could not find the flow it
+                    // belongs to. Asserted by KafkaEventReceiverParkingTest's
+                    // aParkedRecordCarriesItsEventsCorrelation hermetically, and JdbcInboxParking
+                    // writes it; the column's NOT NULL refuses a write without one.
+                    "deadletter",
+                    // NOT a sink, for the reason "metrics" gives: the window counter answers how many
+                    // requests a source made, never which flow made one. A refusal reaches the log and
+                    // the problem-detail response, both carrying correlation under "correlation" and
+                    // "api"; a counter row keyed by a flow would be one row per request.
+                    "abuse",
+                    // NOT a sink. OutboundExchange bounds one HTTP exchange's body and carries no
+                    // identifier of its own; what an adapter sends a provider is the adapter's, and
+                    // the call's span is stamped under "telemetry".
+                    "outbound",
+                    // NOT a sink. The retention sweeps delete expired outbox and inbox rows on a
+                    // schedule: no flow causes them, and the rows they remove carried their
+                    // correlation while they lived ("outbox", "inbox").
+                    "retention",
+                    // NOT a sink. The source-join catalogue is statements and keys the census reads
+                    // the journal with; it records nothing, and the census's findings are the
+                    // accounting module's.
+                    "sourcejoin");
 
     @Test
     @DisplayName("no platform concern exists without a decision about whether correlation reaches it")

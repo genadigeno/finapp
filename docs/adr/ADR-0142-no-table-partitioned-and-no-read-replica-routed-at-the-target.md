@@ -1,6 +1,6 @@
 # ADR-0142 — No table partitioned and no read replica routed at the target: each decision derived, its overturning measurement built
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-13
 Phase: 16
 Context: Platform · Ledger · Accounting (report generation) · every module (the data tier)
@@ -60,7 +60,7 @@ standby. So a deployment's URL alone could put either pool on a copy.
    - The journal (`ledger.journal_entry`, `ledger.journal_line`) is never partitioned for capacity. It is never deleted, so a partition
      buys no retention. Its uniques are integrity and once-ness arbiters, a drop or detach would be an erasure no guard sees, and its
      hot reads are by account over the whole history, where a time key prunes nothing. Their cost is bounded by ADR-0133's
-     commit-order checkpoint for the account folds (item 55) and by item 64's decision for the report folds, never by a partition.
+     commit-order checkpoint for the account folds (item 55) and by item 64's decision for the report folds, never by a partition. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: as built, the checkpoint bounds one account fold: the merchant API's payable read (`P16-REM-001`, ledger `V038`, `CheckpointedPositionBreakdown`, its only reader held by `PositionCheckpointsAreTheApisAloneTest`); the report folds are bounded by `P16-REM-003` (accounting `V017`). The other account folds still read the whole history - `AvailableBalance` under the account's lock among them, on the money-moving path - and their bound waits on E38's measurement, owed under PI-025. The decision stands: a time key prunes none of them.)*
    - The idempotency claims and the inbox are never partitioned by a time: their primary keys are the once-ness arbiters.
    - The outbox, the audit trail and the payment attempts and their history are not partitioned. The outbox's sweep keeps pace at the
      minimum fleet and keeps evidence a drop would lose; the audit trail and the attempts are kept, so a partition buys no retention
@@ -96,7 +96,7 @@ standby. So a deployment's URL alone could put either pool on a copy.
      journal (about half a billion lines a year), a statement past the four-minute bound is item 64's: the fold is bounded first, and
      a replica moves that cost without bounding it. A replica is reconsidered only if, after that, report generation's cost at the
      target, times the runs a day the owner expects (no assumption states it), takes more of the primary's CPU at the busiest hour than
-     the target's peak leaves free (E29 and E30 at seven replicas, owed by `P16-TSK-007`).
+     the target's peak leaves free (E29 and E30 at seven replicas, `P16-TSK-007`'s, owed under `POSTPONED_ISSUES.md` PI-025; *corrected by `P16-DOC-001`, 2026-11-16*).
 3. **The guard, criterion 6's first branch.** One primary data source serves every door, held in layers:
    - no production class but `DatabaseEndpoint` names a database's address, in any module's bytes;
    - no production class but `ReportingPool` builds a pool or a connection (the driver, `DriverManager`, a `javax.sql` source other
@@ -158,6 +158,17 @@ answers a decision.
 - Run E65 with E39 (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=soak REHEARSAL_LOAD_DECISIONS=1`, PI-025), and record its readings in
   `OPERATIONS_RUNBOOK.md` §11.57 against this ADR's thresholds.
 - The owner decides item 64, the report folds' bound. *(Decided 2026-11-13 at (i): an opening checkpoint for each locked month,
-  built by `P16-REM-003`, its database cases run before it merges.)*
+  built by `P16-REM-003`, its database cases run before it merges.)* *(Built 2026-11-15 by `P16-REM-003`, accounting `V017`: every
+  report's opening - `LedgerTrialBalanceReads.before` and `ledger`, `LedgerCounterpartyPositionReads.before` - starts from the latest
+  locked month's checkpoint still under the lock it was folded under and folds only the lines dated after that month; the proofs and
+  the close's GL = ledger check stay on the whole fold. Two departures from item 64 (i)'s wording, neither changing what a read means.
+  **The checkpoint is written after the lock commits**, by `AccountingCloseSchedule`'s openings leg (`OpeningCheckpoints`), not in the
+  lock's transaction: that transaction holds the posting cutoff's key exclusively from its advance to its commit (ADR-0114), and a
+  month's fold inside it would hold every posting in the platform behind it. What "written by the lock" was for still holds: a
+  checkpoint is valid only while its month's row is not `OPEN` and its `locked_at` is the one it was folded under, and its insert reads
+  that lock again. **It holds the journal's own classification** (purpose, owner kind, currency, scale, direction), not a pinned
+  version's GL accounts: the mapping is applied on the read, so no version change can stale it, and the failure scenario "a mapping
+  version change" cannot arise. Its database cases ran green on PostgreSQL 18.6 before any merge; E65 on the final tree stays owed under
+  PI-025.)*
 - Revisit decision 1 for the audit trail when a jurisdiction's retention period is decided (item 23 (b)), and for the idempotency records
-  once their sweep exists.
+  once their sweep exists. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: the sweep exists since `P16-TSK-011` (platform `V016`); the revisit is E65's reading of `platform.idempotency_record`, owed under PI-025.)*

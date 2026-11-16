@@ -111,6 +111,10 @@ class StampOrderedReadsAreJudgedTest {
                 ACCOUNTING);
         read("app.FxReferenceValuationRates|SINGLE_ROW|observed_at desc", 1, Judgement.FACT_TIME,
                 "the reference source's own observation instant, by rule: a valuation asks what the source observed before an instant, and the source's order is the fact (fx V002: one row per (source, pair, observed_at); a not-newer observation is declined)");
+        read("app.LedgerJournalCreations|MIN_MAX|max(entry.created_at)", 2, Judgement.FACT_TIME,
+                "an opening checkpoint's latest_created (P16-REM-003): the entries' own creation stamps as their posting instances made them,"
+                        + " the very values a PROVISIONAL run's cut compares (entry.created_at <= cut), so a checkpoint served under a cut at or"
+                        + " after it holds exactly the entries the whole fold keeps; a stepped or skewed clock moves both alike");
         read("app.LedgerMonitoredLedger|SINGLE_ROW|id", 1, Judgement.DISPLAYS,
                 "the first journal entry past the monitoring watermark, read only by the age gauge (RiskAgeMetrics): reported, and nothing branches on it");
         read("app.LendingReports|SINGLE_ROW|e.occurred_at desc, e.id desc", 6, Judgement.DISPLAYS,

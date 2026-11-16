@@ -39,6 +39,9 @@ import org.springframework.context.SmartLifecycle;
  * generation and let another instance overtake it.
  *   <li><strong>Inquiry</strong> ({@link #inquiryOnce}, `P14-TSK-018`): {@code RegulatorySubmissionDriver.inquireDue} - up to a bound, each due {@code SUBMITTED} return claimed
  * {@code FOR UPDATE SKIP LOCKED} under a lease, asked of its adapter on no transaction, and its answer recorded. It meters its own failed claims, {@code leg=inquiry}, from its first run.
+ *   <li><strong>Openings</strong> ({@link #openingsOnce}, `P16-REM-003`): {@code OpeningCheckpoints.storeNext} - the oldest locked month
+ * whose present lock has no opening checkpoint, folded and stored after the lock committed, one a tick at the checks' cadence, under a
+ * transaction-scoped try-lock (namespace 14), so ten instances fold it once and the others skip the tick.
  * </ul>
  *
  * <p>A leg on its own thread, so a two-hour check never delays the opening of a month; one thread more for the
@@ -52,9 +55,10 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
     static final String CHECKS_LEG = "checks";
     static final String ORPHANS_LEG = "orphans";
     static final String INQUIRY_LEG = "inquiry";
+    static final String OPENINGS_LEG = "openings";
 
-    /** Four legs and the heartbeats - a thread each. */
-    private static final int THREADS = 5;
+    /** Five legs and the heartbeats - a thread each. */
+    private static final int THREADS = 6;
 
     /** The orphan leg's limit per call (`P14-TSK-008`'s review, M-6). */
     static final int ONE_RUN = 1;
@@ -101,11 +105,22 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
         int inquireDue();
     }
 
+    /** The openings leg's callable - {@code OpeningCheckpoints.storeNext} in a transaction of its own: whether it stored one. */
+    @FunctionalInterface
+    public interface Openings {
+
+        /** Nothing to fold - a suite's schedule that drives no opening checkpoint. */
+        Openings NONE = () -> false;
+
+        boolean storeNext();
+    }
+
     private final AccountingPeriods periods;
     private final CloseRuns runs;
     private final CloseCheckWorker worker;
     private final Orphans orphans;
     private final Inquiries inquiries;
+    private final Openings openings;
     private final AccountingTransactions transactions;
     private final CloseRunMetrics metrics;
     private final IdGenerator ids;
@@ -122,10 +137,17 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
     public AccountingCloseSchedule(AccountingPeriods periods, CloseRuns runs, CloseChecks checks,
             Orphans orphans, Inquiries inquiries, AccountingTransactions transactions, CloseRunMetrics metrics,
             AccountingFlowScope flow, IdGenerator ids, Cadence cadence) {
+        this(periods, runs, checks, orphans, inquiries, Openings.NONE, transactions, metrics, flow, ids, cadence);
+    }
+
+    public AccountingCloseSchedule(AccountingPeriods periods, CloseRuns runs, CloseChecks checks,
+            Orphans orphans, Inquiries inquiries, Openings openings, AccountingTransactions transactions, CloseRunMetrics metrics,
+            AccountingFlowScope flow, IdGenerator ids, Cadence cadence) {
         this.periods = Objects.requireNonNull(periods, "periods");
         this.runs = Objects.requireNonNull(runs, "runs");
         this.orphans = Objects.requireNonNull(orphans, "orphans");
         this.inquiries = Objects.requireNonNull(inquiries, "inquiries");
+        this.openings = Objects.requireNonNull(openings, "openings");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
         this.ids = Objects.requireNonNull(ids, "ids");
@@ -185,6 +207,16 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
         return leg(INQUIRY_LEG, inquiries::inquireDue);
     }
 
+    /**
+     * The openings leg (`P16-REM-003`): one locked month's opening checkpoint, when one is missing and no other instance is folding it.
+     * No actor: a checkpoint is derived from the journal, never an act.
+     *
+     * @return how many checkpoints this call stored - one or none
+     */
+    public int openingsOnce() {
+        return leg(OPENINGS_LEG, () -> openings.storeNext() ? 1 : 0);
+    }
+
     @SuppressWarnings("try") // The Scope is used for its close side effect (the established idiom).
     private static int inSystemScope(java.util.function.ToIntFunction<Actor> work) {
         try (SecurityContext.Scope scope = SecurityContext.enterSystem()) {
@@ -230,7 +262,8 @@ public final class AccountingCloseSchedule implements SmartLifecycle {
         });
         executor.set(started);
         for (Leg leg : List.of(new Leg(cadence.openPoll(), this::openOnce), new Leg(cadence.checksPoll(), this::checksOnce),
-                new Leg(cadence.orphansPoll(), this::orphansOnce), new Leg(cadence.inquiryPoll(), this::inquiryOnce))) {
+                new Leg(cadence.orphansPoll(), this::orphansOnce), new Leg(cadence.inquiryPoll(), this::inquiryOnce),
+                new Leg(cadence.checksPoll(), this::openingsOnce))) {
             // At once, not after a poll: an hour's open leg would otherwise never run on a fleet restarted within the hour.
             // Waits at the top of the leg (P15-TSK-005): several threads, and a first tick with no delay, which ScheduleDrain's gate
             // cannot cover. Waits rather than skips, so a leg held at the start still runs at once when released, not a poll later.

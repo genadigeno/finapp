@@ -4,8 +4,8 @@ import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.Counterparty;
 import com.finapp.ledger.CounterpartyChart;
 import com.finapp.ledger.CounterpartyClearing;
-import com.finapp.ledger.JdbcCounterpartyStore;
-import com.finapp.ledger.JdbcLedgerAccountStore;
+import com.finapp.ledger.CounterpartyStore;
+import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -13,7 +13,6 @@ import java.util.Collection;
 import java.util.Optional;
 import javax.sql.DataSource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 /**
  * Refuses to start on an incomplete counterparty chart (`P9-TSK-010`, ADR-0078 section 4): every
@@ -27,9 +26,12 @@ import org.springframework.stereotype.Component;
  * build must find. A database down at startup is not a finding about the chart - the
  * {@code ConnectionPoolSizingGuard} reasoning: readiness reports it - and the per-call refusal
  * of {@code ChartOfAccounts.resolve} stays the backstop. With nothing declared, nothing is read.
+ *
+ * <p><strong>It reads through the ledger's ports</strong>, handed in by {@code SettlementBeans}: it built the two JDBC
+ * adapters itself until {@code P15-REM-001}, and a store adapter is the composition root's wiring to construct
+ * ({@code moduleInternalsArePrivateToTheirModule}).
  */
 @Slf4j
-@Component
 public class CounterpartyChartGuard {
 
     /** A connection source - its own seam, the metrics precedent. */
@@ -37,17 +39,20 @@ public class CounterpartyChartGuard {
         Connection open() throws SQLException;
     }
 
-    CounterpartyChartGuard(DataSource dataSource) {
-        verify(CounterpartyClearings.declared(), dataSource::getConnection);
+    CounterpartyChartGuard(
+            DataSource dataSource, CounterpartyStore<Connection> registry, LedgerAccountStore<Connection> chart) {
+        verify(CounterpartyClearings.declared(), dataSource::getConnection, registry, chart);
     }
 
     /** The startup rule, over planted declarations in its tests. */
-    public static void verify(Collection<CounterpartyClearing> declared, Connections connections) {
+    public static void verify(
+            Collection<CounterpartyClearing> declared,
+            Connections connections,
+            CounterpartyStore<Connection> registry,
+            LedgerAccountStore<Connection> chart) {
         if (declared.isEmpty()) {
             return;
         }
-        JdbcCounterpartyStore registry = new JdbcCounterpartyStore();
-        JdbcLedgerAccountStore chart = new JdbcLedgerAccountStore();
         Connection connection;
         try {
             connection = connections.open();

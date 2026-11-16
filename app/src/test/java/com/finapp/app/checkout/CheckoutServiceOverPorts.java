@@ -38,6 +38,8 @@ final class CheckoutServiceOverPorts {
                 mock(com.finapp.identity.IdentityStore.class), mock(com.finapp.platform.idempotency.IdempotentExecutor.class),
                 mock(com.finapp.platform.audit.AuditWriter.class), mock(com.finapp.platform.outbox.OutboxWriter.class), ids, clock,
                 new TransactionTemplate(transactions), dataSource, mock(com.finapp.identity.MfaEnrolmentStore.class),
-                mock(CheckoutDoorStepUp.class));
+                mock(CheckoutDoorStepUp.class),
+                // The adapters the service built for itself until P15-REM-001, so these tests read what they always read.
+                new com.finapp.payments.JdbcPaymentIntentStore(), new com.finapp.payments.JdbcPaymentAttemptStore());
     }
 }

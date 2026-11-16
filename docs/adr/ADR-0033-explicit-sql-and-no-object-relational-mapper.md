@@ -73,7 +73,10 @@ identity/internal/jdbc/     JdbcIdentityRepository   adapter, takes the unit of 
 ```
 
 `IdempotencyRecordStore<T>` / `JdbcIdempotencyRecordStore` is that pattern verbatim.
-`moduleInternalsArePrivateToTheirModule` already enforces the visibility half.
+`moduleInternalsArePrivateToTheirModule` already enforces the visibility half. *(`P15-REM-001`, 2026-11-15: it did not - the
+`internal/jdbc` layout above was never adopted, every module stayed a flat package, and the rule read only `.internal`, so it
+held nothing. It now reads the adapter itself: a business module's class that executes SQL is private to its module, and
+`app` names a store adapter only in its `@Configuration` wiring. ADR-0006's Follow-up.)*
 
 ### The unit of work is a `Connection`, permanently
 

@@ -207,6 +207,102 @@ public final class MigrationLint {
         }
     }
 
+    /**
+     * What {@link #foreignKeys(Path)} read: how many {@code REFERENCES} clauses it found in all, so that an empty list of
+     * crossings is known to come from a reading that saw the tree's foreign keys rather than from one that saw nothing.
+     */
+    public record ForeignKeys(int read, List<String> crossings) {}
+
+    /**
+     * ADR-0006's "no foreign keys across module schemas", held over every migration of every module (`P15-REM-001`): a
+     * {@code REFERENCES} must name a table of the migration's own module's schema, qualified. An unqualified target is
+     * refused too, because it resolves by the session's {@code search_path}, which no migration controls. The reading is
+     * the tokeniser's, so a comment, a string literal or a quoted name never matches; and it goes inside every dollar-quoted
+     * body, where a {@code DO} block could add a constraint the statement-level lint never sees. {@code REFERENCES} as a
+     * privilege ({@code GRANT REFERENCES ON ...}) is not a key and is passed.
+     */
+    public static ForeignKeys foreignKeys(Path root) throws IOException {
+        int read = 0;
+        List<String> crossings = new ArrayList<>();
+        for (String module : modules(root)) {
+            for (Path file : files(root, module)) {
+                ForeignKeys one = foreignKeys(read(file), module, root.relativize(file).toString().replace('\\', '/'));
+                read += one.read();
+                crossings.addAll(one.crossings());
+            }
+        }
+        return new ForeignKeys(read, List.copyOf(crossings));
+    }
+
+    /** One migration's text, read as {@code module}'s: the planted cases and the real tree take this one path. */
+    static ForeignKeys foreignKeys(String sql, String module, String file) {
+        Tokenised text = tokenise(sql);
+        List<Token> tokens = text.tokens();
+        int read = 0;
+        List<String> crossings = new ArrayList<>();
+        for (int i = 0; i < tokens.size(); i++) {
+            if (!tokens.get(i).is("REFERENCES")) {
+                continue;
+            }
+            Token first = at(tokens, i + 1);
+            if (first.is("ON") || first.isPunct(",") || first.isPunct("(")) {
+                continue; // a privilege: GRANT REFERENCES ON t, GRANT SELECT, REFERENCES ON t, GRANT REFERENCES (column) ON t
+            }
+            read++;
+            Token dot = at(tokens, i + 2);
+            Token table = at(tokens, i + 3);
+            boolean named = first.kind() == Kind.WORD || first.kind() == Kind.QUOTED;
+            if (!named || !dot.isPunct(".") || (table.kind() != Kind.WORD && table.kind() != Kind.QUOTED)) {
+                crossings.add(file + ": REFERENCES " + first.identifier() + " names no schema, so search_path decides whose table it is");
+            } else if (!first.identifier().equals(module)) {
+                crossings.add(file + ": REFERENCES " + first.identifier() + "." + table.identifier() + " crosses from " + module
+                        + "'s schema into another module's");
+            }
+        }
+        for (String body : text.bodies()) {
+            ForeignKeys inside = foreignKeys(body, module, file + " (inside a dollar-quoted body)");
+            read += inside.read();
+            crossings.addAll(inside.crossings());
+        }
+        return new ForeignKeys(read, List.copyOf(crossings));
+    }
+
+    /**
+     * The volatility each definition of {@code module.function} declares, in file order: {@code STABLE}, {@code IMMUTABLE}, or
+     * {@code VOLATILE} - which is also what a definition naming neither gets, PostgreSQL's default. Empty when no migration of
+     * the module defines it. `P15-REM-001`: a function {@code app} calls in another module's schema must be one that cannot
+     * write, and PostgreSQL refuses a data-modifying statement inside a non-volatile function.
+     */
+    public static List<String> volatilities(Path root, String module, String function) throws IOException {
+        List<String> found = new ArrayList<>();
+        for (Path file : files(root, module)) {
+            found.addAll(volatilities(read(file), module, function));
+        }
+        return List.copyOf(found);
+    }
+
+    /** One migration's definitions of {@code module.function}: the planted cases and the real tree take this one path. */
+    static List<String> volatilities(String sql, String module, String function) {
+        List<String> found = new ArrayList<>();
+        for (List<Token> statement : statements(tokenise(sql).tokens())) {
+            int at = 0;
+            if (!at(statement, at).is("CREATE")) {
+                continue;
+            }
+            at++;
+            if (at(statement, at).is("OR") && at(statement, at + 1).is("REPLACE")) {
+                at += 2;
+            }
+            if (!at(statement, at).is("FUNCTION") || !at(statement, at + 1).identifier().equals(module)
+                    || !at(statement, at + 2).isPunct(".") || !at(statement, at + 3).identifier().equals(function)) {
+                continue;
+            }
+            found.add(statement.stream().anyMatch(token -> token.is("IMMUTABLE")) ? "IMMUTABLE"
+                    : statement.stream().anyMatch(token -> token.is("STABLE")) ? "STABLE" : "VOLATILE");
+        }
+        return found;
+    }
+
     /** Each module's highest version on disk. */
     public static SortedMap<String, SchemaVersion> head(Path root) throws IOException {
         SortedMap<String, SchemaVersion> head = new TreeMap<>();
@@ -1810,7 +1906,8 @@ public final class MigrationLint {
 
     private record LineComment(String text, boolean afterTheFirstStatement) {}
 
-    private record Tokenised(List<Token> tokens, List<LineComment> comments) {}
+    /** {@code bodies} holds each dollar-quoted body's text, for a reading that must see inside one ({@link #foreignKeys}). */
+    private record Tokenised(List<Token> tokens, List<LineComment> comments, List<String> bodies) {}
 
     /** The file cannot be read to its end. */
     private static final class UnreadableSql extends RuntimeException {
@@ -1824,6 +1921,7 @@ public final class MigrationLint {
     private static Tokenised tokenise(String sql) {
         List<Token> tokens = new ArrayList<>();
         List<LineComment> comments = new ArrayList<>();
+        List<String> bodies = new ArrayList<>();
         int length = sql.length();
         int i = 0;
         while (i < length) {
@@ -1851,6 +1949,7 @@ public final class MigrationLint {
                     throw new UnreadableSql("an unterminated " + tag + " body");
                 }
                 tokens.add(new Token(Kind.BODY, tag + "..." + tag));
+                bodies.add(sql.substring(tagEnd, close));
                 i = close + tag.length();
             } else if (Character.isLetter(c) || c == '_') {
                 int end = i + 1;
@@ -1883,7 +1982,7 @@ public final class MigrationLint {
                 i++;
             }
         }
-        return new Tokenised(tokens, comments);
+        return new Tokenised(tokens, comments, bodies);
     }
 
     /** The index past the {@code $tag$} opening at {@code start}, or -1 when this {@code $} opens no body (a {@code $1}). */

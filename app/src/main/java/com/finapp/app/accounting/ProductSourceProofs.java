@@ -33,8 +33,9 @@ import java.util.function.Function;
  * decision 2; {@code PHASE_14_PLAN.md} section 13.3; {@code INV-ACC-12}) - in {@code app}, the one module that sees
  * them all: lending's {@link LendingProofs} (the {@link LoanSubledgerProof} and {@link LoanReplayProof} in one reading),
  * the {@link LendingCapitalProof}, {@link BnplProofs} (the {@link BnplSubledgerProof} and {@link BnplThreeWayProof}),
- * fx's {@link FxBooksProof}, reconciliation's {@link PositionProof}, merchant's {@link MerchantPayable} drill-down and the
- * ledger's {@link ProjectionVerification}. <strong>Each verdict as its proof states it - never re-implemented</strong>:
+ * fx's {@link FxBooksProof}, reconciliation's {@link PositionProof}, merchant's {@link MerchantPayable} drill-down (and, since
+ * `X-TSK-021`, the census comparing the API's read of it from a checkpoint with the whole fold) and the ledger's
+ * {@link ProjectionVerification}. <strong>Each verdict as its proof states it - never re-implemented</strong>:
  * this adapter only reads a proof's failing verdicts into {@link SourceProofs.Discrepancy discrepancies}, naming the
  * proof's subject and its failing arms and items - never an amount ({@code INV-AUD-02}).
  *
@@ -74,12 +75,32 @@ public final class ProductSourceProofs implements SourceProofs {
     static final String POSTED_ACCOUNTS = "SELECT ledger_account_id FROM ledger.journal_line"
             + " UNION SELECT ledger_account_id FROM ledger.account_balance ORDER BY 1";
 
-    /** One merchant payable: whether its drill-down's terms sum to its position. */
-    public record PayableTerms(UUID merchant, String currency, boolean sumHolds) {
+    /**
+     * One merchant payable: whether its drill-down's terms sum to its position, and whether the drill-down the merchant API reads
+     * from its commit-order checkpoint is the drill-down of the whole fold (`X-TSK-021`).
+     */
+    public record PayableTerms(UUID merchant, String currency, boolean sumHolds, boolean checkpointAgrees) {
 
         public PayableTerms {
             Objects.requireNonNull(merchant, "merchant");
             Objects.requireNonNull(currency, "currency");
+        }
+
+        /** A payable whose checkpoint was not compared: read from the whole fold only, so it agrees by construction. */
+        public PayableTerms(UUID merchant, String currency, boolean sumHolds) {
+            this(merchant, currency, sumHolds, true);
+        }
+    }
+
+    /**
+     * The two reads of every merchant payable the reading compares (`X-TSK-021`): the whole fold, and the merchant API's read from
+     * its checkpoint, which never stores. Made only by {@link PayableCheckpointCensus}.
+     */
+    public record PayableReads(MerchantPayable wholeFold, MerchantPayable apiRead) {
+
+        public PayableReads {
+            Objects.requireNonNull(wholeFold, "wholeFold");
+            Objects.requireNonNull(apiRead, "apiRead");
         }
     }
 
@@ -125,7 +146,10 @@ public final class ProductSourceProofs implements SourceProofs {
             case BNPL -> bnplReadings(bnpl.apply(snapshot));
             case FX_BOOKS -> List.of(fxReading(fx.apply(snapshot)));
             case POSITION -> List.of(positionReading(position.apply(snapshot)));
-            case MERCHANT_PAYABLE -> List.of(payableReading(payables.apply(snapshot)));
+            case MERCHANT_PAYABLE -> {
+                List<PayableTerms> terms = payables.apply(snapshot);
+                yield List.of(payableReading(terms), checkpointReading(terms));
+            }
             case PROJECTION -> List.of(projectionReading(projections.apply(snapshot)));
         };
     }
@@ -250,6 +274,18 @@ public final class ProductSourceProofs implements SourceProofs {
                 .toList());
     }
 
+    /**
+     * The payables whose API drill-down, from its checkpoint, is not the whole fold's (`X-TSK-021`). The evidence is one fixed
+     * string: which term differs would be an amount's shadow, and what to do is the same - retire the account's checkpoints.
+     */
+    static Reading checkpointReading(List<PayableTerms> payables) {
+        return new Reading(Proof.PAYABLE_CHECKPOINT, true, payables.stream()
+                .filter(payable -> !payable.checkpointAgrees())
+                .map(payable -> new Discrepancy(payable.merchant() + ":" + payable.currency(),
+                        "checkpointAgreesWithTheWholeFold=false"))
+                .toList());
+    }
+
     static Reading projectionReading(Projections projections) {
         return new Reading(Proof.PROJECTION, projections.inFlight() == 0, projections.drifting().stream()
                 .map(account -> new Discrepancy(account.toString(), "verdict=DRIFTING"))
@@ -258,7 +294,38 @@ public final class ProductSourceProofs implements SourceProofs {
 
     // ------------------------------------------------------------------ the two censuses
 
-    /** Every merchant payable's drill-down on the snapshot: does its terms' sum equal its position? */
+    /**
+     * Every merchant payable on the snapshot, judged twice (`X-TSK-021`): do its terms sum to its position, from the whole fold
+     * ({@code wholeFold}), and is the drill-down the merchant API reads ({@code apiRead}, from its checkpoint) that same drill-down,
+     * position and every term? Both reads take one owner-scoped account list on one snapshot, so they come back in the same order,
+     * one payable per currency; a list of another length or currency is a disagreement.
+     */
+    public static Function<Connection, List<PayableTerms>> merchantPayables(PayableReads reads) {
+        Objects.requireNonNull(reads, "reads");
+        return merchantPayables(reads.wholeFold(), reads.apiRead());
+    }
+
+    /** {@link #merchantPayables(PayableReads)} over two reads given apart: the hermetic suite's seam. */
+    static Function<Connection, List<PayableTerms>> merchantPayables(MerchantPayable wholeFold, MerchantPayable apiRead) {
+        Objects.requireNonNull(wholeFold, "wholeFold");
+        Objects.requireNonNull(apiRead, "apiRead");
+        return snapshot -> {
+            List<PayableTerms> payables = new ArrayList<>();
+            for (UUID merchant : ids(snapshot, MERCHANTS, "reading the merchants with a payable")) {
+                List<MerchantPayable.Payable> whole = wholeFold.payablesOf(snapshot, MerchantId.of(merchant));
+                List<MerchantPayable.Payable> read = apiRead.payablesOf(snapshot, MerchantId.of(merchant));
+                for (int index = 0; index < whole.size(); index++) {
+                    MerchantPayable.Payable payable = whole.get(index);
+                    boolean agrees = read.size() == whole.size() && read.get(index).equals(payable);
+                    payables.add(new PayableTerms(merchant, payable.position().currency().code(),
+                            payable.terms().equals(payable.position()), agrees));
+                }
+            }
+            return payables;
+        };
+    }
+
+    /** Every merchant payable's drill-down on the snapshot: does its terms' sum equal its position? No checkpoint is compared. */
     public static Function<Connection, List<PayableTerms>> merchantPayables(MerchantPayable drillDown) {
         Objects.requireNonNull(drillDown, "drillDown");
         return snapshot -> {

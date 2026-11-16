@@ -37,6 +37,9 @@ public class MerchantBeans {
     /**
      * The payable view (`P6-TSK-010`): the ledger's owner-scoped account read and its position
      * breakdown, interpreted by the merchant module that composes the entry shapes being read.
+     * Since `P16-REM-001` the breakdown is the commit-order checkpoint's (ADR-0133 decision 3), so
+     * the read's cost is the lines since the checkpoint, not the merchant's age; the answer is the
+     * whole fold's. This is the one place it is wired: the proofs read the whole history.
      */
     @Bean
     MerchantPayableQuery merchantPayableQuery(
@@ -44,7 +47,7 @@ public class MerchantBeans {
         return new MerchantPayableQuery(
                 new com.finapp.merchant.MerchantPayable(
                         new JdbcLedgerAccountStore(),
-                        new com.finapp.ledger.JdbcPositionBreakdown()),
+                        new com.finapp.ledger.CheckpointedPositionBreakdown()),
                 new TransactionTemplate(transactionManager),
                 dataSource);
     }

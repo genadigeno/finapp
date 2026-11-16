@@ -166,3 +166,9 @@ run's lease; `run` called outside any transaction) and M-10 (reconciliation's `s
 `RECONCILIATION_DISCLOSURE` input) to `P14-TSK-011`; M-7 to the owner; M-8 (offsetting differences within one currency
 cancel in GL = ledger's per-currency sums and in the per-currency balance check) a known limitation; M-9 documented in
 `BreaksNeverPostTest`; M-11 at the integration merge.)*
+
+*(Note, 2026-11-15, `X-TSK-021`: the source proofs' catalogue is `source-proofs:v2`, ten proofs over seven sources. The merchant
+payable source answers `PAYABLE_CHECKPOINT` beside `MERCHANT_PAYABLE`: the drill-down the merchant API reads from its commit-order
+checkpoint (ADR-0133 decision 3) compared with the whole fold's. Read "the nine proofs" and `source-proofs:v1` above as the catalogue
+until then; verdicts and findings recorded before keep `v1`, and a break's identity reads its evidence, not its version. The
+projection close check keeps `source-proofs:v1`: the one proof it reads is unchanged.)*

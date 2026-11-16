@@ -89,6 +89,10 @@ M3 and M6 (fraud and AML share one module, case management is in it). Rests on `
    profile and the case model. M3's split triggers stand and are measured: AML acquiring retention or isolation
    obligations fraud does not share, or the monitoring workload harming the synchronous budget — `P13-TST-001` runs
    the sweep beside the storm and measures T-eval's latency per operation (plan §13.3).
+   *(P16-TSK-030, 2026-11-15, ADR-0151 decision 5: `risk` stays one module, in the monolith. Trigger 1 has not fired - the
+   regulatory report is a retention class of the platform's policy, kept per table inside `risk`, its destruction schedule
+   waiting on a jurisdiction (C12, C4); trigger 2 stays unmeasured, with PI-004's storm and `RiskEvaluationLatencyOverBudget`.
+   The remote-evaluation alternative below is refused again: nothing measured supports it.)*
    *(P13-DOC-001, 2026-10-27: **not measured.** `P13-TST-001` is postponed by the owner until after the project's
    phases (`POSTPONED_ISSUES.md` PI-004): no latency figure exists, so the second trigger is unread - T-eval's latency
    is metered (`finapp.risk.evaluation.latency{operation}`) and alerted (`RiskEvaluationLatencyOverBudget`), never

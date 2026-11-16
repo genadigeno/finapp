@@ -48,7 +48,7 @@ class StepUpRefusalsTest {
     private final List<String> events = new ArrayList<>();
     private final List<AuditRecord> written = new ArrayList<>();
     private final ApiErrorHandler handler = new ApiErrorHandler(provider(InterceptorHarness.stepUpRefusals(events, written,
-            IDS, CLOCK)));
+            IDS, CLOCK)), new org.springframework.beans.factory.support.StaticListableBeanFactory().getBeanProvider(com.finapp.app.api.DatabaseUnreachableAnswer.class));
 
     @Test
     @DisplayName("a conditional step-up's refusal is recorded once, against the person acting, in its own committed"
@@ -110,8 +110,8 @@ class StepUpRefusalsTest {
     @DisplayName("fail closed, as the interceptor does: a record that cannot be written answers 500, never a 403"
             + " without its record; a context without the recorder renders the contract alone")
     void aRefusalWhoseRecordFailsIsAnsweredAsAFailure() {
-        ApiErrorHandler failing = new ApiErrorHandler(provider(InterceptorHarness.failingStepUpRefusals(IDS, CLOCK)));
-        ApiErrorHandler without = new ApiErrorHandler(new StaticListableBeanFactory().getBeanProvider(StepUpRefusals.class));
+        ApiErrorHandler failing = new ApiErrorHandler(provider(InterceptorHarness.failingStepUpRefusals(IDS, CLOCK)), new org.springframework.beans.factory.support.StaticListableBeanFactory().getBeanProvider(com.finapp.app.api.DatabaseUnreachableAnswer.class));
+        ApiErrorHandler without = new ApiErrorHandler(new StaticListableBeanFactory().getBeanProvider(StepUpRefusals.class), new org.springframework.beans.factory.support.StaticListableBeanFactory().getBeanProvider(com.finapp.app.api.DatabaseUnreachableAnswer.class));
         Actor person = new Actor(IdentityId.next(IDS).value().toString(), ActorType.CUSTOMER);
         try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)));
                 SecurityContext.Scope acting = SecurityContext.enter(person)) {

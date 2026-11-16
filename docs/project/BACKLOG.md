@@ -28845,8 +28845,8 @@ open. The owner's postponements PI-004, PI-023 and PI-024 are not repeated here 
 `P15-REM-005` before its guard run, as the owner's acceptance G asked, and added `P15-REM-006` and `-007` from its MINOR findings
 G-2 and G-3, under the same terms.*
 
-**P15-REM-001 — ADR-0006's boundary rules made to hold what they say** — `PLANNED` — **before any service extraction is
-decided** (ADR-0001's revisit point, Phase 16)
+**P15-REM-001 — ADR-0006's boundary rules made to hold what they say** — `COMPLETE` (2026-11-15; designed, built and gated straight through on the owner's "Start P15-REM-001", branch `P15-REM-001` from `71fdcb5c` (`P16-TST-001`, unmerged); no migration, no ADR - ADR-0006 amended in its decision and Follow-up, a dated note on ADR-0033; two production reaches removed; marks `P16-TSK-030` `READY`) *(read "`PLANNED` — **before any service extraction is
+decided** (ADR-0001's revisit point, Phase 16)" until its gate)*
 - Objective: the coupling review (ADR-0006's Follow-up, done by the exit review) found the Gradle graph exactly the declared
   one and no foreign key across schemas, and four rules weaker than the ADR says: (a) the internals rule reads `.internal`
   packages and no module has one - every module is a flat package of public types - so give each module's private stores and
@@ -28863,6 +28863,35 @@ decided** (ADR-0001's revisit point, Phase 16)
   also least-privilege rules.
 - Testing: each rule with a planted violation seen red (ADR-0006's own verification rule), recorded in `MUTATION_TESTING.md`
   §2 for (c) under `INV-LED-04`. DoD: `DOD-ARCH`, `DOD-TEST`, `DOD-DOC`. Risk: Low. Cx: M ((a) touches every module's layout).
+- **As built (2026-11-15, gate `COMPLETE`; no migration; documents, guards and two production reaches).** **(a)** No module's layout
+  moved: `moduleInternalsArePrivateToTheirModule` keeps the internal package and adds what a module's private state is, found from
+  the bytecode - a business module's class that executes a statement (prepares or uses a JDBC statement or result set, or uses
+  Spring's jdbc), with its nested classes. No
+  business module names another's (published service or not), and `app` names a store adapter (an SQL class implementing a port a
+  business module declares) only in its `@Configuration` wiring; a module's service that runs its own statements is its API and
+  `app` its caller - the rule's first form, every SQL class private from `app` too, was seen red 503 times over 44 such services
+  and narrowed; `platform`'s JDBC infrastructure is not held. It found two reaches, both removed: `CheckoutService` built payments'
+  `JdbcPaymentIntentStore` and `JdbcPaymentAttemptStore` itself (now taken through `CheckoutBeans`), and `CounterpartyChartGuard`
+  ledger's `JdbcCounterpartyStore` and `JdbcLedgerAccountStore` (no longer a `@Component`: a `SettlementBeans` bean hands it the
+  ports; its static `verify` takes them). **(b)** `entitiesAreNotReferencedAcrossModules` retired with a dated note in §6: no mapper
+  (ADR-0033), and a store crosses as its port, its adapter held by (a). **(c)** `onlyTheLedgerAppendsToTheJournal`: no class
+  outside `com.finapp.ledger` calls `JournalEntryStore.append`, by a call or a method reference, on the port or an implementation.
+  **(d)** `NoForeignKeyCrossesASchemaTest` over `MigrationLint.foreignKeys`: every `REFERENCES` in every migration of every module
+  (467) names its own module's schema, qualified; the tokeniser's reading, so comments, strings and privileges pass, and every
+  dollar-quoted body is read too. **(e)** `SchemaReadsArePinnedTest`: `app`'s 28 adapters and the schemas each reads (51 pairs over
+  13 schemas) equal to `MODULE_ARCHITECTURE.md` §6 "Data boundary"'s new table both ways; no write, DDL, sequence advance or row lock
+  names a module schema from `app`; each of the three functions it calls there (`platform.applied_migration_versions`,
+  `lending.business_date`, `bnpl.business_date`) `STABLE` in every definition (`MigrationLint.volatilities`); and every module's SQL
+  names its own schema only. ADR-0006's data boundary states the exception in words. **(f)** `notification` deferred, not struck
+  (§2, §3 row 24, §4, §5): no phase builds it, and `DECISIONS.md` §Deferred "Changing the verified contact channel" waits on its
+  notifier. **Demonstrations**: in-suite probes for every rule (`MUTATION_TESTING.md` §2, four rows, `INV-LED-04`'s among them) and
+  six recorded plants on the real tree at the gate, caught in two rounds. **The gate's two findings, fixed**: "executes SQL" read
+  any `java.sql` access, so a class converting a `Timestamp` would have been a module's state - it now reads statement-level JDBC
+  (a statement prepared or used, a result set, Spring's jdbc); and the schema reader saw SQL only by its upper-case words, so a
+  lower-case statement passed unread - a run opening with an SQL word in any case is now SQL too (opening only, so prose is not).
+  Each has its in-suite case. **Multi-instance**: `PASS` - static rules; nothing runs. **Not run**:
+  `databaseTest` and `kafkaTest` (the owner's standing word), so `CounterpartyChartDatabaseTest`, whose calls changed shape, is
+  compiled and owed to PI-023's pass.
 
 **P15-REM-002 — An audit record tested for every auditable route** — `PLANNED` — **before production use**
 - Objective: `PHASE_GATES.md` §5 Phase 15 criterion 5's last clause, "every route in the permission register whose act is
@@ -28918,7 +28947,7 @@ in a real environment**, its run with PI-024's
 - Bounded context: the local stack and the build's version check; the documents that describe the local stack's Redis as available (`SYSTEM_ARCHITECTURE.md`, `DATA_ARCHITECTURE.md`, read at the change). Dependencies: none. Multi-instance: none. Security: one fewer listening service on a developer's loopback.
 - Testing: `verifyInfrastructureVersions` green with the pin's change; any test reading `compose.yaml`'s services updated. DoD: `DOD-DOC`. Risk: Low. Cx: S.
 
-**P15-REM-007 — The autoscaler seen scaling, and a ceiling above seven** — `PLANNED` — **Phase 16, with the ten-instance load task** (`THREAT_MODEL.md` §6 item 43 (g))
+**P15-REM-007 — The autoscaler seen scaling, and a ceiling above seven** — `PLANNED` — **Phase 16, with the ten-instance load task** (`THREAT_MODEL.md` §6 item 43 (g)) *(the Phase 16 exit review, 2026-11-16: read "after the project's phases, with E70 under `POSTPONED_ISSUES.md` PI-025" - the ten-instance task built the run, and its run is owed)*
 - Objective: the Phase 15 completion gate's G-3. The `HorizontalPodAutoscaler` (`deploy/base/horizontalpodautoscaler.yaml`) has only ever held the count at its minimum of three: the `kind` rehearsal installs no metrics source, so no scale-up or scale-down it decided was observed; and its `maxReplicas: 7` is the connection budget's (`7 + 2 × maxSurge + 1 = 10 = FINAPP_DB_INSTANCES`), so the owner's "10+ instances" is above what the platform is configured to run. Under Phase 16's load: observe a scale-up and a scale-down on a real metric, each with the financial census green after it and the budget's peak inside its bound; and if ten or more replicas are wanted, raise the ceiling only with the budget (`FINAPP_DB_INSTANCES`, the server's connections) or a pooler changed first, the formula re-proved by `KubernetesManifestsTest` and the policy.
 - Bounded context: `deploy/` and the rehearsal harness; the connection budget (`ConnectionPoolSizingGuard`). Dependencies: Phase 16's load harness. Multi-instance: the subject. Financial: none moves; correctness under the count is what the census asserts.
 - Testing: the scaling run's assertions; the budget's guard and policy with the new numbers, a planted over-budget ceiling refused. DoD: `DOD-OBS`, `DOD-TEST`. Risk: Medium. Cx: M.
@@ -31084,7 +31113,7 @@ on none:
   reduced to the columns they read, the binds typed as the driver sends them, the index used.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-030 — The service-extraction evaluation (ADR-0001's revisit)** — `PLANNED`
+**P16-TSK-030 — The service-extraction evaluation (ADR-0001's revisit)** — `COMPLETE` (2026-11-15; designed, written and gated straight through on the owner's "Start P16-TSK-030", branch `P16-TSK-030` from `5b9bd5ae` (`P15-REM-001`, unmerged); ADR-0151 `Proposed`; documents only, no migration, no code; marks `P16-TSK-031` `READY`) *(read "`READY` (2026-11-15; marked by `P15-REM-001`'s completion gate: `-008`, `-014` and `P15-REM-001` `COMPLETE`)" and before that "`PLANNED`" until its gate)*
 - **Objective**: decide from the phase's measurements whether any module should leave the monolith. This covers the risk module's M3
   split triggers, the reconciliation intake rules held in `app`, and `DECISIONS.md` §Deferred "Service extraction". The decision is
   recorded as an ADR, which may say "none".
@@ -31103,9 +31132,24 @@ on none:
 - **Measurable acceptance criteria**: an ADR with its evidence; each debt row re-ruled.
 - **Definition of done**: `DOD-ARCH`, `DOD-DOC`.
 - **Operational documentation**: none.
+- **As built (2026-11-15, gate `COMPLETE`; ADR-0151 `Proposed`; documents only).** **No module leaves the monolith**: every module
+  read against `MODULE_ARCHITECTURE.md` §7's four criteria on the evidence on record. Measured (`CAPACITY_MODEL.md` §3.4, two `kind` runs at
+  three replicas): the first limit is the single database writer's CPU, which an extraction does not divide; no money movement's cost
+  belongs to one module (a transfer is `transfers`, `accounts`, `ledger`, `risk` and `platform` in one transaction, 138 statements); the
+  one nearly single-module cost, sign-in's hash, is horizontal replica CPU. `paymentmethods`, §7's likeliest, holds structurally no card
+  data, so no PCI scope; no module carries an isolation regime of its own; one release train, one owner. ADR-0151 names the atomicity each
+  extraction would cost (decision 2), answers the writer by ADR-0134 and ADR-0142 rather than by an extraction or a database split
+  (decision 3), and lists what would reopen it (decision 4: card data entering the platform, a jurisdiction demanding AML isolation, a
+  measured module-specific limit while the database has headroom, M3's trigger 2 measured, a second team or a release held). **Each debt
+  row re-ruled**: risk stays one module in the monolith, the row kept for M3's trigger 2 alone (PI-004, the production alert); the
+  reconciliation intake joins stay in `app`, re-owned to an extraction of `settlement` or `reconciliation`; `DECISIONS.md` §Deferred
+  "Service extraction" decided. Per-service identity and mTLS stay deferred (`SECRET_MANAGEMENT.md`); ADR-0001's "§5" corrected to §7 with
+  its Follow-up noted; dated notes on ADR-0107, `MODULE_ARCHITECTURE.md` §7 and M3, `SYSTEM_ARCHITECTURE.md` and `PHASE_16_PLAN.md` §17.
+  **Multi-instance**: `PASS` - nothing runs. **The evidence's limit**, stated in the ADR: two runs at three replicas; the ten-replica,
+  contention and soak runs owed (PI-025) and risk's latency beside the sweep unread (PI-004), each a reopening trigger when it runs.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TSK-031 — The distributed-system audit and the capacity and operational review** — `PLANNED`
+**P16-TSK-031 — The distributed-system audit and the capacity and operational review** — `COMPLETE` (2026-11-15; designed, written and gated straight through on the owner's "Start P16-TSK-031", branch `P16-TSK-031` from `0bc8bb06` (`P16-TSK-030`, unmerged); documents and one guard, no migration, no production code, no ADR; marks `P16-TST-002` `READY`) *(read "`READY` (2026-11-15; marked by `P16-TSK-030`'s completion gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: `PHASE_16_PLAN.md` §16 at ten, cited answer by answer. The capacity model completed. `PRODUCTION_READINESS.md`'s
   Phase 16 cells re-read with the evidence. The operational review of every new procedure.
 - **Affected components**: documents; `DISTRIBUTED_EXECUTION.md`.
@@ -31123,9 +31167,24 @@ on none:
   re-ruled.
 - **Definition of done**: `DOD-ARCH`, `DOD-DOC`.
 - **Operational documentation**: the readiness review's Phase 16 addendum.
+- **As built (2026-11-15, gate `COMPLETE`; documents and one guard; no violation found).** **The audit**: `DISTRIBUTED_EXECUTION.md`
+  §4b, the plan's eleven questions each answered at ten with its evidence (tests the build runs and the four recorded runs, E01, E27 and
+  E28 passed and E30 failed by design, all at three replicas), its ruling (all eleven `PASS`: no mechanism decides in a process) and its
+  gap (every ten-replica, contention, soak, pipeline and recovery run named as owed, PI-025; the database suites, PI-023); the plan's seven
+  items re-read (five confirmed, two corrected: the connection budget fits at ten on ADR-0134's server, and §3 is guarded both ways); no
+  new violation, instance-clock time still `X-TSK-008`'s and PI-021's; the completion question PASS by construction, measured at ten not
+  yet. **The guard**: `DistributedSystemAuditIsEvidencedTest` reads the questions and items from the plan's §16, resolves every citation
+  through `EvidenceCitations` plus the audit's own `run E.. VERDICT date` (a run the register records) and `owed E..` (registered, never
+  run), refuses a document, a bare file, an unrun database test or an owner as evidence and a finished task as an owner; its plants include
+  the backlog's probe, a claim citing a run that does not exist, and a recorded probe on the real section was seen red. **The capacity
+  model completed**: `CAPACITY_MODEL.md` §7, every part measured, derived or read and every unfilled cell's run named. **The readiness
+  cells**: the six the transition gave the phase re-read in place, each ruling standing; `PRODUCTION_READINESS.md` §6, the Phase 16
+  addendum - what the phase recorded, the cells re-read, and the operational review of all twenty-seven new procedures (§11.39's half,
+  §11.41 to §11.67): each states when, how, how to read it and what to do when red; six rehearsed with records, twenty read with their runs
+  owed, one designed-only. **Multi-instance**: `PASS` - nothing runs; the audit is the subject.
 - **Risk**: Low. **Cx**: M.
 
-**P16-TST-001 — The integrated soak: ten replicas, the engineering workload, faults on a schedule** — `READY` (2026-11-14; marked by `P16-TSK-027`'s completion gate, the one next task its gate names: every dependency, `-015`, `-025` and `-027`, `COMPLETE`) *(read "`PLANNED`" until then)*
+**P16-TST-001 — The integrated soak: ten replicas, the engineering workload, faults on a schedule** — `COMPLETE` (2026-11-14; designed, built and gated straight through on the owner's "Start next task, design then implement then completion", branch `P16-TST-001` from `9369f9f1` (`P16-TSK-027`, PR #21, unmerged); no migration, no production code, no ADR; **built and contract-tested, the run owed under `POSTPONED_ISSUES.md` PI-025**; marks no task `READY`: none is eligible without the owner's word) *(read "`READY` (2026-11-14; marked by `P16-TSK-027`'s completion gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: the phase's substance in one run, not postponed (C1): an 8-hour soak at ten replicas at the engineering workload,
   with a schedule of faults drawn from the register injected during it (a pod kill each hour, a broker loss, a database failover,
   a rolling deploy, a provider outage) and the invariants sampled throughout.
@@ -31144,6 +31203,34 @@ on none:
   their bounds; every fault recovered within its experiment's criteria.
 - **Definition of done**: `DOD-TEST`, `DOD-FIN`.
 - **Operational documentation**: the soak's record in the register.
+- **As built (2026-11-14, gate `COMPLETE`; no migration, no production code, no ADR; the run owed under PI-025).** **The soak**:
+  `REHEARSAL_SOAK=1` in the experiments scope at ten replicas (`REHEARSAL_EXPERIMENTS_REPLICAS=10`), beside `load/integrated-soak.json` -
+  soak.json's mix, stages and eight hours without its `soak` flag, whose database readings are the load scope's own (E39) and which the
+  experiments refuse beside them - and a schedule of faults (`REHEARSAL_SOAK_SCHEDULE`, minute:experiment; default E01 at 45, 105, 165, 225,
+  285, 345 and 405, E08 at 150, E82 at 240, E17 at 315, E05 at 440), each its own experiment run by `experiment_run` under the load with its
+  criteria, security probe and window census, the fleet required back at ten within 900 s after each, a failed sample between faults failing
+  the soak. `soak_resolve` refuses, before anything is built: another scope or count, another profile, `REHEARSAL_EXPERIMENTS` beside the
+  schedule, minutes out of order, an experiment the soak does not admit (it admits E01, E05, E08, E17 and E82, each reading three or more
+  ready replicas or the run's count, added to `EXPERIMENTS_AT_A_COUNT` with the soak alone), a fault after E05, a fault later than minute
+  450, and the probe on a scheduled minute or without the soak. **`P16-TSK-022`'s routed note, built**: a declared fault window in
+  `load.sh`'s `load_sample` - while `$WORK/load-fault-window` is open, a sample whose census could not be read is `OUTAGE`, recorded and
+  not failed, the load not stopped; a census read with a FAIL stays FAIL; E05 runs inside it and the first sample after it must PASS.
+  **The bounds**, read by the soak's own sampler every 15 minutes because the kind Prometheus keeps six hours: the fleet's live data after
+  collection in the last hour at most 1.25 x the first hour's and 0.8 x the largest heap; each named table's bytes per journal entry in the
+  last third at most 1.5 x the first third's; the inbox's lag after the last fault at most 1000 (InboxLagHigh's threshold); a bound with
+  nothing to read fails the soak. **The probe** (`REHEARSAL_PROBE=soak-unbalanced`): one journal line raised by one minor unit at minute
+  300 as the superuser with replication role, behind the safety boundary's context check; the trial balance is a clause sampled every 30
+  s, so the next sample fails the soak. `SoakContractTest` (6 members) holds the text, the default schedule checked against the soak's own
+  rules; two probes recorded (`MUTATION_TESTING.md` §2). Register E90, runbook §11.67 and its count row, PI-025's owed run and probe.
+  **Each criterion**: the soak completes with zero census failures; heap, table growth and lag within bounds; every fault recovered within
+  its experiment's criteria - built, each judged by the text above, the run owed and nothing claimed. **For the first run**: the machine must
+  carry ten replicas eight hours; `jvm_gc_live_data_size_bytes` is Micrometer's default JVM metric and was not read from a live replica here.
+  **Multi-instance**: `PASS` - nothing runs here; the soak is ten replicas throughout. **Not run**: any cluster. **The gate's finding, fixed**:
+  every read of the database named `PG_POD` as it stood in the shell that ran it, and the load's census sampler and the soak's sampler are
+  forked before E05 promotes the standby, so after the failover they would have asked the fenced server for the rest of the soak and no sample
+  after the window could ever pass - the soak red by construction. E05's move now also writes the promoted pod to `$WORK/primary`, and
+  `psql_query` and `pg_admin` read it through `pg_primary`; `ExperimentsRehearsalContractTest#theReadsFollowThePrimary` (`P16-TSK-022`'s)
+  widened with a dated note, `SoakContractTest` holding it; probe P3.
 - **Risk**: High (machine endurance). **Cx**: L.
 - *Routed from `P16-TSK-022` (2026-11-13):* the failover drill (E05, `OPERATIONS_RUNBOOK.md` §11.54) runs under the experiments
   scope's retrying workload, not a k6 profile: the load harness's sampler stops the load at any unreadable sample, and a database
@@ -31152,7 +31239,7 @@ on none:
   (fence, check, promote alone, move the Service, the journal compared) called from the soak's schedule. E05 leaves one server and
   no standby, so in a soak it is the last database fault, or the standby is rebuilt after it.
 
-**P16-TST-002 — The exit pass: the mandatory experiments' quick forms on the final tree** — `PLANNED`
+**P16-TST-002 — The exit pass: the mandatory experiments' quick forms on the final tree** — `COMPLETE` (2026-11-15; designed, run and gated straight through on the owner's "Start P16-TST-002", branch `P16-TST-002` from `8f20d7c3` (`X-TSK-020`, unmerged); **the hermetic half run once on the final tree, one stale guard found and fixed, every quick form owed under `POSTPONED_ISSUES.md` PI-025**; no production code, no migration, no ADR; marks no task `READY`: the phase's remaining items wait on the owner's word) *(read "`READY` (2026-11-15; marked by `P16-TSK-031`'s completion gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: once, on the final tree, re-run the quick forms of the mandatory experiments, and run the named guard classes. Then
   run the database and Kafka fleet tiers as the owner decides under C2 and C11.
   - The quick forms: the demonstration load with invariants during load, E01, E05, E09, the restore with its verification, and
@@ -31171,6 +31258,22 @@ on none:
 - **Measurable acceptance criteria**: every quick form green on the final tree; the guards green.
 - **Definition of done**: `DOD-TEST`.
 - **Operational documentation**: the records.
+- **As built (2026-11-15, gate `COMPLETE`; the hermetic half; every cluster run owed).** **The owner's word decides the shape**: the
+  task's quick forms are `kind` and container runs, and PI-025 (the owner, 2026-11-13: "we dont need long running checks and tests")
+  postponed every Phase 16 run after C2 and C11 were accepted; the owner's standing rule keeps the database and Kafka tiers out. So the
+  task ran what the word allows, once, and recorded the rest as owed - the shape `P16-TST-001` and `P16-TSK-027` took. **The final
+  tree**: the code of commit `8f20d7c3` - every Phase 16 item but the owner's remediation (M16.14, `P16-REM-001`…`-003`, unscheduled)
+  and the exit review; a remediation task that merges later re-runs its own checks and re-opens nothing here. **Run, fresh, once,
+  across every module**: the hermetic tiers - `unitTest`, `sliceTest` and `architectureTest` - 7,000 unit, 299 slice and 1,299 architecture tests across 25 modules, 0 failed, after the one red it found was fixed and platform's two tiers and app's architecture tier re-run on the fix. The architecture tier holds
+  every harness's contract test (`KindRehearsalContractTest`, `ExperimentsRehearsalContractTest`, `ScenarioExperimentsContractTest`,
+  `SoakContractTest`, `DisasterRecoveryRehearsalContractTest` and the rest), the register's guard, and the readiness, audit and
+  provider-call guards: each quick form's harness reads as built on this tree. **What the pass found**: `platform`'s `CorrelationSinkCoverageTest` red on the final tree - five platform packages (`abuse`, `deadletter`, `outbound`, `retention`, `sourcejoin`) added in Phases 15 and 16 had never been classified as correlation sinks or not, and no per-task run had read `platform`'s architecture tier (the class `X-TSK-018` named). Fixed here: `deadletter` is a sink - a parked record carries its event's correlation, `NOT NULL` (platform `V011`), now asserted hermetically by `KafkaEventReceiverParkingTest#aParkedRecordCarriesItsEventsCorrelation` (probe recorded) - and the other four are not, each with its reason in the guard. No production code changed. **Not run, owed** (PI-025's entry for this task names
+  each with its switches): the demonstration load with the census at every sample, at three and at ten replicas (E27's form); E01, E09
+  and E05 at three; the restore with its verification (E59, E61); F01 at three and F14 at ten; E30 again with E52, the stress profile
+  at three. **The fleet tiers** (`databaseTest`, `kafkaTest`): not run, the owner's standing word; C11's narrow pre-flight stays
+  PI-023's. **E30's standing `FAILED`** stays: its remediation cell's other live task, `P16-REM-001`, holds it from this gate (the
+  register's guard reads it so); its re-run is owed. **Multi-instance**: `PASS` - nothing runs on instances here; the ten-instance
+  answer is `DISTRIBUTED_EXECUTION.md` §4b's, by construction, measured not yet - the quick forms are the measurement.
 - **Risk**: Medium. **Cx**: M.
 - **Routed from `P16-TSK-016` (2026-11-13): E30's standing `FAILED` result is held here.** E30 (the stress profile at three replicas,
   `RESILIENCE_EXPERIMENTS.md`) stopped at its 35th sample on two causes: the source-join census starved of the pool and a checkout's
@@ -31184,10 +31287,10 @@ on none:
   task is `P16-REM-001`, its database cases run before it merges; E30's remediation cell names it. Read "once the owner places it"
   above as placed since.)*
 
-**P16-DOC-001 — The Phase 16 exit review** — `PLANNED`
+**P16-DOC-001 — The Phase 16 exit review** — `COMPLETE` (2026-11-16; scheduled by the owner's "Start P16-DOC-001", marked `READY` at `P16-REM-003`'s gate and run straight through, branch `P16-DOC-001` from `86ec7333` (`P16-REM-003`, unmerged); documents only, [`reviews/PHASE_16_REVIEW.md`](reviews/PHASE_16_REVIEW.md); marks no task `READY` - the flip and the merge are the owner's) *(read "`READY` (2026-11-15; scheduled by the owner's "Start P16-DOC-001", marked at `P16-REM-003`'s gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: rule every criterion of `PHASE_GATES.md` §5 Phase 16 and the universal exit gate with evidence. Accept or correct
   ADR-0126…0129. Record C1–C12 as decided. List every designed-only criterion by name. Answer the ten-instance question on counts.
-  Remind the owner of PI-004, PI-023 and PI-024.
+  Remind the owner of PI-004, PI-023 and PI-024. *(2026-11-16, at its gate: the reminder names PI-025 too, as PI-025's own text asks, and the ADRs read are all twenty the phase wrote, as universal criterion 10 asks.)*
 - **Affected components**: `reviews/PHASE_16_REVIEW.md` (new); the documents it corrects.
 - **Dependencies**: every Phase 16 item.
 - **Scope**: the review. **Exclusions**: the Phase 16 → completion transition (the owner's).
@@ -31203,6 +31306,7 @@ on none:
   deviation.
 - **Definition of done**: `DOD-DOC`.
 - **Operational documentation**: the review.
+- **As built (2026-11-16, gate `COMPLETE`; documents only).** Seven independent read-only audits, every finding re-read from its file before it was acted on, the register's counts recomputed from its rows. **The rulings**: criterion 6 `PASS` (no replica routed, held by a guard); criteria 1-5 and fifteen of the seventeen per-area blocks `PARTIAL` by the owner's choice (PI-025), their hermetic and written halves holding and their runs owed; universal criterion 7 `NOT MET` by the owner's choice (PI-023); the ten-instance answer `UNKNOWN` at ten, `PASS` at three as counted and by construction. Only four of the register's 87 rows have a result, each at three replicas on 2026-11-13 (E01, E27, E28 `PASSED`; E30 `FAILED`); 79 are owed under PI-025. **The twenty ADRs** (ADR-0126…0129 and sixteen of the tasks') read decision by decision and `Accepted`, seventeen corrected in place first (39 corrections); ADR-0130…0132, 0138, 0143 and 0146 never written, the next free number ADR-0152. **Five IMPORTANT findings**, none CRITICAL: ADR-0142 claimed every whole-history account fold bounded where one is (corrected; `AvailableBalance` under the account's lock still folds whole, E38 owed); seven Phase 16 tables and `journal_line.txid` unclassified (54 rows written against the DDL, the database's comparison owed to PI-023); E30's failure and D01-D05 held by this entry alone, so its gate would have turned the register's guard red (decided by the owner); this stack's `X-TSK-020` and `-021` colliding with master's (the owner's at the merge); `INV-IDEM-01` read unbounded after item 63 bounded a transfer's and a card checkout's once-ness (a dated note). Stale documents corrected with dated notes across twenty files. **The owner's acceptances A-G** (2026-11-16, "accept all"): the postponements as Phase 16's recorded deviations; D01-D06 accepted as designed-only (D06, the managed restore, written here); `P16-REM-004` (E30 again with E52) and `-005` (the guards told an owed run from an inapplicable one) written `PLANNED`; C12 waiting for the first real rail; `P15-TST-001` kept under PI-004; the identifiers renumbered at the merge; F06 not drivable. Phase 16's status `IN_REVIEW`, the flip to complete the owner's. **The flip, rehearsed**: twice with Phase 16 recorded complete - 1 red of 86 first (this review's own note in E30's cell, fixed), then 0 of 86; restored, sha256 equal. **Fresh**: every module's unit, slice and architecture tiers once on the review's bytes, each of the 75 test tasks executed with `--rerun` (2026-11-16, 06:47-07:07 UTC): 7,057 unit in 990 classes, 302 slice in 53, 1,308 architecture in 140, 0 failed; no database, Kafka, own-container or cluster run (PI-023, PI-025). **Multi-instance**: `PASS` - nothing runs; the phase's own answer is the review's.
 - **Risk**: Low. **Cx**: L.
 
 *M16.14 The owner's remediation (2026-11-13). Created by the owner's decisions on `THREAT_MODEL.md` §6 items 55, 61 and 64 ("Start
@@ -31212,7 +31316,7 @@ depends on finished tasks only, so the coordinator marks it `READY` when the own
 (`POSTPONED_ISSUES.md` PI-025, the runbook), and items 57 and 62's first-real-environment parts and items 60 and 63's after-the-phases
 parts are `POSTPONED_ISSUES.md` PI-026 and PI-027.*
 
-**P16-REM-001 — The merchant payable read bounded by ADR-0133's commit-order checkpoint (`THREAT_MODEL.md` §6 item 55)** — `PLANNED`
+**P16-REM-001 — The merchant payable read bounded by ADR-0133's commit-order checkpoint (`THREAT_MODEL.md` §6 item 55)** — `COMPLETE` (2026-11-15; scheduled by the owner's "Start P16-REM-001" after `P16-TST-002`'s gate and run straight through, branch `P16-REM-001` from `fb2caf23` (`P16-TST-002`, unmerged); one ledger migration (`V038`); its database cases run on the owner's word that day, green, before any merge; marks `X-TSK-021` `READY` on the owner's word, the census its gate found owed) *(read "`PLANNED`" until then)*
 - **Objective**: build ADR-0133 decision 3 for `GET /v1/merchant/payable`, as the owner placed it (item 55 (i), 2026-11-13). The read
   becomes the latest valid checkpoint of the merchant payable account's buckets, the fold of every line whose entry's commit-order
   position (`txid`, ledger `V034`) lies below the checkpoint's watermark (`pg_snapshot_xmin` of the snapshot that read them), plus every
@@ -31261,9 +31365,38 @@ parts are `POSTPONED_ISSUES.md` PI-026 and PI-027.*
 - **Definition of done**: `DOD-FIN`, `DOD-KERNEL`, `DOD-TEST`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.48 (the payable read's bound, and what a restore does to its
   checkpoints); `CAPACITY_MODEL.md` §3.5.
+- **As built (2026-11-15, gate `COMPLETE`).** **The migration**, ledger `V038`: `journal_line.txid`, stamped by a BEFORE INSERT
+  trigger that fires last of the line's (V034's argument, for the line); the index `(ledger_account_id, txid)`, `IF NOT EXISTS` so a
+  large journal's index built `CONCURRENTLY` by hand first is kept; `position_checkpoint` (account, `classification_version`,
+  precedence, namespaces, `cluster_identity` - `pg_control_system()`'s `system_identifier` - the `xid8` watermark and the lines folded;
+  `UNIQUE` over all six as `position_checkpoint_one_per_watermark`) and `position_checkpoint_bucket` (each bucket's total with its
+  currency and scale); the application role granted `SELECT, INSERT` only. **The read**, `CheckpointedPositionBreakdown` (ledger): the
+  latest checkpoint valid for this account, version, precedence, namespaces and cluster, then every line at or above its watermark in
+  one statement that also returns its own snapshot's `pg_snapshot_xmin`, folded by `BucketFold` - the whole fold's arithmetic, now one
+  class `JdbcPositionBreakdown` folds through too; past 1,000 settled lines it stores the checkpoint and the lines below that `xmin`,
+  never one above. Reading and storing each run in a savepoint: a failure (read-only transaction, refused grant, unreadable or foreign
+  row, auto-commit) rolls back to it and the read answers from the lines. **The wiring**: `MerchantBeans`' payable query alone; the
+  proofs keep `JdbcPositionBreakdown`, the whole history (`PositionCheckpointsAreTheApisAloneTest`, the
+  rule `onlyThePayableQueryReadsACheckpoint`). **The version**: `CLASSIFICATION_VERSION` 1, pinned by `PositionClassificationIsVersionedTest`
+  to a fingerprint of the classifying SQL, `JdbcPositionBreakdown#line`, `Bucket#of` and `BucketFold#key`. **Tests**: hermetic -
+  `BucketFoldSplitTest` (500 random histories, every split, any order, and the same refusals at the same totals),
+  `CheckpointedPositionBreakdownTest` (8 cases over a scripted connection), the migration's text, the wiring rule's teeth; **database,
+  run 2026-11-15 on PostgreSQL 18.6** (`PositionCheckpointDatabaseTest`, 6 cases, the owner's exception to the standing skip): the
+  line's stamp, the split under ten instances posting and ten reading (every read the whole fold of its snapshot), ten racing writers
+  (one row per watermark, each the fold below it), the version and cluster refusals, a read-only read, the role's limits. **Probes**
+  (recorded): a rule changed without the version - red; the store folding a line above its watermark - red; and the backlog's two on the
+  database: the watermark taken above the snapshot's `xmin` - the concurrent split case red; the cluster check removed - the refusal
+  case red. **Not changed**: the API's contract (`DERIVED`, the lifetime terms); the decision path's own fold (excluded, its own ADR
+  after E38). **Owed**: E30 again with E52 (PI-025), which measures the bound; E38 and E39, the index's write cost on the posting path.
+  **Multi-instance**: `PASS` - proven at ten on PostgreSQL: ten writers racing one watermark store one row, every read under ten
+  posters equals the whole fold; no clock, lease or memory decides anything. **The gate's finding** (IMPORTANT, owned): a
+  checkpoint row is the application role's to write and each is built on the one before, so a forged or wrong row would show a
+  merchant a wrong payable for good, and no proof compares the two folds - recorded in `THREAT_MODEL.md` §5 under T14, owned by
+  `X-TSK-021`. Also at the gate: `V038` carries a contract marker (`waives=TRIGGER`: the stamp refuses no write of any release),
+  and the checkpointed read's three account-taking methods are classified in `OwnershipIsScopedTest`.
 - **Risk**: High (a schema change on the hottest table). **Cx**: L.
 
-**P16-REM-002 — A lost database answered `503 api.TemporarilyUnavailable` with `Retry-After` (`THREAT_MODEL.md` §6 item 61)** — `PLANNED`
+**P16-REM-002 — A lost database answered `503 api.TemporarilyUnavailable` with `Retry-After` (`THREAT_MODEL.md` §6 item 61)** — `COMPLETE` (2026-11-15; scheduled by the owner's "Start P16-REM-002", marked `READY` at `X-TSK-021`'s gate and run straight through, branch `P16-REM-002` from `ba0610f0` (`X-TSK-021`, unmerged); no migration; marks `P16-REM-003` `READY` on the owner's word) *(read "`READY` (2026-11-15; marked at `X-TSK-021`'s gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: a money-moving command that cannot reach the database - the driver's connection failure, or the pool's wait ending
   because no connection could be made - answers `503 api.TemporarilyUnavailable` with a `Retry-After`, the same `Idempotency-Key`
   safe to send again, in one mapping the error contract states, as the owner decided (item 61 (i), 2026-11-13). Today it answers
@@ -31301,9 +31434,29 @@ parts are `POSTPONED_ISSUES.md` PI-026 and PI-027.*
   T16 row naming item 61 `EXISTS` with its evidence, and item 61 closed.
 - **Definition of done**: `DOD-API`, `DOD-TEST`.
 - **Operational documentation**: `ERROR_CONTRACT.md`; `OPERATIONS_RUNBOOK.md` §11.54 (what a client sees during a failover) and §11.28.
+- **As built (2026-11-15, gate `COMPLETE`).** **The classification**, `DatabaseUnreachable` (platform's persistence): down the cause
+  chain, and from a store's message where a store keeps only the SQLState (`InboxFailures`' reading), the database is lost on a
+  connection exception (SQLState class `08`, `SQLNonTransientConnectionException`), on a server going away or not yet back (`57P01`,
+  `57P02`, `57P03`: a failover's and a shutdown's), and on the pool's timeout only when it carries a cause that is itself lost - Hikari
+  sets that cause, and the last attempt's state, only when no connection could be made. An exhausted pool's timeout carries neither,
+  so it stays the overload shedding answers; a statement timeout (`57014`), a constraint and a serialisation refusal keep their own
+  answers. **The answer**, `ApiErrorHandler`'s last resort: such a failure is `503 api.TemporarilyUnavailable` with `Retry-After`
+  (`finapp.api.database-unreachable.retry-after` 5 s plus up to `-retry-after-spread` 5 s, whole seconds, the shedding's jitter, read
+  through `DatabaseUnreachableAnswer`), logged at `WARN` once without its stack, the body naming no pool, host or cause.
+  `PlatformErrorCode.TEMPORARILY_UNAVAILABLE`'s text now names both causes; `ERROR_CONTRACT.md`'s row and its section say the same key
+  is safe to send again. **Not changed**: the shed answer (`ShedBeforeTheClaimTest` green beside it), the door's own `503` without
+  `Retry-After`, and a refused step-up whose record cannot be written, which stays `500` as its interceptor's does. **Tests**:
+  `DatabaseUnreachableTest` (6: every cause, the busy pool, a statement's own, the chain, both message spellings),
+  `ApiErrorHandlerTest` over a real server (an unreachable database `503` with a `Retry-After` of 5 to 10 and nothing of the cause; a
+  connection lost mid-command, as a store words it, the same; an exhausted pool and a statement timeout still `500`). **Probes**
+  (recorded): the pool's timeout never lost - the outage answered `500`, red; always lost - the overload answered `503`, red. **Owed**:
+  E05 and the rolls scope's database roll read the new answer when they run (PI-025). **Registers**: `CONFIGURATION_REGISTER.md`'s two
+  rows; `PRODUCTION_READINESS.md`'s four cells that named this task re-read at the gate - the two Failure handling cells now name the
+  answer built and E05's run owed (PI-025), the two Security cells drop it from T16's owners. **Multi-instance**: `PASS` - a mapping and a
+  configured bound, the same on every replica; nothing held.
 - **Risk**: Medium. **Cx**: S.
 
-**P16-REM-003 — Report generation's opening bounded by a checkpoint for each locked month (`THREAT_MODEL.md` §6 item 64)** — `PLANNED`
+**P16-REM-003 — Report generation's opening bounded by a checkpoint for each locked month (`THREAT_MODEL.md` §6 item 64)** — `COMPLETE` (2026-11-15; scheduled by the owner's "Start P16-REM-003", marked `READY` at `P16-REM-002`'s gate and run straight through, branch `P16-REM-003` from `97e80dd4` (`P16-REM-002`, unmerged); accounting `V017`; its database cases run green before any merge on the owner's word; marks `P16-DOC-001` `READY` on the owner's word) *(read "`READY` (2026-11-15; marked at `P16-REM-002`'s gate)" and before that "`PLANNED`" until its gate)*
 - **Objective**: bound the trial-balance definitions' from-inception fold, as the owner placed it (item 64 (i), 2026-11-13). When a
   month locks, store its GL groups (purpose, owner kind, currency, scale, direction) of every line dated before the next month's
   start, under the mapping version it pinned. A run's opening is then the latest locked month's checkpoint plus the lines dated after
@@ -31344,7 +31497,53 @@ parts are `POSTPONED_ISSUES.md` PI-026 and PI-027.*
   generation `EXISTS` with its evidence, and item 64 closed.
 - **Definition of done**: `DOD-FIN`, `DOD-TEST`.
 - **Operational documentation**: `OPERATIONS_RUNBOOK.md` §11.57 (the bound and what a move back costs); `CAPACITY_MODEL.md` §3.6.
+- **As built (2026-11-15, gate `COMPLETE`).** **The checkpoint**, accounting `V017`: `opening_checkpoint` (one per month's lock,
+  `UNIQUE (period_id, period_locked_at)`, `latest_created` the latest creation instant of the entries it folds) and
+  `opening_checkpoint_group` (its sums in the three shapes the opening reads take: GL - purpose, owner kind, currency, scale, direction;
+  LEDGER - currency, scale, direction, no account joined, folded by the ledger's own statement; COUNTERPARTY - per counterparty code);
+  the application role `SELECT, INSERT` only, the reporting role `SELECT` (its closed register grows by the two tables). **Valid** while
+  its month's row is not `OPEN` and holds the `locked_at` it was folded under: an unlock or a reopen clears `locked_at` and a relock
+  stamps another, so a move back voids it without touching it. **The reads**: `LedgerTrialBalanceReads.before` and `ledger` and
+  `LedgerCounterpartyPositionReads.before` take the latest valid checkpoint before their day in their own statements on the same
+  snapshot, and fold only the lines dated after its month (`AND entry.posting_date > ?`, the ledger's statement still naming no
+  accounting table); under a cut, only a checkpoint whose `latest_created` the cut keeps - the journal's `created_at` is the posting
+  instance's clock, so the lock's own instant could not say it. The report definitions are unchanged. **The writer**,
+  `OpeningCheckpoints`, the close schedule's fifth leg (openings, at the checks' poll): a try-lock on namespace 14's new key
+  `opening-checkpoint`, the oldest month not `OPEN` whose present lock has none, folded by the very reads a report takes (from the
+  month before's checkpoint), inserted by `INSERT ... SELECT` from the period row only while it holds that lock. **Two departures from
+  this entry's wording, recorded in ADR-0142's follow-up and ADR-0114's as-built**: the checkpoint is written after the lock commits, not
+  in the lock's transaction - that transaction holds the cutoff's key exclusively and a month's fold there would hold every posting
+  behind it; and it holds the journal's own classification, not a pinned version's accounts, so no mapping change can stale it.
+  **Kept whole**: the close's GL = ledger check and the source proofs (`OpeningCheckpointsAreTheReportsAloneTest`: only the two read
+  adapters, the writer and their wirings may name an `OpeningCheckpointStore`, and only the writer stores). **Tests**:
+  `OpeningCheckpointTest` (the split equal to the whole fold over five seeded journals, every day and month after three locked months; a
+  chain of incremental checkpoints equal to each month's whole fold; the cut), `OpeningCheckpointsTest` (the writer),
+  `OpeningCheckpointStatementsTest` (the statements and `V017`), `OpeningCheckpointReadsTest` (the real adapters through the report's
+  snapshot view), `AccountingCloseScheduleTest` (the leg), the ArchUnit pair with teeth. **Database cases** (the owner's exception, run
+  on PostgreSQL 18.6 before any merge): 8 cases green in their own container (2026-11-15, 34.8 s): the split equal to the whole fold over three locked months -
+  every day's opening from 1998-12-01 to 1999-05-01, the counterparties and every month's ledger windows, with no cut and under one; an
+  unlock and then a reopen each voiding their month's checkpoint, a line posted into the month read, each relock checkpointed anew and
+  the voided rows kept; a FINAL run generated before any checkpoint regenerating identical from February's; a cut before March's
+  latest creation (a line a skewed instance created a day ahead) served February's; ten instances storing one checkpoint per lock; a
+  lock rolled back leaving none; the try-lock's key apart from `cutoff` and `mapping` by `hashtext`; the application role refused
+  `UPDATE` and `DELETE` and the reporting role `INSERT` (`42501`). **Probe** (recorded): a checkpoint kept after its month moved back (the read's validity dropped) - the move-back case
+  red at the GL side before 1999-04-01; the ledger merge adding a checkpoint into the period's own window - the seeded split red. **Gate findings (MINOR, recorded, not
+  fixed)**: no gauge counts the locked months lacking a checkpoint - the leg's failure meter and alert and runbook §11.57's query
+  answer it, and a read stays the whole fold's meanwhile; a fold is bounded by the writer pool's five-minute socket timeout, and the
+  first checkpoint folds every line before accounting's first period, which a journal with long pre-accounting history could exceed -
+  E65's to measure. **Owed**: E65 on the final tree (PI-025). **Multi-instance**: `PASS` - one instance folds a month by a try-lock, the insert arbitrates by the period's lock and the
+  unique, and every instance reads the same checkpoint from the same rows.
 - **Risk**: Medium. **Cx**: L.
+
+*Phase 16's exit remediation (2026-11-16). Written by the Phase 16 exit review (`P16-DOC-001`) with the owner's acceptance of that day ("accept all"). Each is `PLANNED` with its horizon; the coordinator marks one `READY` only on the owner's word.*
+
+**P16-REM-004 — The stress profile run again on the final tree: E30 with E52** — `PLANNED` — **with `POSTPONED_ISSUES.md` PI-025's runs, after the project's phases**
+- Objective: E30 stands `FAILED` (2026-11-13, three replicas, commit `89b8fc60`): the source-join census starved of the pool, a checkout's creating answer lost after its commit, and the merchant payable read folding a merchant's whole history. Both remediations are built - the request queue the shedding door holds and the checkout's create in one transaction (`P16-TSK-016`), the payable read's checkpoint (`P16-REM-001`, ledger `V038`) - and neither is measured under load. Run the stress profile at three replicas on the final tree, E30 and E52 at once (`REHEARSAL_SCOPE=load REHEARSAL_LOAD_PROFILE=stress`), and append the result to both rows of `RESILIENCE_EXPERIMENTS.md`; a red names the task that remediates it. Until it runs, this entry holds E30's standing failure, as the register's guard asks of a failure (a live task that can still act on it).
+- Bounded context: none changed; the `kind` load scope. Dependencies: none open; the owner's scheduling of PI-025's runs. Multi-instance: three replicas, the census every 30 s, one effect per key. Financial: the census at every sample; no checkout abandoned. Testing: E30's and E52's criteria; the saturation artefacts read against E30's. DoD: `DOD-TEST`. Risk: Medium. Cx: M.
+
+**P16-REM-005 — The guards read PI-025 as a postponement: an owed run told from one that does not apply** — `PLANNED` — **before PI-025's runs**
+- Objective: two guards admit an owed run in a form meant for something else. (1) `ResilienceExperimentsAreRegisteredTest` admits any `N/A: <reason>` result, and since PI-025 79 rows read `N/A: not run (<date>)` with the postponement as the reason, while the register's §1.2 keeps `N/A` for an experiment that does not apply: nothing mechanical tells an owed run from an inapplicable one, so an owed run could leave PI-025's list unseen. Give the register an owed form, each owed row named in PI-025's list and no `N/A` row's reason a postponement. (2) `RunbookRehearsalCountTest` admits "Phase 16 drill" as a §11 row's reason, which at the phase's exit reads as a drill still to come in a phase that is over; the rows giving it are owed under PI-025, a postponement the guard's closed list admits only for PI-024. Add PI-025's reason, admissible while PI-025 stands `POSTPONED`, and re-mark the rows.
+- Bounded context: two architecture guards and the two documents. Dependencies: none. Multi-instance: none runs. Testing: each guard with a planted row seen red. DoD: `DOD-DOC`, `DOD-TEST`. Risk: Low. Cx: S.
 
 ---
 
@@ -32489,6 +32688,97 @@ branch `claude/project-progress-status-1498c8` after `P16-TSK-026`'s commit; cro
   then the whole `:app:architectureTest`, 1,202 tests, 0 failed. `databaseTest` and `kafkaTest` not run, by the owner's word.
 - **Risk**: Low. **Cx**: S.
 >>>>>>> e097d1ac2f57e9211e00d5e9ed79f3841b26fa57
+
+**X-TSK-020 — Guard: no transaction spans a provider call** — `COMPLETE` *(2026-11-15; found by `P16-TSK-031`'s audit -
+`DISTRIBUTED_EXECUTION.md` §4b, question 5, read the rule "from the code and its review, not held by a test" - and done on the owner's
+word, "Do this task here"; branch `X-TSK-020` from `32c27525` (`P16-TSK-031`, unmerged); cross-cutting, no milestone, marks no task
+`READY`)*
+- **Context**: ADR-0046 §1 and ADR-0008 forbid a transaction around a provider call - it pins a connection for the provider's worst
+  latency, buys an atomicity the provider's effect cannot join, and a rollback erases the record that anything was asked - and ADR-0046's
+  consequences owed "a structural assertion: no connection is held during the call". Payments' database suite asserts it at the wire for
+  its own flows (owed under PI-023); nothing held it for the other modules that call a provider, nor on any hermetic tier. It fails
+  quietly: a call moved one line, into the lambda beside it, compiles and passes every functional test.
+- **Scope**: one hermetic guard over the compiled production classes, its two planted probe classes, and the records. No production code,
+  no migration, no ADR: ADR-0046's owed assertion, made.
+- **Design** (`HeldConnectionCalls`, ASM, not ArchUnit - ArchUnit attributes a lambda's calls to the method that declares it, so it cannot
+  tell a transaction's body from the call ADR-0046 puts beside it). **Held**: every method handed a transaction or a connection
+  (`TransactionStatus`, `Connection`, a statement or a result set as a parameter: Spring's callbacks, every module's
+  `inTransaction(Function<Connection, R>)` body, every store method on the caller's connection), every `@Transactional` method (none
+  exists; ADR-0033), every method that turns auto-commit off itself - and everything those call. **Calls**: the class hierarchy over
+  production code, plus every lambda or method reference implementing a production interface (kyc's screening provider among them, wired in a bean method); making a lambda counts as calling it. **Functional values** from the JDK are followed to
+  where they were made, by ASM's source analysis: a held scope's functional parameter to the lambdas its callers pass, through their
+  parameters in turn (a module's runner body runs whatever work it is handed); a functional field to what is stored in it, through
+  constructors and `@Bean` methods; `requireNonNull`, the JDK's combinators and production methods' returns traced through. What cannot
+  be followed is listed, never passed. **The network**: `HttpClient.send`, which only `OutboundExchange.send` calls
+  (`OutboundCallsAreBoundedTest`). Test fixtures (`-test-fixtures.jar`) are not production and are left out.
+- **Measured on the real tree first**: 7,079 scopes (7,066 handed a handle, 13 opening their own), 25,631 methods held, 329 reaching the
+  network - **no violation**. 77 methods make a transaction body and call a provider beside it, holding nothing: ADR-0046's shape, seen
+  (`PaymentConfirmation#confirm`, `PaymentSweeper#resolveRefund` among them). One value is not followable: `Payoffs#quote` hands
+  `projection` a function taken out of an `Optional`; read - `LoanServicing#periodsOf` maps the accrual start through `periods`, whose one
+  function reads the loan's statement terms - and named as a stand-in, which the guard checks exists and reaches no provider.
+- **Acceptance**, each a member of `NoTransactionSpansAProviderCallTest` (6 tests): (1) no held code reaches the network, the path printed
+  when one does; (2) the unfollowed values are exactly the reviewed stand-ins, and those reach no provider; (3) twenty operations of
+  ADR-0008's ports (card, push and corridor rails, FX and its rate source, payouts and their tokenisation, card tokenisation, screening,
+  verification, credit data, the settlement collector, the audit archive) are each seen reaching the network, and the counts stay at or
+  above today's floors; (4) ADR-0046's shape is seen in at least 70 methods, and a planted copy (`DispatchBeforeCallProbe#confirm`)
+  reaches the network, holds nothing, has both bodies held and is no violation; (5) planted beside production, eight ways to hold a
+  connection around a call are each found through production's adapters to `OutboundExchange#send` - Spring's template, a module's
+  runner, a lambda handed to held code, a functional field, a row being read, auto-commit off, `@Transactional`, a port a lambda
+  implements - and the one other violation is payments' runner body, running the work the probe hands it; (6) a value planted where the
+  guard cannot follow it (a function taken from a map) is listed.
+- **Probes** (recorded, `MUTATION_TESTING.md` §2): `PaymentSweeper#resolveRefund`'s provider query moved into its transaction - red, the
+  path `PaymentSweeper#lambda$resolveRefund$4 -> SimulatedCardPspAdapter#query -> PspWireClient#query -> PspWireClient#fetch ->
+  OutboundExchange#send`, and payments' runner body beside it; restored byte-identical (sha256 `b551fb5d…ed2ecffe`). The guard's
+  following of functional values switched off - red, `runsWhileHeld` and `throughAField` no longer found; restored byte-identical.
+- **Limits, stated not hidden**: reflection and method handles built at runtime are beyond a class file (no provider is reached so);
+  a function taken out of a container is listed, not followed; the class hierarchy over-approximates, so a path no runtime takes could be
+  flagged (none is today); Kafka publishing is the outbox relay's, not a provider call, and is not in scope.
+- **Multi-instance**: `PASS` - a test; no production code changed. What it keeps true matters at ten: a connection pinned per in-flight
+  provider call on every replica is the pool budget ADR-0134 sized spent on waiting.
+- **Verified** (fresh): the guard, 6 tests, green; then the whole `:app:architectureTest`, 1,242 tests, 0 failed. `databaseTest` and `kafkaTest` not run,
+  by the owner's word.
+- **Risk**: Low. **Cx**: M.
+
+**X-TSK-021 — The payable read's checkpoints proven against the whole fold: a census among the source proofs** — `COMPLETE`
+*(2026-11-15; found by `P16-REM-001`'s gate and marked `READY` by the owner's word, "Start X-TSK-021", during it; run straight
+through, branch `X-TSK-021` from `a3fef30e` (`P16-REM-001`, unmerged); cross-cutting, no milestone; marks `P16-REM-002` `READY`
+on the owner's word, "Start P16-REM-002") (read "`READY`" until its gate)*
+- **Context**: `P16-REM-001` answers `GET /v1/merchant/payable` from a commit-order checkpoint and the lines since. A checkpoint row is
+  the application role's to write, and each new one is built on the one before, so a row forged with that credential, or stored wrong
+  by a defect the version fingerprint does not catch, shows a merchant a wrong payable and carries the error into every later
+  checkpoint. The proofs read the whole fold by design (`onlyThePayableQueryReadsACheckpoint`), so nothing compares the two.
+- **Objective**: a source proof, `PAYABLE_CHECKPOINT`, read with `MERCHANT_PAYABLE`'s source on the proofs' snapshot: every merchant
+  payable's drill-down as the API reads it, from its checkpoint, equals the drill-down from the whole fold. A payable that differs is
+  a `SOURCE_DISCREPANCY` break like any proof's, its evidence naming no amount; the catalogue becomes `source-proofs:v2`.
+- **Scope**: the proof's enum value and the catalogue version (accounting); a census reading that never stores (ledger); the reading in
+  `ProductSourceProofs` and its wiring through one named class the wiring rule admits (app); the runbook's answer to the break.
+  **Exclusions**: refusing a checkpoint automatically (an operator retires the account's checkpoints, §11.48); a schedule of its own.
+- **Acceptance**: a payable whose checkpoint differs from the whole fold is named by the proof, and one that agrees is not; the census
+  stores nothing on the read-only snapshot; the wiring rule refuses any other class naming the checkpointed read; the existing proofs'
+  readings unchanged; `THREAT_MODEL.md` §5's T14 residual struck to what remains.
+- **Probe**: the census's comparison made to pass always - the planted wrong checkpoint is not named, red.
+- **As built (2026-11-15, gate `COMPLETE`).** **The proof**: `SourceProofs.Proof.PAYABLE_CHECKPOINT`, on the `MERCHANT_PAYABLE`
+  source; the catalogue `source-proofs:v2` (`SourceCompleteness.CATALOGUE_VERSION` 2, its rule "raised when a proof is added"); a
+  break's identity reads its evidence, never its version, so no open break churns. The projection close check keeps its own
+  `source-proofs:v1`: the one proof it reads is unchanged. **The census**: one pass over the merchants on the proofs' `READ ONLY`
+  snapshot - each payable read twice, from the whole fold (`MERCHANT_PAYABLE`'s terms) and as the API reads it
+  (`CheckpointedPositionBreakdown.readingOnly()`, the same read that never stores), compared record for record, position and every
+  term; another length is a disagreement. Evidence one fixed string, `checkpointAgreesWithTheWholeFold=false`, no amount.
+  `PayableCheckpointCensus`, a `@Configuration` (the module boundary's store rule), makes the two reads as one bean,
+  `ProductSourceProofs.PayableReads`; the wiring rule admits it beside `MerchantBeans`, `theProofsTakeTheCensussReads` holds the
+  proofs' wiring on that bean, and `onlyTheCensusMakesThePayableReads` refuses a pair made anywhere else (a whole fold compared with
+  itself would pass every checkpoint). `ReportingNeverWritesTest`'s term readers name the census's `equals`: both drill-downs are
+  classified alike in one instant, so no closed month's verdict moves with a term. `RestoreVerification` counts the new proof.
+  **Tests**: `PayableCheckpointCensusTest` (agree, a forged term, another length, both proofs from one reading),
+  `CheckpointedPositionBreakdownTest#theCensussReadNeverStores`, the accounting catalogue's tests at version 2, the wiring rules' teeth.
+  **Probes** (recorded, each on the final bytes): the comparison made to pass always - red; the proofs wired to the whole fold
+  alone - `theProofsTakeTheCensussReads` red; and in-suite, a pair made outside the census refused.
+  **Database**: `PositionCheckpointDatabaseTest#theCensusNamesAWrongCheckpoint` written - a real checkpoint planted wrong named on a
+  read-only snapshot, the other not, nothing stored - and not run: the owner's standing skip, the exception being `P16-REM-001`'s
+  alone; owed under PI-023, with the two database tests whose pins moved to `v2`. **What remains of T14's residual**: a wrong
+  checkpoint shows a merchant a wrong figure until the next source-completeness run names it, and an operator retires it
+  (`OPERATIONS_RUNBOOK.md` 11.48). **Multi-instance**: `PASS` - a read on each run's snapshot, nothing written, nothing held.
+- **Definition of done**: `DOD-FIN`, `DOD-TEST`. **Risk**: Low. **Cx**: M.
 
 ---
 

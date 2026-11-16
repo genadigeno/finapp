@@ -98,21 +98,21 @@ class CounterpartyChartDatabaseTest {
                     .isEmpty();
         }
 
-        CounterpartyChartGuard.verify(
+        verify(
                 List.of(clearing(code, CounterpartyKind.FX_PROVIDER, Set.of(EUR))), DatabaseRoles::application);
-        assertThatThrownBy(() -> CounterpartyChartGuard.verify(
+        assertThatThrownBy(() -> verify(
                         List.of(clearing(code, CounterpartyKind.FX_PROVIDER, Set.of(EUR, USD))),
                         DatabaseRoles::application))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Refusing to start")
                 .hasMessageContaining("settles USD");
-        assertThatThrownBy(() -> CounterpartyChartGuard.verify(
+        assertThatThrownBy(() -> verify(
                         List.of(clearing(code, CounterpartyKind.CORRIDOR_PROVIDER, Set.of(EUR))),
                         DatabaseRoles::application))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("registered as FX_PROVIDER");
         String undeclared = uniqueCode();
-        assertThatThrownBy(() -> CounterpartyChartGuard.verify(
+        assertThatThrownBy(() -> verify(
                         List.of(clearing(undeclared, CounterpartyKind.FX_PROVIDER, Set.of(EUR))),
                         DatabaseRoles::application))
                 .isInstanceOf(IllegalStateException.class)
@@ -122,7 +122,7 @@ class CounterpartyChartDatabaseTest {
     @Test
     @DisplayName("an unreachable database is not a finding: the guard defers to the per-call refusal")
     void anUnreachableDatabaseDoesNotRefuse() {
-        assertThatCode(() -> CounterpartyChartGuard.verify(
+        assertThatCode(() -> verify(
                         List.of(clearing("cp-unreachable", CounterpartyKind.FX_PROVIDER, Set.of(EUR))),
                         () -> {
                             throw new SQLException("down", "08001");
@@ -221,5 +221,10 @@ class CounterpartyChartDatabaseTest {
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.executeUpdate();
         }
+    }
+
+    /** The guard over the ledger's two adapters, as {@code SettlementBeans} wires it (P15-REM-001). */
+    private static void verify(List<CounterpartyClearing> declared, CounterpartyChartGuard.Connections connections) {
+        CounterpartyChartGuard.verify(declared, connections, new JdbcCounterpartyStore(), new JdbcLedgerAccountStore());
     }
 }

@@ -16,10 +16,7 @@ import com.finapp.fx.FxBooksProof;
 import com.finapp.lending.LendingCapitalProof;
 import com.finapp.lending.LendingProofs;
 import com.finapp.ledger.JdbcBalanceDerivation;
-import com.finapp.ledger.JdbcLedgerAccountStore;
-import com.finapp.ledger.JdbcPositionBreakdown;
 import com.finapp.ledger.ProjectionVerification;
-import com.finapp.merchant.MerchantPayable;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.outbox.OutboxWriter;
@@ -67,18 +64,21 @@ public class AccountingBreakBeans {
         return new LedgerJournalShapes();
     }
 
-    /** accounting's port over the nine product proofs, each read as its module built it. */
+    /**
+     * accounting's port over the product proofs, each read as its module built it - the nine, and since `X-TSK-021` the census of
+     * the merchant API's payable checkpoints beside the payable proof.
+     */
     @Bean
     SourceProofs sourceProofs(
             LendingProofs lendingProofs,
             LendingCapitalProof lendingCapitalProof,
             BnplProofs bnplProofs,
             FxBooksProof fxBooksProof,
-            PositionProof positionProof) {
+            PositionProof positionProof,
+            ProductSourceProofs.PayableReads payableReads) {
         return new ProductSourceProofs(lendingProofs::prove, lendingCapitalProof::prove, bnplProofs::prove,
                 fxBooksProof::prove, positionProof::sweep,
-                ProductSourceProofs.merchantPayables(
-                        new MerchantPayable(new JdbcLedgerAccountStore(), new JdbcPositionBreakdown())),
+                ProductSourceProofs.merchantPayables(payableReads),
                 ProductSourceProofs.projections(new ProjectionVerification(new JdbcBalanceDerivation())));
     }
 

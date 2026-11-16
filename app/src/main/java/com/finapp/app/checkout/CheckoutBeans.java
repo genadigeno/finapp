@@ -166,6 +166,7 @@ public class CheckoutBeans {
             com.finapp.identity.MfaEnrolmentStore<java.sql.Connection> mfaEnrolmentStore,
             CheckoutStepUpAdvice checkoutStepUpAdvice,
             com.finapp.payments.PaymentIntentStore<Connection> paymentIntentStore,
+            com.finapp.payments.PaymentAttemptStore<Connection> paymentAttemptStore,
             com.finapp.accounts.CustomerAccountStore<Connection> customerAccountStore) {
         return new CheckoutService(
                 checkoutSessions,
@@ -191,7 +192,10 @@ public class CheckoutBeans {
                         paymentParticipants,
                         customerAccountStore,
                         mfaEnrolmentStore,
-                        checkoutSessions::databaseNow));
+                        checkoutSessions::databaseNow),
+                // P15-REM-001: the service built these two adapters itself; the wiring hands it the ports.
+                paymentIntentStore,
+                paymentAttemptStore);
     }
 
     @Bean

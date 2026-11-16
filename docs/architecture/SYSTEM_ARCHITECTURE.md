@@ -52,7 +52,7 @@ Testing:
 - AssertJ
 - Testcontainers
 - WireMock
-- Load tooling: Phase 16
+- Load tooling: Phase 16 *(built: k6 2.3.0 and Toxiproxy 2.13.0, pinned by digest, run as containers outside the build graph, ADR-0126 and ADR-0127; noted by the Phase 16 exit review, 2026-11-16)*
 
 API:
 - REST / OpenAPI
@@ -272,4 +272,4 @@ The full requirement, the component register and the audit that produced it are 
 
 ## Preferred Evolution
 
-Start with a modular monolith unless a hard requirement justifies distribution. Extract services only when independent scaling, isolation, ownership, deployment, or reliability warrants it.
+Start with a modular monolith unless a hard requirement justifies distribution. Extract services only when independent scaling, isolation, ownership, deployment, or reliability warrants it. *(Phase 16's evaluation, ADR-0151 (`P16-TSK-030`, 2026-11-15, `Proposed`): no service is extracted on the evidence on record; what would reopen it is that ADR's decision 4.)*

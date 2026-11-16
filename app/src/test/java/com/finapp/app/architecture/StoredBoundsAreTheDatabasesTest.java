@@ -147,6 +147,8 @@ class StoredBoundsAreTheDatabasesTest {
                 List.of(
                         // A report's or proof's window; a valuation or close run's own recorded cut; an as-of a person chose.
                         "FxReferenceValuationRates#observed_at",
+                        // P16-REM-003: a PROVISIONAL run's recorded cut, against the latest entry creation a checkpoint folds.
+                        "JdbcOpeningCheckpointStore#latest_created",
                         "LedgerCounterpartyPositionReads#created_at",
                         "LedgerTrialBalanceReads#created_at",
                         "LendingFundedAsOfCutoffReads#created_at",

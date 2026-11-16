@@ -86,6 +86,12 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
      */
     private final ObjectProvider<StepUpRefusals> stepUpRefusals;
 
+    /**
+     * The {@code Retry-After} a request that could not reach the database is given (`P16-REM-002`). A provider for the step-up
+     * recorder's reason: a slice that renders the contract alone still builds this advice, and answers with the default.
+     */
+    private final ObjectProvider<DatabaseUnreachableAnswer> databaseUnreachableAnswer;
+
     /** Raised deliberately by our own code, carrying the code that says what went wrong. */
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ProblemDetailBody> handleApiException(ApiException exception, HttpServletRequest request) {
@@ -173,8 +179,33 @@ public class ApiErrorHandler extends ResponseEntityExceptionHandler {
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemDetailBody> handleUnexpected(Exception exception, HttpServletRequest request) {
+        if (com.finapp.platform.persistence.DatabaseUnreachable.is(exception)) {
+            return databaseUnreachable(exception, request);
+        }
         log.error("Unhandled error on {}", routeOf(request), exception);
         return render(ProblemDetail.of(PlatformErrorCode.INTERNAL_ERROR, request.getRequestURI()));
+    }
+
+    /**
+     * The database could not be reached, or was lost mid-request (`P16-REM-002`; {@code THREAT_MODEL.md} section 6 item 61 (i)):
+     * {@code 503 api.TemporarilyUnavailable} with {@code Retry-After}, the refusal said to be temporary. The same request under the
+     * same {@code Idempotency-Key} is safe to send again: a command that committed before the connection went is replayed by its key,
+     * and one that did not is a first attempt ({@code INV-IDEM-*}). An exhausted pool while the database is up is not this, but an
+     * overload, shed before the handler as {@code api.Overloaded} ({@link com.finapp.platform.persistence.DatabaseUnreachable}).
+     *
+     * <p>Logged at {@code WARN}, once per request and without its stack: the cause is the database's, not this request's, and an
+     * outage would otherwise write a trace per request. The body says nothing of the pool, the host or the cause.
+     */
+    private ResponseEntity<ProblemDetailBody> databaseUnreachable(Exception exception, HttpServletRequest request) {
+        log.warn("The database could not be reached on {}; answered 503 api.TemporarilyUnavailable ({})", routeOf(request),
+                exception.getClass().getSimpleName());
+        DatabaseUnreachableAnswer answer = databaseUnreachableAnswer.getIfAvailable(() -> DatabaseUnreachableAnswer.DEFAULT);
+        ResponseEntity<ProblemDetailBody> rendered =
+                render(ProblemDetail.of(PlatformErrorCode.TEMPORARILY_UNAVAILABLE, request.getRequestURI()));
+        return ResponseEntity.status(rendered.getStatusCode())
+                .headers(rendered.getHeaders())
+                .header(org.springframework.http.HttpHeaders.RETRY_AFTER, Long.toString(answer.retryAfterSeconds()))
+                .body(rendered.getBody());
     }
 
     /**

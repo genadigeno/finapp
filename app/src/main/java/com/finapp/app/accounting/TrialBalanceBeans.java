@@ -1,6 +1,8 @@
 package com.finapp.app.accounting;
 
 import com.finapp.accounting.GlMappingStore;
+import com.finapp.accounting.JdbcOpeningCheckpointStore;
+import com.finapp.accounting.OpeningCheckpointStore;
 import com.finapp.accounting.TrialBalanceReads;
 import com.finapp.accounting.ValuationRateReads;
 import com.finapp.accounting.ValuationRateSetStore;
@@ -18,10 +20,19 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 public class TrialBalanceBeans {
 
-    /** What the trial balance reads - {@code SELECT} only, on the generation's read-only snapshot. */
+    /** The locked months' opening checkpoints (`P16-REM-003`; {@code accounting V017}). */
     @Bean
-    TrialBalanceReads trialBalanceReads(GlMappingStore glMappingStore) {
-        return new LedgerTrialBalanceReads(glMappingStore);
+    OpeningCheckpointStore openingCheckpointStore() {
+        return new JdbcOpeningCheckpointStore();
+    }
+
+    /**
+     * What the trial balance reads - {@code SELECT} only, on the generation's read-only snapshot; every opening from the latest
+     * valid checkpoint (`P16-REM-003`).
+     */
+    @Bean
+    TrialBalanceReads trialBalanceReads(GlMappingStore glMappingStore, OpeningCheckpointStore openingCheckpointStore) {
+        return new LedgerTrialBalanceReads(glMappingStore, openingCheckpointStore);
     }
 
     /** What a translated report reads of its pinned set (`P14-TSK-015`) - {@code SELECT} only, on the snapshot. */

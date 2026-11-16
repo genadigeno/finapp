@@ -1,6 +1,6 @@
 # ADR-0141 — One journal entry per posting scope, for ever, then the idempotency records swept
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-13
 Phase: 16
 Context: Ledger · Platform
@@ -43,7 +43,7 @@ instance's clock, while the sweep must judge it on the database's.
    batch of `COMPLETED` or `FAILED` records whose own `expires_at` is more than the grace behind the database's clock, under `FOR
    UPDATE SKIP LOCKED` in a materialised CTE, the predicate repeated on the locked row. It refuses every batch while a valid,
    non-partial unique index on exactly `ledger.journal_entry (idempotency_scope)` is absent, read from the catalogue by shape, and at
-   any column of the table it was not reviewed against. A fourth `RetentionSweepSchedule` bean runs it on every instance, leaderless.
+   any column of the table it was not reviewed against. A fifth `RetentionSweepSchedule` bean *(read "fourth" until `P16-DOC-001`, 2026-11-16: beside the outbox's, the inbox's, the window counter's and the sessions')* runs it on every instance, leaderless.
 5. **The grace: 30 days by default, never less than a day.** `finapp.idempotency.sweep.grace`, refused at start and by the function
    below a day, the margin over a written expiry that skewed instance clocks and stragglers need. Until it is swept a record answers
    every retry, so a key is answered for its expiry plus the grace. The default keeps 31 days of keyed commands (about 25 million rows
@@ -62,7 +62,7 @@ instance's clock, while the sweep must judge it on the database's.
 - The posting hot path gains one index probe (the lookup) and one index entry per entry; the claim's completion gains one partial
   index entry. Both builds hold `SHARE` on their tables for their length. E62 measures the first under load against E38's run on the
   tree before this decision, and E64 the builds' write stop on a soak's journal; both are owed (`POSTPONED_ISSUES.md` PI-025). E63
-  forces a sweep under load and replays posting keys against the swept records.
+  forces a sweep under load and replays posting keys against the swept records. *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: E38's control run on the tree before this decision is itself owed, and since `P16-REM-001` (ledger `V038`) every posting also stamps each line's `txid` by trigger and writes a `(ledger_account_id, txid)` index entry, so E62 on the final tree measures `V037` and `V038` together. E63 is owed too.)*
 - The platform's sweep reads the ledger's catalogue entry. It reads no ledger row and binds no ledger object, and it is the one place a
   platform function names a ledger table: the cost of a sweep that cannot outrun the uniqueness it rests on.
 - A floored posting retried as stated after its record is swept is refused as a conflict, where its record would have replayed it:

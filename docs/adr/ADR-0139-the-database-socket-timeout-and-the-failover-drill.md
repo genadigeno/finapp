@@ -1,6 +1,6 @@
 # ADR-0139 — The data source's socket timeout, and the rules of the local database failover drill
 
-Status: Proposed
+Status: Accepted (2026-11-16, `P16-DOC-001` — read against the code and corrected first)
 Date: 2026-11-13
 Phase: 16
 Context: Platform · every module that reads the database
@@ -103,4 +103,4 @@ lost and no key takes a second effect across a failover.
 
 The runs: E05, E06, E57 and the probe E56 at three replicas, and E29's longest statement, owed under PI-025. The answer a client gets
 while the database is away (`500` today) is put to the owner (`THREAT_MODEL.md` §6 item 61). *(2026-11-13: decided at (i):
-`503 api.TemporarilyUnavailable` with a `Retry-After`, built by `P16-REM-002`.)*
+`503 api.TemporarilyUnavailable` with a `Retry-After`, built by `P16-REM-002`.)* *(Corrected by `P16-DOC-001`, the Phase 16 exit review, 2026-11-16: built 2026-11-15: a connection this timeout gives up, or a pool timeout whose cause is a lost connection, is classified by `DatabaseUnreachable` and answered `503 api.TemporarilyUnavailable` with `Retry-After`; read "`500` today" as true until then. E05 reads the new answer when it runs, owed under PI-025.)*

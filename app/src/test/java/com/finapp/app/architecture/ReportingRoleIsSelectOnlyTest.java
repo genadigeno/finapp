@@ -48,7 +48,7 @@ public class ReportingRoleIsSelectOnlyTest {
             "accounting.accounting_period", "accounting.report_run", "accounting.gl_mapping_version",
             "accounting.gl_account", "accounting.gl_mapping_rule", "accounting.valuation_rate_set",
             "accounting.valuation_rate", "accounting.prior_period_adjustment", "accounting.period_close",
-            "accounting.period_close_check",
+            "accounting.period_close_check", "accounting.opening_checkpoint", "accounting.opening_checkpoint_group",
             "ledger.journal_entry", "ledger.journal_line", "ledger.ledger_account", "ledger.counterparty",
             "ledger.adjustment_proposal",
             "reconciliation.suspense_item", "reconciliation.suspense_release", "reconciliation.break",

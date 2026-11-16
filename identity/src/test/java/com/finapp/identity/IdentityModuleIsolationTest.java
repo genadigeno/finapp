@@ -23,8 +23,9 @@ import org.junit.jupiter.api.Test;
  * a {@code PartyId} <em>by value</em>. A compile-time dependency between them is the first step
  * toward the shared {@code users} table the ADR exists to prevent, and toward a cross-module
  * foreign key that would turn ADR-0001's stated escape — extracting a module — into a data
- * migration. ArchUnit's {@code entitiesAreNotReferencedAcrossModules} catches the reference;
- * this catches the dependency that would make one possible.
+ * migration. This catches the dependency that would make a reference possible; ArchUnit's
+ * {@code moduleInternalsArePrivateToTheirModule} catches a reach into the other's SQL, and the entity rule this named
+ * ({@code entitiesAreNotReferencedAcrossModules}) was retired by P15-REM-001, there being no mapper (ADR-0033).
  */
 @Tag("architecture")
 @DisplayName("identity module isolation (P1-TSK-003)")

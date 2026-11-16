@@ -6,6 +6,8 @@ import com.finapp.accounting.GlMappingStore;
 import com.finapp.accounting.GlMappingVersion;
 import com.finapp.accounting.GlMappingVersionId;
 import com.finapp.accounting.JournalReads;
+import com.finapp.accounting.OpeningCheckpoint;
+import com.finapp.accounting.OpeningCheckpointStore;
 import com.finapp.accounting.PeriodStatus;
 import com.finapp.accounting.Side;
 import com.finapp.accounting.TrialBalanceReads;
@@ -44,6 +46,13 @@ import java.util.UUID;
  * values - never the code's {@code Range.of} that bounded the GL side (`P14-TSK-007`'s review, M-6), and no
  * {@code accounting} table named in a {@code ledger} statement (ADR-0006; `P14-TSK-009`'s review, M-4). The version's
  * content is the mapping store's own read ({@link GlMappingStore#content} - plain {@code SELECT}s).
+ *
+ * <p><strong>The opening, bounded</strong> (`P16-REM-003`; {@code THREAT_MODEL.md} section 6 item 64): built with an
+ * {@link OpeningCheckpointStore}, {@link #before} and {@link #ledger} start from the latest valid checkpoint before their day -
+ * a locked month's sums, still under the lock they were folded under - and fold only the lines dated after its month
+ * ({@link #AFTER}), so a statement's cost is the months since the latest lock, not the journal's life. The checkpoint is read in
+ * its own statements, on the same snapshot, and only its month's last day is bound to the ledger's - which still names no
+ * {@code accounting} table. Built without one, both fold from inception, as the proofs' and the close's whole folds do.
  */
 public final class LedgerTrialBalanceReads implements TrialBalanceReads {
 
@@ -90,13 +99,26 @@ public final class LedgerTrialBalanceReads implements TrialBalanceReads {
             + " CROSS JOIN (SELECT CAST(? AS date) AS period_start, CAST(? AS date) AS period_end) bounds"
             + " WHERE entry.posting_date <= bounds.period_end";
 
+    /** After a checkpoint: only the lines dated after its month (`P16-REM-003`). */
+    static final String AFTER = " AND entry.posting_date > ?";
+
     static final String LEDGER_GROUPS = " GROUP BY line.currency, line.scale, line.direction"
             + " ORDER BY line.currency, line.scale, line.direction";
 
     private final GlMappingStore mappings;
 
+    private final Optional<OpeningCheckpointStore> checkpoints;
+
+    /** The reads folding every opening from inception - no checkpoint. */
     public LedgerTrialBalanceReads(GlMappingStore mappings) {
         this.mappings = Objects.requireNonNull(mappings, "mappings");
+        this.checkpoints = Optional.empty();
+    }
+
+    /** The reads whose openings start from the latest valid checkpoint (`P16-REM-003`). */
+    public LedgerTrialBalanceReads(GlMappingStore mappings, OpeningCheckpointStore checkpoints) {
+        this.mappings = Objects.requireNonNull(mappings, "mappings");
+        this.checkpoints = Optional.of(Objects.requireNonNull(checkpoints, "checkpoints"));
     }
 
     @Override
@@ -126,13 +148,19 @@ public final class LedgerTrialBalanceReads implements TrialBalanceReads {
     public List<JournalReads.Aggregate> before(Connection snapshot, LocalDate before, Optional<Instant> cut) {
         Objects.requireNonNull(before, "before");
         Objects.requireNonNull(cut, "cut");
-        try (PreparedStatement read = snapshot.prepareStatement(BEFORE + (cut.isPresent() ? AT_THE_CUT : "")
-                + GL_GROUPS)) {
-            read.setDate(1, Date.valueOf(before));
-            if (cut.isPresent()) {
-                read.setTimestamp(2, Timestamp.from(cut.get()));
+        Optional<OpeningCheckpoint> from = checkpoint(snapshot, before, cut);
+        try (PreparedStatement read = snapshot.prepareStatement(BEFORE + (from.isPresent() ? AFTER : "")
+                + (cut.isPresent() ? AT_THE_CUT : "") + GL_GROUPS)) {
+            int parameter = 1;
+            read.setDate(parameter++, Date.valueOf(before));
+            if (from.isPresent()) {
+                read.setDate(parameter++, Date.valueOf(from.get().through()));
             }
-            return aggregates(read);
+            if (cut.isPresent()) {
+                read.setTimestamp(parameter, Timestamp.from(cut.get()));
+            }
+            List<JournalReads.Aggregate> after = aggregates(read);
+            return from.map(checkpoint -> checkpoint.gl(after)).orElse(after);
         } catch (SQLException failure) {
             throw failed("reading the trial balance's opening", failure);
         }
@@ -159,12 +187,17 @@ public final class LedgerTrialBalanceReads implements TrialBalanceReads {
     public List<LedgerWindows> ledger(Connection snapshot, Period period, Optional<Instant> cut) {
         Objects.requireNonNull(period, "period");
         Objects.requireNonNull(cut, "cut");
-        try (PreparedStatement read = snapshot.prepareStatement(LEDGER + (cut.isPresent() ? AT_THE_CUT : "")
-                + LEDGER_GROUPS)) {
-            read.setDate(1, Date.valueOf(period.start()));
-            read.setDate(2, Date.valueOf(period.end()));
+        Optional<OpeningCheckpoint> from = checkpoint(snapshot, period.start(), cut);
+        try (PreparedStatement read = snapshot.prepareStatement(LEDGER + (from.isPresent() ? AFTER : "")
+                + (cut.isPresent() ? AT_THE_CUT : "") + LEDGER_GROUPS)) {
+            int parameter = 1;
+            read.setDate(parameter++, Date.valueOf(period.start()));
+            read.setDate(parameter++, Date.valueOf(period.end()));
+            if (from.isPresent()) {
+                read.setDate(parameter++, Date.valueOf(from.get().through()));
+            }
             if (cut.isPresent()) {
-                read.setTimestamp(3, Timestamp.from(cut.get()));
+                read.setTimestamp(parameter, Timestamp.from(cut.get()));
             }
             List<LedgerWindows> windows = new ArrayList<>();
             try (ResultSet row = read.executeQuery()) {
@@ -175,10 +208,15 @@ public final class LedgerTrialBalanceReads implements TrialBalanceReads {
                             minor(row, "through_total"), row.getLong("through_lines")));
                 }
             }
-            return windows;
+            return from.map(checkpoint -> checkpoint.ledger(windows)).orElse(windows);
         } catch (SQLException failure) {
             throw failed("reading the ledger's trial balance windows", failure);
         }
+    }
+
+    /** The latest valid checkpoint a read before {@code before} may start from, when the reads take one. */
+    private Optional<OpeningCheckpoint> checkpoint(Connection snapshot, LocalDate before, Optional<Instant> cut) {
+        return checkpoints.flatMap(store -> store.latest(snapshot, before, cut)).filter(found -> found.precedes(before));
     }
 
     // ------------------------------------------------------------------ plumbing

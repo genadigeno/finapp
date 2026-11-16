@@ -13,7 +13,7 @@ import java.util.Objects;
  * {@link BreakType#SOURCE_DISCREPANCY} break, never a correction.
  *
  * <p><strong>Read-only.</strong> Given its methods by `P14-TSK-010` (declared empty by `P14-TSK-001`); {@code app}'s
- * {@code ProductSourceProofs} implements it over the nine proofs. One call reads one {@link Source} - the proofs one
+ * {@code ProductSourceProofs} implements it over the ten proofs. One call reads one {@link Source} - the proofs one
  * product computes in one reading (lending's subledger and replay; BNPL's subledger and three-way) - on the caller's
  * {@code REPEATABLE READ READ ONLY} snapshot, so the caller gives each source a snapshot of its own and one source's
  * failure blinds no other.
@@ -40,7 +40,10 @@ public interface SourceProofs {
         }
     }
 
-    /** The nine proofs the entry names - the catalogue {@code source-proofs:v1} judges by. */
+    /**
+     * The ten proofs - the catalogue {@code source-proofs:v2} judges by: the entry's nine, and since `X-TSK-021` the payable
+     * read's checkpoint ({@link SourceCompleteness#CATALOGUE_VERSION}).
+     */
     enum Proof {
         /** {@code LoanSubledgerProof}: each loan account's six balances explained by its rows ({@code INV-LND-01}). */
         LOAN_SUBLEDGER(Source.LENDING),
@@ -58,6 +61,12 @@ public interface SourceProofs {
         POSITION(Source.POSITION),
         /** The merchant payable drill-down: every payable's terms sum to its position ({@code INV-MER-02}). */
         MERCHANT_PAYABLE(Source.MERCHANT_PAYABLE),
+        /**
+         * The merchant API's payable drill-down, read from its commit-order checkpoint, equal to the drill-down from the whole
+         * fold (ADR-0133 decision 3; `X-TSK-021`): a checkpoint stored wrong - by a defect, or by a holder of the application's
+         * credential - is named here, since no other proof reads one and each new checkpoint is built on the last.
+         */
+        PAYABLE_CHECKPOINT(Source.MERCHANT_PAYABLE),
         /** {@code ProjectionVerification}: every balance projection equal to its derivation ({@code INV-BAL-02}). */
         PROJECTION(Source.PROJECTION);
 
