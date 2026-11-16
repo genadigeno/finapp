@@ -32008,8 +32008,8 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   pass.)*
 - *The owner's decision (2026-11-08), status unchanged:* the five stores are `P15-TSK-038` (Phase 15, before `P15-TST-002`). What stays here, the ordering `CHECK`s and the bulk-revocation leftover, has the horizon before production use, counted by `P15-TSK-034`; the `touch` leftover is `P15-TSK-031`'s question.
 
-**X-TSK-009 — Provider receipt after a timeout, proved deterministically** — `IN_PROGRESS`
-*(implemented and demonstrated 2026-09-27; awaiting the completion gate)*
+**X-TSK-009 — Provider receipt after a timeout, proved deterministically** — `COMPLETE`
+*(2026-11-16: its completion gate run on the owner's "do all x-tsks", branch `X-TSK-009`; read "`IN_PROGRESS`" and "implemented and demonstrated 2026-09-27; awaiting the completion gate" until then)*
 - **Context**: `platform` test fixtures (`SimulatedProvider`) and `paymentmethods` tests. Test
   code only; no production code changes. Owner-reported flake.
 - **Problem**: `SimulatedTokenisationAdapterTest#aTimeoutIsUnavailable` (`P5-TSK-005`) failed
@@ -32080,6 +32080,7 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
     reads the harness suite; `NoAmbientTimeRulesTest` covers the harness);
   - no production code changed.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+- **Gate (2026-11-16, `COMPLETE`)**: the change is on master: `SimulatedProvider.awaitRequestCount` (bounded in polls, never a clock), the test awaiting receipt at a 2 s budget, `SimulatedProviderTest`'s cases of the wait and `TESTING.md` §5a. Each criterion: (1) five fresh-JVM runs of `SimulatedTokenisationAdapterTest` under `unitTest`, 7 tests each, all green (08:48-08:49 UTC); (2) the adapter made never to send - `aTimeoutIsUnavailable` red, `expected: 1 but was: 0` once its patience ran out, performed again and now registered (`MUTATION_TESTING.md` §2); (3) `SimulatedProviderTest` and `:app:architectureTest` green in this day's fleet runs (`NoAmbientTimeRulesTest`, `ProviderFailureCoverageTest`); (4) no production code changed. **Findings**: MINOR - the three siblings it found (`SimulatedProviderTest#theRequestTimesOut`, `SimulatedCardPspAdapterTest#timeoutIsIndeterminate` and `VerificationRunDatabaseTest#aTimeoutDoesNotDecide`) still read the count the instant their client times out, with wider margins and never seen failing; the one-line change stays the owner's, as the entry left it. **Fresh**: five fresh-JVM runs of `SimulatedTokenisationAdapterTest` (08:48-08:49 UTC, 7 tests each, green); then with --rerun (08:51-08:54 UTC) `SimulatedProviderTest` 16, `paymentmethods`' unit tier 44, and app's `NoAmbientTimeRulesTest`, `ProviderFailureCoverageTest`, `MutationDemonstrationTest` and `TestTaxonomyTest` with the rule classes, 66 - 0 failed. **Multi-instance**: `PASS` - test code only; nothing runs on instances.
 
 **X-TSK-010 — Bind associated data in the four existing ciphers** — `PLANNED`
 - **Context**: `payments` (`EvidenceCipher`), `merchant` (`PayoutEvidenceCipher`), `kyc`
