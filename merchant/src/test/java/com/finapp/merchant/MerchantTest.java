@@ -117,6 +117,41 @@ class MerchantTest {
 
     @Test
     @DisplayName(
+            "X-TSK-006 (ADR-0063 decision 2): a clock trailing the merchant's LATEST stamp - its last move,"
+                    + " not only its birth - stamps that move's instant, max(now, latest), so the history never"
+                    + " reads out of order")
+    void aClockTrailingTheLatestMoveStampsItsInstant() {
+        Merchant merchant =
+                Merchant.onboard(IDS, CLOCK, UUID.randomUUID(), "Acme GmbH", "Acme", EUR);
+        // Instance A, ten seconds ahead, suspends; instance B reinstates on a clock between the two.
+        Merchant suspended =
+                merchant.suspend(Clock.fixed(merchant.createdAt().plusSeconds(10), ZoneOffset.UTC));
+        Clock trailing = Clock.fixed(merchant.createdAt().plusSeconds(4), ZoneOffset.UTC);
+        assertThat(trailing.instant())
+                .as("precondition: B trails the latest stamp, though not the birth - the case a birth"
+                        + " floor let through, stamping the reinstatement before the suspension")
+                .isBefore(suspended.statusChangedAt())
+                .isAfter(merchant.createdAt());
+
+        Merchant reinstated = suspended.reinstate(trailing);
+        assertThat(reinstated.status()).isEqualTo(MerchantStatus.ACTIVE);
+        assertThat(reinstated.statusChangedAt())
+                .as("stamped at the suspension's instant, never before it")
+                .isEqualTo(suspended.statusChangedAt());
+
+        // A clock behind the birth as well: still the latest, not the birth.
+        Merchant closed =
+                reinstated.close(Clock.fixed(merchant.createdAt().minusSeconds(1), ZoneOffset.UTC));
+        assertThat(closed.statusChangedAt()).isEqualTo(suspended.statusChangedAt());
+
+        // A floor, not a pin: a clock past the latest stamps its own read.
+        Clock ahead = Clock.fixed(merchant.createdAt().plusSeconds(20), ZoneOffset.UTC);
+        assertThat(reinstated.suspend(ahead).statusChangedAt())
+                .isEqualTo(merchant.createdAt().plusSeconds(20));
+    }
+
+    @Test
+    @DisplayName(
             "an illegal edge under a behind clock is still the machine's refusal, never the"
                     + " constructor guard's")
     void anIllegalEdgeUnderABehindClockIsStillTheMachinesRefusal() {

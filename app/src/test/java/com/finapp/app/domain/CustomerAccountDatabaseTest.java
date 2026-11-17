@@ -406,6 +406,64 @@ class CustomerAccountDatabaseTest {
         }
     }
 
+    /**
+     * A move on a clock trailing the agreement's latest stamp - a status change, not only its
+     * birth: the floor at {@code opened_at} alone let the move be stamped before the fact it
+     * follows. Stamped at the predecessor's instant instead.
+     */
+    @Test
+    @DisplayName(
+            "a move on a clock trailing the agreement's latest change is stamped at that change,"
+                    + " never before it (X-TSK-006, ADR-0063 decision 2)")
+    void aMoveTrailingTheLatestChangeIsStampedAtIt() throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            CustomerAccountId agreement = freshAgreement(app);
+            app.commit();
+            // Instants derived from the stored birth, never from a second clock read.
+            Instant opened = stampsOf(app, agreement).openedAt();
+            Instant latest = opened.plusSeconds(10);
+            assertThat(
+                            accounts.moveStatus(
+                                    app,
+                                    agreement,
+                                    CustomerAccountStatus.ACTIVE,
+                                    CustomerAccountStatus.SUSPENDED,
+                                    latest))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(app, agreement).statusChangedAt()).isEqualTo(latest);
+
+            Instant trailing = opened.plusSeconds(5);
+            assertThat(trailing)
+                    .as("precondition: the clock trails the latest change, not the birth")
+                    .isBefore(latest)
+                    .isAfter(opened);
+            assertThat(
+                            accounts.moveStatus(
+                                    app,
+                                    agreement,
+                                    CustomerAccountStatus.SUSPENDED,
+                                    CustomerAccountStatus.ACTIVE,
+                                    trailing))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(app, agreement).statusChangedAt())
+                    .as("the predecessor's instant, not the trailing clock's")
+                    .isEqualTo(latest);
+            assertThat(
+                            accounts.moveStatus(
+                                    app,
+                                    agreement,
+                                    CustomerAccountStatus.ACTIVE,
+                                    CustomerAccountStatus.CLOSED,
+                                    trailing))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(app, agreement).statusChangedAt()).isEqualTo(latest);
+        }
+    }
+
     @Test
     @DisplayName(
             "an illegal move under a behind clock is still the machine's or the conditional's"

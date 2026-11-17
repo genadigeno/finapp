@@ -60,6 +60,7 @@ import com.finapp.platform.security.CipherFormat;
 import com.finapp.platform.security.KeyRing;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
+import com.finapp.platform.testing.database.SimulatedInstance;
 import com.finapp.platform.testing.provider.SimulatedProvider;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -812,6 +813,87 @@ class MerchantPayoutDatabaseTest {
         assertThat(takenOver.status()).isEqualTo(MerchantPayoutStatus.COMPLETED);
         assertThat(provider.requestCount(PATH)).as("one instruction, the takeover's").isEqualTo(1);
         assertThat(entryLines(crashed)).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("X-TSK-006 (ADR-0063 decision 2): a takeover on an instance TRAILING the payout's latest permit renews it"
+            + " clamped - one microsecond past it, never back to a trailing reading - re-sends the SAME reference exactly"
+            + " once, and the sweep's NEVER_RECEIVED still waits for its bound, then concludes past it")
+    void aTrailingTakeoverRenewsClampedAndTheSweepStillWaitsForItsBound() throws Exception {
+        Funded merchant = funded("100.00");
+        String key = key();
+        // The dispatch crashed on an instance an hour AHEAD of the database: created_at is its clock, so the birth
+        // permit, GREATEST(created_at, statement_timestamp()), stands an hour in the future of every other clock here.
+        MerchantPayoutId crashed;
+        try (SimulatedInstance ahead = SimulatedInstance.skewedBy(Duration.ofHours(1))) {
+            crashed = crash(merchant, "40.00", key, ahead.clock());
+        }
+        MerchantPayout born = stored(merchant, crashed);
+        Instant latestPermit = born.lastDispatchedAt();
+        String ours = born.reference().value();
+        assertThat(provider.requestCount(PATH)).as("the crash sent nothing").isZero();
+        expireTheLease(merchant, key);
+        // The re-send reaches the provider and its answer is lost: the payout stays resolvable, for the sweep.
+        provider.receivesTheRequestThenLosesTheResponse(PATH);
+
+        MerchantPayouts.Initiated takenOver;
+        try (SimulatedInstance trailing = SimulatedInstance.skewedBy(Duration.ofSeconds(-5))) {
+            // The preconditions (DISTRIBUTED_EXECUTION.md section 5): the skew is real and in the dangerous direction.
+            assertThat(trailing.clock().instant())
+                    .as("the takeover's clock trails the payout's latest permit - the renewer whose conditional,"
+                            + " 'last_dispatched_at <= <my clock>' until X-TSK-013, matched no row and re-sent nothing")
+                    .isBefore(latestPermit);
+            assertThat(SimulatedInstance.serverNow())
+                    .as("and so does the database's: the clamp, not a clock reading, sets the renewed permit")
+                    .isBefore(latestPermit);
+            takenOver =
+                    initiateWith(
+                            payoutsSendingTo(
+                                    new SimulatedPayoutProvider(
+                                            URI.create(provider.baseUrl()), Duration.ofSeconds(2), new byte[32]),
+                                    idempotentExecutor,
+                                    trailing.clock()),
+                            merchant,
+                            "40.00",
+                            key);
+        }
+
+        assertThat(takenOver.payout()).isEqualTo(crashed);
+        assertThat(takenOver.status())
+                .as("the re-send's answer was lost: UNKNOWN, the hold standing")
+                .isEqualTo(MerchantPayoutStatus.UNKNOWN);
+        assertThat(provider.headerValues(PATH, SimulatedPayoutProvider.IDEMPOTENCY_KEY_HEADER))
+                .as("the trailing takeover renewed and re-sent the SAME reference, exactly once (INV-PAY-04)")
+                .containsExactly(ours);
+        assertThat(stored(merchant, crashed).lastDispatchedAt())
+                .as("clamped: GREATEST(last_dispatched_at + 1 microsecond, statement_timestamp()) - one microsecond"
+                        + " past the latest permit, never moved backwards to a trailing reading")
+                .isEqualTo(latestPermit.plus(Duration.ofNanos(1_000)));
+        assertThat(holdStatuses(merchant)).containsExactly("ACTIVE");
+
+        // THE SWEEP, DRIVEN. The provider has no record of our reference, and a sweep on an instance minutes ahead -
+        // so the UNKNOWN row is its candidate - asks; but the renewed permit is younger than the bound on the
+        // database's clock, so absence proves nothing yet (ADR-0057 section 4). A later permit only postpones.
+        queryAnswers(merchant, crashed, "unrecognised");
+        Clock sweeper = com.finapp.app.database.ServerSkewedClock.of(Duration.ofMinutes(5));
+        resolution(Duration.ofMinutes(10), sweeper).sweep();
+        assertThat(provider.requestCount(PATH + "/" + ours))
+                .as("driven, not assumed: the sweep reached the payout and asked")
+                .isGreaterThanOrEqualTo(1);
+        assertThat(stored(merchant, crashed).status())
+                .as("NEVER_RECEIVED waits for its bound on the renewed permit")
+                .isEqualTo(MerchantPayoutStatus.UNKNOWN);
+        assertThat(holdStatuses(merchant)).containsExactly("ACTIVE");
+
+        // ...and only waits: once the permit is past the bound, the same sweep concludes.
+        com.finapp.app.database.AgedPermits.age(
+                "merchant.merchant_payout", "last_dispatched_at", crashed.value(), Duration.ofHours(2));
+        resolution(Duration.ofMinutes(10), sweeper).sweep();
+        MerchantPayout concluded = stored(merchant, crashed);
+        assertThat(concluded.status()).isEqualTo(MerchantPayoutStatus.FAILED);
+        assertThat(concluded.failureReason()).contains(PayoutFailureReason.NEVER_RECEIVED);
+        assertThat(holdStatuses(merchant)).containsExactly("RELEASED");
+        assertThat(provider.requestCount(PATH)).as("and nothing more was ever sent").isEqualTo(1);
     }
 
     @Test
@@ -1579,6 +1661,12 @@ class MerchantPayoutDatabaseTest {
      * before anything is sent, leaving the payout DISPATCHED and its claim IN_PROGRESS.
      */
     private MerchantPayoutId crash(Funded merchant, String amount, String key) throws Exception {
+        return crash(merchant, amount, key, CLOCK);
+    }
+
+    /** {@link #crash(Funded, String, String)} on an instance whose clock is {@code clock} (X-TSK-006). */
+    private MerchantPayoutId crash(Funded merchant, String amount, String key, Clock clock)
+            throws Exception {
         PayoutProvider crashing =
                 new PayoutProvider() {
                     @Override
@@ -1594,7 +1682,7 @@ class MerchantPayoutDatabaseTest {
         assertThatThrownBy(
                         () ->
                                 initiateWith(
-                                        payoutsSendingTo(crashing, idempotentExecutor),
+                                        payoutsSendingTo(crashing, idempotentExecutor, clock),
                                         merchant,
                                         amount,
                                         key))

@@ -167,8 +167,12 @@ public final class ProjectionRebuilds {
                         throw new RebuildNotOpenException(id, rebuild.status());
                     }
                     Instant now = clock.instant();
-                    rebuild.decided(ProjectionRebuildStatus.REJECTED, actor.id(), now, Optional.empty());
-                    if (!store.decide(uow, id, ProjectionRebuildStatus.REJECTED, actor.id(), now, Optional.empty())) {
+                    // The row takes the image's stamp, max(now, proposedAt) (ADR-0063 decision 2, X-TSK-006); the audit
+                    // record keeps this instance's own reading.
+                    ProjectionRebuild rejected = rebuild.decided(ProjectionRebuildStatus.REJECTED, actor.id(), now,
+                            Optional.empty());
+                    if (!store.decide(uow, id, ProjectionRebuildStatus.REJECTED, actor.id(),
+                            rejected.decidedAt().orElseThrow(), Optional.empty())) {
                         throw new IllegalStateException("the locked rebuild " + id + " was decided by another writer: the FOR"
                                 + " UPDATE protocol was bypassed");
                     }
@@ -275,7 +279,9 @@ public final class ProjectionRebuilds {
                 after.figures());
         ProjectionRebuildStatus to = unchanged ? ProjectionRebuildStatus.UNCHANGED : ProjectionRebuildStatus.APPLIED;
         ProjectionRebuild decided = rebuild.decided(to, actor.id(), now, Optional.of(found));
-        if (!store.decide(unitOfWork, id, to, actor.id(), now, Optional.of(found))) {
+        // The row takes the image's stamp, max(now, proposedAt) (ADR-0063 decision 2, X-TSK-006); the audit record keeps
+        // this instance's own reading.
+        if (!store.decide(unitOfWork, id, to, actor.id(), decided.decidedAt().orElseThrow(), Optional.of(found))) {
             throw new IllegalStateException("the locked rebuild " + id + " was decided by another writer: the FOR UPDATE"
                     + " protocol was bypassed");
         }

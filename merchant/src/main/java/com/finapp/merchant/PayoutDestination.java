@@ -177,9 +177,10 @@ public final class PayoutDestination {
             throw new PayoutDestinationSelfApprovalException();
         }
         // The deadline runs from the database's reading, never from the floor below: a proposer's
-        // fast clock must not lengthen the control. approved_at is floored at the proposal (the
-        // P1-TSK-031 drift, CheckoutSession's idiom): proposed_at is business time from the
-        // proposing instance's clock, and the database's reading may stand behind it.
+        // fast clock must not lengthen the control. approved_at is floored at the proposal -
+        // max(now, latest), ADR-0063 decision 2: a PROPOSED change's only stamp is proposed_at,
+        // business time from the proposing instance's clock, and the database's reading may stand
+        // behind it.
         Instant approvedAt = databaseNow.isBefore(proposedAt) ? proposedAt : databaseNow;
         return new PayoutDestination(
                 id,
@@ -283,7 +284,16 @@ public final class PayoutDestination {
     private PayoutDestination ended(PayoutDestinationStatus to, String actor, Clock clock) {
         Objects.requireNonNull(actor, "actor must not be null");
         requireEdge(to);
-        Instant now = Instant.now(clock);
+        // max(now, latest) - ADR-0063 decision 2 (X-TSK-006): the instance ending the change may
+        // read behind the one that proposed or approved it (ADR-0014: skew is bounded, never
+        // zero). The latest fact a PROPOSED or APPROVED change carries is its approval, else its
+        // proposal (approvedAt >= proposedAt, V006), so the end never precedes either and V006's
+        // ended_at >= proposed_at holds by construction - where before it refused a legal end.
+        // The row lock and the conditional UPDATE decide the order; the audit record beside it
+        // keeps the instance's own reading.
+        Instant latest = approvedAt != null ? approvedAt : proposedAt;
+        Instant reading = Instant.now(clock);
+        Instant now = reading.isBefore(latest) ? latest : reading;
         return new PayoutDestination(
                 id,
                 merchantId,

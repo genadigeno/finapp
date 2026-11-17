@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -69,6 +71,42 @@ class CustomerAccountTest {
                     .as("%s terminal?", status)
                     .isEqualTo(status == CustomerAccountStatus.CLOSED);
         }
+    }
+
+    @Test
+    @DisplayName(
+            "a move on a clock trailing the agreement's latest stamp is stamped at that stamp,"
+                    + " never before it; a clock past it stamps its own read (X-TSK-006, ADR-0063"
+                    + " decision 2)")
+    void aMoveOnATrailingClockIsStampedAtTheLatestStamp() {
+        // Opened at 09:00, suspended at 09:01 - by an instance whose clock led this one's.
+        Instant opened = Instant.parse("2026-09-04T09:00:00Z");
+        Instant latest = opened.plusSeconds(60);
+        CustomerAccount suspended =
+                CustomerAccount.rehydrate(
+                        CustomerAccountId.next(IDS),
+                        IDS.next(),
+                        ProductType.WALLET,
+                        CustomerAccountStatus.SUSPENDED,
+                        opened,
+                        latest);
+        Clock trailing =
+                Clock.offset(Clock.fixed(latest, ZoneOffset.UTC), Duration.ofSeconds(-5));
+        assertThat(Instant.now(trailing))
+                .as("precondition: the clock trails the latest stamp, and not only birth")
+                .isBefore(latest)
+                .isAfter(opened);
+
+        CustomerAccount active = suspended.moveTo(CustomerAccountStatus.ACTIVE, trailing);
+        assertThat(active.status()).isEqualTo(CustomerAccountStatus.ACTIVE);
+        assertThat(active.statusChangedAt()).as("the predecessor's instant").isEqualTo(latest);
+        assertThat(active.moveTo(CustomerAccountStatus.CLOSED, trailing).statusChangedAt())
+                .isEqualTo(latest);
+
+        // A floor, not a pin.
+        Clock ahead = Clock.fixed(latest.plusSeconds(5), ZoneOffset.UTC);
+        assertThat(suspended.moveTo(CustomerAccountStatus.ACTIVE, ahead).statusChangedAt())
+                .isEqualTo(latest.plusSeconds(5));
     }
 
     /** An agreement rehydrated in {@code status}, as a row read back would be. */

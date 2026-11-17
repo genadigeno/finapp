@@ -83,13 +83,18 @@ public record Hold(
         if (!status.canTransitionTo(HoldStatus.RELEASED)) {
             throw new IllegalHoldTransitionException(id, status, HoldStatus.RELEASED);
         }
+        // max(now, latest) - ADR-0063 decision 2 (X-TSK-006): the releasing instance's clock may
+        // read behind the placing one's (ADR-0014: skew is bounded, never zero), so the release
+        // is stamped no earlier than the placement - the instant the store's statement writes
+        // (JdbcHoldStore.moveToReleased, GREATEST(?, placed_at)), so the image and the row agree.
+        Instant now = Instant.now(clock);
         return new Hold(
                 id,
                 account,
                 amount,
                 HoldStatus.RELEASED,
                 placedAt,
-                Optional.of(Instant.now(clock)));
+                Optional.of(now.isBefore(placedAt) ? placedAt : now));
     }
 
     /**

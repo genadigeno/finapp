@@ -684,8 +684,9 @@ class PaymentAttemptTest {
             + " (ADR-0062 section 3 adapted)")
     void theInitiationPermitOnlyMovesForward() {
         PaymentAttempt born = pushBorn();
-        assertThatThrownBy(() -> born.withInitiationPermit(born.lastDispatchedAt().minusSeconds(1)))
-                .isInstanceOf(IllegalArgumentException.class);
+        // Never backwards: an earlier reading is clamped to the latest (X-TSK-006, the test below).
+        assertThat(born.withInitiationPermit(born.lastDispatchedAt().minusSeconds(1)).lastDispatchedAt())
+                .isEqualTo(born.lastDispatchedAt());
         PaymentAttempt renewed = born.withInitiationPermit(born.lastDispatchedAt().plusSeconds(5));
         assertThat(renewed.lastDispatchedAt())
                 .isEqualTo(born.lastDispatchedAt().plusSeconds(5));
@@ -694,6 +695,32 @@ class PaymentAttemptTest {
         assertThatThrownBy(() -> done.withInitiationPermit(Instant.now(CLOCK).plusSeconds(60)))
                 .as("a concluded initiation is never contacted again")
                 .isInstanceOf(IllegalPaymentAttemptTransitionException.class);
+    }
+
+    @Test
+    @DisplayName("X-TSK-006 (ADR-0063 decision 2): an initiation permit read on a clock trailing the latest"
+            + " permit succeeds and stamps the predecessor's instant - refused 'only moves forward' before;"
+            + " the row still AWAITING_PAYER")
+    void anInitiationPermitOnATrailingClockStampsThePredecessorsInstant() {
+        PaymentAttempt born = pushBorn();
+        Clock behind =
+                Clock.offset(
+                        Clock.fixed(born.lastDispatchedAt(), java.time.ZoneOffset.UTC),
+                        java.time.Duration.ofMinutes(-1));
+        Instant reading = Instant.now(behind);
+        assertThat(reading)
+                .as("precondition: the renewer's clock reads BEFORE the latest permit - the dangerous direction")
+                .isBefore(born.lastDispatchedAt());
+
+        PaymentAttempt renewed = born.withInitiationPermit(reading);
+
+        assertThat(renewed.lastDispatchedAt())
+                .as("max(now, latest): the predecessor's instant, never the trailing reading")
+                .isEqualTo(born.lastDispatchedAt());
+        assertThat(renewed.status())
+                .as("the clamp touches stamps, never states (INV-LIFE-02)")
+                .isEqualTo(PaymentAttemptStatus.AWAITING_PAYER);
+        assertThat(renewed.createdAt()).isEqualTo(born.createdAt());
     }
 
     private static PaymentAttempt pushBorn() {

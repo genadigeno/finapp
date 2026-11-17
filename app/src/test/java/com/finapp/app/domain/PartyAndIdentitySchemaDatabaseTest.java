@@ -453,6 +453,65 @@ class PartyAndIdentitySchemaDatabaseTest {
         }
     }
 
+    /**
+     * A move on a clock trailing the relationship's latest stamp - a status change, not only its
+     * birth: the floor at {@code opened_at} alone let the move be stamped before the fact it
+     * follows. Stamped at the predecessor's instant instead.
+     */
+    @Test
+    @DisplayName(
+            "a customer move on a clock trailing its latest status change is stamped at that"
+                    + " change, never before it (X-TSK-006, ADR-0063 decision 2)")
+    void aCustomerMoveTrailingTheLatestChangeIsStampedAtIt() throws SQLException {
+        JdbcPartyStore parties = new JdbcPartyStore();
+        try (Connection app = DatabaseRoles.application()) {
+            CustomerId customer =
+                    CustomerId.of(
+                            insertCustomer(
+                                    app, insertParty(app, "PERSON", "Ada Lovelace"), "PENDING"));
+            // Instants derived from the stored birth, never from a second clock read.
+            Instant opened = customerStampsOf(app, customer.value()).openedAt();
+            Instant activated = opened.plusSeconds(10);
+            assertThat(
+                            parties.moveCustomerStatus(
+                                    app,
+                                    customer,
+                                    CustomerStatus.PENDING,
+                                    CustomerStatus.ACTIVE,
+                                    activated))
+                    .isTrue();
+            assertThat(customerStampsOf(app, customer.value()).statusChangedAt())
+                    .isEqualTo(activated);
+
+            Instant trailing = opened.plusSeconds(5);
+            assertThat(trailing)
+                    .as("precondition: the clock trails the latest change, not the birth")
+                    .isBefore(activated)
+                    .isAfter(opened);
+            assertThat(
+                            parties.moveCustomerStatus(
+                                    app,
+                                    customer,
+                                    CustomerStatus.ACTIVE,
+                                    CustomerStatus.SUSPENDED,
+                                    trailing))
+                    .isTrue();
+            assertThat(customerStampsOf(app, customer.value()).statusChangedAt())
+                    .as("the predecessor's instant, not the trailing clock's")
+                    .isEqualTo(activated);
+            assertThat(
+                            parties.moveCustomerStatus(
+                                    app,
+                                    customer,
+                                    CustomerStatus.SUSPENDED,
+                                    CustomerStatus.ACTIVE,
+                                    trailing))
+                    .isTrue();
+            assertThat(customerStampsOf(app, customer.value()).statusChangedAt())
+                    .isEqualTo(activated);
+        }
+    }
+
     @Test
     @DisplayName(
             "an illegal customer move under a behind clock is still the machine's or the"
@@ -527,6 +586,81 @@ class PartyAndIdentitySchemaDatabaseTest {
             assertThat(identities.moveStatus(app, id, IdentityStatus.ACTIVE, suspended)).isTrue();
             assertThat(identities.findById(app, id).orElseThrow().statusChangedAt())
                     .isEqualTo(identity.createdAt());
+        }
+    }
+
+    /**
+     * {@code X-TSK-006}, the statement's half. {@code Identity} clamps a move to the latest stamp
+     * it <em>read</em>; {@code moveStatus}'s {@code status = ?} also matches a row that moved away
+     * and back since that read, so only the row knows the latest stamp, and
+     * {@code GREATEST(?, status_changed_at)} is where the clamp against it lives. Each instance's
+     * clock is derived from the stored birth, never from the database's {@code now()}
+     * ({@code DISTRIBUTED_EXECUTION.md} §5's fixture convention).
+     */
+    @Test
+    @DisplayName(
+            "X-TSK-006 (ADR-0063 decision 2): a move from a snapshot read before the row moved away"
+                    + " and back lands at the row's latest stamp, never before it")
+    void aMoveFromAStaleSnapshotLandsAtTheRowsLatestStamp() throws SQLException {
+        JdbcIdentityStore identities = new JdbcIdentityStore();
+        try (Connection app = DatabaseRoles.application()) {
+            IdentityId id =
+                    IdentityId.of(
+                            insertIdentity(
+                                    app,
+                                    insertParty(app, "PERSON", "Ada Lovelace"),
+                                    login(),
+                                    "ACTIVE"));
+            // Instance A reads the identity ACTIVE, and is about to suspend it.
+            Identity snapshot = identities.findById(app, id).orElseThrow();
+            Instant born = snapshot.createdAt();
+
+            // Meanwhile B suspends it and C reinstates it, each on its own clock.
+            assertThat(
+                            identities.moveStatus(
+                                    app,
+                                    id,
+                                    IdentityStatus.ACTIVE,
+                                    snapshot.suspend(
+                                            Clock.fixed(born.plusSeconds(10), ZoneOffset.UTC))))
+                    .isTrue();
+            Identity seenByC = identities.findById(app, id).orElseThrow();
+            assertThat(
+                            identities.moveStatus(
+                                    app,
+                                    id,
+                                    IdentityStatus.SUSPENDED,
+                                    seenByC.reinstate(
+                                            Clock.fixed(born.plusSeconds(20), ZoneOffset.UTC))))
+                    .isTrue();
+
+            // A's clock reads past the birth and behind C's reinstatement.
+            Identity suspendedByA =
+                    snapshot.suspend(Clock.fixed(born.plusSeconds(5), ZoneOffset.UTC));
+            assertThat(suspendedByA.statusChangedAt())
+                    .as("precondition: A's stamp, clamped to what A read, precedes the row's latest")
+                    .isEqualTo(born.plusSeconds(5));
+            assertThat(identities.moveStatus(app, id, IdentityStatus.ACTIVE, suspendedByA))
+                    .as("the row is ACTIVE again, so A's conditional move wins")
+                    .isTrue();
+
+            Identity landed = identities.findById(app, id).orElseThrow();
+            assertThat(landed.status()).isEqualTo(IdentityStatus.SUSPENDED);
+            assertThat(landed.statusChangedAt())
+                    .as("never before the reinstatement the row lock ordered first")
+                    .isEqualTo(born.plusSeconds(20));
+
+            // A floor, not a pin: a move past the row's latest stamps its own read.
+            assertThat(
+                            identities.moveStatus(
+                                    app,
+                                    id,
+                                    IdentityStatus.SUSPENDED,
+                                    landed.reinstate(
+                                            Clock.fixed(born.plusSeconds(30), ZoneOffset.UTC))))
+                    .isTrue();
+            assertThat(identities.findById(app, id).orElseThrow().statusChangedAt())
+                    .isEqualTo(born.plusSeconds(30));
         }
     }
 

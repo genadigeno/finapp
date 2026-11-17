@@ -331,14 +331,50 @@ class ProjectionRebuildsTest {
                 .isEqualTo(ProjectionRebuildStatus.PROPOSED);
     }
 
+    @Test
+    @DisplayName("a decision on a clock trailing the proposal is stamped at the proposal's instant, never before it - an"
+            + " approval and a rejection both, where V031's CHECK refused them; the audit keeps the instance's own reading"
+            + " (X-TSK-006, ADR-0063 decision 2)")
+    void aDecisionOnATrailingClockIsStampedAtTheProposal() {
+        Clock trailing = Clock.offset(CLOCK, Duration.ofSeconds(-5));
+        world.journal(5_000, 2).row(4_000, 0, 2);
+
+        // A rejection first: it leaves the row drifting, so a second proposal stands for the approval.
+        ProjectionRebuild rejectedOne = proposed();
+        assertThat(Instant.now(trailing)).as("precondition: the deciding clock trails the proposal")
+                .isBefore(rejectedOne.proposedAt());
+        ProjectionRebuilds.Outcome rejected = as(APPROVER, () -> rebuilds(trailing).reject(UOW, rejectedOne.id(), "t1"));
+        assertThat(rejected.rebuild().status()).isEqualTo(ProjectionRebuildStatus.REJECTED);
+        assertThat(rejected.rebuild().decidedAt()).as("the predecessor's instant").contains(rejectedOne.proposedAt());
+        assertThat(audited.get(audited.size() - 1).occurredAt()).as("the audit keeps the instance's own reading")
+                .isEqualTo(Instant.now(trailing));
+
+        ProjectionRebuild approvedOne = proposed2();
+        ProjectionRebuilds.Outcome applied = as(APPROVER, () -> rebuilds(trailing).approve(UOW, approvedOne.id(), "t2"));
+        assertThat(applied.rebuild().status()).isEqualTo(ProjectionRebuildStatus.APPLIED);
+        assertThat(applied.rebuild().decidedAt()).as("the predecessor's instant").contains(approvedOne.proposedAt());
+        assertThat(world.row).contains(new ProjectionFigures(5_000, 0, 2));
+        assertThat(audited.get(audited.size() - 1).occurredAt()).as("the audit keeps the instance's own reading")
+                .isEqualTo(Instant.now(trailing));
+    }
+
     // ------------------------------------------------------------------ the world
 
     private ProjectionRebuild proposed() {
         return as(PROPOSER, () -> rebuilds().propose(UOW, account, "row lost a posting", "k1")).rebuild();
     }
 
+    /** A second standing rebuild for the same account, once the first was rejected - its own key. */
+    private ProjectionRebuild proposed2() {
+        return as(PROPOSER, () -> rebuilds().propose(UOW, account, "row lost a posting again", "k1b")).rebuild();
+    }
+
     private ProjectionRebuilds rebuilds() {
-        return new ProjectionRebuilds(executor(), store, world, writer(), IDS, CLOCK);
+        return rebuilds(CLOCK);
+    }
+
+    private ProjectionRebuilds rebuilds(Clock clock) {
+        return new ProjectionRebuilds(executor(), store, world, writer(), IDS, clock);
     }
 
     private IdempotentExecutor executor() {
@@ -498,6 +534,10 @@ class ProjectionRebuildsTest {
             }
             if (to.approved() && decidedBy.equals(held.proposedBy())) {
                 throw new IllegalStateException("projection_rebuild_approver_is_not_proposer");
+            }
+            if (decidedAt.isBefore(held.proposedAt())) {
+                // V031's ordering CHECK, on the stamp the service hands the store (X-TSK-006).
+                throw new IllegalStateException("projection_rebuild_decision_follows_proposal");
             }
             rows.put(id, held.decided(to, decidedBy, decidedAt, approval));
             return true;

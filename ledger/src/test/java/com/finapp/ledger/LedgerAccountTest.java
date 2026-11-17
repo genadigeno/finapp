@@ -7,6 +7,9 @@ import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -84,6 +87,43 @@ class LedgerAccountTest {
         assertThat(LedgerAccountStatus.CLOSED.isTerminal()).isTrue();
         assertThat(LedgerAccountStatus.ACTIVE.isTerminal()).isFalse();
         assertThat(LedgerAccountStatus.POSTING_SUSPENDED.isTerminal()).isFalse();
+    }
+
+    @Test
+    @DisplayName("a move on a clock trailing the account's latest stamp is stamped at that stamp, never before it; a"
+            + " clock past it stamps its own read (X-TSK-006, ADR-0063 decision 2)")
+    void aMoveOnATrailingClockIsStampedAtTheLatestStamp() {
+        // Created at 09:00, suspended at 09:01 - by an instance whose clock led this one's.
+        Instant created = Instant.parse("2026-09-04T09:00:00Z");
+        Instant latest = created.plusSeconds(60);
+        LedgerAccount fresh = accountIn(LedgerAccountStatus.ACTIVE);
+        LedgerAccount suspended =
+                LedgerAccount.rehydrate(
+                        fresh.id(),
+                        fresh.accountType(),
+                        fresh.normalBalance(),
+                        fresh.currency(),
+                        fresh.ownerKind(),
+                        fresh.ownerRef().orElseThrow(),
+                        fresh.purpose(),
+                        null,
+                        LedgerAccountStatus.POSTING_SUSPENDED,
+                        created,
+                        latest);
+        Clock trailing = Clock.offset(Clock.fixed(latest, ZoneOffset.UTC), Duration.ofSeconds(-5));
+        assertThat(Instant.now(trailing))
+                .as("precondition: the clock trails the latest stamp, and not only birth")
+                .isBefore(latest)
+                .isAfter(created);
+
+        LedgerAccount resumed = suspended.resumePostings(trailing);
+        assertThat(resumed.status()).isEqualTo(LedgerAccountStatus.ACTIVE);
+        assertThat(resumed.statusChangedAt()).as("the predecessor's instant").isEqualTo(latest);
+        assertThat(resumed.close(trailing).statusChangedAt()).isEqualTo(latest);
+
+        // A floor, not a pin.
+        Clock ahead = Clock.fixed(latest.plusSeconds(5), ZoneOffset.UTC);
+        assertThat(suspended.resumePostings(ahead).statusChangedAt()).isEqualTo(latest.plusSeconds(5));
     }
 
     /** Drives an account into {@code from} through rehydrate, so every state is reachable. */

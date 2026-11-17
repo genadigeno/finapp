@@ -345,6 +345,64 @@ class LedgerAccountDatabaseTest {
         }
     }
 
+    /**
+     * A move on a clock trailing the account's latest stamp - a status change, not only its
+     * birth: the floor at {@code created_at} alone let the move be stamped before the fact it
+     * follows. Stamped at the predecessor's instant instead.
+     */
+    @Test
+    @DisplayName(
+            "a move on a clock trailing the account's latest change is stamped at that change,"
+                    + " never before it (X-TSK-006, ADR-0063 decision 2)")
+    void aMoveTrailingTheLatestChangeIsStampedAtIt() throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            LedgerAccountId account = store.createOrConverge(app, wallet(IDS.next())).account().id();
+            app.commit();
+            // Instants derived from the stored birth, never from a second clock read.
+            Instant born = stampsOf(app, account).createdAt();
+            Instant latest = born.plusSeconds(10);
+            assertThat(
+                            store.moveStatus(
+                                    app,
+                                    account,
+                                    LedgerAccountStatus.ACTIVE,
+                                    LedgerAccountStatus.POSTING_SUSPENDED,
+                                    latest))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(app, account).statusChangedAt()).isEqualTo(latest);
+
+            Instant trailing = born.plusSeconds(5);
+            assertThat(trailing)
+                    .as("precondition: the clock trails the latest change, not the birth")
+                    .isBefore(latest)
+                    .isAfter(born);
+            assertThat(
+                            store.moveStatus(
+                                    app,
+                                    account,
+                                    LedgerAccountStatus.POSTING_SUSPENDED,
+                                    LedgerAccountStatus.ACTIVE,
+                                    trailing))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(app, account).statusChangedAt())
+                    .as("the predecessor's instant, not the trailing clock's")
+                    .isEqualTo(latest);
+            assertThat(
+                            store.moveStatus(
+                                    app,
+                                    account,
+                                    LedgerAccountStatus.ACTIVE,
+                                    LedgerAccountStatus.CLOSED,
+                                    trailing))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(app, account).statusChangedAt()).isEqualTo(latest);
+        }
+    }
+
     @Test
     @DisplayName(
             "an illegal move under a behind clock is still the machine's or the conditional's"

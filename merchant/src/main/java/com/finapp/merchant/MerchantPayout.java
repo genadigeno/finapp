@@ -206,16 +206,20 @@ public final class MerchantPayout {
 
     /**
      * A renewed send permit, committed before a takeover re-sends our reference. Only while
-     * the payout still awaits the rail's word, and only forward in time.
+     * the payout still awaits the rail's word, and never before the latest permit it carries:
+     * {@code max(at, latest)} (ADR-0063 decision 2, `X-TSK-006`). A renewer whose clock trails
+     * that permit renews at it rather than being refused - safe under ADR-0057 §4, because a
+     * later permit only postpones a {@code NEVER_RECEIVED} conclusion. The row's own renewal is
+     * the database's, strictly forward ({@code JdbcMerchantPayoutStore#renewSendPermit},
+     * {@code X-TSK-013}).
      */
     public MerchantPayout withSendPermit(Instant at) {
         Objects.requireNonNull(at, "at must not be null");
         if (!status.isResolvable()) {
             throw new IllegalMerchantPayoutTransitionException(status, status);
         }
-        if (at.isBefore(lastDispatchedAt)) {
-            throw new IllegalArgumentException("a send permit only moves forward");
-        }
+        // Never before the latest permit, whatever the two instances' clocks said.
+        Instant granted = at.isBefore(lastDispatchedAt) ? lastDispatchedAt : at;
         return new MerchantPayout(
                 id,
                 merchantId,
@@ -230,7 +234,7 @@ public final class MerchantPayout {
                 requestedByType,
                 reason,
                 createdAt,
-                at);
+                granted);
     }
 
     /**

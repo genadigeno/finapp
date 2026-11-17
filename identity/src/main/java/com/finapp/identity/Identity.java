@@ -142,10 +142,12 @@ public final class Identity {
         if (!status.canTransitionTo(target)) {
             throw new IllegalIdentityTransitionException(id, status, target);
         }
-        // GREATEST(now(), created_at) - the P1-TSK-031 drift, met in domain code: the
-        // administrator's instance may read behind the clock that wrote createdAt (ADR-0014:
-        // skew is bounded, never zero), and the store persists this stamp verbatim, so a legal
-        // move would die on V002's CHECK.
+        // max(now, latest) - ADR-0063 decision 2 (X-TSK-006): the administrator's instance may
+        // read behind the clock that stamped this identity's latest fact (ADR-0014: skew is
+        // bounded, never zero), and a later fact's stamp never precedes it. The latest is
+        // statusChangedAt - the previous move's stamp, or the birth's, never before createdAt
+        // (V002) - so V002's CHECK holds by construction and the history reads in order.
+        // JdbcIdentityStore.moveStatus clamps again in the statement, against the row.
         Instant now = Instant.now(clock);
         return new Identity(
                 id,
@@ -153,7 +155,7 @@ public final class Identity {
                 loginIdentifier,
                 target,
                 createdAt,
-                now.isBefore(createdAt) ? createdAt : now);
+                now.isBefore(statusChangedAt) ? statusChangedAt : now);
     }
 
     /** Whether this identity may currently be used to authenticate. */

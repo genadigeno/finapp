@@ -435,7 +435,8 @@ class MfaEnrolmentDatabaseTest {
     @Test
     @DisplayName(
             "a clock behind birth cannot fail a legal confirmation or restart: the stamp clamps"
-                    + " to created_at in the statement (the P1-TSK-031 drift; ADR-0014)")
+                    + " to created_at in the statement (the P1-TSK-031 drift; ADR-0014; X-TSK-006,"
+                    + " ADR-0063 decision 2)")
     void aClockBehindBirthCannotFailALegalMove() throws Exception {
         IdentityId confirming = givenAnIdentity();
         IdentityId restarting = givenAnIdentity();

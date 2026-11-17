@@ -671,7 +671,7 @@ class IdempotentExecutorTest {
     @Test
     @DisplayName("a flight whose clock reads behind its takeover's still records the outcome:"
             + " completed_at clamps to created_at in the statement (the P1-TSK-031 drift;"
-            + " ADR-0014)")
+            + " ADR-0014; X-TSK-006, ADR-0063 decision 2)")
     void aFlightBehindItsTakeoverStillRecordsTheOutcome() throws SQLException {
         // The one shape in which two instances write this row's two instants. execute() claims
         // and completes in one transaction on one instance; here a takeover rewrites created_at
@@ -739,6 +739,76 @@ class IdempotentExecutorTest {
         connection.commit();
         assertThat(stateOf(key)).isEqualTo(IdempotencyState.COMPLETED);
         assertThat(stampsOf(key).completedAt()).isEqualTo(FIXED);
+    }
+
+    @Test
+    @DisplayName("X-TSK-006 (ADR-0063 decision 2): a takeover on a clock trailing the abandoned claim"
+            + " stamps the claim's instant and keeps its retention, and its outcome lands there too")
+    void aTakeoverOnATrailingClockStampsTheAbandonedClaimsInstant() throws SQLException {
+        // The crashed flight claimed at FIXED on its own clock (its own connection); the takeover
+        // runs on an instance whose clock reads five seconds behind it. The lease decided the order
+        // - it expired on the database's clock before the takeover - so the takeover's created_at
+        // never precedes the claim it took over. Unclamped it moved five seconds backwards.
+        IdempotencyKey key = uniqueKey();
+        RequestFingerprint fingerprint =
+                RequestFingerprint.sha256("refund:305".getBytes(StandardCharsets.UTF_8));
+        insertExpiredLeaseClaim(key, fingerprint);
+        Clock trailing = Clock.offset(Clock.fixed(FIXED, ZoneOffset.UTC), Duration.ofSeconds(-5));
+        assertThat(trailing.instant())
+                .as("precondition: the takeover's clock trails the abandoned claim's stamp")
+                .isBefore(stampsOf(key).createdAt());
+        IdempotentExecutor takingOver =
+                new IdempotentExecutor(new JdbcIdempotencyRecordStore(), trailing, RETENTION, LEASE);
+
+        IdempotentExecutor.BeginOutcome takenOver =
+                inScope(
+                        () ->
+                                takingOver.begin(
+                                        connection,
+                                        key,
+                                        fingerprint,
+                                        uow -> "converged".getBytes(StandardCharsets.UTF_8)));
+        connection.commit();
+
+        assertThat(takenOver.dispatched()).contains("converged".getBytes(StandardCharsets.UTF_8));
+        assertThat(stampsOf(key).createdAt()).isEqualTo(FIXED);
+        assertThat(expiryOf(key))
+                .as("expires_at moves with the clamp, so the retention runs from the stamp")
+                .isEqualTo(FIXED.plus(RETENTION));
+
+        assertThat(
+                        takingOver.complete(
+                                connection,
+                                key,
+                                true,
+                                StoredResponse.of(
+                                        "judged".getBytes(StandardCharsets.UTF_8), "text/plain")))
+                .isTrue();
+        connection.commit();
+        assertThat(stampsOf(key).completedAt()).isEqualTo(FIXED);
+
+        // Trailing by more than the retention: clamping created_at alone would leave expires_at
+        // before it, and V002's expires_at > created_at would refuse the takeover outright.
+        IdempotencyKey farBehind = uniqueKey();
+        insertExpiredLeaseClaim(farBehind, fingerprint);
+        inScope(
+                () ->
+                        executorAt(FIXED.minus(RETENTION).minus(Duration.ofHours(1)))
+                                .begin(connection, farBehind, fingerprint, uow -> new byte[0]));
+        connection.commit();
+        assertThat(stampsOf(farBehind).createdAt()).isEqualTo(FIXED);
+        assertThat(expiryOf(farBehind)).isEqualTo(FIXED.plus(RETENTION));
+
+        // A floor, not a pin: a takeover past the claim stamps its own read.
+        IdempotencyKey own = uniqueKey();
+        insertExpiredLeaseClaim(own, fingerprint);
+        inScope(
+                () ->
+                        executorAt(FIXED.plusSeconds(5))
+                                .begin(connection, own, fingerprint, uow -> new byte[0]));
+        connection.commit();
+        assertThat(stampsOf(own).createdAt()).isEqualTo(FIXED.plusSeconds(5));
+        assertThat(expiryOf(own)).isEqualTo(FIXED.plusSeconds(5).plus(RETENTION));
     }
 
     @Test
@@ -1011,6 +1081,21 @@ class IdempotentExecutorTest {
                 return new Stamps(
                         rows.getTimestamp(1).toInstant(),
                         completedAt == null ? null : completedAt.toInstant());
+            }
+        }
+    }
+
+    /** The claim's retention bound as stored. */
+    private static Instant expiryOf(IdempotencyKey key) throws SQLException {
+        try (PreparedStatement select =
+                connection.prepareStatement(
+                        "SELECT expires_at FROM platform.idempotency_record"
+                                + " WHERE scope = ? AND idempotency_key = ?")) {
+            select.setString(1, key.scope());
+            select.setString(2, key.key());
+            try (ResultSet rows = select.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                return rows.getTimestamp(1).toInstant();
             }
         }
     }

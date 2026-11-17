@@ -153,6 +153,38 @@ class PayoutDestinationTest {
     }
 
     @Test
+    @DisplayName("X-TSK-006 (ADR-0063 decision 2): an operator's instance trailing the proposal ends the change"
+            + " at the change's LATEST fact - the proposal, or the approval once approved - where the"
+            + " constructor refused it as ending before it was proposed")
+    void anEndOnATrailingClockStampsTheLatestFact() {
+        Clock trailing = Clock.fixed(T0.minusSeconds(5), ZoneOffset.UTC);
+        assertThat(trailing.instant()).as("precondition: the ender trails the proposal").isBefore(T0);
+
+        PayoutDestination rejected = proposed().reject(APPROVER, trailing);
+        assertThat(rejected.status()).isEqualTo(PayoutDestinationStatus.REJECTED);
+        assertThat(rejected.endedAt()).as("max(now, proposedAt)").contains(T0);
+
+        PayoutDestination withdrawnProposal = proposed().withdraw(PROPOSER, trailing);
+        assertThat(withdrawnProposal.endedAt()).contains(T0);
+
+        // Approved on the database's reading ten seconds after the proposal: the approval is the
+        // latest fact, so a withdrawal during the cooling-off never precedes it either.
+        Instant approvedAt = T0.plusSeconds(10);
+        PayoutDestination approved = proposed().approve(APPROVER, approvedAt, COOLING_OFF);
+        PayoutDestination withdrawn = approved.withdraw(PROPOSER, trailing);
+        assertThat(withdrawn.status()).isEqualTo(PayoutDestinationStatus.WITHDRAWN);
+        assertThat(withdrawn.endedAt()).as("max(now, approvedAt)").contains(approvedAt);
+        Clock between = Clock.fixed(T0.plusSeconds(4), ZoneOffset.UTC);
+        assertThat(approved.withdraw(PROPOSER, between).endedAt())
+                .as("a clock past the proposal but behind the approval still stamps the approval")
+                .contains(approvedAt);
+
+        // A floor, not a pin: a clock past the latest fact stamps its own read.
+        Clock ahead = Clock.fixed(approvedAt.plusSeconds(1), ZoneOffset.UTC);
+        assertThat(approved.withdraw(PROPOSER, ahead).endedAt()).contains(approvedAt.plusSeconds(1));
+    }
+
+    @Test
     @DisplayName("the constructor holds the coherence: a corrupt row is refused at read")
     void corruptRowsAreRefusedAtRead() {
         Optional<Instant> deadline = Optional.of(T0.plus(COOLING_OFF));

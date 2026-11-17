@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.EnumSet;
@@ -149,6 +150,34 @@ class CustomerLifecycleTest {
         }
         assertThat(terminal)
                 .containsExactlyInAnyOrder(CustomerStatus.CLOSED, CustomerStatus.REJECTED);
+    }
+
+    @Test
+    @DisplayName(
+            "a move on a clock trailing the relationship's latest stamp is stamped at that stamp,"
+                    + " never before it; a clock past it stamps its own read (X-TSK-006, ADR-0063"
+                    + " decision 2)")
+    void aMoveOnATrailingClockIsStampedAtTheLatestStamp() {
+        // Opened at 09:00, activated at 09:01 - by an instance whose clock led this one's.
+        Instant opened = Instant.parse("2026-09-04T09:00:00Z");
+        Instant latest = opened.plusSeconds(60);
+        Customer active =
+                Customer.rehydrate(
+                        CustomerId.next(IDS), PartyId.next(IDS), CustomerStatus.ACTIVE, opened, latest);
+        Clock trailing = Clock.offset(Clock.fixed(latest, ZoneOffset.UTC), Duration.ofSeconds(-5));
+        assertThat(Instant.now(trailing))
+                .as("precondition: the clock trails the latest stamp, and not only birth")
+                .isBefore(latest)
+                .isAfter(opened);
+
+        Customer suspended = active.suspend(trailing);
+        assertThat(suspended.status()).isEqualTo(CustomerStatus.SUSPENDED);
+        assertThat(suspended.statusChangedAt()).as("the predecessor's instant").isEqualTo(latest);
+        assertThat(suspended.close(trailing).statusChangedAt()).isEqualTo(latest);
+
+        // A floor, not a pin.
+        Clock ahead = Clock.fixed(latest.plusSeconds(5), ZoneOffset.UTC);
+        assertThat(active.suspend(ahead).statusChangedAt()).isEqualTo(latest.plusSeconds(5));
     }
 
     // -----------------------------------------------------------------

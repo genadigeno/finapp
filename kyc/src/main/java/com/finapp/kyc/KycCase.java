@@ -133,8 +133,21 @@ public final class KycCase {
         if (!status.canTransitionTo(target)) {
             throw new IllegalKycCaseTransitionException(id, status, target);
         }
+        // max(now, latest) - ADR-0063 decision 2 (X-TSK-006): the database orders the case's
+        // facts, and a stamp never contradicts that order. A callback, a reviewer or a decision
+        // moves the case on whichever instance serves it, whose clock may read behind the one
+        // that stamped the previous move (ADR-0014: skew is bounded, never zero), so the later
+        // fact is stamped no earlier than statusChangedAt - never before openedAt. The store's
+        // two statements clamp the same way.
+        Instant now = Instant.now(clock);
         return new KycCase(
-                id, customerId, kind, target, policyVersion, openedAt, Instant.now(clock));
+                id,
+                customerId,
+                kind,
+                target,
+                policyVersion,
+                openedAt,
+                now.isBefore(statusChangedAt) ? statusChangedAt : now);
     }
 
     public KycCaseId id() {

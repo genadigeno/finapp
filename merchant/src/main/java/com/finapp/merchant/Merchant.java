@@ -126,11 +126,13 @@ public final class Merchant {
         if (!status.canTransitionTo(to)) {
             throw new IllegalMerchantTransitionException(status, to);
         }
-        // GREATEST(now(), created_at) - the P1-TSK-031 drift, met in domain code rather than
-        // a fixture: the clock that wrote createdAt may read ahead of this one (another
-        // instance's, or this one stepped back by time sync; ADR-0014: skew is bounded,
-        // never zero), and a legal edge moments after onboarding must not die on the
-        // ordering the constructor and `V002`'s CHECK are right to refuse.
+        // max(now, latest) - ADR-0063 decision 2 (X-TSK-006): the clock that stamped this
+        // merchant's latest fact may read ahead of this one (another instance's, or this one
+        // stepped back by time sync; ADR-0014: skew is bounded, never zero). The latest is
+        // statusChangedAt - the previous move's stamp, or the birth's, never before createdAt -
+        // so the constructor's and `V002`'s CHECK hold by construction and the history reads in
+        // order; the row lock and the conditional UPDATE decide which move came first. The audit
+        // record beside it keeps the instance's own reading.
         Instant now = Instant.now(clock);
         return new Merchant(
                 id,
@@ -140,7 +142,7 @@ public final class Merchant {
                 settlementCurrency,
                 to,
                 createdAt,
-                now.isBefore(createdAt) ? createdAt : now);
+                now.isBefore(statusChangedAt) ? statusChangedAt : now);
     }
 
     private static String validName(String value, String field) {

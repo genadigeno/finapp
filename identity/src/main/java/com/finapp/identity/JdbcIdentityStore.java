@@ -116,8 +116,13 @@ public final class JdbcIdentityStore implements IdentityStore<Connection> {
         // UPDATE succeeds against a row that has already moved, and two audit records describe one
         // transition - which is worse than a lost update, because the trail then says two people
         // suspended somebody and only one of them did.
+        // GREATEST(?, status_changed_at) - ADR-0063 decision 2 (X-TSK-006), in the statement: the
+        // aggregate clamped to the latest stamp it READ, and `status = ?` can match a row that moved
+        // away and back since (ACTIVE -> SUSPENDED -> ACTIVE). The row's lock orders the moves; the
+        // stamp never contradicts that order.
         String sql =
-                "UPDATE " + TABLE + " SET status = ?, status_changed_at = ?, suspension_cause = ?"
+                "UPDATE " + TABLE + " SET status = ?,"
+                        + " status_changed_at = GREATEST(?, status_changed_at), suspension_cause = ?"
                         + " WHERE id = ? AND status = ?"
                         + (ownCauseOnly ? " AND suspension_cause = ?" : "");
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {

@@ -42,6 +42,29 @@ class MerchantApiKeyTest {
 
     @Test
     @DisplayName(
+            "X-TSK-006 (ADR-0063 decision 2): a revoking instance trailing the issuing one stamps the"
+                    + " key's latest fact, max(now, issuedAt) - the CHECK revoked_at >= issued_at holds by"
+                    + " construction instead of refusing the revocation")
+    void aRevokerTrailingTheIssuerStampsTheIssuance() {
+        // Issued by an instance five seconds ahead of the one that revokes it.
+        MerchantApiKey key =
+                MerchantApiKey.issue(
+                        IDS,
+                        Clock.fixed(CLOCK.instant().plusSeconds(5), ZoneOffset.UTC),
+                        MerchantId.next(IDS),
+                        MerchantApiKeySecret.issue(new SecureRandom()),
+                        "operator-" + UUID.randomUUID());
+        assertThat(CLOCK.instant())
+                .as("precondition: the revoker trails the key's only stamp")
+                .isBefore(key.issuedAt());
+
+        MerchantApiKey revoked = key.revoke(CLOCK);
+        assertThat(revoked.status()).isEqualTo(MerchantApiKeyStatus.REVOKED);
+        assertThat(revoked.revokedAt()).contains(key.issuedAt());
+    }
+
+    @Test
+    @DisplayName(
             "an illegal revocation under a behind clock is still the machine's refusal, never"
                     + " the constructor guard's")
     void anIllegalRevocationUnderABehindClockIsStillTheMachinesRefusal() {

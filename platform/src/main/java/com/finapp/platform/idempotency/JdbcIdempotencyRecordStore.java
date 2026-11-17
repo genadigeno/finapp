@@ -204,10 +204,11 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
                         // a convention.
                         //
                         // GREATEST(?, created_at) - the P1-TSK-031 drift, clamped in the
-                        // statement: a takeover rewrites created_at on its own clock, and the
-                        // original flight may still complete first on one reading behind it
-                        // (ADR-0014: skew is bounded, never zero) - a legal outcome that must not
-                        // die on V002's CHECK.
+                        // statement, and ADR-0063 decision 2's max(now, latest) (X-TSK-006): an
+                        // IN_PROGRESS row's latest stamp is created_at, which a takeover rewrites
+                        // on its own clock, and the original flight may still complete first on
+                        // one reading behind it (ADR-0014: skew is bounded, never zero) - a legal
+                        // outcome that must not die on V002's CHECK.
                         + "completed_at = GREATEST(?, created_at), lease_expires_at = NULL "
                         + "WHERE scope = ? AND idempotency_key = ? AND state = ?";
         try (PreparedStatement update = connection.prepareStatement(sql)) {
@@ -244,8 +245,18 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
         // The fingerprint is NOT rewritten - V003 forbids it, and rightly: a reclaim must not
         // quietly convert a claim into one for a different request. A caller whose fingerprint
         // differs is a conflict, decided before reclaim is attempted.
+        //
+        // created_at = GREATEST(?, created_at) - ADR-0063 decision 2 (X-TSK-006): the takeover is a
+        // later fact than the claim it takes over (the lease's expiry, judged on the database's
+        // clock, orders them), so its stamp never precedes the abandoned claim's, however far this
+        // instance's clock trails the one that made it. expires_at moves by the same amount, and
+        // only then, so the record keeps the retention the caller asked for and V002's
+        // expires_at > created_at holds by construction rather than only while the skew is
+        // smaller than the retention. Every column reference in a SET reads the row as it was.
         String sql =
-                "UPDATE " + TABLE + " SET correlation_id = ?, created_at = ?, expires_at = ?, "
+                "UPDATE " + TABLE + " SET correlation_id = ?, created_at = GREATEST(?, created_at), "
+                        + "expires_at = CAST(? AS timestamptz)"
+                        + " + GREATEST(created_at - CAST(? AS timestamptz), INTERVAL '0 seconds'), "
                         + "lease_expires_at = now() + (? * INTERVAL '1 millisecond') "
                         + "WHERE scope = ? AND idempotency_key = ? AND state = ? "
                         + "AND lease_expires_at < now()";
@@ -253,10 +264,11 @@ public final class JdbcIdempotencyRecordStore implements IdempotencyRecordStore<
             update.setString(1, correlationId.value());
             update.setTimestamp(2, Timestamp.from(now));
             update.setTimestamp(3, Timestamp.from(expiresAt));
-            update.setLong(4, lease.toMillis());
-            update.setString(5, key.scope());
-            update.setString(6, key.key());
-            update.setString(7, IdempotencyState.IN_PROGRESS.name());
+            update.setTimestamp(4, Timestamp.from(now));
+            update.setLong(5, lease.toMillis());
+            update.setString(6, key.scope());
+            update.setString(7, key.key());
+            update.setString(8, IdempotencyState.IN_PROGRESS.name());
             return update.executeUpdate() == 1;
         } catch (SQLException e) {
             throw new IdempotencyStorageException("Could not reclaim " + key, e);

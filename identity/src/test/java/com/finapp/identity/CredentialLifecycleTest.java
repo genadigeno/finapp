@@ -102,6 +102,30 @@ class CredentialLifecycleTest {
     }
 
     @Test
+    @DisplayName(
+            "X-TSK-006 (ADR-0063 decision 2): a clock trailing the credential's birth supersedes it"
+                    + " at that instant, never before it")
+    void aClockTrailingBirthSupersedesAtBirth() {
+        // Created on one instance, superseded on another whose clock reads five seconds behind.
+        // Unclamped, the aggregate carried a supersession before its own birth - the stamp V003's
+        // CHECK refuses on every other writer.
+        Credential credential = active();
+        Clock trailing = Clock.offset(CLOCK, Duration.ofSeconds(-5));
+        assertThat(trailing.instant())
+                .as("precondition: the superseding clock trails the birth")
+                .isBefore(credential.createdAt());
+
+        Credential superseded = credential.supersede(trailing);
+
+        assertThat(superseded.status()).isEqualTo(CredentialStatus.SUPERSEDED);
+        assertThat(superseded.supersededAt()).contains(credential.createdAt());
+
+        // A floor, not a pin: a clock past the birth stamps its own read.
+        assertThat(credential.supersede(Clock.offset(CLOCK, Duration.ofSeconds(5))).supersededAt())
+                .contains(FIXED.plusSeconds(5));
+    }
+
+    @Test
     @DisplayName("the exception names both states, so a caller need not parse the message")
     void theExceptionCarriesItsStates() {
         Credential superseded = active().supersede(CLOCK);

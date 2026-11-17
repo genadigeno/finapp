@@ -641,7 +641,9 @@ public final class PaymentAttempt {
      * permit paces re-initiations and inquiries — its conditional renewal is the wire-noise
      * arbiter among instances, never a money guard, because an initiation moves nothing and
      * re-initiating converges on the scheme's dedupe. Truncated at mint (the `P7-TSK-004`
-     * clock-precision class). Only a waiting row is ever contacted again.
+     * clock-precision class). Only a waiting row is ever contacted again, and the permit is
+     * never before the latest one the row carries: {@code max(at, latest)} (ADR-0063
+     * decision 2, `X-TSK-006`).
      */
     public PaymentAttempt withInitiationPermit(Instant at) {
         Objects.requireNonNull(at, "at must not be null");
@@ -649,11 +651,9 @@ public final class PaymentAttempt {
             throw new IllegalPaymentAttemptTransitionException(
                     id, status, PaymentAttemptStatus.AWAITING_PAYER);
         }
-        Instant truncated = at.truncatedTo(ChronoUnit.MICROS);
-        if (truncated.isBefore(lastDispatchedAt)) {
-            throw new IllegalArgumentException(
-                    "an initiation permit only moves forward (ADR-0062 section 3)");
-        }
+        Instant reading = at.truncatedTo(ChronoUnit.MICROS);
+        // Never before the latest permit, whatever the two instances' clocks said (ADR-0063 decision 2).
+        Instant truncated = reading.isBefore(lastDispatchedAt) ? lastDispatchedAt : reading;
         return new PaymentAttempt(
                 id, intentId, rail, interactionModel, authorizationReference, captureReference,
                 authorizationProviderReference, authorizedAmount, captureProviderReference,

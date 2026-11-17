@@ -115,8 +115,20 @@ public final class VerificationCheck {
         if (!status.canTransitionTo(target)) {
             throw new IllegalCheckTransitionException(id, status, target);
         }
+        // max(now, latest) - ADR-0063 decision 2 (X-TSK-006): a dispatch and a provider's answer
+        // land on whichever instances serve them, whose clocks may read behind the one that
+        // stamped the check's previous fact (ADR-0014: skew is bounded, never zero), so the later
+        // fact is stamped no earlier than statusChangedAt - never before requestedAt. The store's
+        // conditional clamps the same way.
+        Instant now = Instant.now(clock);
         return new VerificationCheck(
-                id, caseId, type, target, requestedAt, Instant.now(clock), purpose);
+                id,
+                caseId,
+                type,
+                target,
+                requestedAt,
+                now.isBefore(statusChangedAt) ? statusChangedAt : now,
+                purpose);
     }
 
     public CheckId id() {

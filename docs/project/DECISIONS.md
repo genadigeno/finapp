@@ -596,7 +596,7 @@ cycle; every outbound push carries the send permit; pay-by-bank waits in `AWAITI
 payer PSP. The merchant payout keeps its own port. →
 [ADR-0062](../adr/ADR-0062-account-to-account-and-instant-payments.md)
 
-### Business stamps under N instances (cross-cutting, `Proposed` by `X-TSK-005`)
+### Business stamps under N instances (cross-cutting, `Proposed` by `X-TSK-005`; `Accepted` by the owner 2026-11-16)
 **The order of an aggregate's facts is the database's, and a business stamp never contradicts
 it.** Stamps are still read from the acting instance's clock, but a later fact's stamp is the
 later of that reading and the latest stamp the aggregate already carries. The twenty-one ordering
@@ -604,7 +604,7 @@ later of that reading and the latest stamp the aggregate already carries. The tw
 they stay as the rank against corrupt writers. Judgements of one instance's stamp by another's
 clock (expiries, cooling-off, sweep bounds, session liveness) stay bounded-skew premises, each
 dominated by its margin. The clamp removes the refusal that was a skewed instance's only symptom,
-so clock offset needs its own signal. Implemented by `X-TSK-006` once accepted. →
+so clock offset needs its own signal. Implemented by `X-TSK-006` (2026-11-17). *(Read "once accepted" until then.)* →
 [ADR-0063](../adr/ADR-0063-business-stamps-never-contradict-the-order-of-facts.md), ADR-0014
 
 ### Settlement and reconciliation (Phase 8, `Proposed` at the Phase 7 → 8 transition; `Accepted` at the Phase 8 review, `P8-DOC-001`, each read against the code with its corrected passages marked in place)

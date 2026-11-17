@@ -243,11 +243,13 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
         }
         String sql =
                 "UPDATE party.customer SET status = ?,"
-                        // GREATEST(?, opened_at) - the P1-TSK-031 drift, clamped in the
-                        // statement: the deciding instance's clock may read behind the one that
-                        // opened the relationship (ADR-0014: skew is bounded, never zero), and a
-                        // legal projection must not die on V002's CHECK.
-                        + " status_changed_at = GREATEST(?, opened_at)"
+                        // GREATEST(?, status_changed_at) - ADR-0063 decision 2 (X-TSK-006), the
+                        // P1-TSK-031 drift clamped in the statement: the deciding instance's
+                        // clock may read behind the one that stamped the relationship's latest
+                        // fact (ADR-0014: skew is bounded, never zero), so the move is stamped no
+                        // earlier than it. status_changed_at is never before opened_at (V002's
+                        // CHECK), so a legal projection cannot die on that CHECK either.
+                        + " status_changed_at = GREATEST(?, status_changed_at)"
                         + " WHERE id = ? AND status = ?";
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
             update.setString(1, to.name());

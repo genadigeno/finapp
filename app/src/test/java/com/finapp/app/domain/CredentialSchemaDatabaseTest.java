@@ -188,7 +188,8 @@ class CredentialSchemaDatabaseTest {
     @Test
     @DisplayName(
             "a clock behind birth cannot fail a legal supersession: superseded_at clamps to"
-                    + " created_at in the statement (the P1-TSK-031 drift; ADR-0014)")
+                    + " created_at in the statement (the P1-TSK-031 drift; ADR-0014; X-TSK-006,"
+                    + " ADR-0063 decision 2)")
     void aClockBehindBirthCannotFailALegalSupersession() throws SQLException {
         try (Connection app = DatabaseRoles.application()) {
             JdbcCredentialStore store = new JdbcCredentialStore();

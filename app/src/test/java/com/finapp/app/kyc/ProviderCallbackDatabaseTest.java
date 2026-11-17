@@ -286,25 +286,76 @@ class ProviderCallbackDatabaseTest {
     @Test
     @DisplayName(
             "a clock behind birth cannot fail a legal completion: status_changed_at clamps to"
-                    + " requested_at in the statement (the P1-TSK-031 drift; ADR-0014)")
+                    + " the check's latest stamp - its dispatch, never before requested_at - in"
+                    + " the statement (the P1-TSK-031 drift; ADR-0014; X-TSK-006, ADR-0063)")
     void aClockBehindBirthCannotFailALegalCompletion() throws Exception {
         CheckId clamped = givenACaseAwaiting(CheckType.IDENTITY).pendingCheck();
         CheckId own = givenACaseAwaiting(CheckType.IDENTITY).pendingCheck();
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
-            Instant requested = stampsOf(clamped).requestedAt();
+            Stamps dispatched = stampsOf(clamped);
+            Instant requested = dispatched.requestedAt();
             assertThat(
                             checkStore.complete(
                                     app, clamped, CheckOutcome.CLEAR, requested.minusMillis(250)))
                     .isTrue();
             app.commit();
-            assertThat(stampsOf(clamped).statusChangedAt()).isEqualTo(requested);
+            // The predecessor's instant: the dispatch the fixture stamped, at or after the request
+            // (X-TSK-006 moved the floor from requested_at to the latest stamp).
+            assertThat(stampsOf(clamped).statusChangedAt())
+                    .isEqualTo(dispatched.statusChangedAt())
+                    .isAfterOrEqualTo(requested);
 
             // A floor, not a pin: a clock past birth stamps its own read.
             Instant later = stampsOf(own).requestedAt().plusSeconds(5);
             assertThat(checkStore.complete(app, own, CheckOutcome.CLEAR, later)).isTrue();
             app.commit();
             assertThat(stampsOf(own).statusChangedAt()).isEqualTo(later);
+        }
+    }
+
+    /**
+     * The answer lands on an instance whose clock trails the one that dispatched the check, but
+     * not the one that requested it: the floor at {@code requested_at} alone let the answer be
+     * stamped before its own dispatch. Stamped at the dispatch's instant instead.
+     */
+    @Test
+    @DisplayName(
+            "a completion on a clock trailing the dispatch is stamped at the dispatch's instant,"
+                    + " never before it (X-TSK-006, ADR-0063 decision 2)")
+    void aCompletionTrailingTheDispatchIsStampedAtTheDispatch() throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            KycCase opened =
+                    cases.openOrConverge(app, KycCase.open(IDS, CLOCK, IDS.next(), KycCaseKind.KYC))
+                            .kycCase();
+            CheckId check =
+                    checkStore
+                            .requestOrConverge(
+                                    app,
+                                    VerificationCheck.request(
+                                            IDS, CLOCK, opened.id(), CheckType.IDENTITY))
+                            .check()
+                            .id();
+            app.commit();
+            // Instants derived from the stored request, never from a second clock read.
+            Instant requested = stampsOf(check).requestedAt();
+            Instant dispatchedAt = requested.plusSeconds(10);
+            assertThat(checkStore.dispatch(app, check, dispatchedAt)).isTrue();
+            app.commit();
+            assertThat(stampsOf(check).statusChangedAt()).isEqualTo(dispatchedAt);
+
+            Instant trailing = requested.plusSeconds(5);
+            assertThat(trailing)
+                    .as("precondition: the answering clock trails the dispatch, not the request")
+                    .isBefore(dispatchedAt)
+                    .isAfter(requested);
+            assertThat(checkStore.complete(app, check, CheckOutcome.CLEAR, trailing)).isTrue();
+            app.commit();
+            assertThat(checkStatusOf(check)).isEqualTo("CLEAR");
+            assertThat(stampsOf(check).statusChangedAt())
+                    .as("the predecessor's instant, not the trailing clock's")
+                    .isEqualTo(dispatchedAt);
         }
     }
 

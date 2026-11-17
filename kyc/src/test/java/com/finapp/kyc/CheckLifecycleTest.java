@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.EnumSet;
@@ -144,6 +145,39 @@ class CheckLifecycleTest {
                                         CheckPurpose.RESCREEN))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThat(CheckPurpose.sqlValueList()).isEqualTo("'ONBOARDING', 'RESCREEN'");
+    }
+
+    @Test
+    @DisplayName(
+            "an answer on a clock trailing the dispatch is stamped at the dispatch's instant, never"
+                    + " before it; a clock past it stamps its own read (X-TSK-006, ADR-0063"
+                    + " decision 2)")
+    void anAnswerOnATrailingClockIsStampedAtTheDispatch() {
+        // Requested at 09:00, dispatched at 09:01 - by an instance whose clock led this one's.
+        Instant requested = Instant.parse("2026-09-09T09:00:00Z");
+        Instant dispatchedAt = requested.plusSeconds(60);
+        VerificationCheck dispatched =
+                VerificationCheck.rehydrate(
+                        CheckId.next(IDS),
+                        KycCaseId.next(IDS),
+                        CheckType.IDENTITY,
+                        CheckStatus.DISPATCHED,
+                        requested,
+                        dispatchedAt);
+        Clock trailing = Clock.offset(Clock.fixed(dispatchedAt, ZoneOffset.UTC), Duration.ofSeconds(-5));
+        assertThat(Instant.now(trailing))
+                .as("precondition: the clock trails the dispatch, and not only the request")
+                .isBefore(dispatchedAt)
+                .isAfter(requested);
+
+        VerificationCheck answered = dispatched.complete(CheckOutcome.CLEAR, trailing);
+        assertThat(answered.status()).isEqualTo(CheckStatus.CLEAR);
+        assertThat(answered.statusChangedAt()).as("the predecessor's instant").isEqualTo(dispatchedAt);
+
+        // A floor, not a pin.
+        Clock ahead = Clock.fixed(dispatchedAt.plusSeconds(5), ZoneOffset.UTC);
+        assertThat(dispatched.complete(CheckOutcome.CLEAR, ahead).statusChangedAt())
+                .isEqualTo(dispatchedAt.plusSeconds(5));
     }
 
     private static VerificationCheck move(VerificationCheck check, CheckStatus to) {

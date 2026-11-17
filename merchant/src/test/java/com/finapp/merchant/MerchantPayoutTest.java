@@ -118,8 +118,10 @@ class MerchantPayoutTest {
         MerchantPayout payout = dispatched();
         Instant later = payout.createdAt().plus(Duration.ofMinutes(5));
         assertThat(payout.withSendPermit(later).lastDispatchedAt()).isEqualTo(later);
-        assertThatIllegalArgumentException()
-                .isThrownBy(() -> payout.withSendPermit(payout.createdAt().minusSeconds(1)));
+        assertThat(payout.withSendPermit(payout.createdAt().minusSeconds(1)).lastDispatchedAt())
+                .as("never backwards: an earlier instant is clamped to the latest permit (ADR-0063,"
+                        + " X-TSK-006), never refused")
+                .isEqualTo(payout.lastDispatchedAt());
         assertThat(payout.outcomeUnknown().withSendPermit(later).lastDispatchedAt())
                 .as("an UNKNOWN payout may be re-sent: our reference is idempotent at the rail")
                 .isEqualTo(later);
@@ -147,6 +149,31 @@ class MerchantPayoutTest {
         assertThat(payout.sendPermitAtOrBefore(payout.lastDispatchedAt().plusSeconds(1))).isTrue();
         assertThat(payout.sendPermitAtOrBefore(payout.lastDispatchedAt().minusSeconds(1)))
                 .isFalse();
+    }
+
+    @Test
+    @DisplayName("X-TSK-006 (ADR-0063 decision 2): a renewer whose clock trails the latest permit renews AT it -"
+            + " max(at, latest), where it was refused - and the later permit only postpones NEVER_RECEIVED")
+    void aTrailingRenewerRenewsAtTheLatestPermit() {
+        MerchantPayout payout = dispatched();
+        // The latest permit, renewed by an instance a minute ahead of the next renewer.
+        MerchantPayout renewed = payout.withSendPermit(payout.createdAt().plusSeconds(60));
+        Instant trailing = payout.createdAt().plusSeconds(30);
+        assertThat(trailing)
+                .as("precondition: the renewer trails the latest permit, though not the birth")
+                .isBefore(renewed.lastDispatchedAt())
+                .isAfter(payout.createdAt());
+
+        MerchantPayout again = renewed.withSendPermit(trailing);
+        assertThat(again.lastDispatchedAt())
+                .as("stamped at the latest permit, never at the trailing reading")
+                .isEqualTo(renewed.lastDispatchedAt());
+        assertThat(again.sendPermitAtOrBefore(trailing))
+                .as("so a sweep bounded at the trailing reading still waits: absence proves nothing yet")
+                .isFalse();
+        assertThat(again.outcomeUnknown().withSendPermit(payout.createdAt().minusSeconds(1)).lastDispatchedAt())
+                .as("from UNKNOWN too, and behind the birth as well")
+                .isEqualTo(renewed.lastDispatchedAt());
     }
 
     @Test

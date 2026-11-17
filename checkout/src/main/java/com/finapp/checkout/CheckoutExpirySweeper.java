@@ -262,7 +262,10 @@ public final class CheckoutExpirySweeper {
                         return false;
                     }
 
-                    // The state, the record and the event carry the one reading judged above.
+                    // The state and the event carry the row's stamp: the reading judged above,
+                    // never before the session's latest fact (ADR-0063 decision 2, X-TSK-006).
+                    // The record keeps the reading itself, unclamped - what this sweep observed -
+                    // and differs from the stamp only when that reading trailed the latest fact.
                     Instant at = expired.statusChangedAt();
                     Actor platform = SecurityContext.require();
                     audit.append(
@@ -270,7 +273,7 @@ public final class CheckoutExpirySweeper {
                             new AuditRecord(
                                     AuditId.next(ids),
                                     platform,
-                                    at,
+                                    databaseNow,
                                     CheckoutAuditAction.CHECKOUT_SESSION_EXPIRED,
                                     AGGREGATE_TYPE,
                                     current.id().value().toString(),
