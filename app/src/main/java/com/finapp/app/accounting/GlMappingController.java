@@ -1,7 +1,9 @@
 package com.finapp.app.accounting;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -43,6 +45,7 @@ public class GlMappingController {
     @NonNull private final GlMappingDesk desk;
 
     /** Proposes a whole new GL mapping version - coherent, and frozen from this moment. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_MAPPING_PROPOSE)
     @RequiresIdempotencyKey
@@ -57,6 +60,7 @@ public class GlMappingController {
      * Activates a pending version - a different person's act; refused unless total over the ledger's purposes and
      * classification-compatible; retires the version in force in the same transaction.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{versionId}/activation", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_MAPPING_APPROVE)
     @RequiresIdempotencyKey
@@ -68,6 +72,7 @@ public class GlMappingController {
     }
 
     /** Rejects a pending version; a reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{versionId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_MAPPING_APPROVE)
     @RequiresIdempotencyKey

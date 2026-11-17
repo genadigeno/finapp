@@ -1124,8 +1124,13 @@ class ResolutionBatteryDatabaseTest {
         return IdentityId.of(identity);
     }
 
+    /**
+     * A {@code MULTI_FACTOR} session (`P17-TSK-102`): every operator act steps up - the resolution's doors, the backfill and the
+     * generic ledger doors alike - and the interceptor judges assurance before the permission, so a password session would be
+     * refused {@code identity.AssuranceRequired} before anything these cases prove, the refused roles' {@code 403} included.
+     */
     private String givenASessionFor(IdentityId identity) throws SQLException {
-        return givenASessionFor(identity, AssuranceLevel.PASSWORD);
+        return givenASessionFor(identity, AssuranceLevel.MULTI_FACTOR);
     }
 
     private String givenASessionFor(IdentityId identity, AssuranceLevel assurance) throws SQLException {

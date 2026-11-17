@@ -1,6 +1,8 @@
 package com.finapp.app.risk;
 
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
@@ -39,6 +41,7 @@ public class RiskAssessmentController {
     }
 
     /** The assessment replayed from its seal - audited, a reason required, nothing changed. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{assessmentId}/replay", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_INVESTIGATE)
     public RiskAssessmentDesk.RiskReplayView replayRiskAssessment(@PathVariable("assessmentId") String assessmentId,
@@ -52,6 +55,7 @@ public class RiskAssessmentController {
      * {@code limit} (200 unless named, 1000 at most) after the cursor {@code after}, the answer's {@code next} the cursor
      * of the page that follows.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/replay", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_INVESTIGATE)
     public RiskAssessmentDesk.RiskDayReplayView replayRiskAssessmentsOfDay(

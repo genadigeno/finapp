@@ -1,7 +1,9 @@
 package com.finapp.app.kyc;
 
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.PermissionName;
 import com.finapp.identity.Session;
@@ -82,6 +84,7 @@ public class ReviewController {
      * Resolves one review task: the judgement a non-clean check owed a person
      * ({@code INV-KYC-04}), with its reason, audibly, exactly once.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping("/{id}/reviews/{taskId}/resolution")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(PermissionName.KYC_REVIEW)
@@ -123,6 +126,7 @@ public class ReviewController {
      * lost response lands here, honestly — while a case still in checks or review is <em>not
      * ready</em>, and those call for different reviewer behaviour (stop, versus wait).
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping("/{id}/decision")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(PermissionName.KYC_REVIEW)

@@ -2148,7 +2148,8 @@ class PayoutReturnDatabaseTest {
         com.finapp.identity.Session.Draft session =
                 com.finapp.identity.Session.issue(
                         IDS, CLOCK, identity, SessionToken.of(plaintext),
-                        AssuranceLevel.PASSWORD, SessionPolicy.current());
+                        // An operator's session: every operator act steps up since `P17-TSK-102`.
+                        AssuranceLevel.MULTI_FACTOR, SessionPolicy.current());
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, session);
         }

@@ -1,7 +1,9 @@
 package com.finapp.app.accounting;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -43,6 +45,7 @@ public class ReportRunController {
      * status GENERATING (another request holds it), FINAL, PROVISIONAL (reused within its freshness window, `P14-TSK-009`)
      * or FAILED (a new request asks a new revision).
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_REPORT_GENERATE)
     @RequiresIdempotencyKey
@@ -61,6 +64,7 @@ public class ReportRunController {
     }
 
     /** Regenerates a FINAL run from its pinned inputs and compares the bytes: IDENTICAL or DIVERGED, never repaired. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{runId}/regeneration")
     @RequiresPermission(PermissionName.ACCOUNTING_REPORT_GENERATE)
     @RequiresIdempotencyKey

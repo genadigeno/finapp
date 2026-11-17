@@ -317,7 +317,7 @@ class AdjustmentEndpointDatabaseTest {
     }
 
     @Test
-    @DisplayName("P14-TSK-022: the approval is MULTI_FACTOR: the holder on a password session is 403 identity.AssuranceRequired with nothing written, while its proposal, its read and its rejection are not stepped up; the same proposal then posts from a MULTI_FACTOR session")
+    @DisplayName("P14-TSK-022, P17-TSK-102: the approval is MULTI_FACTOR: the holder on a password session is 403 identity.AssuranceRequired with nothing written, and so are its proposal and its rejection, every operator act being stepped up; only its read is not; the same proposal then posts from a MULTI_FACTOR session")
     void theApprovalIsMultiFactor() throws Exception {
         Operator initiator = givenAnOperator();
         IdentityId holder = givenAnIdentity();
@@ -338,8 +338,15 @@ class AdjustmentEndpointDatabaseTest {
         }
 
         assertThat(get(proposal.toString(), password).statusCode()).as("the read is not stepped up").isEqualTo(200);
-        UUID mine = proposalIdOf(post(body(wallet, "6.00", "a password session proposes"), password, "adj-" + IDS.next()));
-        assertThat(reject(mine.toString(), password).statusCode()).as("nor the rejection").isEqualTo(204);
+        HttpResponse<String> proposing = post(body(wallet, "6.00", "a password session proposes"), password, "adj-" + IDS.next());
+        assertThat(proposing.statusCode()).as("the proposal is an operator act, stepped up too (P17-TSK-102)").isEqualTo(403);
+        assertThat(proposing.body()).contains("identity.AssuranceRequired");
+        HttpResponse<String> rejecting = reject(proposal.toString(), password);
+        assertThat(rejecting.statusCode()).as("and so is the rejection").isEqualTo(403);
+        assertThat(rejecting.body()).contains("identity.AssuranceRequired");
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(proposalColumn(app, proposal, "status")).isEqualTo("PROPOSED");
+        }
 
         assertThat(approve(proposal.toString(), steppedUp).statusCode()).isEqualTo(201);
         assertThat(adjustmentEntryCount()).isEqualTo(entriesBefore + 1);

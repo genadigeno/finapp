@@ -138,8 +138,8 @@ list held five since `P15-TSK-039`)*:
 3. Does any identity hold `ADMINISTRATOR` beside another role? The administrator grants roles; holding one of the
    roles it grants is reviewed as a conflict and justified or revoked.
 4. Was every grant since the last review made by a different person than its holder, with a reason that names a need?
-5. Does any holder of a role that needs an enrolled factor - one that can redirect a merchant's money, `ADMINISTRATOR`, or
-   the risk desk's approver (`RISK_ANALYST`), §6 - have none? `GET
+5. Does any holder of a role that needs an enrolled factor - every role that can act since `P17-TSK-102` *(read "one that can
+   redirect a merchant's money, `ADMINISTRATOR`, or the risk desk's approver (`RISK_ANALYST`)" until then)*, §6 - have none? `GET
    /v1/operator/access-review/factorless-holdings`, on a `MULTI_FACTOR` session, names them, from the live rows of both tables: each is resolved by
    the holder enrolling, or the role being revoked with a reason. The rule below refuses new ones; this finds the ones
    that stood before it (§6).
@@ -184,7 +184,8 @@ credential, a channel's value or a factor.
 
 ## 6. Step-up and refused attempts
 
-40 handlers declare `@RequiresAssurance(MULTI_FACTOR)`, every one on the method: Phase 13's risk doors, Phase 14's
+*(Since `P17-TSK-102`, 2026-11-17: every act - every unsafe handler declaring a permission - declares it, held by
+`EveryOperatorActRequiresAFactorTest`; the fourth ruling below. The count that follows is the one before it.)* 40 handlers declare `@RequiresAssurance(MULTI_FACTOR)`, every one on the method: Phase 13's risk doors, Phase 14's
 accounting, ledger and write-off approvals, the dead-letter doors, the rulings below, §5's check and the four identity
 administration doors - a role's grant and revocation, a suspension and a reinstatement (`P15-TSK-032`). About thirty operations demand
 the step-up themselves - a bank-account registration, a withdrawal, a wallet payment, the lending and BNPL doors - some
@@ -234,7 +235,23 @@ self-service, and §5's check names them. **The risk desk's approver needs a fac
 `RISK_ANALYST`; ruled under the same word): risk's automated `SUSPEND_IDENTITY` is not bound by the last-administrator rule
 - a compromised last administrator must stay suspendable - so it is the one path that can suspend every administrator, and
 its approval already needs a stepped-up session; without the factor rule a factorless analyst's stolen password would enrol
-the thief's factor and approve. Opening a case and proposing an action need neither.
+the thief's factor and approve. Opening a case and proposing an action need neither *(until the fourth ruling below)*.
+
+**A fourth ruling: every act asks for the factor, and every role that can act needs one** (`P17-TSK-102`, 2026-11-17; the
+owner's D-6, "require `MULTI_FACTOR` for every act on the operator surface, server-enforced"; finapp-admin-panel ADR-C131
+decision 3). Every `POST`, `PUT`, `PATCH` or `DELETE` handler that declares a permission declares `MULTI_FACTOR` - proposals,
+rejections, withdrawals, drafts and a kill switch's stop among them, wherever the route lives - and every role holding a
+permission that guards such an act is refused to an identity with no enrolled factor (`RoleName.requiresEnrolledFactor`, decided
+from `PermissionName.guardsAnAct`: today every role, since none only reads). The third ruling's reasoning, applied to every act:
+either half alone is hollow, because a password may enrol a first factor. `EveryOperatorActRequiresAFactorTest` derives the acts
+from the dispatcher, knocks on each through the real interceptor - a password session holding the permission refused
+`403 identity.AssuranceRequired` and recorded, a stepped-up one let through - and holds the domain's read-only permissions
+(`ACCOUNTING_READ`, `FX_INVESTIGATE`) to the routes' both ways, so a permission added later counts as an act until somebody says
+otherwise. **It supersedes the second ruling's "what stops a change stays quick"**, recorded knowingly as the third ruling
+recorded its own tension: a stolen password-level session rejecting a colleague's proposal, withdrawing a destination or
+switching a pair off is an act on someone else's work, and a holder already stepped up in their session pays nothing more. If
+the owner wants a stop kept quick, the guard's `EXEMPT` register is where it is named, with its reason. Holders from before the
+rule who have no factor are what §5's check names - every role now - and cannot act until they enroll.
 
 **Declared doors judge the level before the permission**, as every declared door does: at those thirteen, a caller on a
 password session is told to step up whether or not they hold the permission. It denies a stolen password a way to learn

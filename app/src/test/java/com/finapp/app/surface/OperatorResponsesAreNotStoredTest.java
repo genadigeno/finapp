@@ -69,7 +69,7 @@ class OperatorResponsesAreNotStoredTest {
         }
 
         @PostMapping(path = "/probe/no-store/body", consumes = MediaType.APPLICATION_JSON_VALUE)
-        String body(@RequestBody Payload payload) {
+        String body(@RequestBody NoStorePayload payload) {
             return "ok";
         }
 
@@ -88,7 +88,8 @@ class OperatorResponsesAreNotStoredTest {
             response.sendError(503);
         }
 
-        record Payload(String name, int amount) {}
+        /** Named apart from every other probe's record: {@code ApiSchemaNamesAreUniqueTest} reads test controllers too. */
+        record NoStorePayload(String name, int amount) {}
     }
 
     /** Each kind of answer, by the request that produces it: a handler's, the interceptor's, and the ones nobody wrote. */

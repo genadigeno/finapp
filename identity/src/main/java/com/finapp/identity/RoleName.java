@@ -410,14 +410,17 @@ public enum RoleName {
      * Every such door demands a {@code MULTI_FACTOR} session, and a password alone may enrol an identity's <em>first</em>
      * factor, so a factorless holder's stolen password would otherwise pass every one of those doors after enrolling the
      * thief's own factor. Opening and proposing a risk case need none.
+     *
+     * <p><strong>Every role that can act, since `P17-TSK-102`</strong> (2026-11-17; the owner's D-6; finapp-admin-panel ADR-C131
+     * decision 3). Every act on the operator surface now asks for a {@code MULTI_FACTOR} session, so the reasoning above holds for
+     * every act and not only those six: a factorless holder's stolen password - or its stolen password-level session - enrols the
+     * thief's factor and steps up into whatever the role can do. The rule is therefore decided from {@link
+     * PermissionName#guardsAnAct}: a role holding any permission that guards an act needs an enrolled factor, and a role that only
+     * reads does not. The six named above all guard acts, so no role that needed a factor stops needing one.
+     * <em>(Read "the six permissions named above" as the whole rule until then.)</em>
      */
     public boolean requiresEnrolledFactor() {
-        return permissions.contains(PermissionName.MERCHANT_ADMINISTER)
-                || permissions.contains(PermissionName.PAYOUT_DESTINATION_APPROVE)
-                || permissions.contains(PermissionName.MERCHANT_PAYOUT)
-                || permissions.contains(PermissionName.ROLE_ASSIGN)
-                || permissions.contains(PermissionName.IDENTITY_SUSPEND)
-                || permissions.contains(PermissionName.RISK_CASE_APPROVE);
+        return permissions.stream().anyMatch(PermissionName::guardsAnAct);
     }
 
     public static String sqlValueList() {

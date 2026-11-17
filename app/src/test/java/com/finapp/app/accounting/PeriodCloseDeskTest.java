@@ -308,8 +308,13 @@ class PeriodCloseDeskTest {
         refused(() -> as(ACCOUNTANT, () -> desk.proposeReopen("k-q", period(), List.of(), "again")), AccountingErrorCode.PERIOD_STALE, 409);
     }
 
+    /**
+     * <em>(Read "the close's and the reopen's approvals step up; an end, a proposal, a rejection of a close and a read do not"
+     * until `P17-TSK-102`, 2026-11-17.)</em>
+     */
     @Test
-    @DisplayName("the routes are the partition: every act keyed; the accountant proposes, the controller decides and reads what it decides")
+    @DisplayName("the routes are the partition: every act keyed and, since the owner's D-6 (P17-TSK-102), MULTI_FACTOR; the reads"
+            + " not; the accountant proposes, the controller decides and reads what it decides")
     void theRoutesAreThePartition() throws Exception {
         Map<String, PermissionName> expected = Map.of("proposeAccountingPeriodClose", PermissionName.ACCOUNTING_CLOSE_PROPOSE, "readAccountingPeriodCloseProposal", PermissionName.ACCOUNTING_CLOSE_APPROVE,
                 "approveAccountingPeriodClose", PermissionName.ACCOUNTING_CLOSE_APPROVE, "rejectAccountingPeriodClose", PermissionName.ACCOUNTING_CLOSE_APPROVE, "proposeAccountingPeriodReopen",
@@ -319,8 +324,9 @@ class PeriodCloseDeskTest {
         for (Method method : PeriodCloseController.class.getDeclaredMethods()) {
             if (method.isAnnotationPresent(RequiresPermission.class)) {
                 seen++;
-                // P14-TSK-024, the owner's acceptance: the close's and the reopen's approvals step up; an end, a proposal, a rejection of a close and a read do not.
-                boolean stepsUp = method.getName().equals("approveAccountingPeriodClose") || method.getName().equals("approveAccountingPeriodReopen");
+                // P14-TSK-024, the owner's acceptance: the close's and the reopen's approvals step up; since the owner's D-6
+                // (P17-TSK-102) so does every other act - an end, a proposal, a rejection - and only a read does not.
+                boolean stepsUp = !method.getName().startsWith("read");
                 assertThat(Optional.ofNullable(method.getAnnotation(com.finapp.app.session.RequiresAssurance.class)).map(com.finapp.app.session.RequiresAssurance::value)).as(method.getName())
                         .isEqualTo(stepsUp ? Optional.of(com.finapp.identity.AssuranceLevel.MULTI_FACTOR) : Optional.empty());
                 assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName()).isEqualTo(expected.get(method.getName()));

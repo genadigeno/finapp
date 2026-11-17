@@ -123,7 +123,7 @@ class AlertSuppressionApiTest {
     @DisplayName("the refusals: an attached alert 409 AlertNotOpen; a card-shaped reason 422 ReasonRequired; an unknown"
             + " alert 404; a risk officer 403; no session 401")
     void theRefusals() throws Exception {
-        RiskOperatorSessions.Session analyst = http.sessionWith(RoleName.RISK_ANALYST, false);
+        RiskOperatorSessions.Session analyst = http.sessionWith(RoleName.RISK_ANALYST, true);
         RiskAlert attached = attachedAlert();
         HttpResponse<String> notOpen = http.post("/v1/operator/risk/alerts/" + attached.id().value() + "/suppression",
                 "{\"reasonCode\":\"FALSE_POSITIVE\",\"reason\":\"seen\"}", analyst.token());
@@ -139,7 +139,7 @@ class AlertSuppressionApiTest {
         assertThat(http.post("/v1/operator/risk/alerts/" + RiskOperatorSessions.IDS.next() + "/suppression",
                 "{\"reasonCode\":\"FALSE_POSITIVE\",\"reason\":\"none\"}", analyst.token()).statusCode())
                 .isEqualTo(404);
-        RiskOperatorSessions.Session officer = http.sessionWith(RoleName.RISK_OFFICER, false);
+        RiskOperatorSessions.Session officer = http.sessionWith(RoleName.RISK_OFFICER, true);
         assertThat(http.post(door, "{\"reasonCode\":\"FALSE_POSITIVE\",\"reason\":\"another desk\"}",
                 officer.token()).statusCode()).isEqualTo(403);
         assertThat(http.post(door, "{\"reasonCode\":\"FALSE_POSITIVE\",\"reason\":\"no one\"}", null).statusCode())

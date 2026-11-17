@@ -2545,7 +2545,7 @@ class MultiRailConservationStormDatabaseTest {
                 null);
     }
 
-    /** A signed-in staff member holding exactly {@code role}. */
+    /** A signed-in staff member holding exactly {@code role}, on a MULTI_FACTOR session (`P17-TSK-102`). */
     private String operatorSession(RoleName role) throws Exception {
         String login = "ops." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(register(login).statusCode()).isEqualTo(201);
@@ -2568,7 +2568,8 @@ class MultiRailConservationStormDatabaseTest {
                     "test fixture");
             app.commit();
         }
-        return field(authenticate(login).body(), "sessionToken");
+        return com.finapp.app.session.OperatorStepUp.elevated(
+                field(authenticate(login).body(), "sessionToken"), this::post);
     }
 
     // ----------------------------------------------------------------- the calls

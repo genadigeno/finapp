@@ -62,6 +62,7 @@ public class AdjustmentController {
      * (`X-TSK-003`): another operator's equal value is their own proposal, never a conflict.
      * Nothing posts: the entry is the approval's, by a second person.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LEDGER_ADJUST)
     @RequiresIdempotencyKey
@@ -104,6 +105,7 @@ public class AdjustmentController {
      * converges on this same {@code 204}; an {@code APPROVED} proposal is a {@code 409},
      * corrected by a reversal rather than by un-deciding.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @DeleteMapping("/{id}")
     @RequiresPermission(PermissionName.LEDGER_ADJUST)
     @ResponseStatus(HttpStatus.NO_CONTENT)

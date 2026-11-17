@@ -2,7 +2,9 @@ package com.finapp.app.kyc;
 
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RecordsRefusals;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -34,6 +36,7 @@ public class CounterpartyScreeningController {
     @NonNull private final CounterpartyScreeningDesk desk;
 
     /** Releases or blocks a screening in review. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/decision", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.COUNTERPARTY_SCREENING_REVIEW)
     @RequiresIdempotencyKey

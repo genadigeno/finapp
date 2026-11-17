@@ -52,8 +52,13 @@ class RulingsDoorsApiTest {
 
     private final HttpClient http = HttpClient.newHttpClient();
 
+    /**
+     * <em>(Read "while its read, its list and its rejection reach it", the rejection {@code 404} on the password session ("nor the rejection"),
+     * until `P17-TSK-102`, 2026-11-18.)</em>
+     */
     @Test
-    @DisplayName("(r) a prior-period adjustment's approval is MULTI_FACTOR: the controller on a password session is 403 identity.AssuranceRequired before the domain, while its read, its list and its rejection reach it")
+    @DisplayName("(r) a prior-period adjustment's approval is MULTI_FACTOR: the controller on a password session is 403 identity.AssuranceRequired before the domain, as is"
+            + " its rejection since the owner's D-6 (P17-TSK-102), while its read and its list reach it; stepped up, the rejection reaches it")
     void thePriorPeriodApprovalIsMultiFactor() throws Exception {
         String controller = sessionWith(RoleName.FINANCIAL_CONTROLLER);
         String adjustment = BASE + "/prior-period-adjustments/" + IDS.next();
@@ -64,8 +69,12 @@ class RulingsDoorsApiTest {
         assertThat(refused.body()).contains("identity.AssuranceRequired");
 
         assertThat(get(adjustment, controller).statusCode()).as("the read is not stepped up").isEqualTo(404);
-        assertThat(post(adjustment + "/rejection", REASON, controller, key()).statusCode()).as("nor the rejection").isEqualTo(404);
+        HttpResponse<String> rejection = post(adjustment + "/rejection", REASON, controller, key());
+        assertThat(rejection.statusCode()).as("the rejection is stepped up: " + rejection.body()).isEqualTo(403);
+        assertThat(rejection.body()).contains("identity.AssuranceRequired");
         assertThat(get(BASE + "/prior-period-adjustments", controller).statusCode()).as("nor the list").isEqualTo(200);
+        String steppedUp = com.finapp.app.session.OperatorStepUp.elevated(controller, this::post);
+        assertThat(post(adjustment + "/rejection", REASON, steppedUp, key()).statusCode()).as("stepped up, the rejection reaches it").isEqualTo(404);
     }
 
     @Test
@@ -87,7 +96,7 @@ class RulingsDoorsApiTest {
     @Test
     @DisplayName("(m) a reopen's body: a null among the names is 422 at the door, never a 500; a field it does not declare is 422; an act without a key is 422; well formed, naming or not, an unknown period is 404")
     void aReopensBody() throws Exception {
-        String accountant = sessionWith(RoleName.ACCOUNTANT);
+        String accountant = multiFactorSessionWith(RoleName.ACCOUNTANT);
         String proposal = BASE + "/periods/" + IDS.next() + "/reopen-proposal";
 
         HttpResponse<String> aNull = post(proposal, "{\"reason\":\"a correction\",\"postedAdjustments\":[null]}", accountant, key());
@@ -120,7 +129,8 @@ class RulingsDoorsApiTest {
     }
 
     private HttpResponse<String> post(String path, String body, String bearer, String idempotencyKey) throws Exception {
-        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body));
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).header("Content-Type", "application/json")
+                .POST(body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         if (bearer != null) {
             request.header("Authorization", "Bearer " + bearer);
         }
@@ -128,6 +138,11 @@ class RulingsDoorsApiTest {
             request.header("Idempotency-Key", idempotencyKey);
         }
         return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** {@link #sessionWith}, stepped up to {@code MULTI_FACTOR}: every operator act declares it (`P17-TSK-102`). */
+    private String multiFactorSessionWith(RoleName role) throws Exception {
+        return com.finapp.app.session.OperatorStepUp.elevated(sessionWith(role), this::post);
     }
 
     /** A signed-in password session holding {@code role}, or no role at all when it is {@code null}. */

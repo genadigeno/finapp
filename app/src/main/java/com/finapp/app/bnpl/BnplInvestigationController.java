@@ -1,7 +1,9 @@
 package com.finapp.app.bnpl;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
@@ -44,6 +46,7 @@ public class BnplInvestigationController {
     }
 
     /** The agreement replayed by its pinned engines and terms - IDENTICAL or DIVERGED; audited with its reason. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/replay", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.BNPL_INVESTIGATE)
     public BnplInvestigationDesk.BnplReplayView replayBnplAgreement(

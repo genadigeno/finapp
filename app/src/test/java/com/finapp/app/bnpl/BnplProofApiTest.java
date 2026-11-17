@@ -104,7 +104,7 @@ class BnplProofApiTest {
             + " recorded FAILED and nothing served")
     void selfDealingIsRefusedAndRecorded() throws Exception {
         Bought bought = bought();
-        String insider = world.client.sessionWithRole(authorization, bought.owner().login(), RoleName.BNPL_OFFICER);
+        String insider = world.client.insiderSession(authorization, bought.owner(), RoleName.BNPL_OFFICER);
         String base = "/v1/operator/bnpl-agreements/" + bought.agreement();
         for (HttpResponse<String> refused : List.of(world.client.get(base, insider),
                 world.client.get(base + "/explanation", insider), world.client.post(base + "/replay", REASON, insider,

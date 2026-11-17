@@ -1413,7 +1413,9 @@ class DisputeResponseDatabaseTest {
                 post("/v1/authentications",
                         "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}",
                         null, someKey());
-        return field(authenticated.body(), "sessionToken");
+        // MULTI_FACTOR: every operator act steps up since `P17-TSK-102`.
+        return com.finapp.app.session.OperatorStepUp.elevated(
+                field(authenticated.body(), "sessionToken"), this::post);
     }
 
     private <R> R asCustomer(Function<Connection, R> work) throws Exception {

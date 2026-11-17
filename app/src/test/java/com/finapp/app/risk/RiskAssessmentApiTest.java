@@ -166,7 +166,9 @@ class RiskAssessmentApiTest {
         }
         HttpResponse<String> session = post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null);
-        return new Session(field(session.body(), "sessionToken"), party);
+        // Every operator act is MULTI_FACTOR (P17-TSK-102), the replay included: the holder steps up.
+        return new Session(com.finapp.app.session.OperatorStepUp.elevated(field(session.body(), "sessionToken"),
+                (path, body, bearer, key) -> post(path, body, bearer)), party);
     }
 
     private HttpResponse<String> get(String path, String bearer) throws Exception {
@@ -184,7 +186,7 @@ class RiskAssessmentApiTest {
                 .uri(URI.create("http://localhost:" + port + path))
                 .header("Content-Type", "application/json")
                 .header(IdempotencyKeyHeader.NAME, UUID.randomUUID().toString())
-                .POST(HttpRequest.BodyPublishers.ofString(body));
+                .POST(body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         if (bearer != null) {
             request.header("Authorization", "Bearer " + bearer);
         }

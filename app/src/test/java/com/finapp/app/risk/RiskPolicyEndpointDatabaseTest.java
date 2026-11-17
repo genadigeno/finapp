@@ -206,7 +206,8 @@ class RiskPolicyEndpointDatabaseTest {
     @DisplayName("every door is closed to a RISK_ANALYST, to a session holding no role and to no session, every act to a"
             + " missing key - nothing written")
     void theDoorsAreClosed() throws Exception {
-        String analyst = sessionWith(RoleName.RISK_ANALYST, false);
+        // The analyst stepped up (P17-TSK-102: every act is MULTI_FACTOR), so its 403 is the permission's, not the step-up's.
+        String analyst = sessionWith(RoleName.RISK_ANALYST, true);
         String nobody = sessionWith(null, false);
         String officer = sessionWith(RoleName.RISK_OFFICER, true);
         long versions = versions();
@@ -234,7 +235,7 @@ class RiskPolicyEndpointDatabaseTest {
     @DisplayName("ten proposals under one key are one (INV-IDEM-01): one receipt or 409 api.IdempotencyInProgress, one"
             + " version, one history row")
     void tenProposalsUnderOneKeyAreOne() throws Exception {
-        String proposer = sessionWith(RoleName.RISK_OFFICER, false);
+        String proposer = sessionWith(RoleName.RISK_OFFICER, true); // the proposal is MULTI_FACTOR (P17-TSK-102)
         long before = versions();
         String body = transfer(Map.of());
         String key = someKey();

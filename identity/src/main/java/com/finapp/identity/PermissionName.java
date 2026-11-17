@@ -777,5 +777,26 @@ public enum PermissionName {
      * one permission are the two persons (the {@link #LEDGER_ADJUST} shape). Every act on a {@code MULTI_FACTOR} session, keyed and
      * reasoned. Moves no money, and reads no payload. <strong>Held by {@code EVENT_OPERATOR} alone.</strong>
      */
-    EVENT_OPERATE
+    EVENT_OPERATE;
+
+    /**
+     * Whether this permission guards an act - a {@code POST}, {@code PUT}, {@code PATCH} or {@code DELETE} handler - and not only
+     * reads (`P17-TSK-102`; the owner's D-6; finapp-admin-panel ADR-C131 decision 3).
+     *
+     * <p><strong>Why the domain knows it.</strong> Every act on the operator surface asks for a {@code MULTI_FACTOR} session, and a
+     * password alone may enrol an identity's <em>first</em> factor. So a role that can act must be refused to an identity with no
+     * factor ({@link RoleName#requiresEnrolledFactor}): otherwise a stolen password, or a stolen password-level session, of a
+     * holder who never enrolled one enrols the thief's own factor and steps up into every act the role grants. The grant is
+     * decided here, in {@code identity}, which cannot see the routes; {@code EveryOperatorActRequiresAFactorTest} reads them and
+     * holds this answer to theirs both ways.
+     *
+     * <p><strong>Written as the reads, so a permission added later guards an act until somebody decides otherwise</strong> - the
+     * {@code Surface#admitsRoleHolders} shape: forgetting this method costs a factor at grant, never a factor-free act.
+     */
+    public boolean guardsAnAct() {
+        return switch (this) {
+            case ACCOUNTING_READ, FX_INVESTIGATE -> false;
+            default -> true;
+        };
+    }
 }

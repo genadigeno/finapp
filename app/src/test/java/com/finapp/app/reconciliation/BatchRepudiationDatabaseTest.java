@@ -3136,6 +3136,11 @@ class BatchRepudiationDatabaseTest {
         return IdentityId.of(identity);
     }
 
+    /**
+     * A {@code MULTI_FACTOR} session (`P17-TSK-102`): every operator act steps up, and the interceptor judges assurance before
+     * the permission - so a password session would be refused {@code identity.AssuranceRequired} before anything these cases
+     * prove, the refused roles' {@code 403} included.
+     */
     private String givenASessionFor(IdentityId identity) throws SQLException {
         byte[] bytes = new byte[32];
         RANDOMNESS.nextBytes(bytes);
@@ -3143,7 +3148,7 @@ class BatchRepudiationDatabaseTest {
         com.finapp.identity.Session.Draft session =
                 com.finapp.identity.Session.issue(
                         IDS, CLOCK, identity, SessionToken.of(plaintext),
-                        AssuranceLevel.PASSWORD, SessionPolicy.current());
+                        AssuranceLevel.MULTI_FACTOR, SessionPolicy.current());
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, session);
         }

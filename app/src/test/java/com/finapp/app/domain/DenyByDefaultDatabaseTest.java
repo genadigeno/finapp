@@ -347,6 +347,7 @@ class DenyByDefaultDatabaseTest {
         String session = givenASessionAt(administrator, AssuranceLevel.MULTI_FACTOR);
         givenTheRole(administrator, RoleName.ADMINISTRATOR);
         IdentityId subject = givenAnIdentity();
+        givenAConfirmedFactorFor(subject); // every role guards an act, so every grant needs one (P17-TSK-102)
         HttpResponse<String> granted = post("/identities/" + subject.value() + "/roles",
                 "{\"role\":\"KYC_REVIEWER\",\"reason\":\"joins the review desk\"}", session);
         assertThat(granted.statusCode()).as(granted.body()).isEqualTo(204);
@@ -465,6 +466,21 @@ class DenyByDefaultDatabaseTest {
         } finally {
             actor.close();
             correlation.close();
+        }
+    }
+
+    /** A confirmed factor, written directly: this suite is about the door's rules, not enrolment. */
+    private static void givenAConfirmedFactorFor(IdentityId identity) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement insert = app.prepareStatement(
+                        "INSERT INTO identity.mfa_enrolment (id, identity_id, type, secret_ciphertext, secret_nonce, key_version,"
+                                + " algorithm, digits, period_seconds, status, created_at, confirmed_at)"
+                                + " VALUES (?, ?, 'TOTP', ?, ?, 1, 'SHA1', 6, 30, 'ACTIVE', now(), now())")) {
+            insert.setObject(1, IDS.next());
+            insert.setObject(2, identity.value());
+            insert.setBytes(3, new byte[32]); // never decrypted: V008 sizes it, 16 to 1024
+            insert.setBytes(4, new byte[12]); // a 96-bit nonce, per V008
+            insert.executeUpdate();
         }
     }
 

@@ -104,8 +104,15 @@ class RegulatoryObligationDeskTest {
         assertThatThrownBy(door::run).isInstanceOfSatisfying(ApiException.class, refused -> assertThat(refused.errorCode()).isEqualTo(code));
     }
 
+    /**
+     * <em>(Read "the routes: a preparer proposes and reads; a controller decides and reads their own door, the activation
+     * MULTI_FACTOR; every POST keyed; ...", the activation the only door declaring an assurance, until `P17-TSK-102`,
+     * 2026-11-17.)</em>
+     */
     @Test
-    @DisplayName("the routes: a preparer proposes and reads; a controller decides and reads their own door, the activation MULTI_FACTOR; every POST keyed; no route asks ACCOUNTING_READ; the bodies closed")
+    @DisplayName("the routes: a preparer proposes and reads; a controller decides and reads their own door; every POST keyed and,"
+            + " since the owner's D-6 (P17-TSK-102), MULTI_FACTOR - the proposal, the activation and the rejection - and no read;"
+            + " no route asks ACCOUNTING_READ; the bodies closed")
     void theRoutes() {
         Map<String, PermissionName> expected = Map.of(
                 "proposeRegulatoryObligation", PermissionName.REGULATORY_REPORT_PREPARE,
@@ -121,7 +128,7 @@ class RegulatoryObligationDeskTest {
                 seen++;
                 assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName()).isEqualTo(expected.get(method.getName()));
                 assertThat(method.isAnnotationPresent(RequiresIdempotencyKey.class)).as(method.getName()).isEqualTo(method.isAnnotationPresent(org.springframework.web.bind.annotation.PostMapping.class));
-                assertThat(method.isAnnotationPresent(RequiresAssurance.class)).as(method.getName()).isEqualTo(method.getName().equals("activateRegulatoryObligation"));
+                assertThat(method.isAnnotationPresent(RequiresAssurance.class)).as(method.getName()).isEqualTo(method.isAnnotationPresent(org.springframework.web.bind.annotation.PostMapping.class));
                 if (method.isAnnotationPresent(RequiresAssurance.class)) {
                     assertThat(method.getAnnotation(RequiresAssurance.class).value()).isEqualTo(AssuranceLevel.MULTI_FACTOR);
                 }

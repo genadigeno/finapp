@@ -137,8 +137,8 @@ class RiskOverrideApiTest {
             + " recorded FAILED; an ALLOW 409 ActionNotProposable; a card-shaped reason 422 ReasonRequired; an unknown"
             + " assessment 404; a rejection 200 issuing nothing")
     void theRefusals() throws Exception {
-        Session officer = sessionWith(RoleName.RISK_OFFICER, false);
-        Session analyst = sessionWith(RoleName.RISK_ANALYST, false);
+        Session officer = sessionWith(RoleName.RISK_OFFICER, true);
+        Session analyst = sessionWith(RoleName.RISK_ANALYST, true);
         UUID review = sealed(RiskOperation.TRANSFER, RiskDecision.REVIEW, 100_00, IDS.next());
         String body = "{\"reasonCode\":\"FALSE_POSITIVE\",\"reason\":\"explained\"}";
 

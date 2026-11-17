@@ -305,7 +305,7 @@ class Phase9ReportsDatabaseTest {
         }
         HttpResponse<String> session = client().post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + FxTestClient.PASSWORD + "\"}", null, FxTestClient.key());
-        return field(session.body(), "sessionToken");
+        return com.finapp.app.session.OperatorStepUp.elevated(field(session.body(), "sessionToken"), client()::post);
     }
 
     @TestConfiguration

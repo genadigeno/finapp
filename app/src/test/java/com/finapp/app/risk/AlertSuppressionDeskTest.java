@@ -64,9 +64,14 @@ class AlertSuppressionDeskTest {
     private final RiskAlertDesk desk = new RiskAlertDesk(alerts, world.executor, world.transactions,
             RiskFlowScope.NONE);
 
+    /**
+     * <em>(Read "the proposal RISK_INVESTIGATE (201), the approval RISK_CASE_APPROVE and MULTI_FACTOR, the rejection
+     * RISK_CASE_APPROVE - every act keyed", the approval the only act declaring an assurance, until `P17-TSK-102`,
+     * 2026-11-17.)</em>
+     */
     @Test
-    @DisplayName("the proposal RISK_INVESTIGATE (201), the approval RISK_CASE_APPROVE and MULTI_FACTOR, the rejection"
-            + " RISK_CASE_APPROVE - every act keyed; the queue a read, keyless")
+    @DisplayName("the proposal RISK_INVESTIGATE (201), the approval and the rejection RISK_CASE_APPROVE - every act keyed and,"
+            + " since the owner's D-6 (P17-TSK-102), MULTI_FACTOR; the queue a read, keyless, at a session's assurance")
     void everyRouteCarriesItsPermission() throws NoSuchMethodException {
         Map<Method, PermissionName> acts = Map.of(
                 RiskAlertController.class.getMethod("proposeRiskAlertSuppression", String.class, String.class,
@@ -79,15 +84,13 @@ class AlertSuppressionDeskTest {
             assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName())
                     .isEqualTo(permission);
             assertThat(method.getAnnotation(RequiresIdempotencyKey.class)).as(method.getName()).isNotNull();
-            boolean approval = method.getName().equals("approveRiskAlertSuppression");
-            assertThat(method.getAnnotation(RequiresAssurance.class) != null).as(method.getName()).isEqualTo(approval);
+            assertThat(method.getAnnotation(RequiresAssurance.class)).as(method.getName()).isNotNull()
+                    .extracting(RequiresAssurance::value).isEqualTo(AssuranceLevel.MULTI_FACTOR);
         });
-        assertThat(RiskAlertController.class.getMethod("approveRiskAlertSuppression", String.class, String.class,
-                RiskAlertController.RiskSuppressionDecisionRequest.class).getAnnotation(RequiresAssurance.class).value())
-                .isEqualTo(AssuranceLevel.MULTI_FACTOR);
         Method queue = RiskAlertController.class.getMethod("readRiskAlertQueue", String.class, String.class,
                 String.class, Integer.class);
         assertThat(queue.getAnnotation(GetMapping.class)).isNotNull();
+        assertThat(queue.getAnnotation(RequiresAssurance.class)).isNull();
         assertThat(queue.getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.RISK_INVESTIGATE);
         assertThat(queue.getAnnotation(RequiresIdempotencyKey.class)).isNull();
     }

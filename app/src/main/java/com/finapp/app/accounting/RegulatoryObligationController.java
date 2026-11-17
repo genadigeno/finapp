@@ -37,6 +37,7 @@ public class RegulatoryObligationController {
     @NonNull private final RegulatoryObligationDesk desk;
 
     /** Proposes an obligation version - nothing can be drafted from it until a second person activates it. A reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.REGULATORY_REPORT_PREPARE)
     @RequiresIdempotencyKey
@@ -91,6 +92,7 @@ public class RegulatoryObligationController {
     }
 
     /** Rejects it - final; may be the proposer's. A reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{obligationId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.REGULATORY_REPORT_APPROVE)
     @RequiresIdempotencyKey

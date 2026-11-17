@@ -269,9 +269,10 @@ final class StormTraffic {
         byte[] bytes = new byte[32];
         RANDOMNESS.nextBytes(bytes);
         String plaintext = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        // MULTI_FACTOR: every operator act steps up (P17-TSK-102); the customers keep their password sessions.
         com.finapp.identity.Session.Draft session =
                 com.finapp.identity.Session.issue(
-                        IDS, CLOCK, id, SessionToken.of(plaintext), AssuranceLevel.PASSWORD,
+                        IDS, CLOCK, id, SessionToken.of(plaintext), AssuranceLevel.MULTI_FACTOR,
                         SessionPolicy.current());
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, session);

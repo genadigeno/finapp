@@ -1,8 +1,10 @@
 package com.finapp.app.bnpl;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.bnpl.BnplSpans;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -39,6 +41,7 @@ public class BnplCorrectionController {
     @NonNull private final BnplFlowScope flow;
 
     /** Proposes the exact reversal of one of the agreement's repayments, with a reason; nothing is posted. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/repayments/{repaymentId}/reversal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.BNPL_SERVICE)
     @RequiresIdempotencyKey
@@ -55,6 +58,7 @@ public class BnplCorrectionController {
      * Approves the named pending reversal - someone other than its proposer: the repayment's entry swapped exactly, the
      * wallet credited back, what it paid due again.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/repayments/{repaymentId}/reversal/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.BNPL_SERVICE_APPROVE)
     @RequiresIdempotencyKey
@@ -67,6 +71,7 @@ public class BnplCorrectionController {
     }
 
     /** Rejects the named pending reversal - the proposer's withdrawal included; a reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/repayments/{repaymentId}/reversal/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.BNPL_SERVICE)
     @RequiresIdempotencyKey
@@ -79,6 +84,7 @@ public class BnplCorrectionController {
     }
 
     /** Proposes waiving an amount of one of the agreement's late fees, with a reason; nothing is posted. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/waivers", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.BNPL_SERVICE)
     @RequiresIdempotencyKey
@@ -94,6 +100,7 @@ public class BnplCorrectionController {
      * Approves the named pending waiver - someone other than its proposer: posted within what may still be forgiven of the
      * fee, the agreement closed when it settled the last receivable.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/waivers/{waiverId}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.BNPL_SERVICE_APPROVE)
     @RequiresIdempotencyKey
@@ -106,6 +113,7 @@ public class BnplCorrectionController {
     }
 
     /** Rejects the named pending waiver - the proposer's withdrawal included; a reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/waivers/{waiverId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.BNPL_SERVICE)
     @RequiresIdempotencyKey

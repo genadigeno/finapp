@@ -118,12 +118,17 @@ class RegulatorySubmissionApiTest {
         }
     }
 
+    /**
+     * <em>(Read "while the reads and the refusal reach it", the refusal {@code 404} on the password session, until `P17-TSK-102`,
+     * 2026-11-18.)</em>
+     */
     @Test
-    @DisplayName("the attestation and the sending are MULTI_FACTOR: on a password session, 403 identity.AssuranceRequired before the domain, while the reads and the refusal reach it")
+    @DisplayName("the attestation and the sending are MULTI_FACTOR: on a password session, 403 identity.AssuranceRequired before the domain, as is the"
+            + " refusal since the owner's D-6 (P17-TSK-102), while the reads reach it; stepped up, the refusal reaches it")
     void theDecisionsAreMultiFactor() throws Exception {
         String id = IDS.next().toString();
-        String controller = sessionWith(RoleName.FINANCIAL_CONTROLLER);
-        String reporter = sessionWith(RoleName.REGULATORY_REPORTER);
+        String controller = passwordSessionWith(RoleName.FINANCIAL_CONTROLLER);
+        String reporter = passwordSessionWith(RoleName.REGULATORY_REPORTER);
         for (Door door : List.of(new Door("POST", SUBMISSIONS + "/" + id + "/approval", ATTESTATION), new Door("POST", OBLIGATIONS + "/" + id + "/activation", ACTIVATION))) {
             HttpResponse<String> stepped = knock(door, controller);
             assertThat(stepped.statusCode()).as(stepped.body()).isEqualTo(403);
@@ -135,9 +140,14 @@ class RegulatorySubmissionApiTest {
             assertThat(stepped.body()).contains("identity.AssuranceRequired");
         }
         assertThat(knock(new Door("GET", SUBMISSIONS + "/" + id + "/attestation", null), controller).statusCode()).isEqualTo(404);
-        assertThat(knock(new Door("POST", SUBMISSIONS + "/" + id + "/refusal", REASON), controller).statusCode()).isEqualTo(404);
+        Door refusal = new Door("POST", SUBMISSIONS + "/" + id + "/refusal", REASON);
+        HttpResponse<String> refused = knock(refusal, controller);
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(403);
+        assertThat(refused.body()).contains("identity.AssuranceRequired");
         assertThat(knock(new Door("GET", SUBMISSIONS + "/awaiting-approval", null), controller).statusCode()).isEqualTo(200);
         assertThat(knock(new Door("GET", SUBMISSIONS, null), reporter).statusCode()).isEqualTo(200);
+        String steppedUp = com.finapp.app.session.OperatorStepUp.elevated(controller, (path, body, bearer, key) -> send("POST", path, body, bearer, key));
+        assertThat(knock(refusal, steppedUp).statusCode()).isEqualTo(404);
     }
 
     @Test
@@ -184,8 +194,16 @@ class RegulatorySubmissionApiTest {
         }
     }
 
-    /** A signed-in password session holding {@code role}, or no role at all when it is {@code null}. */
+    /**
+     * A signed-in session holding {@code role}, or no role at all when it is {@code null}, stepped up to {@code MULTI_FACTOR}: every operator act
+     * declares it (`P17-TSK-102`), so a refusal here is the permission's, never the assurance's.
+     */
     private String sessionWith(RoleName role) throws Exception {
+        return com.finapp.app.session.OperatorStepUp.elevated(passwordSessionWith(role), (path, body, bearer, key) -> send("POST", path, body, bearer, key));
+    }
+
+    /** A signed-in password session holding {@code role}, or no role at all when it is {@code null}. */
+    private String passwordSessionWith(RoleName role) throws Exception {
         String login = "reg." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(send("POST", "/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Ada Lovelace\",\"password\":\"" + PASSWORD + "\"}", null, UUID.randomUUID().toString()).statusCode()).isEqualTo(201);
         if (role != null) {

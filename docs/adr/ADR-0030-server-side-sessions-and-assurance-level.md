@@ -181,3 +181,13 @@ same shape elsewhere.
 database's clock. The caution recorded here, an early expiry logging a user out, cannot arise: the sweep selects only rows whose
 idle bound has passed, which a live session's has not, and it never moves a bound. Expiry stays derived; there is still no
 `EXPIRED` status. This record's decision and status are unchanged.
+
+## Dated note: every operator act at `MULTI_FACTOR` (`P17-TSK-102`, 2026-11-17)
+
+The decision is unchanged: assurance is a level on the session, judged per request by the handler's declared minimum. What
+changed is who declares it. Under the owner's D-6 (finapp-admin-panel ADR-C131 decision 3), every `POST`, `PUT`, `PATCH` or
+`DELETE` handler that declares a permission declares `MULTI_FACTOR` - not only approvals - and `EveryOperatorActRequiresAFactorTest`
+holds it over every handler the dispatcher serves. A customer's own doors keep their conditional step-ups (`ConditionalStepUp`).
+Because a password may enrol an identity's first factor, every role that can act now needs an enrolled factor before it is
+granted (`RoleName.requiresEnrolledFactor`, from `PermissionName.guardsAnAct`), or the level would be a password's with one extra
+step. `PRIVILEGED_ACCESS_REVIEW.md` §6's fourth ruling records it, and that it supersedes the second ruling's quick stop.

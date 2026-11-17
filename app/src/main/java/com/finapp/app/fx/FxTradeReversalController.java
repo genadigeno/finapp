@@ -59,6 +59,7 @@ public class FxTradeReversalController {
     }
 
     /** Rejects a pending reversal - a different person's act; nothing moves. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/reversal/{rid}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.FX_TRADE_REVERSE)
     public FxTradeReversalDesk.ReversalReceipt rejectFxTradeReversal(

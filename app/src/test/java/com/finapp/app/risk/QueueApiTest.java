@@ -42,7 +42,7 @@ class QueueApiTest {
     @DisplayName("the case queue: two cases opened after a marker page oldest first after it, one a page; each page"
             + " recorded risk.CaseRead; the file 200 with its parts and evidence by reference, recorded")
     void theCaseQueueAndTheFile() throws Exception {
-        RiskOperatorSessions.Session opener = http.sessionWith(RoleName.RISK_ANALYST, false);
+        RiskOperatorSessions.Session opener = http.sessionWith(RoleName.RISK_ANALYST, true);
         String marker = open(opener, RiskOperatorSessions.IDS.next());
         String first = open(opener, RiskOperatorSessions.IDS.next());
         String second = open(opener, RiskOperatorSessions.IDS.next());
@@ -76,7 +76,7 @@ class QueueApiTest {
             + " session 401; the alert queue 200, recorded risk.AlertRead")
     void theRefusals() throws Exception {
         RiskOperatorSessions.Session reader = http.sessionWith(RoleName.RISK_ANALYST, false);
-        RiskOperatorSessions.Session opener = http.sessionWith(RoleName.RISK_ANALYST, false);
+        RiskOperatorSessions.Session opener = http.sessionWith(RoleName.RISK_ANALYST, true);
         String marker = open(opener, RiskOperatorSessions.IDS.next());
         String own = open(opener, reader.party());
 

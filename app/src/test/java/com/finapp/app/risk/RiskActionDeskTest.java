@@ -39,9 +39,13 @@ class RiskActionDeskTest {
 
     private final RiskActionWorld world = new RiskActionWorld();
 
+    /**
+     * <em>(Read "the decisions RISK_CASE_APPROVE, the approval MULTI_FACTOR and 202; every act keyed", and {@code isNull} on
+     * the proposal and the rejection, until `P17-TSK-102`, 2026-11-17.)</em>
+     */
     @Test
-    @DisplayName("the proposal carries RISK_INVESTIGATE and answers 201; the decisions RISK_CASE_APPROVE, the approval"
-            + " MULTI_FACTOR and 202; every act keyed")
+    @DisplayName("the proposal carries RISK_INVESTIGATE and answers 201; the decisions RISK_CASE_APPROVE, the approval 202;"
+            + " every act keyed and, since the owner's D-6 (P17-TSK-102), MULTI_FACTOR")
     void theRoutesPermissionsAndStatuses() throws NoSuchMethodException {
         Method propose = RiskActionController.class.getMethod("proposeRiskAction", String.class, String.class,
                 RiskActionController.RiskActionProposalRequest.class);
@@ -52,10 +56,9 @@ class RiskActionDeskTest {
         assertThat(propose.getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.RISK_INVESTIGATE);
         assertThat(approve.getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.RISK_CASE_APPROVE);
         assertThat(reject.getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.RISK_CASE_APPROVE);
-        assertThat(approve.getAnnotation(RequiresAssurance.class).value()).isEqualTo(AssuranceLevel.MULTI_FACTOR);
-        assertThat(propose.getAnnotation(RequiresAssurance.class)).isNull();
-        assertThat(reject.getAnnotation(RequiresAssurance.class)).isNull();
         for (Method act : List.of(propose, approve, reject)) {
+            assertThat(act.getAnnotation(RequiresAssurance.class)).as(act.getName()).isNotNull()
+                    .extracting(RequiresAssurance::value).isEqualTo(AssuranceLevel.MULTI_FACTOR);
             assertThat(act.getAnnotation(RequiresIdempotencyKey.class)).as(act.getName()).isNotNull();
         }
         assertThat(propose.getAnnotation(ResponseStatus.class).value()).isEqualTo(HttpStatus.CREATED);

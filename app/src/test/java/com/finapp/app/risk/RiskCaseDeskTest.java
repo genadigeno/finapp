@@ -137,9 +137,13 @@ class RiskCaseDeskTest {
             new IdempotentExecutor(new Claims(), RiskEvaluationWorld.CLOCK, Duration.ofDays(1), Duration.ofMinutes(1)),
             transactions, RiskFlowScope.NONE);
 
+    /**
+     * <em>(Read "the acts carry RISK_INVESTIGATE, the decisions RISK_CASE_APPROVE, the approval MULTI_FACTOR; every act is
+     * keyed", the approval the only act declaring an assurance, until `P17-TSK-102`, 2026-11-17.)</em>
+     */
     @Test
-    @DisplayName("the acts carry RISK_INVESTIGATE, the decisions RISK_CASE_APPROVE, the approval MULTI_FACTOR; every act"
-            + " is keyed")
+    @DisplayName("the acts carry RISK_INVESTIGATE, the decisions RISK_CASE_APPROVE; every act is keyed and, since the owner's"
+            + " D-6 (P17-TSK-102), MULTI_FACTOR; the reads not")
     void everyRouteCarriesItsPermission() throws NoSuchMethodException {
         Map<Method, PermissionName> routes = Map.of(
                 RiskCaseController.class.getMethod("openRiskCase", String.class,
@@ -156,12 +160,18 @@ class RiskCaseDeskTest {
             assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName())
                     .isEqualTo(permission);
             assertThat(method.getAnnotation(RequiresIdempotencyKey.class)).as(method.getName()).isNotNull();
-            boolean approval = method.getName().equals("approveRiskCaseDisposition");
-            assertThat(method.getAnnotation(RequiresAssurance.class) != null).as(method.getName()).isEqualTo(approval);
+            assertThat(method.getAnnotation(RequiresAssurance.class)).as(method.getName()).isNotNull()
+                    .extracting(RequiresAssurance::value).isEqualTo(AssuranceLevel.MULTI_FACTOR);
         });
-        assertThat(RiskCaseController.class.getMethod("approveRiskCaseDisposition", String.class, String.class,
-                String.class, RiskCaseController.RiskCaseDecisionRequest.class).getAnnotation(RequiresAssurance.class)
-                .value()).isEqualTo(AssuranceLevel.MULTI_FACTOR);
+        List<String> reads = new ArrayList<>();
+        for (Method method : RiskCaseController.class.getDeclaredMethods()) {
+            if (method.isAnnotationPresent(RequiresPermission.class)
+                    && method.isAnnotationPresent(org.springframework.web.bind.annotation.GetMapping.class)) {
+                reads.add(method.getName());
+                assertThat(method.getAnnotation(RequiresAssurance.class)).as(method.getName()).isNull();
+            }
+        }
+        assertThat(reads).containsExactlyInAnyOrder("readRiskCaseEvidence", "readRiskCaseQueue", "readRiskCase");
     }
 
     @Test

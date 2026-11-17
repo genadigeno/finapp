@@ -125,7 +125,11 @@ class RepaymentReversalApiTest {
         return "/v1/operator/loans/" + loan + "/repayments/" + repayment + "/reversal";
     }
 
-    /** A signed-in session holding {@code role}, or no role at all when it is {@code null}. */
+    /**
+     * A signed-in session holding {@code role}, or no role at all when it is {@code null}, stepped up to
+     * {@code MULTI_FACTOR}: every operator act declares it (`P17-TSK-102`), so a refusal here is the permission's, never
+     * the assurance's.
+     */
     private String sessionWith(RoleName role) throws Exception {
         LoanApplicationClient client = new LoanApplicationClient(port);
         String login = "rr." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
@@ -153,6 +157,6 @@ class RepaymentReversalApiTest {
         }
         HttpResponse<String> session = client.post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, key());
-        return field(session.body(), "sessionToken");
+        return com.finapp.app.session.OperatorStepUp.elevated(field(session.body(), "sessionToken"), client::post);
     }
 }

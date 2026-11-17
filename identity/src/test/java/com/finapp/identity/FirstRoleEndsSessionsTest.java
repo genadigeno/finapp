@@ -53,6 +53,8 @@ class FirstRoleEndsSessionsTest {
     private final Set<RoleName> live = EnumSet.noneOf(RoleName.class);
     private int liveSessions = 2;
     private boolean inserts = true;
+    /** The subject holds no enrolled factor: every role is refused it since P17-TSK-102. */
+    private boolean factorless;
     private RuntimeException revocationFails;
 
     @Test
@@ -140,6 +142,7 @@ class FirstRoleEndsSessionsTest {
     void aRefusedGrantEndsNothing() {
         assertThat(administration().assignRole(UNIT_OF_WORK, ADMINISTRATOR, RoleName.KYC_REVIEWER, ADMINISTRATOR, "because"))
                 .isEqualTo(IdentityAdministration.RoleGrant.SELF);
+        factorless = true;
         assertThat(assign(RoleName.LEDGER_OPERATOR)).as("no factor enrolled")
                 .isEqualTo(IdentityAdministration.RoleGrant.FACTOR_REQUIRED);
 
@@ -214,9 +217,11 @@ class FirstRoleEndsSessionsTest {
                     liveSessions = 0;
                     return ended;
                 });
+        // Since P17-TSK-102 every role needs an enrolled factor at grant, so the subject holds one unless a test says it does not
+        // (factorless); this class is about the sessions a first role ends, which a factor does not change.
         MfaEnrolmentStore<Connection> enrolments = (MfaEnrolmentStore<Connection>) Proxy.newProxyInstance(
                 MfaEnrolmentStore.class.getClassLoader(), new Class<?>[] {MfaEnrolmentStore.class},
-                (proxy, method, args) -> Optional.empty());
+                (proxy, method, args) -> factorless ? Optional.empty() : Optional.of(new Object()));
         com.finapp.platform.audit.AuditWriter<Connection> trail = (uow, record) -> {
             calls.add("audit " + record.operation().code());
             written.add(record);

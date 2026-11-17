@@ -40,6 +40,7 @@ public class RiskScreeningListController {
     @NonNull private final RiskScreeningListDesk desk;
 
     /** Records a list version - the fact that the provider's version of a list exists; a recorded label converges. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_POLICY_ADMINISTER)
     @RequiresIdempotencyKey

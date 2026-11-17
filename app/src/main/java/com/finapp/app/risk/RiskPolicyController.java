@@ -45,6 +45,7 @@ public class RiskPolicyController {
     @NonNull private final RiskPolicyDesk desk;
 
     /** Proposes a whole new policy version for an operation - complete, judged, and frozen from this moment. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_POLICY_ADMINISTER)
     @RequiresIdempotencyKey
@@ -71,6 +72,7 @@ public class RiskPolicyController {
     }
 
     /** Rejects a pending version - anyone, the proposer's withdrawal included; a reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{versionId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_POLICY_ADMINISTER)
     @RequiresIdempotencyKey

@@ -1,8 +1,10 @@
 package com.finapp.app.transfers;
 
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.app.session.RequiresSession;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.identity.Session;
 import com.finapp.platform.api.ApiException;
@@ -85,6 +87,7 @@ public class TransferController {
      * the idempotency ({@code INV-IDEM-01} through state) — a retry after a lost response gets
      * the 409 naming the state, and the view carries the reversal.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/reversal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.TRANSFER_REVERSE)
     @ResponseStatus(HttpStatus.CREATED)

@@ -263,8 +263,7 @@ class BnplDisputeApiTest {
         String dispute = BnplApplicationClient.field(open(bought).body(), "disputeId");
         assertThat(world.client.post("/v1/merchant/bnpl-disputes/" + dispute + "/response", CONTEST,
                 bought.merchant().apiKey(), BnplApplicationClient.key()).statusCode()).isEqualTo(200);
-        String insider = world.client.sessionWithRole(authorization, bought.owner().login(),
-                RoleName.BNPL_SERVICING_AGENT);
+        String insider = world.client.insiderSession(authorization, bought.owner(), RoleName.BNPL_SERVICING_AGENT);
         String resolutions = "/v1/operator/bnpl-disputes/" + dispute + "/resolution";
         HttpResponse<String> resolved = world.client.post(resolutions, "{\"outcome\":\"REFUND\",\"reason\":\"mine\"}",
                 insider, BnplApplicationClient.key());
@@ -299,7 +298,7 @@ class BnplDisputeApiTest {
             + " purchase, no refund written")
     void anInsidersOperatorRefundIsSelfDealing() throws Exception {
         Bought bought = bought();
-        String insider = world.client.sessionWithRole(authorization, bought.owner().login(), RoleName.LEDGER_OPERATOR);
+        String insider = world.client.insiderSession(authorization, bought.owner(), RoleName.LEDGER_OPERATOR);
         HttpResponse<String> refused = world.client.post("/v1/operator/bnpl-purchases/" + bought.purchase()
                 + "/refunds", "{\"amount\":\"100.00\",\"currency\":\"EUR\",\"reason\":\"returned\"}", insider,
                 BnplApplicationClient.key());
@@ -318,8 +317,8 @@ class BnplDisputeApiTest {
             + " the key named, no refund written, the dispute still OPEN; a key an outsider issued accepts it")
     void anInsiderMintedKeyIsSelfDealingAtBothMerchantDoors() throws Exception {
         Bought bought = bought();
-        world.client.sessionWithRole(authorization, bought.owner().login(), RoleName.MERCHANT_ADMINISTRATOR);
-        String insider = world.client.sessionWithRole(authorization, bought.owner().login(), RoleName.LEDGER_OPERATOR);
+        world.client.insiderSession(authorization, bought.owner(), RoleName.MERCHANT_ADMINISTRATOR);
+        String insider = world.client.insiderSession(authorization, bought.owner(), RoleName.LEDGER_OPERATOR);
         String insidersKey = world.client.refundScopedKey(insider, bought.merchant().id());
         String insidersKeyId = insidersKey.substring(0, insidersKey.indexOf('.'));
 

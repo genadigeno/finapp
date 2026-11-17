@@ -366,13 +366,14 @@ class TransferReversalDatabaseTest {
         String transferId = field(created.body(), "id");
         UUID entryId = UUID.fromString(field(created.body(), "journalEntryId"));
 
-        // The transfer's own customer holds no TRANSFER_REVERSE: refused, audited as a
-        // denial by the interceptor, and NOTHING of the reversal written (INV-AUD-03) -
-        // the acceptance test's operator success is the positive control, so this refusal
-        // is not blanket.
+        // The transfer's own customer holds no TRANSFER_REVERSE: refused, audited by the
+        // interceptor, and NOTHING of the reversal written (INV-AUD-03) - the acceptance
+        // test's operator success is the positive control, so this refusal is not blanket.
+        // The reversal is MULTI_FACTOR since P17-TSK-102 and the step-up is judged before the
+        // permission, so the customer's password session meets the step-up's refusal first.
         HttpResponse<String> forbidden = reverse(sender, transferId, reasonBody("mine"));
         assertThat(forbidden.statusCode()).isEqualTo(403);
-        assertThat(forbidden.body()).contains("api.Forbidden");
+        assertThat(forbidden.body()).contains("identity.AssuranceRequired");
 
         String operator = operator(someLogin());
 
@@ -500,7 +501,7 @@ class TransferReversalDatabaseTest {
     /**
      * Registers an identity over HTTP, grants {@code LEDGER_OPERATOR} through the real
      * {@code Authorization} write (the `P3-TSK-007` pattern - the boundary enum, the role
-     * constraint and the per-request resolution are all on the path), and returns its token.
+     * constraint and the per-request resolution are all on the path), and returns its stepped-up token.
      */
     private String operator(String login) throws Exception {
         assertThat(register(login).statusCode()).isEqualTo(201);
@@ -515,7 +516,9 @@ class TransferReversalDatabaseTest {
                     "test fixture");
             app.commit();
         }
-        return tokenFrom(authenticate(login).body());
+        // The reversal is an operator act, MULTI_FACTOR (P17-TSK-102): the operator steps up.
+        return com.finapp.app.session.OperatorStepUp.elevated(tokenFrom(authenticate(login).body()),
+                (path, body, bearer, key) -> post(path, body, bearer, key != null));
     }
 
     private static String identityIdOf(Connection app, String login) throws SQLException {

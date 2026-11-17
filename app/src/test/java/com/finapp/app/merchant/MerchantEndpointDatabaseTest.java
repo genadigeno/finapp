@@ -288,7 +288,8 @@ class MerchantEndpointDatabaseTest {
                     app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
             app.commit();
         }
-        return tokenFrom(authenticate(login).body());
+        return com.finapp.app.session.OperatorStepUp.elevated(
+                tokenFrom(authenticate(login).body()), this::post);
     }
 
     private String registered() throws Exception {

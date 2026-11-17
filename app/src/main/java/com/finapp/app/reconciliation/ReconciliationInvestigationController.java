@@ -1,7 +1,9 @@
 package com.finapp.app.reconciliation;
 
 import com.finapp.app.session.RecordsRefusals;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -88,6 +90,7 @@ public class ReconciliationInvestigationController {
     // ------------------------------------------------------------------ the case file
 
     /** Assigns the break; the first assignment opens the investigation. Idempotent by state. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/breaks/{id}/assignment", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
     public BreakInvestigation.BreakView assignReconciliationBreak(
@@ -97,6 +100,7 @@ public class ReconciliationInvestigationController {
     }
 
     /** Appends a note, keyed per principal; a replay answers the same receipt. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/breaks/{id}/notes", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
     @RequiresIdempotencyKey
@@ -109,6 +113,7 @@ public class ReconciliationInvestigationController {
     }
 
     /** Links stored evidence by identifier, verified to exist; keyed per principal. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(
             path = "/breaks/{id}/evidence-links",
             consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -124,6 +129,7 @@ public class ReconciliationInvestigationController {
     }
 
     /** Reclassifies the break, reasoned; in OPEN and INVESTIGATING only. Idempotent by state. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(
             path = "/breaks/{id}/classification",
             consumes = MediaType.APPLICATION_JSON_VALUE)

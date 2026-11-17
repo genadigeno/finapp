@@ -47,6 +47,7 @@ public class ValuationRateSetController {
      * Captures a valuation rate set for a LOCKED period: per valued currency the reference's last EUR-based observation
      * before the period's end, within the staleness bound - one stale or missing pair refuses all. PROPOSED, immutable.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
     @RequiresIdempotencyKey
@@ -64,6 +65,7 @@ public class ValuationRateSetController {
      * Reasoned. {@code 409 accounting.ReferenceGapRefused} when a named pair is no gap, or its last observation is not the
      * one named. PROPOSED, approved only at its own door.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/reference-gap", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
     @RequiresIdempotencyKey
@@ -97,6 +99,7 @@ public class ValuationRateSetController {
      * Approves a pending set - a person other than its capturer, while the period is LOCKED; the period's one approved
      * set. A reason is required. A set holding a reference gap is approved at its own door.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{setId}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
     @RequiresIdempotencyKey
@@ -108,6 +111,7 @@ public class ValuationRateSetController {
     }
 
     /** Rejects a pending set - terminal; a correction is a new capture. A reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{setId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
     @RequiresIdempotencyKey

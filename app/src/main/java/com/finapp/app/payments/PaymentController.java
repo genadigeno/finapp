@@ -1,8 +1,10 @@
 package com.finapp.app.payments;
 
 import com.finapp.app.session.RecordsRefusals;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.app.session.RequiresSession;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
 import com.finapp.identity.Session;
@@ -110,6 +112,7 @@ public class PaymentController {
      * {@code FAILED}, or {@code UNKNOWN} with the customer's funds visibly reserved until
      * the provider answers.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/refund", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.PAYMENT_REFUND)
     @RecordsRefusals
@@ -132,6 +135,7 @@ public class PaymentController {
      * state-driven like the capture — the conditional out of AUTHORIZED admits one, and a
      * retry converges on the machine's truth.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/void", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.PAYMENT_REFUND)
     @RecordsRefusals

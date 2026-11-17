@@ -2,6 +2,7 @@ package com.finapp.app.bnpl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.credit.CreditFixtures;
 import com.finapp.bnpl.BnplProduct;
 import com.finapp.bnpl.BnplTerms;
 import com.finapp.bnpl.BnplTermsAdministration;
@@ -179,9 +180,30 @@ final class BnplApplicationClient {
 
     /**
      * A session of the EXISTING identity {@code login} - a customer's - after {@code role} is assigned to it
-     * (`P12-TSK-025`): an operator who is also the customer, for the self-dealing negatives.
+     * (`P12-TSK-025`): an operator who is also the customer, for the self-dealing negatives. A fresh {@code PASSWORD}
+     * session, so a read's insider only - an act's is {@link #insiderSession} (`P17-TSK-102`).
      */
     String sessionWithRole(Authorization authorization, String login, RoleName role) throws Exception {
+        assign(authorization, login, role);
+        return field(post("/v1/authentications",
+                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, null).body(),
+                "sessionToken");
+    }
+
+    /**
+     * The EXISTING customer {@code owner}'s own {@code MULTI_FACTOR} session after {@code role} is assigned to their
+     * identity - the insider of the self-dealing negatives at an operator ACT (`P17-TSK-102`: every act declares
+     * {@code MULTI_FACTOR}). The customer already enrolled their one factor, so a fresh password sign-in cannot step up
+     * through {@code OperatorStepUp}; the fixture's grant ends no session and the standing is read with each request, so
+     * their own stepped-up session carries the role. A read's insider keeps {@link #sessionWithRole}.
+     */
+    String insiderSession(Authorization authorization, CreditFixtures.Customer owner, RoleName role) throws Exception {
+        assign(authorization, owner.login(), role);
+        return owner.token();
+    }
+
+    /** {@code role} assigned to the EXISTING identity {@code login} - the fixture's grant, no door. */
+    private static void assign(Authorization authorization, String login, RoleName role) throws Exception {
         UUID identity = UUID.fromString(scalar("SELECT id::text FROM identity.identity WHERE login_identifier = ?",
                 login));
         try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(correlation()));
@@ -191,22 +213,21 @@ final class BnplApplicationClient {
             authorization.assign(app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
             app.commit();
         }
-        return field(post("/v1/authentications",
-                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, null).body(),
-                "sessionToken");
     }
 
     /**
      * A session of a fresh operator holding {@code MERCHANT_ADMINISTRATOR} AND {@code LEDGER_OPERATOR} - the population that
      * may issue a merchant key carrying the {@code BNPL_REFUND} scope ({@code MERCHANT_ADMINISTER} beside
-     * {@code PAYMENT_REFUND}, the Phase 12 -> 13 gate's A5-F1); a party of their own, nobody's customer.
+     * {@code PAYMENT_REFUND}, the Phase 12 -> 13 gate's A5-F1); a party of their own, nobody's customer. Stepped up to
+     * {@code MULTI_FACTOR} (`P17-TSK-102`: every operator act declares it) - the last session elevated, once.
      */
     String refundKeyIssuerSession(Authorization authorization) throws Exception {
         String login = "ops." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Ada Lovelace\","
                 + "\"password\":\"" + PASSWORD + "\"}", null, key()).statusCode()).isEqualTo(201);
         sessionWithRole(authorization, login, RoleName.MERCHANT_ADMINISTRATOR);
-        return sessionWithRole(authorization, login, RoleName.LEDGER_OPERATOR);
+        return com.finapp.app.session.OperatorStepUp.elevated(
+                sessionWithRole(authorization, login, RoleName.LEDGER_OPERATOR), this::post);
     }
 
     /** A key issued to {@code merchantId} with the {@code BNPL_REFUND} scope by {@code issuer}'s session: {@code id.secret}. */
@@ -217,6 +238,10 @@ final class BnplApplicationClient {
         return field(issued.body(), "keyId") + "." + field(issued.body(), "secret");
     }
 
+    /**
+     * A {@code MULTI_FACTOR} session of a fresh operator holding {@code role} (`P17-TSK-102`: every operator act declares
+     * it) - signed in, then stepped up over the real endpoints.
+     */
     String operatorSession(Authorization authorization, RoleName role) throws Exception {
         String login = "ops." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Ada Lovelace\","
@@ -230,9 +255,9 @@ final class BnplApplicationClient {
             authorization.assign(app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
             app.commit();
         }
-        return field(post("/v1/authentications",
+        return com.finapp.app.session.OperatorStepUp.elevated(field(post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, null).body(),
-                "sessionToken");
+                "sessionToken"), this::post);
     }
 
     private String onboard(String operator) throws Exception {

@@ -82,6 +82,7 @@ public class PayoutDestinationController {
     }
 
     /** Rejects a proposed destination, reasoned. Terminal. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{destinationId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.PAYOUT_DESTINATION_APPROVE)
     public PayoutDestinationOperations.PayoutDestinationView rejectPayoutDestination(
@@ -92,6 +93,7 @@ public class PayoutDestinationController {
     }
 
     /** Withdraws a change before it takes effect — during the proposal or the cooling-off. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{destinationId}/withdrawal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
     public PayoutDestinationOperations.PayoutDestinationView withdrawPayoutDestination(

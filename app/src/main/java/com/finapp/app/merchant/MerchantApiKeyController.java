@@ -1,6 +1,8 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -53,6 +55,7 @@ public class MerchantApiKeyController {
      * Issues a key. The {@code 201} body carries the secret <strong>once</strong>; a retried
      * key converges on the same credential with {@code alreadyIssued: true} and no secret.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
     @RequiresIdempotencyKey
@@ -92,6 +95,7 @@ public class MerchantApiKeyController {
      * <p>No idempotency key: the machine is the idempotency ({@code INV-IDEM-01} through
      * state), the adjustment-rejection reasoning.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @DeleteMapping("/{keyId}")
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
     @ResponseStatus(HttpStatus.NO_CONTENT)

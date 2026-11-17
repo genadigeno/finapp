@@ -52,6 +52,7 @@ public class FxAdministrationController {
     }
 
     /** Proposes a whole new version - keyed per principal; frozen from here. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/pricing-policies", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.FX_ADMINISTER)
     @RequiresIdempotencyKey
@@ -72,6 +73,7 @@ public class FxAdministrationController {
     }
 
     /** Rejects a pending version - anyone, the proposer's withdrawal included. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/pricing-policies/{id}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.FX_ADMINISTER)
     public FxAdministrationDesk.PolicyReceipt rejectFxPricingPolicy(
@@ -83,6 +85,7 @@ public class FxAdministrationController {
      * Sets a pair's availability: {@code available=false} disables it at once (one person);
      * {@code available=true} proposes enabling it (a different person approves). Keyed.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/pairs/{pair}/availability", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.FX_ADMINISTER)
     @RequiresIdempotencyKey
@@ -94,6 +97,7 @@ public class FxAdministrationController {
     }
 
     /** Sets a declared provider's availability - the pair route's rules. Keyed. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/providers/{code}/availability", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.FX_ADMINISTER)
     @RequiresIdempotencyKey
@@ -114,6 +118,7 @@ public class FxAdministrationController {
     }
 
     /** Rejects an enable request - anyone, the proposer's withdrawal included. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/enable-requests/{rid}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.FX_ADMINISTER)
     public FxAdministrationDesk.EnableReceipt rejectFxEnableRequest(

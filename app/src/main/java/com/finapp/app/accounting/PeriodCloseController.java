@@ -41,6 +41,7 @@ public class PeriodCloseController {
     /**
      * Proposes closing a LOCKED period on the attempts the person read: the run, and per DISCLOSED attempt its check, its number and a reason. Refused unless the present run is ready, and if anything named is no longer what stands.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{periodId}/close-proposal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
     @RequiresIdempotencyKey
@@ -86,6 +87,7 @@ public class PeriodCloseController {
     }
 
     /** Rejects the proposal named: LOCKED again, the same lock and run; a next proposal is a new one. A reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{periodId}/close-rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
     @RequiresIdempotencyKey
@@ -100,6 +102,7 @@ public class PeriodCloseController {
      * Proposes reopening the latest CLOSED period, the next not locked, naming the adjustments posted against it (read at GET .../prior-period-adjustments of the period) - nothing moves until a different person approves; a reason is required. Naming other than what is posted now is 409
      * accounting.PriorPeriodAdjustmentStale. The receipt lists the returns the reopen would overtake, as read at this act (overtakenReturns, overtakenReturnsTotal, overtakenReturnsNote): information, named back by nobody; the approval's receipt reads its own.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{periodId}/reopen-proposal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
     @RequiresIdempotencyKey
@@ -130,6 +133,7 @@ public class PeriodCloseController {
      * Rejects the pending reopen named (reopenId) - a person other than its proposer: the reopen REJECTED, the period still CLOSED at its revision, nothing superseded and the cutoff unmoved; a new reopen may be proposed. A reason is required. The proposer is
      * refused 403 accounting.SelfApprovalRefused and withdraws instead. Another reopen pending is 409 accounting.RequestStale; with none pending, 409 accounting.PeriodStale says whether the one named was approved, rejected or withdrawn.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{periodId}/reopen-rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
     @RequiresIdempotencyKey
@@ -144,6 +148,7 @@ public class PeriodCloseController {
      * Withdraws the pending reopen named (reopenId, as GET .../periods lists it) - its proposer alone: the reopen WITHDRAWN, the period still CLOSED at its revision, nothing superseded and the cutoff unmoved; a new reopen may be proposed. A reason is required.
      * Anyone else is refused 403 accounting.NotTheProposer, recorded. Another reopen pending is 409 accounting.RequestStale; with none pending, 409 accounting.PeriodStale says whether the one named was approved, rejected or withdrawn.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{periodId}/reopen-withdrawal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
     @RequiresIdempotencyKey

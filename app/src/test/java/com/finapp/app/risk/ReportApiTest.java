@@ -70,7 +70,7 @@ class ReportApiTest {
         Session customer = customer();
         String caseId = confirmedSuspicious(customer);
 
-        Session drafter = sessionWith(RoleName.AML_OFFICER, false);
+        Session drafter = sessionWith(RoleName.AML_OFFICER, true);
         HttpResponse<String> drafted = post(reports(caseId), "{\"jurisdiction\":\"EU-REF\",\"narrative\":\"" + NARRATIVE
                 + "\",\"reason\":\"the case is confirmed suspicious\"}", drafter.token());
         assertThat(drafted.statusCode()).as(drafted.body()).isEqualTo(201);
@@ -78,9 +78,8 @@ class ReportApiTest {
                 .contains("\"subjectRef\":\"" + customer.party() + "\"").contains(NARRATIVE).doesNotContain("draftedBy");
         String reportId = field(drafted.body(), "reportId");
 
-        Session drafterStepped = sessionOf(drafter, true);
         HttpResponse<String> own = post(reports(caseId) + "/" + reportId + "/approval", "{\"reason\":\"mine\"}",
-                drafterStepped.token());
+                drafter.token());
         assertThat(own.statusCode()).as(own.body()).isEqualTo(403);
         assertThat(own.body()).contains("risk.SelfApprovalRefused");
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'risk.SelfApprovalRefused'"
@@ -127,11 +126,11 @@ class ReportApiTest {
     @DisplayName("the refusals: a case not disposed CONFIRMED_SUSPICIOUS 409 risk.ReportNotFileable, no session 401, an"
             + " analyst's draft 403, an unknown report 404")
     void theRefusals() throws Exception {
-        Session analyst = sessionWith(RoleName.RISK_ANALYST, false);
+        Session analyst = sessionWith(RoleName.RISK_ANALYST, true);
         HttpResponse<String> opened = post("/v1/operator/risk/cases", "{\"kind\":\"AML\",\"subjectKind\":\"PARTY\","
                 + "\"subjectRef\":\"" + IDS.next() + "\",\"reason\":\"a pattern\"}", analyst.token());
         String open = field(opened.body(), "caseId");
-        Session officer = sessionWith(RoleName.AML_OFFICER, false);
+        Session officer = sessionWith(RoleName.AML_OFFICER, true);
         String body = "{\"jurisdiction\":\"EU-REF\",\"narrative\":\"" + NARRATIVE + "\",\"reason\":\"r\"}";
         HttpResponse<String> notFileable = post(reports(open), body, officer.token());
         assertThat(notFileable.statusCode()).as(notFileable.body()).isEqualTo(409);
@@ -151,7 +150,7 @@ class ReportApiTest {
 
     /** An AML case of {@code customer}'s party, taken and disposed CONFIRMED_SUSPICIOUS by two analysts; its id. */
     private String confirmedSuspicious(Session customer) throws Exception {
-        Session alice = sessionWith(RoleName.RISK_ANALYST, false);
+        Session alice = sessionWith(RoleName.RISK_ANALYST, true);
         HttpResponse<String> opened = post("/v1/operator/risk/cases", "{\"kind\":\"AML\",\"subjectKind\":\"PARTY\","
                 + "\"subjectRef\":\"" + customer.party() + "\",\"reason\":\"structured inflows\"}", alice.token());
         assertThat(opened.statusCode()).as(opened.body()).isEqualTo(201);

@@ -302,10 +302,12 @@ class PersonWrittenReasonsAreScreenedDatabaseTest {
         byte[] bytes = new byte[32];
         RANDOMNESS.nextBytes(bytes);
         String plaintext = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        // MULTI_FACTOR: every operator act steps up (P17-TSK-102), and the step-up is judged before the permission - a
+        // password session would be refused identity.AssuranceRequired before anything these cases prove.
         com.finapp.identity.Session.Draft session =
                 com.finapp.identity.Session.issue(
                         IDS, CLOCK, identity, SessionToken.of(plaintext),
-                        AssuranceLevel.PASSWORD, SessionPolicy.current());
+                        AssuranceLevel.MULTI_FACTOR, SessionPolicy.current());
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, session);
         }

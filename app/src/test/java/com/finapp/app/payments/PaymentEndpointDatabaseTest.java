@@ -1397,7 +1397,10 @@ class PaymentEndpointDatabaseTest {
                     "test fixture");
             app.commit();
         }
-        return tokenFrom(authenticate(login).body());
+        // MULTI_FACTOR: the operator's void and refund step up since `P17-TSK-102`.
+        return com.finapp.app.session.OperatorStepUp.elevated(
+                tokenFrom(authenticate(login).body()),
+                (path, body, bearer, key) -> post(path, body, bearer, key != null));
     }
 
     private static String someLogin() {

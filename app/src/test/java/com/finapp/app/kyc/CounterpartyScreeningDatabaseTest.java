@@ -723,14 +723,16 @@ class CounterpartyScreeningDatabaseTest {
         }
         HttpResponse<String> session = post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, someKey());
-        return field(session.body(), "sessionToken");
+        String token = field(session.body(), "sessionToken");
+        // Every operator act is MULTI_FACTOR (P17-TSK-102): a role holder steps up; the customer keeps a password session.
+        return role == null ? token : com.finapp.app.session.OperatorStepUp.elevated(token, this::post);
     }
 
     private HttpResponse<String> post(String path, String body, String bearer, String key) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:" + port + path))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body));
+                .POST(body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         if (bearer != null) {
             request.header("Authorization", "Bearer " + bearer);
         }

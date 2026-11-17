@@ -40,6 +40,7 @@ public class PriorPeriodAdjustmentController {
     /**
      * Proposes correcting a CLOSED period at the revision read, dated today by the server in the OPEN month holding today - nothing posts until a different person approves. The receipt names the date, and the month's other corrections.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/prior-period-adjustments", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_ADJUST_PROPOSE)
     @RequiresIdempotencyKey
@@ -79,6 +80,7 @@ public class PriorPeriodAdjustmentController {
     }
 
     /** Rejects it, the ledger's proposal with it - final, and the way on for one that can no longer post. May be the proposer's. A reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/prior-period-adjustments/{adjustmentId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_ADJUST_APPROVE)
     @RequiresIdempotencyKey

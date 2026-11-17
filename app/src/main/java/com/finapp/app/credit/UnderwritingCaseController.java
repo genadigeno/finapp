@@ -2,7 +2,9 @@ package com.finapp.app.credit;
 
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RecordsRefusals;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -47,6 +49,7 @@ public class UnderwritingCaseController {
     }
 
     /** Takes an open case - of two underwriters, one; the other {@code 409 credit.CaseTaken}. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/assignment")
     @RequiresPermission(PermissionName.CREDIT_UNDERWRITE)
     @RequiresIdempotencyKey
@@ -56,6 +59,7 @@ public class UnderwritingCaseController {
     }
 
     /** Releases a case its holder took back to the queue. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/release")
     @RequiresPermission(PermissionName.CREDIT_UNDERWRITE)
     @RequiresIdempotencyKey
@@ -68,6 +72,7 @@ public class UnderwritingCaseController {
      * The holder's decision, with reason codes and a reason: recorded, or - an approval above the product's four-eyes
      * threshold - awaiting a second underwriter.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/decision", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.CREDIT_UNDERWRITE)
     @RequiresIdempotencyKey
@@ -79,6 +84,7 @@ public class UnderwritingCaseController {
     }
 
     /** A different underwriter approves the first decision, or refuses it with a reason. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/second-approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.CREDIT_UNDERWRITE)
     @RequiresIdempotencyKey

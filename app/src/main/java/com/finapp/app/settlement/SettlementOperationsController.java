@@ -1,7 +1,9 @@
 package com.finapp.app.settlement;
 
 import com.finapp.app.session.RecordsRefusals;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -53,6 +55,7 @@ public class SettlementOperationsController {
      * contract is "received, status readable by GET". The same key replays the same answer;
      * the same bytes from anybody converge on {@code duplicateOf}.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/files", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.SETTLEMENT_INGEST)
     @RequiresIdempotencyKey
@@ -70,6 +73,7 @@ public class SettlementOperationsController {
      * published, failed, or not pullable — because the request was served either way. No
      * idempotency key: the content address makes a repeated fetch one file.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/sources/{code}/fetch", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.SETTLEMENT_INGEST)
     public SettlementFetch.FetchAnswer fetchSettlementReport(
@@ -82,6 +86,7 @@ public class SettlementOperationsController {
      * {@code NULL → value} fact is the idempotency ({@code INV-IDEM-01} through state), the
      * same attester converges, and anybody else is refused.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping("/files/{id}/attestation")
     @RequiresPermission(PermissionName.SETTLEMENT_INGEST)
     public SettlementOperations.AttestationView attestSettlementFile(
@@ -94,6 +99,7 @@ public class SettlementOperationsController {
      * idempotency key: the machine is the record, a terminal file answers {@code 409}, and
      * each door refuses before it converges (the `P8-TSK-006` rule).
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/files/{id}/decline", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.SETTLEMENT_INGEST)
     public SettlementOperations.DeclineView declineSettlementFile(
@@ -150,6 +156,7 @@ public class SettlementOperationsController {
      * re-gate, NEW-SEC-1) — passes nothing on, and the readmission then awaits its own
      * attestation by a person distinct from every earlier submitter.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(
             path = "/files/{id}/readmission",
             consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -167,6 +174,7 @@ public class SettlementOperationsController {
      * Re-verifies a stored file's normalisation under its recorded format version (`P8-TSK-022`,
      * ADR-0066 §9): reasoned and audited per access, it reads the content and replaces nothing.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(
             path = "/files/{id}/verification",
             consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -182,6 +190,7 @@ public class SettlementOperationsController {
      * before a byte is served, the checksum verified — a failed verification serves nothing
      * and is on the record as a failed read.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(
             path = "/files/{id}/content-reads",
             consumes = MediaType.APPLICATION_JSON_VALUE)

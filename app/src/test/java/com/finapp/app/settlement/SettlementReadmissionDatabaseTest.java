@@ -908,7 +908,9 @@ class SettlementReadmissionDatabaseTest {
             }
             app.commit();
         }
-        return new Session(identity.toString(), field(authenticate(login).body(), "sessionToken"));
+        // Every operator act is MULTI_FACTOR (P17-TSK-102): the operator steps up.
+        return new Session(identity.toString(), com.finapp.app.session.OperatorStepUp.elevated(
+                field(authenticate(login).body(), "sessionToken"), this::post));
     }
 
     private String registered() throws Exception {

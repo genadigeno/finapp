@@ -247,6 +247,13 @@ final class LendingStormWorld {
             }
         }
 
+        /** A post to this instance as the raw response - unjudged and unrouted: an operator's step-up before the storm. */
+        HttpResponse<String> unjudged(String path, String body, String bearer, String key) throws Exception {
+            try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
+                return client.send(postRequest(port, path, body, bearer, key), HttpResponse.BodyHandlers.ofString());
+            }
+        }
+
         private Answer send(HttpRequest request, String path) throws Exception {
             HttpResponse<String> response;
             try (HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
@@ -364,15 +371,19 @@ final class LendingStormWorld {
         this.door = door;
     }
 
-    /** A signed-in operator session holding {@code role} - and only it. */
+    /**
+     * A signed-in operator session holding {@code role} - and only it - stepped up to {@code MULTI_FACTOR}, which every
+     * operator act declares (`P17-TSK-102`).
+     */
     String sessionWith(RoleName role) throws Exception {
         String login = "ls." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(door.post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Grace"
                 + " Hopper\",\"password\":\"" + PASSWORD + "\"}", null, key()).status()).isEqualTo(201);
         UUID identity = UUID.fromString(scalar("SELECT id::text FROM identity.identity WHERE login_identifier = ?", login));
         assign(identity, role);
-        String token = door.post("/v1/authentications", "{\"loginIdentifier\":\"" + login + "\",\"password\":\""
-                + PASSWORD + "\"}", null, key()).field("sessionToken");
+        String token = com.finapp.app.session.OperatorStepUp.elevated(door.post("/v1/authentications",
+                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, key())
+                .field("sessionToken"), door::unjudged);
         identities.put(token, identity.toString());
         return token;
     }

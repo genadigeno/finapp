@@ -206,9 +206,14 @@ class AccountingPeriodDeskTest {
         assertThat(closedThrough).isEmpty();
     }
 
+    /**
+     * <em>(Read "the approval moves the cutoff and supersedes FINAL runs, so MULTI_FACTOR; nothing else here does", and
+     * {@code Optional.empty()} at every other door, until `P17-TSK-102`, 2026-11-17.)</em>
+     */
     @Test
     @DisplayName("the routes: list ACCOUNTING_READ, lock, unlock proposal and withdrawal ACCOUNTING_CLOSE_PROPOSE, the"
-            + " approval and the rejection ACCOUNTING_CLOSE_APPROVE; every POST keyed")
+            + " approval and the rejection ACCOUNTING_CLOSE_APPROVE; every POST keyed and, since the owner's D-6"
+            + " (P17-TSK-102), MULTI_FACTOR; the list not")
     void theRoutesAreThePartition() {
         Map<String, PermissionName> expected = Map.of(
                 "listAccountingPeriods", PermissionName.ACCOUNTING_READ,
@@ -221,9 +226,10 @@ class AccountingPeriodDeskTest {
         for (Method method : AccountingPeriodController.class.getDeclaredMethods()) {
             if (method.isAnnotationPresent(RequiresPermission.class)) {
                 doors++;
-                // P14-TSK-024, the owner's acceptance: the approval moves the cutoff and supersedes FINAL runs, so MULTI_FACTOR; nothing else here does.
+                // P14-TSK-024, the owner's acceptance: the approval moves the cutoff and supersedes FINAL runs, so MULTI_FACTOR; since
+                // the owner's D-6 (P17-TSK-102) every act here is MULTI_FACTOR too, and only the list is not.
                 assertThat(Optional.ofNullable(method.getAnnotation(RequiresAssurance.class)).map(RequiresAssurance::value)).as(method.getName())
-                        .isEqualTo(method.getName().equals("approveAccountingPeriodUnlock") ? Optional.of(AssuranceLevel.MULTI_FACTOR) : Optional.empty());
+                        .isEqualTo(method.getName().startsWith("list") ? Optional.empty() : Optional.of(AssuranceLevel.MULTI_FACTOR));
                 assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName())
                         .isEqualTo(expected.get(method.getName()));
                 assertThat(method.isAnnotationPresent(RequiresIdempotencyKey.class)).as(method.getName())

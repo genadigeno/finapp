@@ -194,7 +194,10 @@ class ScorecardAdministrationEndpointDatabaseTest {
         }
     }
 
-    /** A signed-in session holding {@code role}. */
+    /**
+     * A signed-in session holding {@code role}, stepped up to {@code MULTI_FACTOR}: every operator act declares it
+     * (`P17-TSK-102`).
+     */
     private String sessionWith(RoleName role) throws Exception {
         String login = "sc." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(post("/v1/registrations",
@@ -220,14 +223,14 @@ class ScorecardAdministrationEndpointDatabaseTest {
         }
         HttpResponse<String> session = post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, someKey());
-        return field(session.body(), "sessionToken");
+        return com.finapp.app.session.OperatorStepUp.elevated(field(session.body(), "sessionToken"), this::post);
     }
 
     private HttpResponse<String> post(String path, String body, String bearer, String key) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:" + port + path))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body));
+                .POST(body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         if (bearer != null) {
             request.header("Authorization", "Bearer " + bearer);
         }

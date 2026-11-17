@@ -1,7 +1,9 @@
 package com.finapp.app.lending;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -39,6 +41,7 @@ public class LoanTermsController {
     @NonNull private final LoanTermsDesk desk;
 
     /** Proposes a whole new terms version for a product - complete, judged, and frozen from this moment. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LENDING_ADMINISTER)
     @RequiresIdempotencyKey
@@ -50,6 +53,7 @@ public class LoanTermsController {
     }
 
     /** Activates a pending version - a different person's act; retires the product's predecessor. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{versionId}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LENDING_ADMINISTER)
     @RequiresIdempotencyKey
@@ -61,6 +65,7 @@ public class LoanTermsController {
     }
 
     /** Rejects a pending version - anyone, the proposer's withdrawal included; a reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{versionId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LENDING_ADMINISTER)
     @RequiresIdempotencyKey

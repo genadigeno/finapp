@@ -2217,7 +2217,10 @@ class PayByBankDatabaseTest {
                     "test fixture");
             app.commit();
         }
-        return tokenFrom(authenticate(login).body());
+        // MULTI_FACTOR: the operator's refund steps up since `P17-TSK-102`.
+        return com.finapp.app.session.OperatorStepUp.elevated(
+                tokenFrom(authenticate(login).body()),
+                (path, body, bearer, key) -> post(path, body, bearer, key != null));
     }
 
     @Autowired private com.finapp.identity.Authorization authorizationBean;

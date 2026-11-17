@@ -52,6 +52,7 @@ public class ProjectionRebuildController {
      * ledger.ProjectionRebuildStanding}) or when its history or its row's scale is the migrator's ({@code 409
      * ledger.ProjectionNotRebuildable}). Nothing is written to the projection.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LEDGER_ADJUST)
     @RequiresIdempotencyKey
@@ -86,6 +87,7 @@ public class ProjectionRebuildController {
     }
 
     /** Rejects - or, for its proposer, withdraws - a standing rebuild; a repeat converges. An approved one is a {@code 409}. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/rejection")
     @RequiresPermission(PermissionName.LEDGER_ADJUST)
     @RequiresIdempotencyKey

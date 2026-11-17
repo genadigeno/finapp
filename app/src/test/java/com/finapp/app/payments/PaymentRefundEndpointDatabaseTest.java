@@ -368,7 +368,12 @@ class PaymentRefundEndpointDatabaseTest {
                     "test fixture");
             app.commit();
         }
-        return new Operator(tokenFrom(authenticate(login).body()), identity);
+        // MULTI_FACTOR: the operator's refund steps up since `P17-TSK-102`.
+        String token =
+                com.finapp.app.session.OperatorStepUp.elevated(
+                        tokenFrom(authenticate(login).body()),
+                        (path, body, bearer, key) -> post(path, body, bearer, key != null));
+        return new Operator(token, identity);
     }
 
     /** The full customer chain over HTTP to a SUCCEEDED payment of 12.00 EUR. */

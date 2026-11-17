@@ -46,6 +46,7 @@ public class RiskReportController {
     @NonNull private final RiskReportDesk desk;
 
     /** Drafts a regulatory report from a disposed confirmed-suspicious AML case - awaiting a second holder. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{caseId}/reports", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.AML_REPORT_APPROVE)
     @RequiresIdempotencyKey

@@ -562,6 +562,11 @@ class DecisionDatabaseTest {
         return reviewer;
     }
 
+    /**
+     * A {@code MULTI_FACTOR} session (`P17-TSK-102`): every operator act steps up, the reviewer's decision and resolution
+     * included, and the interceptor judges assurance before the permission - so a password session would be refused
+     * {@code identity.AssuranceRequired} before anything these cases prove, the role-less refusal's {@code 403} included.
+     */
     private String givenASessionFor(IdentityId identity) throws SQLException {
         byte[] bytes = new byte[32];
         RANDOMNESS.nextBytes(bytes);
@@ -572,7 +577,7 @@ class DecisionDatabaseTest {
                         CLOCK,
                         identity,
                         SessionToken.of(plaintext),
-                        AssuranceLevel.PASSWORD,
+                        AssuranceLevel.MULTI_FACTOR,
                         SessionPolicy.current());
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, session);

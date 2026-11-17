@@ -1,8 +1,10 @@
 package com.finapp.app.lending;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.app.session.RequiresSession;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
@@ -37,6 +39,7 @@ public class LoanInvestigationController {
     }
 
     /** The loan replayed by its pinned engines and terms - IDENTICAL or DIVERGED; audited with its reason. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/replay", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LENDING_INVESTIGATE)
     public LoanInvestigationDesk.LoanReplayView replayLoan(

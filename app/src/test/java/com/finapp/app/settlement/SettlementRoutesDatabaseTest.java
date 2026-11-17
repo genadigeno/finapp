@@ -574,7 +574,9 @@ class SettlementRoutesDatabaseTest {
                     app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
             app.commit();
         }
-        return tokenFrom(authenticate(login).body());
+        // Every operator act is MULTI_FACTOR (P17-TSK-102): the role holder steps up, so a refusal below is the
+        // permission's; the role-less session stays a customer's password one.
+        return com.finapp.app.session.OperatorStepUp.elevated(tokenFrom(authenticate(login).body()), this::post);
     }
 
     private String registered() throws Exception {

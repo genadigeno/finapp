@@ -50,20 +50,33 @@ class RoleGrantNeedsAFactorTest {
     private int standing = 1;
 
     @Test
-    @DisplayName("exactly the roles granting a payout destination's proposal, its approval or a payout need one - and, since"
-            + " P15-TSK-032, the role that grants roles and suspends identities, and the risk desk that approves its actions")
+    @DisplayName("every role that can act needs one (P17-TSK-102: every act asks for a second factor, so a factorless holder's"
+            + " password would enrol a thief's) - today all of them, since every role holds a permission that guards an act")
     void whichRolesNeedAFactor() {
         assertThat(Arrays.stream(RoleName.values()).filter(RoleName::requiresEnrolledFactor).collect(Collectors.toSet()))
-                .isEqualTo(Set.of(RoleName.MERCHANT_ADMINISTRATOR, RoleName.LEDGER_OPERATOR, RoleName.ADMINISTRATOR,
-                        RoleName.RISK_ANALYST));
+                .as("the rule is the permissions' own: a role needs a factor exactly when one of them guards an act")
+                .isEqualTo(Arrays.stream(RoleName.values())
+                        .filter(role -> role.permissions().stream().anyMatch(PermissionName::guardsAnAct))
+                        .collect(Collectors.toSet()))
+                .as("and today that is every role")
+                .isEqualTo(Set.of(RoleName.values()));
+        assertThat(Set.of(RoleName.MERCHANT_ADMINISTRATOR, RoleName.LEDGER_OPERATOR, RoleName.ADMINISTRATOR, RoleName.RISK_ANALYST))
+                .as("the four that needed one before P17-TSK-102 still do")
+                .allMatch(RoleName::requiresEnrolledFactor);
     }
 
     @Test
-    @DisplayName("no factor: refused, nothing granted, nothing written - an administrator's and a risk approver's role among them"
-            + " (P15-TSK-032)")
+    @DisplayName("a permission that only reads needs no factor, and one added later guards an act until somebody says otherwise")
+    void onlyTheReadsNeedNone() {
+        assertThat(Arrays.stream(PermissionName.values()).filter(permission -> !permission.guardsAnAct()))
+                .containsExactlyInAnyOrder(PermissionName.ACCOUNTING_READ, PermissionName.FX_INVESTIGATE);
+    }
+
+    @Test
+    @DisplayName("no factor: refused, nothing granted, nothing written - every role, an administrator's and a risk approver's"
+            + " among them (P15-TSK-032, P17-TSK-102)")
     void aGrantWithNoFactorIsRefused() {
-        for (RoleName role : List.of(RoleName.MERCHANT_ADMINISTRATOR, RoleName.LEDGER_OPERATOR, RoleName.ADMINISTRATOR,
-                RoleName.RISK_ANALYST)) {
+        for (RoleName role : RoleName.values()) {
             assertThat(assign(role)).as(role.name()).isEqualTo(IdentityAdministration.RoleGrant.FACTOR_REQUIRED);
         }
         assertThat(grants).hasValue(0);
@@ -81,10 +94,12 @@ class RoleGrantNeedsAFactorTest {
     }
 
     @Test
-    @DisplayName("a role that cannot redirect a merchant's money is granted with no factor, and reads none")
-    void anUnrelatedRoleNeedsNoFactor() {
-        assertThat(assign(RoleName.KYC_REVIEWER)).isEqualTo(IdentityAdministration.RoleGrant.GRANTED);
-        assertThat(factorReads).hasValue(0);
+    @DisplayName("a role that cannot redirect a merchant's money needs one too since P17-TSK-102 - the KYC reviewer, granted with"
+            + " no factor until then - and the factor is read for it")
+    void aRoleThatOnlyActsOnCasesNeedsOneToo() {
+        assertThat(assign(RoleName.KYC_REVIEWER)).isEqualTo(IdentityAdministration.RoleGrant.FACTOR_REQUIRED);
+        assertThat(factorReads).hasValue(1);
+        assertThat(grants).hasValue(0);
     }
 
     @Test
@@ -177,9 +192,9 @@ class RoleGrantNeedsAFactorTest {
                         return Set.of();
                     }
                     if (method.getName().equals("holdingsWithoutFactor")) {
-                        // P15-TSK-032: a factorless administrator, and a factorless risk approver, are named by the check too.
-                        assertThat((Set<RoleName>) args[1]).containsExactlyInAnyOrder(RoleName.MERCHANT_ADMINISTRATOR, RoleName.LEDGER_OPERATOR,
-                                RoleName.ADMINISTRATOR, RoleName.RISK_ANALYST);
+                        // P15-TSK-032: a factorless administrator, and a factorless risk approver, are named by the check too;
+                        // since P17-TSK-102 every role that can act, which today is every role.
+                        assertThat((Set<RoleName>) args[1]).containsExactlyInAnyOrder(RoleName.values());
                         return java.util.Collections.nCopies(standing,
                                 new RoleAssignmentStore.FactorlessHolding(SUBJECT, RoleName.LEDGER_OPERATOR, Instant.now(CLOCK)));
                     }

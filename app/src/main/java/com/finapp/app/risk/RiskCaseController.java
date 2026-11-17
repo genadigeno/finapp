@@ -88,6 +88,7 @@ public class RiskCaseController {
     }
 
     /** Opens a case by hand - or answers the subject's open case of the kind; never on the analyst's own party. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_INVESTIGATE)
     @RequiresIdempotencyKey
@@ -99,6 +100,7 @@ public class RiskCaseController {
     }
 
     /** An investigator's act on the case: take, note, attach evidence by reference, escalate. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{caseId}/actions", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_INVESTIGATE)
     @RequiresIdempotencyKey
@@ -110,6 +112,7 @@ public class RiskCaseController {
     }
 
     /** Proposes the case's disposition - a one-person close decided at once, a two persons' one standing. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{caseId}/dispositions", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_INVESTIGATE)
     @RequiresIdempotencyKey
@@ -139,6 +142,7 @@ public class RiskCaseController {
     }
 
     /** Rejects a standing disposition - anyone, the proposer's withdrawal included; the case stays open. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{caseId}/dispositions/{dispositionId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_CASE_APPROVE)
     @RequiresIdempotencyKey

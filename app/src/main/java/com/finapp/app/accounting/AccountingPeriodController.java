@@ -57,6 +57,7 @@ public class AccountingPeriodController {
      * Locks an OPEN period after its grace, the previous period closed: from the commit no entry dated in it commits.
      * A second lock answers LOCKED.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{periodId}/lock", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
     @RequiresIdempotencyKey
@@ -68,6 +69,7 @@ public class AccountingPeriodController {
     }
 
     /** Proposes unlocking a LOCKED period - nothing moves until a different person approves; a reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{periodId}/unlock-proposal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
     @RequiresIdempotencyKey
@@ -98,6 +100,7 @@ public class AccountingPeriodController {
      * proposed; a reason is required. The proposer is refused 403 accounting.SelfApprovalRefused and withdraws instead. Another unlock pending is 409 accounting.RequestStale; with none pending, 409
      * accounting.PeriodStale says whether the one named was approved, rejected or withdrawn.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{periodId}/unlock-rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
     @RequiresIdempotencyKey
@@ -113,6 +116,7 @@ public class AccountingPeriodController {
      * be proposed; a reason is required. Anyone else is refused 403 accounting.NotTheProposer, recorded. Another unlock pending is 409 accounting.RequestStale; with none pending, 409
      * accounting.PeriodStale says whether the one named was approved, rejected or withdrawn.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{periodId}/unlock-withdrawal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
     @RequiresIdempotencyKey

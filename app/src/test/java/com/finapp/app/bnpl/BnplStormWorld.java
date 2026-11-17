@@ -244,6 +244,11 @@ final class BnplStormWorld {
             }
         }
 
+        /** A post to this instance as the raw response - unjudged and unrouted: an operator's step-up before the storm. */
+        HttpResponse<String> unjudged(String path, String body, String bearer, String key) throws Exception {
+            return CLIENT.send(postRequest(port, path, body, bearer, key), HttpResponse.BodyHandlers.ofString());
+        }
+
         private Answer send(HttpRequest request, String path) throws Exception {
             HttpResponse<String> response = CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
             String body = response.body() == null ? "" : response.body();
@@ -364,15 +369,18 @@ final class BnplStormWorld {
         this.door = door;
     }
 
-    /** A signed-in operator session holding {@code role} - and only it. */
+    /**
+     * A signed-in operator session holding {@code role} - and only it - stepped up to {@code MULTI_FACTOR}, which every
+     * operator act declares (`P17-TSK-102`).
+     */
     String sessionWith(RoleName role) throws Exception {
         String login = "bs." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(door.post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Grace"
                 + " Hopper\",\"password\":\"" + PASSWORD + "\"}", null, key()).status()).isEqualTo(201);
         UUID identity = UUID.fromString(scalar("SELECT id::text FROM identity.identity WHERE login_identifier = ?", login));
         assign(identity, role);
-        return door.post("/v1/authentications", "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD
-                + "\"}", null, key()).field("sessionToken");
+        return com.finapp.app.session.OperatorStepUp.elevated(door.post("/v1/authentications", "{\"loginIdentifier\":\""
+                + login + "\",\"password\":\"" + PASSWORD + "\"}", null, key()).field("sessionToken"), door::unjudged);
     }
 
     /** {@code role} assigned to {@code identity} by the system - the fixture's grant. */
@@ -386,12 +394,16 @@ final class BnplStormWorld {
         }
     }
 
-    /** A fresh session of a customer's login, after {@code role} is assigned to it - the self-dealing actor. */
+    /**
+     * The customer's own {@code MULTI_FACTOR} session, after {@code role} is assigned to its identity - the self-dealing
+     * actor. Not a fresh password sign-in (`P17-TSK-102`): every operator act declares {@code MULTI_FACTOR}, the customer's
+     * factor is already enrolled - a second cannot be - and the fixture's grant ends no session, while the standing is read
+     * with each request, so the session the customer stepped up on carries the role.
+     */
     String customerWithRole(CreditFixtures.Customer customer, RoleName role) throws Exception {
         assign(UUID.fromString(scalar("SELECT id::text FROM identity.identity WHERE login_identifier = ?",
                 customer.login())), role);
-        return door.post("/v1/authentications", "{\"loginIdentifier\":\"" + customer.login() + "\",\"password\":\""
-                + PASSWORD + "\"}", null, key()).field("sessionToken");
+        return customer.token();
     }
 
     /**

@@ -87,20 +87,29 @@ class BnplWriteOffApiTest {
         assertThat(client.post(writeOffs(account), REASON, sessionWith(RoleName.BNPL_OFFICER), key()).statusCode()).isEqualTo(403);
     }
 
+    /**
+     * <em>(Read "while their read, their list and their rejection reach it", the rejection {@code 404} on the password session,
+     * until `P17-TSK-102`, 2026-11-18.)</em>
+     */
     @Test
-    @DisplayName("the approval is MULTI_FACTOR: the approver on a password session is 403 identity.AssuranceRequired before the domain, while"
-            + " their read, their list and their rejection reach it")
+    @DisplayName("the approval is MULTI_FACTOR: the approver on a password session is 403 identity.AssuranceRequired before the domain, as is"
+            + " their rejection since the owner's D-6 (P17-TSK-102), while their read and their list reach it; stepped up, the rejection"
+            + " reaches it")
     void theApprovalIsMultiFactor() throws Exception {
         BnplApplicationClient client = new BnplApplicationClient(port);
         String account = IDS.next().toString();
         String writeOff = IDS.next().toString();
-        String officer = sessionWith(RoleName.BNPL_OFFICER);
+        String officer = passwordSessionWith(RoleName.BNPL_OFFICER);
         HttpResponse<String> approval = client.post(writeOffs(account) + "/" + writeOff + "/approval", APPROVAL, officer, key());
         assertThat(approval.statusCode()).as(approval.body()).isEqualTo(403);
         assertThat(approval.body()).contains("identity.AssuranceRequired");
         assertThat(client.get(writeOffs(account) + "/" + writeOff, officer).statusCode()).isEqualTo(404);
-        assertThat(client.post(writeOffs(account) + "/" + writeOff + "/rejection", REASON, officer, key()).statusCode()).isEqualTo(404);
+        HttpResponse<String> rejection = client.post(writeOffs(account) + "/" + writeOff + "/rejection", REASON, officer, key());
+        assertThat(rejection.statusCode()).as(rejection.body()).isEqualTo(403);
+        assertThat(rejection.body()).contains("identity.AssuranceRequired");
         assertThat(client.get(PENDING, officer).statusCode()).isEqualTo(200);
+        String stepped = com.finapp.app.session.OperatorStepUp.elevated(officer, client::post);
+        assertThat(client.post(writeOffs(account) + "/" + writeOff + "/rejection", REASON, stepped, key()).statusCode()).isEqualTo(404);
     }
 
     @Test
@@ -130,8 +139,16 @@ class BnplWriteOffApiTest {
         return "/v1/operator/bnpl-agreements/" + account + "/write-offs";
     }
 
-    /** A signed-in password session holding {@code role}, or no role at all when it is {@code null}. */
+    /**
+     * A signed-in session holding {@code role}, or no role at all when it is {@code null}, stepped up to {@code MULTI_FACTOR}: every
+     * operator act declares it (`P17-TSK-102`), so a refusal here is the permission's, never the assurance's.
+     */
     private String sessionWith(RoleName role) throws Exception {
+        return com.finapp.app.session.OperatorStepUp.elevated(passwordSessionWith(role), new BnplApplicationClient(port)::post);
+    }
+
+    /** A signed-in password session holding {@code role}, or no role at all when it is {@code null}. */
+    private String passwordSessionWith(RoleName role) throws Exception {
         BnplApplicationClient client = new BnplApplicationClient(port);
         String login = "wo." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(client.post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Ada"

@@ -1433,7 +1433,10 @@ class DisputeBatteryDatabaseTest {
         }
     }
 
-    /** A session holding {@code role}, through the real registration and authentication. */
+    /**
+     * A MULTI_FACTOR session holding {@code role}, through the real registration, authentication and step-up: every
+     * operator act steps up since `P17-TSK-102`.
+     */
     private String session(RoleName role) throws Exception {
         String login = "battery." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         HttpResponse<String> registration =
@@ -1459,7 +1462,8 @@ class DisputeBatteryDatabaseTest {
                 post("/v1/authentications",
                         "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}",
                         null, someKey());
-        return field(authenticated.body(), "sessionToken");
+        return com.finapp.app.session.OperatorStepUp.elevated(
+                field(authenticated.body(), "sessionToken"), this::post);
     }
 
     private <R> R asActor(Function<Connection, R> work) throws Exception {

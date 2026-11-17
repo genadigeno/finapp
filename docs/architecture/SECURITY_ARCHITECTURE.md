@@ -72,6 +72,8 @@ Held by `ManagementPortTest` and `ManagementAddressGuardTest`.
 
 **Operator answers are never stored** *(`P17-TSK-101`, 2026-11-17; finapp-admin-panel ADR-C131 decision 5; `THREAT_MODEL.md` T55)*. Every answer the application gives on the operator surface, refusals and the container's error dispatch included, carries `Cache-Control: no-store`, set by one filter from the edge's marker before anything else can answer; the public surface is left as it was. Held by `OperatorResponsesAreNotStoredTest`, which also refuses a `Cache-Control` set anywhere else in the application and any response reset that would drop it.
 
+**Every operator act asks for the second factor, and every role that can act needs one** *(`P17-TSK-102`, 2026-11-17; the owner's D-6; finapp-admin-panel ADR-C131 decision 3; `THREAT_MODEL.md` T50, T53; `PRIVILEGED_ACCESS_REVIEW.md` §6, the fourth ruling)*. Every `POST`, `PUT`, `PATCH` or `DELETE` handler that declares a permission declares `MULTI_FACTOR`, so a stolen password-level session acts on nothing; and a role holding any permission that guards an act is refused to an identity with no enrolled factor, because a password may enrol a first factor and step up. `EveryOperatorActRequiresAFactorTest` derives the acts from the dispatcher and knocks on each through the real interceptor; reads keep the password session.
+
 The actuator is an allow-list, not a default (`P0-TSK-027`, ADR-0016). Only `health`, `info` and `prometheus` are served
 *(read "Only `health` and `info`" until `P15-TSK-008`: the scrape endpoint joined the allow-list in Phase 0 with its own
 debt row)*. The rest exist as beans whether or not they are reachable, and each is one property
