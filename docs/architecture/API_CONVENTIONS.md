@@ -327,6 +327,8 @@ headers (`console-headers`: the console's Content-Security-Policy with Trusted T
 `Cache-Control`, which the console's server sets per path). Every API route keeps `edge-headers` and `default-src 'none'`; the public
 host never serves `/console`; and no API route may be served under `/console`, which the generator refuses.
 
+**Operator answers are never stored** *(`P17-TSK-101`, 2026-11-17; gap G-05; finapp-admin-panel ADR-C131 decision 5)*. Every answer the application gives on the operator surface - a handler's, a refusal, a problem document, the container's own error dispatch - carries `Cache-Control: no-store`, so no browser, shared workstation or intermediary keeps what a session read after it ends. One filter sets it from the edge's marker (`OperatorResponsesAreNotStored`, next after the correlation filter, before the chain runs); where nothing is deployed the one port is the operator surface too and carries it. The public surface's answers carry no `Cache-Control`: its caching is not decided here. A route's author sets no `Cache-Control` of their own and never resets a response - `OperatorResponsesAreNotStoredTest` refuses both - and `/console/**` keeps the console server's per-path caching.
+
 **For a route's author.** A route is listed by method and whole path, so a new method on an existing path is a new line. A
 path variable's value is letters, digits, `_` and `-`, with a dot only between other characters: an identifier, a code, an enum
 name, a settlement source's dotted code. A value carrying `;`, `%` or `/`, or a segment of `.` or `..`, never reaches the

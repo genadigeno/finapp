@@ -328,7 +328,7 @@ planned tasks; what the console itself enforces is finapp-admin-panel's and is n
 | Spoofing | T50, T53 | A session taken from the browser and used elsewhere, or a compromised workstation acting through the live one |
 | Tampering | T54 | The console's own code altered before it reaches the browser |
 | Repudiation | N/A | The console records nothing and decides nothing: every act is decided and recorded past the edge under the operator's own actor, and an operator's repudiation is modelled at B3 (T38) |
-| Information disclosure | T48 | |
+| Information disclosure | T48, T55 | |
 | Denial of service | T52 | |
 | Elevation of privilege | T49, T51, T54 | |
 
@@ -395,11 +395,12 @@ numbers `PHASE_15_PLAN.md` §9.2 gave them.
 | T52 | A request storm from a faulty console client exhausting the operator surface | B11:D | MEDIUM | MEDIUM | MEDIUM | CONTROL |
 | T53 | A compromised operator workstation acting through a live, stepped-up session | B11:S | MEDIUM | SEVERE | CRITICAL | CONTROL |
 | T54 | A malicious or vulnerable dependency in the console's build reaching the operator's browser | B11:T, B11:E | MEDIUM | SEVERE | CRITICAL | CONTROL |
+| T55 | Operator data kept after the session that read it has ended: an operator answer's identifiers, amounts, statuses and restricted fields stored by the browser, a shared workstation's disk cache or an intermediary, because nothing forbade it | B11:I | MEDIUM | HIGH | HIGH | CONTROL |
 
-**Summary.** 54 threats: 30 CRITICAL, 14 HIGH, 9 MEDIUM, 1 LOW. 52 are `CONTROL`. Two, T42 and T47 (both MEDIUM),
+**Summary.** 55 threats: 30 CRITICAL, 15 HIGH, 9 MEDIUM, 1 LOW. 53 are `CONTROL`. Two, T42 and T47 (both MEDIUM),
 are accepted by the owner (2026-11-08; T42 until 2027-06-30; §6 items 1 and 6). None is `PROPOSED ACCEPTANCE`.
 *(Read "are `PROPOSED ACCEPTANCE` awaiting the owner (§6). No threat is `ACCEPTED`." until the owner's decisions of
-2026-11-08.)* *(Read "47 threats: 25 CRITICAL, 13 HIGH, 8 MEDIUM, 1 LOW. 45 are `CONTROL`." until P17-INIT, 2026-11-17, which added T48-T54 at B11. A browser-cache threat, rated HIGH, waits for its control: §6 item 73 (b).)*
+2026-11-08.)* *(Read "47 threats: 25 CRITICAL, 13 HIGH, 8 MEDIUM, 1 LOW. 45 are `CONTROL`." until P17-INIT, 2026-11-17, which added T48-T54 at B11. A browser-cache threat, rated HIGH, waits for its control: §6 item 73 (b).)* *(Read "54 threats: 30 CRITICAL, 14 HIGH, 9 MEDIUM, 1 LOW. 52 are `CONTROL`." until P17-TSK-101's gate, 2026-11-17, which registered T55 with its evidence.)*
 
 *(The fix round of 2026-11-08 re-read every rating against §1.3's words. T10, T19, T22, T32, T33, T34 and T36 rose to
 CRITICAL; T35, T38, T43 and T44 to HIGH. Each had understated a likelihood the definitions call one foothold, or an
@@ -981,6 +982,7 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T53 | The workstation itself: nothing the console or the platform does detects or contains a compromised machine acting within a live, stepped-up session's bounds and its holder's permissions | GAP | `owner item 73`; owner: the owner, since 2026-11-17 |
 | T54 | The console's image is admitted only signed and attested, provenance and SBOM, under the platform's two policies in every name it goes by, and a look-alike name meets no policy and is refused | EXISTS | `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#theConsolesImageIsHeldToBothPlatformPolicies` |
 | T54 | The console's image built from a named commit of finapp-admin-panel, signed and attested with the run's key and its own CycloneDX SBOM, loaded on `kind` and admitted there | PLANNED | `P17-TSK-104` |
+| T55 | Every answer of the operator surface carries `Cache-Control: no-store` - a handler's, the session interceptor's refusals, and each answer nobody wrote a handler for (an unknown route, an unsupported method, a body that never parsed, a media type nobody reads, an unexpected failure, a body over the size bound) - set before the chain runs and again on the container's error dispatch; the public surface is left as it was; nothing else in the application sets the header or resets a response, so nothing undoes it. The console's own files are served by its own server, which sets their caching per path | EXISTS | `app/src/test/java/com/finapp/app/surface/OperatorResponsesAreNotStoredTest.java#everyOperatorAnswerIsNoStore`; `app/src/test/java/com/finapp/app/surface/OperatorResponsesAreNotStoredTest.java#nothingElseSetsItOrResetsAResponse` |
 
 **Where the evidence is a database test.** Many `EXISTS` rows cite tests in the `database` tier. Phase 15's standing
 deviation (C14) deferred those tiers to one pass at the phase exit, which the owner postponed past the project's phases on
@@ -3040,9 +3042,11 @@ options. **Item 67 was added on 2026-11-13 by the capacity calibration and await
     **(b) Operator data kept in the browser's cache.** Operator answers carry identifiers, amounts, statuses and restricted fields,
     and none says `Cache-Control: no-store`, so a browser may keep them on disk after the session ends (impact HIGH, likelihood
     MEDIUM: HIGH). A HIGH threat registered after Phase 15's exit needs built evidence or the owner's acceptance (§1.5), and nothing
-    is built yet, so it is held out of §3: `P17-TSK-101`, which builds the control, registers it at the next free number with its
+    is built yet, so it is held out of §3: P17-TSK-101, which builds the control, registers it at the next free number with its
     evidence. The options: **(i)** as written, registered by that task; **(ii)** the owner accepts it until that task's gate, and it
     is registered now. *Recommendation*: **(i)**: the task is the phase's first.
+    *(Settled 2026-11-17 by P17-TSK-101's gate, as (i) recommended: registered as T55, its control `EXISTS` with its evidence. Nothing awaits
+    the owner on (b); (a) stands.)*
 
     Until decided: §4's T53 `GAP` row naming this item. *Awaiting the owner* (2026-11-17).
 
