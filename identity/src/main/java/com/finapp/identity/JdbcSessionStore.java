@@ -239,11 +239,14 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
         // the session had lived. revoked_at is still this instance's business time, beside the
         // audit record that carries the same reading.
         //
-        // ACTIVE, not LIVE, deliberately: this ends a session its owner named, and whether an
-        // already-expired one should count is recorded against X-TSK-008 rather than changed here.
+        // LIVE, not ACTIVE (X-TSK-008): an expired session has already ended, so ending it again
+        // would stamp a revoked_at after its end and count a revocation of nothing - and the owner's
+        // listing shows live sessions alone, so a session expired since it was listed is answered as
+        // one that is gone, the same "nothing was ended" as a revoked or absent one. Judged on the
+        // database's clock, the same predicate as the lookup.
         String sql =
                 "UPDATE " + TABLE + " SET status = 'REVOKED', revoked_at = ?"
-                        + " WHERE id = ? AND identity_id = ? AND status = 'ACTIVE'"
+                        + " WHERE id = ? AND identity_id = ? AND " + LIVE
                         + " RETURNING extract(epoch FROM now() - live_from)::bigint";
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
             update.setTimestamp(1, Timestamp.from(at));
@@ -306,9 +309,13 @@ public final class JdbcSessionStore implements SessionStore<Connection> {
 
         // Scoped by identity_id, and that scope is load-bearing rather than obvious: a predicate of
         // `id <> ?` alone would revoke every session on the platform except one.
+        //
+        // LIVE, not ACTIVE (X-TSK-008): a session past either bound has already ended. Revoking it
+        // too stamped a revoked_at after its end and counted it in the audit record's
+        // sessionsRevoked, which an investigator reads as other sessions in use at the time.
         String sql =
                 "UPDATE " + TABLE + " SET status = 'REVOKED', revoked_at = ?"
-                        + " WHERE identity_id = ? AND status = 'ACTIVE'"
+                        + " WHERE identity_id = ? AND " + LIVE
                         + (spare == null ? "" : " AND id <> ?");
         try (PreparedStatement update = unitOfWork.prepareStatement(sql)) {
             update.setTimestamp(1, Timestamp.from(at));

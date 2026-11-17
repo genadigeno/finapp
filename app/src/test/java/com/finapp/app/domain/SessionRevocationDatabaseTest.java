@@ -258,6 +258,83 @@ class SessionRevocationDatabaseTest {
     }
 
     @Test
+    @DisplayName("X-TSK-008: revoke-all ends live sessions only - an expired one stays as it ended, uncounted, so the"
+            + " audit's count is of sessions that were in use")
+    void revokeAllEndsOnlyLiveSessions() throws SQLException {
+        IdentityId identity = givenAnIdentity();
+
+        try (Connection app = DatabaseRoles.application()) {
+            Session live = sessions.insert(app, issue(identity, SessionToken.issue(RANDOMNESS)));
+            Session expired = sessions.insert(app, issue(identity, SessionToken.issue(RANDOMNESS)));
+            expire(app, expired.id());
+
+            assertThat(sessions.revokeAllFor(app, identity, Instant.now(CLOCK)))
+                    .as("one session was in use; the expired one had already ended")
+                    .isEqualTo(1);
+            assertThat(statusOf(app, live.id())).isEqualTo("REVOKED");
+            assertThat(statusOf(app, expired.id()))
+                    .as("no revoked_at stamped after its end")
+                    .isEqualTo("ACTIVE, never revoked");
+        }
+    }
+
+    @Test
+    @DisplayName("X-TSK-008: revoke-all-except ends the other live sessions only, never an expired one")
+    void revokeAllExceptEndsOnlyLiveSessions() throws SQLException {
+        IdentityId identity = givenAnIdentity();
+        Session.Draft keeper = issue(identity, SessionToken.issue(RANDOMNESS));
+
+        try (Connection app = DatabaseRoles.application()) {
+            sessions.insert(app, keeper);
+            Session other = sessions.insert(app, issue(identity, SessionToken.issue(RANDOMNESS)));
+            Session expired = sessions.insert(app, issue(identity, SessionToken.issue(RANDOMNESS)));
+            expire(app, expired.id());
+
+            assertThat(sessions.revokeAllForExcept(app, identity, keeper.id(), Instant.now(CLOCK))).isEqualTo(1);
+            assertThat(statusOf(app, keeper.id())).isEqualTo("ACTIVE, never revoked");
+            assertThat(statusOf(app, other.id())).isEqualTo("REVOKED");
+            assertThat(statusOf(app, expired.id())).isEqualTo("ACTIVE, never revoked");
+        }
+    }
+
+    @Test
+    @DisplayName("X-TSK-008: an owner revoking a session that expired since it was listed ends nothing - the same answer"
+            + " as a revoked or absent one, and no revoked_at after its end")
+    void revokingAnOwnedExpiredSessionEndsNothing() throws SQLException {
+        IdentityId identity = givenAnIdentity();
+
+        try (Connection app = DatabaseRoles.application()) {
+            Session expired = sessions.insert(app, issue(identity, SessionToken.issue(RANDOMNESS)));
+            expire(app, expired.id());
+
+            assertThat(sessions.revokeOwned(app, expired.id(), identity, Instant.now(CLOCK))).isEmpty();
+            assertThat(statusOf(app, expired.id())).isEqualTo("ACTIVE, never revoked");
+        }
+    }
+
+    /** Both bounds an hour in the database's past: the session ended by expiry, as no sweep ever marks. */
+    private static void expire(Connection app, SessionId session) throws SQLException {
+        execute(
+                app,
+                "UPDATE identity.session SET live_from = now() - interval '13 hours',"
+                        + " idle_expires_at = now() - interval '1 hour',"
+                        + " absolute_expires_at = now() - interval '1 hour' WHERE id = ?",
+                session.value());
+    }
+
+    private static String statusOf(Connection app, SessionId session) throws SQLException {
+        try (java.sql.PreparedStatement select = app.prepareStatement(
+                "SELECT status, revoked_at FROM identity.session WHERE id = ?")) {
+            select.setObject(1, session.value());
+            try (java.sql.ResultSet row = select.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                String status = row.getString(1);
+                return row.getTimestamp(2) == null ? status + ", never revoked" : status;
+            }
+        }
+    }
+
+    @Test
     @DisplayName("revocation is terminal, and revoking again is not an error")
     void revocationIsTerminalAndIdempotentInEffect() throws SQLException {
         // INV-LIFE-04. And re-revoking must report "nothing to do" rather than failing: a failure

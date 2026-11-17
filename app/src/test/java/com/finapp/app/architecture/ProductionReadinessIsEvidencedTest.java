@@ -48,8 +48,8 @@ import org.junit.jupiter.api.Test;
  *       What it cites as holding obeys rule 3's forms, a database-tier test admitted only beside PI-023, which owes it;
  *   <li>an {@code N/A} cell states its reason;
  *   <li>the evidence column cites no task, issue or item (a promise is not evidence), and the gap column no path;
- *   <li>every open remediation entry ({@code P14-REM-*}), every postponed issue, and {@code X-TSK-008} (the owner's routed
- *       note) is the owner of a gap, so none can be read as met; a remediation entry a "Named gaps" paragraph lists is open;
+ *   <li>every open remediation entry ({@code P14-REM-*}), every postponed issue, and {@code X-TSK-008} while open (the owner's
+ *       routed note) is the owner of a gap, so none can be read as met; a remediation entry a "Named gaps" paragraph lists is open;
  *   <li>no ruling, evidence or gap cell carries compliance wording or calls anything ready for production;
  *   <li>the review is not vacuous: every ruling occurs, above floors.
  * </ol>
@@ -106,7 +106,10 @@ class ProductionReadinessIsEvidencedTest {
     private static final Pattern OWNER_ITEMS = Pattern.compile("(?m)^(\\d+)\\. \\*\\*");
     private static final Pattern MODULE = Pattern.compile("(?m)^include\\(\"([a-z]+)\"\\)");
 
-    /** The routed note on the entry (the owner, 2026-11-08): this remainder is a named gap, horizon before production use. */
+    /**
+     * The routed note on the entry (the owner, 2026-11-08): this remainder is a named gap, horizon before production use -
+     * while the entry is open. Its gate (2026-11-17) closed it, and a closed entry owns no gap.
+     */
     private static final String ROUTED_REMAINDER = "X-TSK-008";
 
     /** Floors, well below the review's counts and well above what a broken table leaves. */
@@ -282,7 +285,10 @@ class ProductionReadinessIsEvidencedTest {
                 open.add(id);
             }
         });
-        open.add(ROUTED_REMAINDER);
+        // While it is open (X-TSK-008's gate, 2026-11-17, closed it): a routed remainder owns a gap only as long as it remains.
+        if (EvidenceCitations.LIVE_STATUSES.contains(statuses.get(ROUTED_REMAINDER))) {
+            open.add(ROUTED_REMAINDER);
+        }
         assertThat(open).as("the open entries and issues were read").contains("P14-REM-001", "PI-004", "PI-023", "PI-024");
         assertThat(open).as("open entries and postponed issues that own no gap in %s: none may be read as met", REVIEW)
                 .isSubsetOf(owners);

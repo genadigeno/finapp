@@ -79,7 +79,7 @@ class SessionTimeIsTheDatabasesTest {
 
     /** Liveness judged per statement, the methods that must use the one shared predicate. */
     private static final Set<String> JUDGES_LIVENESS =
-            Set.of("findLive", "findLiveFor", "countLive", "touch", "revoke");
+            Set.of("findLive", "findLiveFor", "countLive", "touch", "revoke", "revokeOwned", "revokeAll");
 
     @Test
     @DisplayName("every SessionStore method is classified, and only revocations take an instant")
@@ -151,7 +151,11 @@ class SessionTimeIsTheDatabasesTest {
                 .contains("status = 'ACTIVE'");
 
         for (String method : JUDGES_LIVENESS) {
-            assertThat(namesIdentifier(methodSource(source, method), "LIVE"))
+            // Read as code, comments and literals removed (X-TSK-008's probe): a comment saying
+            // "LIVE, not ACTIVE" above a statement that says status = 'ACTIVE' passed the word
+            // match, so the predicate is looked for where the statement can use it.
+            assertThat(namesIdentifier(
+                            IdempotencyScopesKeyThePersonTest.codeOnly(methodSource(source, method)), "LIVE"))
                     .as(method + " must judge liveness with the shared predicate, so the lookup,"
                             + " the listing, the gauge, the touch and rotation cannot disagree")
                     .isTrue();
