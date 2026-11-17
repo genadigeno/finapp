@@ -1,5 +1,6 @@
 package com.finapp.kyc;
 
+import com.finapp.platform.security.CipherFormat;
 import com.finapp.platform.security.KeyRing;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
@@ -35,6 +36,14 @@ import javax.crypto.spec.GCMParameterSpec;
  * <p>{@code FINAPP_DOC_KEY}, never the MFA key: one key per concern is what makes later rotation
  * per concern possible (ADR-0036). The key version is recorded on every row, so a rotation can
  * tell which key wrote which — {@code INV-HIST-04}'s rule applied to a key.
+ *
+ * <h2>Bound to its row (`X-TSK-010`)</h2>
+ *
+ * <p>Every call names the row's {@code AssociatedData}. While {@code finapp.ciphers.bind-associated-data} is on, a write
+ * authenticates it with the ciphertext ({@link CipherFormat#BOUND}), so a ciphertext copied into another row - another
+ * document, another case, another check's evidence - fails to decrypt there; while it is off, as in the release that
+ * introduced it, a write is {@link CipherFormat#UNBOUND}, which the previous release can still read during a roll. A read
+ * follows the format stored with the row, never a guess, and reads both.
  */
 public final class DocumentCipher {
 
@@ -54,6 +63,9 @@ public final class DocumentCipher {
     private final KeyRing ring;
     private final SecureRandom randomness;
 
+    /** Whether a write binds its associated data (`X-TSK-010`): the {@code finapp.ciphers.bind-associated-data} switch. */
+    private final boolean bindWrites;
+
     /**
      * @param key exactly {@value #KEY_BYTES} bytes. Refused otherwise rather than stretched,
      *     because silently accepting a short key would produce a cipher that looks like AES-256
@@ -71,8 +83,14 @@ public final class DocumentCipher {
      * (`P15-TSK-019`, ADR-0123 point 4).
      */
     public DocumentCipher(KeyRing ring, SecureRandom randomness) {
+        this(ring, randomness, false);
+    }
+
+    /** A cipher over a {@link KeyRing} whose writes bind their associated data when {@code bindWrites} (`X-TSK-010`). */
+    public DocumentCipher(KeyRing ring, SecureRandom randomness, boolean bindWrites) {
         this.ring = Objects.requireNonNull(ring, "ring must not be null");
         this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
+        this.bindWrites = bindWrites;
     }
 
     private static KeyRing ringOfOne(byte[] key, int version) {
@@ -97,16 +115,23 @@ public final class DocumentCipher {
      * <p><strong>Reusing a nonce under one key breaks GCM completely</strong> — it leaks the
      * authentication key, not merely a plaintext — so the nonce is generated per call and never
      * derived from anything.
+     *
+     * @param associatedData the row's, bound only while writes are bound (`X-TSK-010`)
      */
-    public Encrypted encrypt(DocumentBytes plaintext) {
+    public Encrypted encrypt(byte[] associatedData, DocumentBytes plaintext) {
+        Objects.requireNonNull(associatedData, "associatedData must not be null");
         Objects.requireNonNull(plaintext, "plaintext must not be null");
 
         byte[] nonce = new byte[NONCE_BYTES];
         randomness.nextBytes(nonce);
+        CipherFormat format = bindWrites ? CipherFormat.BOUND : CipherFormat.UNBOUND;
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.ENCRYPT_MODE, ring.activeKey(), new GCMParameterSpec(TAG_BITS, nonce));
-            return new Encrypted(cipher.doFinal(plaintext.value()), nonce, ring.activeVersion());
+            if (format == CipherFormat.BOUND) {
+                cipher.updateAAD(associatedData);
+            }
+            return new Encrypted(cipher.doFinal(plaintext.value()), nonce, ring.activeVersion(), format);
         } catch (GeneralSecurityException e) {
             // Never the cause: a provider exception can carry key-material context, and this
             // message reaches a log line (INV-AUD-02). The P1-TSK-008 DatabaseFailure precedent.
@@ -117,29 +142,40 @@ public final class DocumentCipher {
     /**
      * Decrypts document content.
      *
-     * @throws IllegalStateException if the ciphertext was tampered with, or was written under a
-     *     different key. <strong>Both are the same outcome deliberately</strong>: neither may be
-     *     distinguished by a caller, and neither ever yields content
+     * @param associatedData the row's, rebuilt from the row read; presented only when the ciphertext is {@link CipherFormat#BOUND}
+     * @throws IllegalStateException if the ciphertext was tampered with, was written under a
+     *     different key, or is another row's. <strong>All are the same outcome deliberately</strong>:
+     *     none may be distinguished by a caller, and none ever yields content
      */
-    public byte[] decrypt(Encrypted encrypted) {
+    public byte[] decrypt(byte[] associatedData, Encrypted encrypted) {
+        Objects.requireNonNull(associatedData, "associatedData must not be null");
         Objects.requireNonNull(encrypted, "encrypted must not be null");
         javax.crypto.SecretKey key = ring.keyFor(encrypted.keyVersion(), "Could not decrypt document content");
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(
                     Cipher.DECRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, encrypted.nonce()));
+            if (encrypted.format() == CipherFormat.BOUND) {
+                cipher.updateAAD(associatedData);
+            }
             return cipher.doFinal(encrypted.ciphertext());
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException("Could not decrypt document content");
         }
     }
 
-    /** A ciphertext, the nonce that produced it, and the key version that wrote it. */
-    public record Encrypted(byte[] ciphertext, byte[] nonce, int keyVersion) {
+    /** A ciphertext, the nonce that produced it, the key version that wrote it, and whether it is bound to its row. */
+    public record Encrypted(byte[] ciphertext, byte[] nonce, int keyVersion, CipherFormat format) {
+
+        /** A ciphertext written without associated data: every row before `X-TSK-010`. */
+        public Encrypted(byte[] ciphertext, byte[] nonce, int keyVersion) {
+            this(ciphertext, nonce, keyVersion, CipherFormat.UNBOUND);
+        }
 
         public Encrypted {
             Objects.requireNonNull(ciphertext, "ciphertext must not be null");
             Objects.requireNonNull(nonce, "nonce must not be null");
+            Objects.requireNonNull(format, "format must not be null");
             if (nonce.length != NONCE_BYTES) {
                 throw new IllegalArgumentException("nonce must be " + NONCE_BYTES + " bytes");
             }
@@ -158,12 +194,12 @@ public final class DocumentCipher {
         }
 
         /**
-         * The key version and nothing else. Printing the ciphertext would put the thing an
-         * offline attacker needs into a log archive ({@code SecretCipher.Encrypted}'s reasoning).
+         * The key version and the format, and nothing else. Printing the ciphertext would put the
+         * thing an offline attacker needs into a log archive ({@code SecretCipher.Encrypted}'s reasoning).
          */
         @Override
         public String toString() {
-            return "Encrypted[keyVersion=" + keyVersion + "]";
+            return "Encrypted[keyVersion=" + keyVersion + ", format=" + format + "]";
         }
     }
 }

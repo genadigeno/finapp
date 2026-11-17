@@ -16,6 +16,7 @@ import com.finapp.identity.TotpVerifier;
 import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.outbox.JdbcOutboxWriter;
+import com.finapp.platform.security.CipherFormat;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.Correlation;
@@ -291,8 +292,80 @@ class MfaEnrolmentDatabaseTest {
         // INV-IDN-08's actual claim: a database leak alone does not yield the secret. This is that
         // claim, with the database in hand and the key absent.
         org.assertj.core.api.Assertions.assertThatThrownBy(
-                        () -> wrong.decrypt(stored.encryptedSecret()))
+                        () -> wrong.decrypt(stored.associatedData(), stored.encryptedSecret()))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName(
+            "X-TSK-010: a secret written unbound stays usable once writes are bound, and a bound secret"
+                    + " copied into another enrolment's row fails there - read as unbound too")
+    void aBoundSecretIsUsableOnlyInItsOwnEnrolment() throws Exception {
+        SecretCipher bound =
+                new SecretCipher(
+                        com.finapp.platform.security.KeyRing.single("MFA encryption key", KEY, 1),
+                        RANDOMNESS,
+                        true);
+
+        // Written before the switch, as the previous release writes: the read follows the stored
+        // format, so a replica writing bound still confirms it.
+        IdentityId before = givenAnIdentity();
+        Sensitive<String> beforeSecret = beginAndCaptureSecret(before);
+        boolean[] confirmed = {false};
+        inAFlow(app -> confirmed[0] = service(bound).confirm(app, before, codeFor(beforeSecret)));
+        assertThat(confirmed[0]).as("an unbound secret confirms under a bound-writing cipher").isTrue();
+
+        // Written after: an attacker's own secret, copied over a victim's pending enrolment by
+        // somebody with write access to the table. Unbound, it would decrypt there and the
+        // attacker's codes would confirm the victim's second factor.
+        IdentityId attacker = givenAnIdentity();
+        IdentityId victim = givenAnIdentity();
+        Sensitive<String> attackerSecret = beginAndCaptureSecret(attacker, bound);
+        beginAndCaptureSecret(victim, bound);
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(cipherFormatOf(app, before)).isEqualTo(CipherFormat.UNBOUND.code());
+            assertThat(cipherFormatOf(app, attacker)).isEqualTo(CipherFormat.BOUND.code());
+            try (PreparedStatement copy =
+                    app.prepareStatement(
+                            "UPDATE identity.mfa_enrolment victim SET secret_ciphertext ="
+                                    + " source.secret_ciphertext, secret_nonce = source.secret_nonce,"
+                                    + " key_version = source.key_version, cipher_format ="
+                                    + " source.cipher_format FROM identity.mfa_enrolment source"
+                                    + " WHERE source.identity_id = ? AND source.status = 'PENDING'"
+                                    + " AND victim.identity_id = ? AND victim.status = 'PENDING'")) {
+                copy.setObject(1, attacker.value());
+                copy.setObject(2, victim.value());
+                assertThat(copy.executeUpdate()).as("the attacker's ciphertext is on the victim's row").isEqualTo(1);
+            }
+        }
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> inAFlow(app -> service(bound).confirm(app, victim, codeFor(attackerSecret))))
+                .as("copied into another enrolment, the secret fails to decrypt - never the attacker's factor")
+                .isInstanceOf(IllegalStateException.class)
+                .hasNoCause();
+
+        // The stored format is no downgrade path: a bound ciphertext read as unbound fails its tag.
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement downgrade =
+                        app.prepareStatement(
+                                "UPDATE identity.mfa_enrolment SET cipher_format = 1"
+                                        + " WHERE identity_id = ? AND status = 'PENDING'")) {
+            downgrade.setObject(1, victim.value());
+            assertThat(downgrade.executeUpdate()).isEqualTo(1);
+        }
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> inAFlow(app -> service(bound).confirm(app, victim, codeFor(attackerSecret))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasNoCause();
+
+        // The positive control: under its own enrolment the same bound secret confirms.
+        inAFlow(app -> confirmed[0] = service(bound).confirm(app, attacker, codeFor(attackerSecret)));
+        assertThat(confirmed[0]).as("a bound secret confirms in its own row").isTrue();
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(enrolments.findActive(app, victim, MfaFactorType.TOTP))
+                    .as("the victim holds no factor the attacker's codes satisfy")
+                    .isEmpty();
+        }
     }
 
     // -----------------------------------------------------------------
@@ -444,9 +517,13 @@ class MfaEnrolmentDatabaseTest {
     // -----------------------------------------------------------------
 
     private MfaEnrolmentService service() {
+        return service(cipher);
+    }
+
+    private MfaEnrolmentService service(SecretCipher with) {
         return new MfaEnrolmentService(
                 enrolments,
-                cipher,
+                with,
                 new TotpVerifier(CLOCK),
                 RANDOMNESS,
                 IDS,
@@ -461,9 +538,28 @@ class MfaEnrolmentDatabaseTest {
     }
 
     private Sensitive<String> beginAndCaptureSecret(IdentityId identity) throws SQLException {
+        return beginAndCaptureSecret(identity, cipher);
+    }
+
+    private Sensitive<String> beginAndCaptureSecret(IdentityId identity, SecretCipher with) throws SQLException {
         Captured captured = new Captured();
-        inAFlow(app -> captured.secret = service().begin(app, identity, AssuranceLevel.PASSWORD).orElseThrow().secret());
+        inAFlow(app -> captured.secret = service(with).begin(app, identity, AssuranceLevel.PASSWORD).orElseThrow().secret());
         return captured.secret;
+    }
+
+    /** The stored {@code cipher_format} of an identity's one enrolment (`X-TSK-010`). */
+    private static int cipherFormatOf(Connection app, IdentityId identity) throws SQLException {
+        try (PreparedStatement read =
+                app.prepareStatement(
+                        "SELECT cipher_format FROM identity.mfa_enrolment WHERE identity_id = ?")) {
+            read.setObject(1, identity.value());
+            try (var rows = read.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                int format = rows.getInt(1);
+                assertThat(rows.next()).as("one enrolment").isFalse();
+                return format;
+            }
+        }
     }
 
     /** What the customer's phone would show. Generating codes is the device's job, not ours. */

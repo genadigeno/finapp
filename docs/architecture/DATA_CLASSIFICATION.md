@@ -326,6 +326,7 @@ role cannot edit it.
 | `mfa_enrolment` | `secret_ciphertext` | `RESTRICTED-PII` | **The platform's only recoverable authentication secret.** `INV-IDN-01`'s irreversibility is unavailable — the server must hold the secret to compute a code — so confidentiality replaces it (`INV-IDN-08`): AES-256-GCM under a key held outside this database. Classified at its ceiling like every other column, but the classification is not what protects it; the encryption is |
 | `mfa_enrolment` | `secret_nonce` | `INTERNAL` | Public by construction. A GCM nonce is not secret and is stored beside its ciphertext; what must never happen is a **reuse**, which is why it is generated per encryption and nothing here could regenerate one |
 | `mfa_enrolment` | `key_version` | `INTERNAL` | Which key encrypted this row, so a rotation knows. Operational metadata |
+| `mfa_enrolment` | `cipher_format` | `INTERNAL` | Whether the ciphertext is bound to this row as AES-GCM associated data (1 unbound, 2 bound; `X-TSK-010`) - read to decrypt, never a secret |
 | `mfa_enrolment` | `algorithm` | `INTERNAL` | The HMAC an enrolment uses. Published in the provisioning URI anyway |
 | `mfa_enrolment` | `digits` | `INTERNAL` | As `algorithm` |
 | `mfa_enrolment` | `period_seconds` | `INTERNAL` | As `algorithm` |
@@ -815,6 +816,7 @@ them are classified at the ceiling regardless.
 | `dispute_evidence` | `content_ciphertext` | `RESTRICTED-PII` | **The document** - receipts, correspondence, delivery records naming a person: classified at the ceiling of what it decrypts to (`kyc_document.content_ciphertext`'s reasoning, ADR-0022), under its own key (`INV-DSP-03`) |
 | `dispute_evidence` | `content_nonce` | `INTERNAL` | Public-by-design cryptographic material; useless without the key |
 | `dispute_evidence` | `key_version` | `INTERNAL` | Which key wrote the row - operational metadata for rotation |
+| `dispute_evidence` | `cipher_format` | `INTERNAL` | Whether the ciphertext is bound to this row as AES-GCM associated data (1 unbound, 2 bound; `X-TSK-010`) - read to decrypt, never a secret |
 | `dispute_evidence` | `checksum_sha256` | `RESTRICTED-PII` | **A possession oracle over the content** - `kyc_document.checksum_sha256`'s reasoning verbatim: anyone holding a candidate document can confirm it is this one |
 | `dispute_evidence` | `content_length` | `CONFIDENTIAL` | Weakly identifying; with the kind it narrows a known document - errs up |
 | `dispute_evidence` | `uploaded_by_id` | `CONFIDENTIAL` | Who attached it - the merchant or the operator, the audit actor class (`withdrawal_event.actor_id`) |
@@ -917,6 +919,7 @@ them are classified at the ceiling regardless.
 | `provider_evidence` | `content_ciphertext` | `RESTRICTED-PII` | **The provider's raw payload about a person's payment.** Classified at the ceiling of what it decrypts to (ADR-0022): provider payloads may quote masked instrument data, names and issuer messages — `verification_evidence.content_ciphertext`'s reasoning verbatim, and the level is what governs handling if the encryption is ever broken, mis-keyed or stripped |
 | `provider_evidence` | `content_nonce` | `INTERNAL` | Public-by-design cryptographic material; useless without the key |
 | `provider_evidence` | `key_version` | `INTERNAL` | Which key wrote the row — operational metadata for rotation |
+| `provider_evidence` | `cipher_format` | `INTERNAL` | Whether the ciphertext is bound to this row as AES-GCM associated data (1 unbound, 2 bound; `X-TSK-010`) - read to decrypt, never a secret |
 | `provider_evidence` | `checksum_sha256` | `RESTRICTED-PII` | The possession oracle again: anyone holding a candidate payload can confirm this is what the provider sent about this person's payment. Classified with what it fingerprints — `kyc_document.checksum_sha256` |
 | `provider_evidence` | `content_length` | `CONFIDENTIAL` | Weakly identifying alone; a decline body is longer than an approval's, so the length leaks the outcome's shape. Errs up, because ADR-0022 forbids reclassifying later |
 | `provider_evidence` | `recorded_at` | `CONFIDENTIAL` | Dates a person's payment traffic |
@@ -1061,6 +1064,7 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `payout_evidence` | `content_ciphertext` | `RESTRICTED-PII` | **The payout provider's raw answer about a counterparty's money.** Classified at the ceiling of what it decrypts to (ADR-0022): untrusted bytes the platform does not control, which a real provider could enrich with an account holder's details — `provider_evidence.content_ciphertext`'s reasoning, and the level governs handling if the encryption is ever broken, mis-keyed or stripped |
 | `payout_evidence` | `content_nonce` | `INTERNAL` | Public-by-design cryptographic material; useless without the key |
 | `payout_evidence` | `key_version` | `INTERNAL` | Which key wrote the row — operational metadata for rotation |
+| `payout_evidence` | `cipher_format` | `INTERNAL` | Whether the ciphertext is bound to this row as AES-GCM associated data (1 unbound, 2 bound; `X-TSK-010`) - read to decrypt, never a secret |
 | `payout_evidence` | `checksum_sha256` | `RESTRICTED-PII` | The possession oracle: anyone holding a candidate answer can confirm this is what the provider said — `provider_evidence.checksum_sha256`'s reasoning |
 | `payout_evidence` | `content_length` | `CONFIDENTIAL` | Weakly identifying alone; a decline's body differs from an acceptance's, so the length leaks the outcome's shape |
 | `payout_evidence` | `recorded_at` | `CONFIDENTIAL` | Dates a counterparty's payout traffic |
@@ -1756,6 +1760,7 @@ precedent).
 | `fx_provider_evidence` | `content_ciphertext` | `CONFIDENTIAL` | The provider exchange, encrypted: rates, amounts and trade references - commercial traffic, at the ceiling of what it decrypts to |
 | `fx_provider_evidence` | `content_nonce` | `INTERNAL` | The GCM nonce - public by design |
 | `fx_provider_evidence` | `key_version` | `INTERNAL` | Which key wrote it - rotation metadata |
+| `fx_provider_evidence` | `cipher_format` | `INTERNAL` | Whether the ciphertext is bound to this row as AES-GCM associated data (1 unbound, 2 bound; `X-TSK-010`) - read to decrypt, never a secret |
 | `fx_provider_evidence` | `checksum_sha256` | `INTERNAL` | A fingerprint of the plaintext, recoverable from nothing |
 | `fx_provider_evidence` | `content_length` | `INTERNAL` | A byte count |
 | `fx_provider_evidence` | `recorded_at` | `INTERNAL` | When the exchange was retained |
@@ -2050,6 +2055,7 @@ door.
 | `kyc_document` | `content_ciphertext` | `RESTRICTED-PII` | **The document.** Classified at the ceiling of what it decrypts to (ADR-0022), not at the comfort of its encryption: the level is what governs handling if the encryption is ever broken, mis-keyed or stripped by a migration — exactly the day the classification must already be right |
 | `kyc_document` | `content_nonce` | `INTERNAL` | Public-by-design cryptographic material; useless without the key |
 | `kyc_document` | `key_version` | `INTERNAL` | Which key wrote the row — operational metadata for rotation |
+| `kyc_document` | `cipher_format` | `INTERNAL` | Whether the ciphertext is bound to this row as AES-GCM associated data (1 unbound, 2 bound; `X-TSK-010`) - read to decrypt, never a secret |
 | `kyc_document` | `checksum_sha256` | `RESTRICTED-PII` | **A possession oracle over the content.** Anyone holding a candidate document can hash it and confirm this person submitted exactly it — the checksum identifies the content without revealing it, which is a disclosure about a person, not about a system. Classified with what it fingerprints |
 | `kyc_document` | `content_length` | `CONFIDENTIAL` | Weakly identifying on its own; with the type it narrows a known document. Errs up, because ADR-0022 forbids reclassifying later |
 | `kyc_document` | `uploaded_at` | `CONFIDENTIAL` | Dates a KYC event — `kyc_case.opened_at`'s reasoning |
@@ -2080,6 +2086,7 @@ one treatment), and the same classifications for the same columns, for the same 
 | `verification_evidence` | `content_ciphertext` | `RESTRICTED-PII` | **The provider's raw answer about a person.** Classified at the ceiling of what it decrypts to (ADR-0022): a screening response can carry the match — names, dates of birth, list entries — and the level is what governs handling if the encryption is ever broken, mis-keyed or stripped. `kyc_document.content_ciphertext`'s reasoning verbatim |
 | `verification_evidence` | `content_nonce` | `INTERNAL` | Public-by-design cryptographic material; useless without the key |
 | `verification_evidence` | `key_version` | `INTERNAL` | Which key wrote the row — operational metadata for rotation |
+| `verification_evidence` | `cipher_format` | `INTERNAL` | Whether the ciphertext is bound to this row as AES-GCM associated data (1 unbound, 2 bound; `X-TSK-010`) - read to decrypt, never a secret |
 | `verification_evidence` | `checksum_sha256` | `RESTRICTED-PII` | The possession oracle again: anyone holding a candidate payload can confirm this is the answer the provider gave about this person. Classified with what it fingerprints — `kyc_document.checksum_sha256` |
 | `verification_evidence` | `content_length` | `CONFIDENTIAL` | Weakly identifying alone; a hit response is longer than `{"status":"clear"}`, so the length leaks the outcome's shape. Errs up, because ADR-0022 forbids reclassifying later |
 | `verification_evidence` | `received_at` | `CONFIDENTIAL` | Dates a KYC event — `kyc_case.opened_at`'s reasoning |

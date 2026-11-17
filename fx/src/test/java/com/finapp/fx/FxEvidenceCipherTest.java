@@ -15,6 +15,45 @@ import org.junit.jupiter.api.Test;
 @DisplayName("the FX evidence cipher rotates without losing a row (P15-TSK-019)")
 class FxEvidenceCipherTest {
 
+    /** One row's associated data, and another's (`X-TSK-010`). */
+    private static final byte[] ROW = com.finapp.platform.security.AssociatedData.of(
+            "fx.fx_provider_evidence.content", new java.util.UUID(0, 1), "fx-sim-a", "ref-1", "QUOTE");
+    private static final byte[] OTHER_ROW = com.finapp.platform.security.AssociatedData.of(
+            "fx.fx_provider_evidence.content", new java.util.UUID(0, 2), "fx-sim-a", "ref-1", "QUOTE");
+
+    // ---------------------------------------------------------------- bound to its row (X-TSK-010)
+
+    @Test
+    @DisplayName("X-TSK-010: a bound ciphertext decrypts under its own row and nowhere else - one indistinguishable refusal")
+    void aBoundCiphertextDecryptsOnlyUnderItsOwnRow() {
+        FxEvidenceCipher cipher = new FxEvidenceCipher(rotatedRing(1), new java.security.SecureRandom(), true);
+        FxEvidenceCipher.Encrypted written = cipher.encrypt(ROW, "bound evidence".getBytes(StandardCharsets.UTF_8));
+        assertThat(written.format()).isEqualTo(com.finapp.platform.security.CipherFormat.BOUND);
+        assertThat(new String(cipher.decrypt(ROW, written), StandardCharsets.UTF_8)).isEqualTo("bound evidence");
+        assertThatThrownBy(() -> cipher.decrypt(OTHER_ROW, written))
+                .as("copied into another row, it fails to decrypt").isInstanceOf(IllegalStateException.class).hasNoCause();
+    }
+
+    @Test
+    @DisplayName("X-TSK-010: a bound ciphertext presented as unbound fails its tag - the stored format is no downgrade path")
+    void aBoundCiphertextReadAsUnboundFails() {
+        FxEvidenceCipher cipher = new FxEvidenceCipher(rotatedRing(1), new java.security.SecureRandom(), true);
+        FxEvidenceCipher.Encrypted written = cipher.encrypt(ROW, "bound evidence".getBytes(StandardCharsets.UTF_8));
+        FxEvidenceCipher.Encrypted downgraded = new FxEvidenceCipher.Encrypted(written.ciphertext(), written.nonce(),
+                written.keyVersion(), com.finapp.platform.security.CipherFormat.UNBOUND);
+        assertThatThrownBy(() -> cipher.decrypt(ROW, downgraded)).isInstanceOf(IllegalStateException.class).hasNoCause();
+    }
+
+    @Test
+    @DisplayName("X-TSK-010: with the switch off a write is unbound, as the previous release writes, and both releases read it")
+    void writesAreUnboundWhileTheSwitchIsOff() {
+        FxEvidenceCipher cipher = new FxEvidenceCipher(rotatedRing(1), new java.security.SecureRandom());
+        FxEvidenceCipher.Encrypted written = cipher.encrypt(ROW, "unbound evidence".getBytes(StandardCharsets.UTF_8));
+        assertThat(written.format()).isEqualTo(com.finapp.platform.security.CipherFormat.UNBOUND);
+        assertThat(new String(new FxEvidenceCipher(rotatedRing(1), new java.security.SecureRandom(), true).decrypt(ROW, written),
+                StandardCharsets.UTF_8)).as("a bound-writing replica reads it").isEqualTo("unbound evidence");
+    }
+
     // ---------------------------------------------------------------- key rings (P15-TSK-019)
 
     /**
@@ -45,14 +84,14 @@ class FxEvidenceCipherTest {
     @DisplayName("a row written before key rings existed decrypts unchanged, under a ring of one (the code on master, 6a1e9626)")
     void aRowWrittenBeforeRingsDecryptsUnderARingOfOne() {
         FxEvidenceCipher cipher = new FxEvidenceCipher(ringKey(0x17), 1, new java.security.SecureRandom());
-        assertThat(new String(cipher.decrypt(writtenBeforeRings()), StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
+        assertThat(new String(cipher.decrypt(ROW, writtenBeforeRings()), StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
     }
 
     @Test
     @DisplayName("a v1 row is read under version 1 after rotation to version 2: the stamp decides, never the active version")
     void aV1RowIsReadUnderItsStampAfterRotation() {
         FxEvidenceCipher cipher = new FxEvidenceCipher(rotatedRing(2), new java.security.SecureRandom());
-        assertThat(new String(cipher.decrypt(writtenBeforeRings()), StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
+        assertThat(new String(cipher.decrypt(ROW, writtenBeforeRings()), StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
     }
 
     @Test
@@ -61,22 +100,22 @@ class FxEvidenceCipherTest {
         FxEvidenceCipher before = new FxEvidenceCipher(rotatedRing(1), new java.security.SecureRandom());
         FxEvidenceCipher after = new FxEvidenceCipher(rotatedRing(2), new java.security.SecureRandom());
 
-        FxEvidenceCipher.Encrypted writtenBefore = before.encrypt("later evidence".getBytes(StandardCharsets.UTF_8));
-        FxEvidenceCipher.Encrypted writtenAfter = after.encrypt("later evidence".getBytes(StandardCharsets.UTF_8));
+        FxEvidenceCipher.Encrypted writtenBefore = before.encrypt(ROW, "later evidence".getBytes(StandardCharsets.UTF_8));
+        FxEvidenceCipher.Encrypted writtenAfter = after.encrypt(ROW, "later evidence".getBytes(StandardCharsets.UTF_8));
 
         assertThat(writtenBefore.keyVersion()).as("a known version stays unused until it is activated").isEqualTo(1);
         assertThat(writtenAfter.keyVersion()).as("the active pointer decides the version written").isEqualTo(2);
-        assertThat(new String(after.decrypt(writtenAfter), StandardCharsets.UTF_8)).isEqualTo("later evidence");
-        assertThat(new String(before.decrypt(writtenAfter), StandardCharsets.UTF_8)).as("a replica not yet activated reads its neighbour's new row").isEqualTo("later evidence");
-        assertThat(new String(after.decrypt(writtenBefore), StandardCharsets.UTF_8)).as("an activated replica reads an old row").isEqualTo("later evidence");
+        assertThat(new String(after.decrypt(ROW, writtenAfter), StandardCharsets.UTF_8)).isEqualTo("later evidence");
+        assertThat(new String(before.decrypt(ROW, writtenAfter), StandardCharsets.UTF_8)).as("a replica not yet activated reads its neighbour's new row").isEqualTo("later evidence");
+        assertThat(new String(after.decrypt(ROW, writtenBefore), StandardCharsets.UTF_8)).as("an activated replica reads an old row").isEqualTo("later evidence");
     }
 
     @Test
     @DisplayName("a row stamped with a version the ring does not hold is refused, even when the active key could read it")
     void anUnknownStampedVersionIsRefused() {
         FxEvidenceCipher cipher = new FxEvidenceCipher(rotatedRing(1), new java.security.SecureRandom());
-        FxEvidenceCipher.Encrypted written = cipher.encrypt("later evidence".getBytes(StandardCharsets.UTF_8));
-        assertThatThrownBy(() -> cipher.decrypt(new FxEvidenceCipher.Encrypted(written.ciphertext(), written.nonce(), 9)))
+        FxEvidenceCipher.Encrypted written = cipher.encrypt(ROW, "later evidence".getBytes(StandardCharsets.UTF_8));
+        assertThatThrownBy(() -> cipher.decrypt(ROW, new FxEvidenceCipher.Encrypted(written.ciphertext(), written.nonce(), 9)))
                 .isInstanceOf(com.finapp.platform.security.UnknownKeyVersionException.class)
                 .as("one refusal, whatever went wrong: the version the row claims is not told to a caller")
                 .hasMessageNotContaining("9")

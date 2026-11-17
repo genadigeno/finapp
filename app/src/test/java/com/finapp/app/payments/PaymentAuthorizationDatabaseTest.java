@@ -1179,4 +1179,81 @@ class PaymentAuthorizationDatabaseTest {
             }
         }
     }
+
+    // ---------------------------------------------------------------- bound to its row (X-TSK-010)
+
+    @Test
+    @DisplayName("X-TSK-010: evidence written unbound stays readable once writes are bound, and a bound ciphertext copied into"
+            + " another row - its nonce, key version, checksum, length and format copied with it - fails to decrypt there")
+    void providerEvidenceIsBoundToItsRow() throws Exception {
+        // Two approved attempts, each with its response retained by this suite's store: the switch off, as the previous
+        // release writes.
+        psp.succeedsWith(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH, 200, APPROVED_BODY.formatted(UUID.randomUUID()));
+        PaymentIntentId victim = createIntent();
+        confirmation(adapter()).confirm(party, victim);
+        psp.succeedsWith(SimulatedCardPspAdapter.AUTHORIZATIONS_PATH, 200, APPROVED_BODY.formatted(UUID.randomUUID()));
+        PaymentIntentId other = createIntent();
+        confirmation(adapter()).confirm(party, other);
+
+        // The switch on: the same key, every write bound to its row.
+        JdbcProviderEvidenceStore bound = new JdbcProviderEvidenceStore(
+                new EvidenceCipher(
+                        com.finapp.platform.security.KeyRing.single("evidence encryption key", EVIDENCE_KEY, 1),
+                        new SecureRandom(),
+                        true),
+                IDS);
+        byte[] secret = "a provider answer bound to its row".getBytes(StandardCharsets.UTF_8);
+        try (Connection app = DatabaseRoles.application()) {
+            com.finapp.payments.PaymentAttemptId victimAttempt = attempts.findForIntent(app, victim).orElseThrow().id();
+            com.finapp.payments.PaymentAttemptId otherAttempt = attempts.findForIntent(app, other).orElseThrow().id();
+            assertThat(cipherFormats(app, victimAttempt)).as("written with the switch off").containsExactly(1);
+            assertThat(bound.payloadsFor(app, victimAttempt)).as("a bound-writing replica reads a row written unbound")
+                    .hasSize(1);
+
+            bound.append(app, Optional.of(victimAttempt), Optional.empty(), com.finapp.payments.EvidenceKind.RESPONSE,
+                    secret, Instant.now(CLOCK));
+            assertThat(cipherFormats(app, victimAttempt)).containsExactly(1, 2);
+            List<byte[]> read = bound.payloadsFor(app, victimAttempt);
+            assertThat(read).hasSize(2);
+            assertThat(read.get(1)).as("a bound row decrypts under its own row").isEqualTo(secret);
+            assertThat(evidence.payloadsFor(app, victimAttempt)).as("and on a replica whose own writes are unbound")
+                    .hasSize(2);
+
+            // A writer holding the application role's INSERT copies the bound row whole into the other attempt's evidence:
+            // the checksum travels with it, so only the binding can refuse it.
+            try (PreparedStatement copy = app.prepareStatement(
+                    "INSERT INTO payments.provider_evidence (id, attempt_id, kind, content_ciphertext, content_nonce,"
+                            + " key_version, checksum_sha256, content_length, recorded_at, cipher_format)"
+                            + " SELECT ?, ?, kind, content_ciphertext, content_nonce, key_version, checksum_sha256,"
+                            + " content_length, recorded_at, cipher_format FROM payments.provider_evidence"
+                            + " WHERE attempt_id = ? AND cipher_format = 2")) {
+                copy.setObject(1, IDS.next());
+                copy.setObject(2, otherAttempt.value());
+                copy.setObject(3, victimAttempt.value());
+                assertThat(copy.executeUpdate()).isEqualTo(1);
+            }
+            assertThatThrownBy(() -> bound.payloadsFor(app, otherAttempt))
+                    .as("copied into another row, it fails to decrypt - and yields nothing")
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("Could not decrypt provider evidence")
+                    .hasNoCause();
+            assertThat(bound.payloadsFor(app, victimAttempt)).as("the row it was copied from is untouched").hasSize(2);
+        }
+    }
+
+    /** The {@code cipher_format} of an attempt's evidence, in read order (`X-TSK-010`). */
+    private static List<Integer> cipherFormats(Connection app, com.finapp.payments.PaymentAttemptId attempt)
+            throws SQLException {
+        try (PreparedStatement read = app.prepareStatement(
+                "SELECT cipher_format FROM payments.provider_evidence WHERE attempt_id = ? ORDER BY recorded_at, id")) {
+            read.setObject(1, attempt.value());
+            try (ResultSet rows = read.executeQuery()) {
+                List<Integer> formats = new ArrayList<>();
+                while (rows.next()) {
+                    formats.add(rows.getInt(1));
+                }
+                return formats;
+            }
+        }
+    }
 }

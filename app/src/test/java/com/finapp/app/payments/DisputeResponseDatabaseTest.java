@@ -147,6 +147,11 @@ class DisputeResponseDatabaseTest {
     @Autowired private AuditWriter<Connection> auditWriter;
     @Autowired private DisputeResponder disputeResponder;
 
+    // The dispute-evidence key, for a store whose writes are bound (X-TSK-010): the switch is off in this context.
+    @Autowired
+    @Qualifier("disputeEvidenceKeyRing")
+    private com.finapp.platform.security.KeyRing disputeEvidenceKeyRing;
+
     @BeforeAll
     static void startProvider() {
         if (provider == null) {
@@ -533,6 +538,98 @@ class DisputeResponseDatabaseTest {
                         dispute))
                 .isZero();
         assertThat(provider.requestCount(RESPONSES)).as("nothing unverified ever leaves").isZero();
+    }
+
+    @Test
+    @DisplayName("X-TSK-010: a document written unbound stays readable once writes are bound, and a bound ciphertext copied"
+            + " over another dispute's document - its nonce, key version, checksum, length and format copied with it -"
+            + " fails to decrypt there")
+    void evidenceIsBoundToItsRow() throws Exception {
+        Merchant merchant = merchant();
+        UUID dispute = chargedBack(merchant.payable(), future());
+        UUID otherDispute = chargedBack(merchant.payable(), future());
+        // Through the production door, the switch off: as the previous release writes.
+        byte[] unboundBytes = bytes("an unbound receipt");
+        UUID unbound = UUID.fromString(
+                field(post(merchantPath(dispute, "evidence"), evidence("RECEIPT", "PDF", unboundBytes),
+                                merchant.key(), null)
+                        .body(),
+                        "evidenceId"));
+        assertThat(count("SELECT count(*) FROM payments.dispute_evidence WHERE id = ? AND cipher_format = 1",
+                        unbound))
+                .isEqualTo(1);
+
+        // The switch on: the same dispute-evidence key, every write bound to its row.
+        com.finapp.payments.JdbcDisputeEvidenceStore bound = new com.finapp.payments.JdbcDisputeEvidenceStore(
+                new com.finapp.payments.EvidenceCipher(disputeEvidenceKeyRing, new SecureRandom(), true));
+        byte[] boundBytes = bytes("a bound receipt");
+        com.finapp.payments.DisputeEvidenceId boundId = com.finapp.payments.DisputeEvidenceId.next(IDS);
+        com.finapp.payments.DisputeEvidenceId otherId = com.finapp.payments.DisputeEvidenceId.next(IDS);
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(bound.readContent(app, DisputeId.of(dispute),
+                                    com.finapp.payments.DisputeEvidenceId.of(unbound))
+                            .orElseThrow().content().value())
+                    .as("a bound-writing replica reads a document written unbound")
+                    .isEqualTo(unboundBytes);
+            storeReceipt(bound, app, boundId, dispute, boundBytes);
+            storeReceipt(bound, app, otherId, otherDispute, bytes("the other dispute's receipt"));
+            assertThat(bound.readContent(app, DisputeId.of(dispute), boundId).orElseThrow().content().value())
+                    .as("a bound document decrypts under its own row")
+                    .isEqualTo(boundBytes);
+            assertThat(evidenceStore.readContent(app, DisputeId.of(dispute), boundId).orElseThrow().content()
+                            .value())
+                    .as("and on a replica whose own writes are unbound")
+                    .isEqualTo(boundBytes);
+        }
+        assertThat(count("SELECT count(*) FROM payments.dispute_evidence WHERE id = ? AND cipher_format = 2",
+                        boundId.value()))
+                .isEqualTo(1);
+
+        // The table's owner copies the bound document whole over the other dispute's: the checksum travels with it, so
+        // only the binding can refuse it. The application role may not update it.
+        try (Connection migrator = DatabaseRoles.migrator();
+                PreparedStatement copy = migrator.prepareStatement(
+                        "UPDATE payments.dispute_evidence AS target SET"
+                                + " content_ciphertext = source.content_ciphertext,"
+                                + " content_nonce = source.content_nonce, key_version = source.key_version,"
+                                + " checksum_sha256 = source.checksum_sha256,"
+                                + " content_length = source.content_length, cipher_format = source.cipher_format"
+                                + " FROM payments.dispute_evidence AS source"
+                                + " WHERE target.id = ? AND source.id = ?")) {
+            copy.setObject(1, otherId.value());
+            copy.setObject(2, boundId.value());
+            assertThat(copy.executeUpdate()).isEqualTo(1);
+        }
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThatThrownBy(() -> bound.readContent(app, DisputeId.of(otherDispute), otherId))
+                    .as("copied into another row, it fails to decrypt - and yields nothing")
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessage("Could not decrypt provider evidence")
+                    .hasNoCause();
+            assertThat(bound.readContent(app, DisputeId.of(dispute), boundId).orElseThrow().content().value())
+                    .as("the document it was copied from is untouched")
+                    .isEqualTo(boundBytes);
+        }
+    }
+
+    /** {@code content} stored as a merchant's PDF receipt on {@code dispute}, through {@code store} (`X-TSK-010`). */
+    private static void storeReceipt(
+            DisputeEvidenceStore<Connection> store,
+            Connection app,
+            com.finapp.payments.DisputeEvidenceId id,
+            UUID dispute,
+            byte[] content) {
+        com.finapp.payments.DisputeEvidence candidate = new com.finapp.payments.DisputeEvidence(
+                id,
+                DisputeId.of(dispute),
+                com.finapp.payments.DisputeEvidenceKind.RECEIPT,
+                com.finapp.payments.DisputeEvidenceContentType.PDF,
+                content.length,
+                "x-tsk-010",
+                "MERCHANT",
+                Instant.now(CLOCK));
+        assertThat(store.appendOrConverge(app, candidate, DisputeEvidenceContent.of(content)).created()).isTrue();
     }
 
     // -----------------------------------------------------------------

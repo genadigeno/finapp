@@ -20,13 +20,19 @@ class PayoutEvidenceCipherTest {
     private static final byte[] PAYLOAD =
             "{\"status\":\"paid\",\"reference\":\"po_1\"}".getBytes(StandardCharsets.UTF_8);
 
+    /** One row's associated data, and another's (`X-TSK-010`). */
+    private static final byte[] ROW = com.finapp.platform.security.AssociatedData.of(
+            "merchant.payout_evidence.content", new java.util.UUID(0, 1), new java.util.UUID(0, 9).toString(), "RESPONSE");
+    private static final byte[] OTHER_ROW = com.finapp.platform.security.AssociatedData.of(
+            "merchant.payout_evidence.content", new java.util.UUID(0, 2), new java.util.UUID(0, 9).toString(), "RESPONSE");
+
     @Test
     @DisplayName("round-trips, with a fresh nonce and the GCM tag on every ciphertext")
     void roundTrips() {
         PayoutEvidenceCipher cipher = cipher((byte) 7);
-        PayoutEvidenceCipher.Encrypted first = cipher.encrypt(PAYLOAD);
-        PayoutEvidenceCipher.Encrypted second = cipher.encrypt(PAYLOAD);
-        assertThat(cipher.decrypt(first)).isEqualTo(PAYLOAD);
+        PayoutEvidenceCipher.Encrypted first = cipher.encrypt(ROW, PAYLOAD);
+        PayoutEvidenceCipher.Encrypted second = cipher.encrypt(ROW, PAYLOAD);
+        assertThat(cipher.decrypt(ROW, first)).isEqualTo(PAYLOAD);
         assertThat(first.ciphertext()).hasSize(PAYLOAD.length + PayoutEvidenceCipher.TAG_BYTES);
         assertThat(first.nonce()).isNotEqualTo(second.nonce());
         assertThat(first.ciphertext()).isNotEqualTo(PAYLOAD);
@@ -35,18 +41,19 @@ class PayoutEvidenceCipherTest {
     @Test
     @DisplayName("tampering and the wrong key are one indistinguishable refusal, never content")
     void tamperAndWrongKeyAreOneFailure() {
-        PayoutEvidenceCipher.Encrypted sealed = cipher((byte) 7).encrypt(PAYLOAD);
+        PayoutEvidenceCipher.Encrypted sealed = cipher((byte) 7).encrypt(ROW, PAYLOAD);
         byte[] flipped = sealed.ciphertext();
         flipped[0] ^= 1;
         assertThatThrownBy(
                         () ->
                                 cipher((byte) 7)
                                         .decrypt(
+                                                ROW,
                                                 new PayoutEvidenceCipher.Encrypted(
                                                         flipped, sealed.nonce(), 1)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Could not decrypt payout evidence");
-        assertThatThrownBy(() -> cipher((byte) 8).decrypt(sealed))
+        assertThatThrownBy(() -> cipher((byte) 8).decrypt(ROW, sealed))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Could not decrypt payout evidence");
     }
@@ -58,14 +65,53 @@ class PayoutEvidenceCipherTest {
                 .isThrownBy(() -> new PayoutEvidenceCipher(new byte[16], 1, new SecureRandom()));
         assertThatIllegalArgumentException()
                 .isThrownBy(() -> new PayoutEvidenceCipher(new byte[32], 0, new SecureRandom()));
-        assertThat(cipher((byte) 7).encrypt(PAYLOAD).toString())
-                .isEqualTo("Encrypted[keyVersion=1]");
+        assertThat(cipher((byte) 7).encrypt(ROW, PAYLOAD).toString())
+                .isEqualTo("Encrypted[keyVersion=1, format=UNBOUND]");
     }
 
     private static PayoutEvidenceCipher cipher(byte fill) {
         byte[] key = new byte[PayoutEvidenceCipher.KEY_BYTES];
         java.util.Arrays.fill(key, fill);
         return new PayoutEvidenceCipher(key, 1, new SecureRandom());
+    }
+
+    // ---------------------------------------------------------------- bound to its row (X-TSK-010)
+
+    @Test
+    @DisplayName("X-TSK-010: a bound ciphertext decrypts under its own row and nowhere else - one indistinguishable refusal")
+    void aBoundCiphertextDecryptsOnlyUnderItsOwnRow() {
+        PayoutEvidenceCipher cipher = new PayoutEvidenceCipher(rotatedRing(1), new SecureRandom(), true);
+        PayoutEvidenceCipher.Encrypted written = cipher.encrypt(ROW, "bound evidence".getBytes(StandardCharsets.UTF_8));
+        assertThat(written.format()).isEqualTo(com.finapp.platform.security.CipherFormat.BOUND);
+        assertThat(new String(cipher.decrypt(ROW, written), StandardCharsets.UTF_8)).isEqualTo("bound evidence");
+        assertThatThrownBy(() -> cipher.decrypt(OTHER_ROW, written))
+                .as("copied into another row, it fails to decrypt")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Could not decrypt payout evidence")
+                .hasNoCause();
+    }
+
+    @Test
+    @DisplayName("X-TSK-010: a bound ciphertext presented as unbound fails its tag - the stored format is no downgrade path")
+    void aBoundCiphertextReadAsUnboundFails() {
+        PayoutEvidenceCipher cipher = new PayoutEvidenceCipher(rotatedRing(1), new SecureRandom(), true);
+        PayoutEvidenceCipher.Encrypted written = cipher.encrypt(ROW, "bound evidence".getBytes(StandardCharsets.UTF_8));
+        PayoutEvidenceCipher.Encrypted downgraded = new PayoutEvidenceCipher.Encrypted(written.ciphertext(), written.nonce(),
+                written.keyVersion(), com.finapp.platform.security.CipherFormat.UNBOUND);
+        assertThatThrownBy(() -> cipher.decrypt(ROW, downgraded))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Could not decrypt payout evidence")
+                .hasNoCause();
+    }
+
+    @Test
+    @DisplayName("X-TSK-010: with the switch off a write is unbound, as the previous release writes, and both releases read it")
+    void writesAreUnboundWhileTheSwitchIsOff() {
+        PayoutEvidenceCipher cipher = new PayoutEvidenceCipher(rotatedRing(1), new SecureRandom());
+        PayoutEvidenceCipher.Encrypted written = cipher.encrypt(ROW, "unbound evidence".getBytes(StandardCharsets.UTF_8));
+        assertThat(written.format()).isEqualTo(com.finapp.platform.security.CipherFormat.UNBOUND);
+        assertThat(new String(new PayoutEvidenceCipher(rotatedRing(1), new SecureRandom(), true).decrypt(ROW, written),
+                StandardCharsets.UTF_8)).as("a bound-writing replica reads it").isEqualTo("unbound evidence");
     }
 
     // ---------------------------------------------------------------- key rings (P15-TSK-019)
@@ -98,14 +144,14 @@ class PayoutEvidenceCipherTest {
     @DisplayName("a row written before key rings existed decrypts unchanged, under a ring of one (the code on master, 6a1e9626)")
     void aRowWrittenBeforeRingsDecryptsUnderARingOfOne() {
         PayoutEvidenceCipher cipher = new PayoutEvidenceCipher(ringKey(0x15), 1, new java.security.SecureRandom());
-        assertThat(new String(cipher.decrypt(writtenBeforeRings()), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
+        assertThat(new String(cipher.decrypt(ROW, writtenBeforeRings()), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
     }
 
     @Test
     @DisplayName("a v1 row is read under version 1 after rotation to version 2: the stamp decides, never the active version")
     void aV1RowIsReadUnderItsStampAfterRotation() {
         PayoutEvidenceCipher cipher = new PayoutEvidenceCipher(rotatedRing(2), new java.security.SecureRandom());
-        assertThat(new String(cipher.decrypt(writtenBeforeRings()), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
+        assertThat(new String(cipher.decrypt(ROW, writtenBeforeRings()), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
     }
 
     @Test
@@ -114,22 +160,22 @@ class PayoutEvidenceCipherTest {
         PayoutEvidenceCipher before = new PayoutEvidenceCipher(rotatedRing(1), new java.security.SecureRandom());
         PayoutEvidenceCipher after = new PayoutEvidenceCipher(rotatedRing(2), new java.security.SecureRandom());
 
-        PayoutEvidenceCipher.Encrypted writtenBefore = before.encrypt("later evidence".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        PayoutEvidenceCipher.Encrypted writtenAfter = after.encrypt("later evidence".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        PayoutEvidenceCipher.Encrypted writtenBefore = before.encrypt(ROW, "later evidence".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        PayoutEvidenceCipher.Encrypted writtenAfter = after.encrypt(ROW, "later evidence".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
         assertThat(writtenBefore.keyVersion()).as("a known version stays unused until it is activated").isEqualTo(1);
         assertThat(writtenAfter.keyVersion()).as("the active pointer decides the version written").isEqualTo(2);
-        assertThat(new String(after.decrypt(writtenAfter), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("later evidence");
-        assertThat(new String(before.decrypt(writtenAfter), java.nio.charset.StandardCharsets.UTF_8)).as("a replica not yet activated reads its neighbour's new row").isEqualTo("later evidence");
-        assertThat(new String(after.decrypt(writtenBefore), java.nio.charset.StandardCharsets.UTF_8)).as("an activated replica reads an old row").isEqualTo("later evidence");
+        assertThat(new String(after.decrypt(ROW, writtenAfter), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("later evidence");
+        assertThat(new String(before.decrypt(ROW, writtenAfter), java.nio.charset.StandardCharsets.UTF_8)).as("a replica not yet activated reads its neighbour's new row").isEqualTo("later evidence");
+        assertThat(new String(after.decrypt(ROW, writtenBefore), java.nio.charset.StandardCharsets.UTF_8)).as("an activated replica reads an old row").isEqualTo("later evidence");
     }
 
     @Test
     @DisplayName("a row stamped with a version the ring does not hold is refused, even when the active key could read it")
     void anUnknownStampedVersionIsRefused() {
         PayoutEvidenceCipher cipher = new PayoutEvidenceCipher(rotatedRing(1), new java.security.SecureRandom());
-        PayoutEvidenceCipher.Encrypted written = cipher.encrypt("later evidence".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        assertThatThrownBy(() -> cipher.decrypt(new PayoutEvidenceCipher.Encrypted(written.ciphertext(), written.nonce(), 9)))
+        PayoutEvidenceCipher.Encrypted written = cipher.encrypt(ROW, "later evidence".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThatThrownBy(() -> cipher.decrypt(ROW, new PayoutEvidenceCipher.Encrypted(written.ciphertext(), written.nonce(), 9)))
                 .isInstanceOf(com.finapp.platform.security.UnknownKeyVersionException.class)
                 .as("one refusal, whatever went wrong: the version the row claims is not told to a caller")
                 .hasMessageNotContaining("9")

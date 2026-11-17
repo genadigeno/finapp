@@ -95,10 +95,17 @@ public class MerchantPayoutBeans {
         return PayoutEvidenceKey.ring(configuredKey, keyVersion, environment, loopback);
     }
 
+    /**
+     * Bound writes behind {@code finapp.ciphers.bind-associated-data} (`X-TSK-010`): off by default in the release that reads
+     * both formats, so a replica of the previous release, which reads only unbound ciphertexts, can read every row written
+     * during the roll; on once every replica reads both (`X-TSK-027`).
+     */
     @Bean
     PayoutEvidenceCipher payoutEvidenceCipher(
-            com.finapp.platform.security.KeyRing payoutEvidenceKeyRing, SecureRandom payoutEvidenceRandomness) {
-        return new PayoutEvidenceCipher(payoutEvidenceKeyRing, payoutEvidenceRandomness);
+            com.finapp.platform.security.KeyRing payoutEvidenceKeyRing,
+            SecureRandom payoutEvidenceRandomness,
+            @Value("${finapp.ciphers.bind-associated-data:false}") boolean bindAssociatedData) {
+        return new PayoutEvidenceCipher(payoutEvidenceKeyRing, payoutEvidenceRandomness, bindAssociatedData);
     }
 
     @Bean

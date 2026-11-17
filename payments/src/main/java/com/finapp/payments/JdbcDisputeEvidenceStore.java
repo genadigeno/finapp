@@ -2,6 +2,8 @@ package com.finapp.payments;
 
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.platform.persistence.DatabaseFailure;
+import com.finapp.platform.security.AssociatedData;
+import com.finapp.platform.security.CipherFormat;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
@@ -40,7 +42,8 @@ public final class JdbcDisputeEvidenceStore implements DisputeEvidenceStore<Conn
                     + " e.uploaded_by_type, e.uploaded_at";
 
     private static final String CONTENT =
-            METADATA + ", e.content_ciphertext, e.content_nonce, e.key_version, e.checksum_sha256";
+            METADATA + ", e.content_ciphertext, e.content_nonce, e.key_version, e.checksum_sha256,"
+                    + " e.cipher_format";
 
     @NonNull private final EvidenceCipher cipher;
 
@@ -54,7 +57,11 @@ public final class JdbcDisputeEvidenceStore implements DisputeEvidenceStore<Conn
         }
         byte[] plaintext = content.value();
         byte[] checksum = sha256(plaintext);
-        EvidenceCipher.Encrypted encrypted = cipher.encrypt(plaintext);
+        EvidenceCipher.Encrypted encrypted =
+                cipher.encrypt(
+                        associatedData(candidate.id().value(), candidate.dispute().value(),
+                                candidate.kind().name()),
+                        plaintext);
         // ON CONFLICT names the ONE arbiter it may absorb - the content address; any other
         // refusal (a key collision, a CHECK) still fails loudly rather than converging.
         try (PreparedStatement insert =
@@ -62,8 +69,8 @@ public final class JdbcDisputeEvidenceStore implements DisputeEvidenceStore<Conn
                         "INSERT INTO " + TABLE
                                 + " (id, dispute_id, kind, content_type, content_ciphertext,"
                                 + " content_nonce, key_version, checksum_sha256, content_length,"
-                                + " uploaded_by_id, uploaded_by_type, uploaded_at)"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                                + " uploaded_by_id, uploaded_by_type, uploaded_at, cipher_format)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                                 + " ON CONFLICT ON CONSTRAINT"
                                 + " dispute_evidence_one_per_dispute_and_checksum DO NOTHING")) {
             insert.setObject(1, candidate.id().value());
@@ -78,6 +85,7 @@ public final class JdbcDisputeEvidenceStore implements DisputeEvidenceStore<Conn
             insert.setString(10, candidate.uploadedById());
             insert.setString(11, candidate.uploadedByType());
             insert.setTimestamp(12, Timestamp.from(candidate.uploadedAt()));
+            insert.setInt(13, encrypted.format().code());
             if (insert.executeUpdate() == 1) {
                 return new Stored(candidate, true);
             }
@@ -267,10 +275,13 @@ public final class JdbcDisputeEvidenceStore implements DisputeEvidenceStore<Conn
         DisputeEvidence evidence = metadata(row);
         byte[] plaintext =
                 cipher.decrypt(
+                        associatedData(evidence.id().value(), evidence.dispute().value(),
+                                evidence.kind().name()),
                         new EvidenceCipher.Encrypted(
                                 row.getBytes("content_ciphertext"),
                                 row.getBytes("content_nonce"),
-                                row.getInt("key_version")));
+                                row.getInt("key_version"),
+                                CipherFormat.of(row.getInt("cipher_format"))));
         // GCM authenticates the ciphertext; the checksum says THESE are the bytes received at
         // capture - so silent corruption is a detected failure (ADR-0036's read rule).
         if (!MessageDigest.isEqual(sha256(plaintext), row.getBytes("checksum_sha256"))) {
@@ -281,6 +292,17 @@ public final class JdbcDisputeEvidenceStore implements DisputeEvidenceStore<Conn
         }
         return new Content(evidence, DisputeEvidenceContent.of(plaintext));
     }
+
+    /**
+     * The row's associated data (`X-TSK-010`): its identity, and the dispute and kind that name where the document belongs -
+     * so a ciphertext copied into another row, or under another dispute, fails to decrypt once writes are bound.
+     */
+    static byte[] associatedData(UUID id, UUID dispute, String kind) {
+        return AssociatedData.of(PURPOSE, id, dispute.toString(), kind);
+    }
+
+    /** What the ciphertext is, in its associated data. */
+    static final String PURPOSE = "payments.dispute_evidence.content";
 
     private static DisputeEvidence metadata(ResultSet row) throws SQLException {
         return new DisputeEvidence(

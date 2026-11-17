@@ -1,5 +1,6 @@
 package com.finapp.identity;
 
+import com.finapp.platform.security.CipherFormat;
 import com.finapp.platform.security.KeyRing;
 import com.finapp.sharedkernel.security.Sensitive;
 import java.nio.charset.StandardCharsets;
@@ -45,6 +46,16 @@ import javax.crypto.spec.GCMParameterSpec;
  * <p>The key version is recorded on every row this produces. Without it, rotating the key means
  * guessing which rows were written under which — {@code INV-HIST-04}'s rule applied to a key, and
  * the same argument ADR-0032 made for recording derivation parameters per credential.
+ *
+ * <h2>Bound to its enrolment (`X-TSK-010`)</h2>
+ *
+ * <p>Every call names the enrolment's {@code AssociatedData}. While
+ * {@code finapp.ciphers.bind-associated-data} is on, a write authenticates it with the ciphertext
+ * ({@link CipherFormat#BOUND}), so a ciphertext copied into another enrolment's row - an attacker's
+ * own secret over a victim's - fails to decrypt there instead of confirming the attacker's codes; while
+ * it is off, as in the release that introduced it, a write is {@link CipherFormat#UNBOUND}, which the
+ * previous release can still read during a roll. A read follows the format stored with the row, never a
+ * guess, and reads both.
  */
 public final class SecretCipher {
 
@@ -61,6 +72,9 @@ public final class SecretCipher {
     private final KeyRing ring;
     private final SecureRandom randomness;
 
+    /** Whether a write binds its associated data (`X-TSK-010`): the {@code finapp.ciphers.bind-associated-data} switch. */
+    private final boolean bindWrites;
+
     /**
      * @param key exactly {@value #KEY_BYTES} bytes. Refused otherwise rather than stretched, because
      *     silently accepting a short key would produce a cipher that looks like AES-256 and is not
@@ -76,8 +90,14 @@ public final class SecretCipher {
      * (`P15-TSK-019`, ADR-0123 point 4).
      */
     public SecretCipher(KeyRing ring, SecureRandom randomness) {
+        this(ring, randomness, false);
+    }
+
+    /** A cipher over a {@link KeyRing} whose writes bind their associated data when {@code bindWrites} (`X-TSK-010`). */
+    public SecretCipher(KeyRing ring, SecureRandom randomness, boolean bindWrites) {
         this.ring = Objects.requireNonNull(ring, "ring must not be null");
         this.randomness = Objects.requireNonNull(randomness, "randomness must not be null");
+        this.bindWrites = bindWrites;
     }
 
     private static KeyRing ringOfOne(byte[] key, int version) {
@@ -96,18 +116,27 @@ public final class SecretCipher {
         return ring.activeVersion();
     }
 
-    /** Encrypts a secret, producing a fresh nonce that must be stored with the ciphertext. */
-    public Encrypted encrypt(Sensitive<String> plaintext) {
+    /**
+     * Encrypts a secret, producing a fresh nonce that must be stored with the ciphertext.
+     *
+     * @param associatedData the enrolment's, bound into the tag only while writes are bound (`X-TSK-010`)
+     */
+    public Encrypted encrypt(byte[] associatedData, Sensitive<String> plaintext) {
+        Objects.requireNonNull(associatedData, "associatedData must not be null");
         Objects.requireNonNull(plaintext, "plaintext must not be null");
 
         byte[] nonce = new byte[NONCE_BYTES];
         randomness.nextBytes(nonce);
+        CipherFormat format = bindWrites ? CipherFormat.BOUND : CipherFormat.UNBOUND;
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.ENCRYPT_MODE, ring.activeKey(), new GCMParameterSpec(TAG_BITS, nonce));
+            if (format == CipherFormat.BOUND) {
+                cipher.updateAAD(associatedData);
+            }
             byte[] ciphertext =
                     cipher.doFinal(plaintext.expose().getBytes(StandardCharsets.UTF_8));
-            return new Encrypted(ciphertext, nonce, ring.activeVersion());
+            return new Encrypted(ciphertext, nonce, ring.activeVersion(), format);
         } catch (GeneralSecurityException e) {
             // Never the cause: a provider exception can carry key material context, and this
             // message reaches a log line (INV-AUD-02). The P1-TSK-008 DatabaseFailure precedent.
@@ -118,17 +147,23 @@ public final class SecretCipher {
     /**
      * Decrypts a secret.
      *
-     * @throws IllegalStateException if the ciphertext was tampered with, or was written under a
-     *     different key. <strong>Both are the same outcome deliberately</strong>: neither may be
-     *     distinguished by a caller, and neither ever yields a secret
+     * @param associatedData the enrolment's, rebuilt from the row read; presented only when the
+     *     ciphertext is {@link CipherFormat#BOUND}
+     * @throws IllegalStateException if the ciphertext was tampered with, was written under a
+     *     different key, or is another enrolment's. <strong>All are the same outcome
+     *     deliberately</strong>: none may be distinguished by a caller, and none ever yields a secret
      */
-    public Sensitive<String> decrypt(Encrypted encrypted) {
+    public Sensitive<String> decrypt(byte[] associatedData, Encrypted encrypted) {
+        Objects.requireNonNull(associatedData, "associatedData must not be null");
         Objects.requireNonNull(encrypted, "encrypted must not be null");
         javax.crypto.SecretKey key = ring.keyFor(encrypted.keyVersion(), "Could not decrypt an MFA secret");
         try {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(
                     Cipher.DECRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, encrypted.nonce()));
+            if (encrypted.format() == CipherFormat.BOUND) {
+                cipher.updateAAD(associatedData);
+            }
             return Sensitive.of(
                     new String(cipher.doFinal(encrypted.ciphertext()), StandardCharsets.UTF_8));
         } catch (GeneralSecurityException e) {
@@ -136,12 +171,21 @@ public final class SecretCipher {
         }
     }
 
-    /** A ciphertext, the nonce that produced it, and the key version that wrote it. */
-    public record Encrypted(byte[] ciphertext, byte[] nonce, int keyVersion) {
+    /**
+     * A ciphertext, the nonce that produced it, the key version that wrote it, and whether it is
+     * bound to its enrolment.
+     */
+    public record Encrypted(byte[] ciphertext, byte[] nonce, int keyVersion, CipherFormat format) {
+
+        /** A ciphertext written without associated data: every enrolment before `X-TSK-010`. */
+        public Encrypted(byte[] ciphertext, byte[] nonce, int keyVersion) {
+            this(ciphertext, nonce, keyVersion, CipherFormat.UNBOUND);
+        }
 
         public Encrypted {
             Objects.requireNonNull(ciphertext, "ciphertext must not be null");
             Objects.requireNonNull(nonce, "nonce must not be null");
+            Objects.requireNonNull(format, "format must not be null");
             if (nonce.length != NONCE_BYTES) {
                 throw new IllegalArgumentException("nonce must be " + NONCE_BYTES + " bytes");
             }
@@ -168,7 +212,8 @@ public final class SecretCipher {
          */
         @Override
         public String toString() {
-            return "Encrypted[keyVersion=" + keyVersion + ", " + com.finapp.sharedkernel.security.Sensitive.MASK + "]";
+            return "Encrypted[keyVersion=" + keyVersion + ", format=" + format + ", "
+                    + com.finapp.sharedkernel.security.Sensitive.MASK + "]";
         }
     }
 }

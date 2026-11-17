@@ -1,6 +1,7 @@
 package com.finapp.identity;
 
 import com.finapp.platform.persistence.DatabaseFailure;
+import com.finapp.platform.security.CipherFormat;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -23,7 +24,7 @@ public final class JdbcMfaEnrolmentStore implements MfaEnrolmentStore<Connection
     private static final String COLUMNS =
             "id, identity_id, type, secret_ciphertext, secret_nonce, key_version, algorithm,"
                     + " digits, period_seconds, status, created_at, confirmed_at, discarded_at,"
-                    + " last_used_step";
+                    + " last_used_step, cipher_format";
 
     @Override
     public void insert(Connection unitOfWork, MfaEnrolment enrolment) {
@@ -32,7 +33,7 @@ public final class JdbcMfaEnrolmentStore implements MfaEnrolmentStore<Connection
 
         String sql =
                 "INSERT INTO " + TABLE + " (" + COLUMNS + ")"
-                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement insert = unitOfWork.prepareStatement(sql)) {
             insert.setObject(1, enrolment.id().value());
             insert.setObject(2, enrolment.identityId().value());
@@ -52,6 +53,8 @@ public final class JdbcMfaEnrolmentStore implements MfaEnrolmentStore<Connection
             } else {
                 insert.setNull(14, java.sql.Types.BIGINT);
             }
+            // Whether the ciphertext is bound to this row (X-TSK-010): stored, so a read never guesses.
+            insert.setInt(15, enrolment.encryptedSecret().format().code());
             insert.executeUpdate();
         } catch (SQLException e) {
             // Never the SQLException: PostgreSQL puts the whole refused row in a constraint
@@ -195,7 +198,8 @@ public final class JdbcMfaEnrolmentStore implements MfaEnrolmentStore<Connection
                 new SecretCipher.Encrypted(
                         rows.getBytes("secret_ciphertext"),
                         rows.getBytes("secret_nonce"),
-                        rows.getInt("key_version")),
+                        rows.getInt("key_version"),
+                        CipherFormat.of(rows.getInt("cipher_format"))),
                 new TotpParameters(
                         TotpAlgorithm.valueOf(rows.getString("algorithm")),
                         rows.getInt("digits"),

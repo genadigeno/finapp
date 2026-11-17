@@ -24,6 +24,7 @@ import com.finapp.ledger.LedgerAccountStore;
 import com.finapp.ledger.PostingCommand;
 import com.finapp.ledger.PostingService;
 import com.finapp.ledger.SupportedCurrencies;
+import com.finapp.merchant.JdbcPayoutEvidenceStore;
 import com.finapp.merchant.MerchantId;
 import com.finapp.merchant.MerchantNotTradingException;
 import com.finapp.merchant.MerchantPayable;
@@ -42,6 +43,8 @@ import com.finapp.merchant.PayoutDestinationReference;
 import com.finapp.merchant.PayoutDestinationStore;
 import com.finapp.merchant.PayoutDestinationTokenisation;
 import com.finapp.merchant.PayoutDestinations;
+import com.finapp.merchant.PayoutEvidenceCipher;
+import com.finapp.merchant.PayoutEvidenceKind;
 import com.finapp.merchant.PayoutEvidenceStore;
 import com.finapp.merchant.PayoutFailureReason;
 import com.finapp.merchant.PayoutProvider;
@@ -52,6 +55,9 @@ import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
+import com.finapp.platform.security.AssociatedData;
+import com.finapp.platform.security.CipherFormat;
+import com.finapp.platform.security.KeyRing;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.platform.testing.provider.SimulatedProvider;
@@ -63,6 +69,7 @@ import com.finapp.sharedkernel.money.Money;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.ServerSocket;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -1317,6 +1324,73 @@ class MerchantPayoutDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // Evidence bound to its row (X-TSK-010)
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("X-TSK-010: a row written unbound stays readable; with bound writes on, a ciphertext copied into another row"
+            + " fails to decrypt there")
+    void evidenceIsBoundToItsRow() throws Exception {
+        Funded merchant = funded("100.00");
+        provider.succeedsWith(PATH, 200, "{\"status\":\"declined\"}");
+        MerchantPayoutId payout = initiate(merchant, "10.00", key()).payout();
+        // Two writers over one key: the switch off, as the previous release writes, and on.
+        byte[] fixtureKey = new byte[PayoutEvidenceCipher.KEY_BYTES];
+        java.util.Arrays.fill(fixtureKey, (byte) 0x2a);
+        KeyRing ring = KeyRing.single("payout evidence fixture key", fixtureKey, 1);
+        PayoutEvidenceCipher unboundWrites = new PayoutEvidenceCipher(ring, new SecureRandom());
+        PayoutEvidenceCipher boundWrites = new PayoutEvidenceCipher(ring, new SecureRandom(), true);
+        byte[] unboundAnswer = "{\"status\":\"declined\",\"written\":\"unbound\"}".getBytes(StandardCharsets.UTF_8);
+        byte[] boundAnswer = "{\"status\":\"declined\",\"written\":\"bound\"}".getBytes(StandardCharsets.UTF_8);
+
+        asPlatform(uow -> {
+            new JdbcPayoutEvidenceStore(unboundWrites, IDS)
+                    .append(uow, payout, PayoutEvidenceKind.QUERY_RESULT, unboundAnswer, Instant.now(CLOCK));
+            return null;
+        });
+        List<EvidenceRow> unbound = evidenceRows(payout, PayoutEvidenceKind.QUERY_RESULT, CipherFormat.UNBOUND);
+        assertThat(unbound).as("written with the switch off, recorded unbound").hasSize(1);
+        assertThat(boundWrites.decrypt(unbound.get(0).associatedData(), unbound.get(0).encrypted()))
+                .as("a row written unbound stays readable, by a replica whose writes are bound")
+                .isEqualTo(unboundAnswer);
+
+        asPlatform(uow -> {
+            new JdbcPayoutEvidenceStore(boundWrites, IDS)
+                    .append(uow, payout, PayoutEvidenceKind.QUERY_RESULT, boundAnswer, Instant.now(CLOCK));
+            return null;
+        });
+        List<EvidenceRow> bound = evidenceRows(payout, PayoutEvidenceKind.QUERY_RESULT, CipherFormat.BOUND);
+        assertThat(bound).as("written with the switch on, recorded bound").hasSize(1);
+        EvidenceRow original = bound.get(0);
+        assertThat(boundWrites.decrypt(original.associatedData(), original.encrypted()))
+                .as("under its own row, it reads")
+                .isEqualTo(boundAnswer);
+
+        // The forgery, by the INSERT finapp_app holds: the bound row whole - ciphertext, nonce, stamp, checksum, format -
+        // under another id, beside the original on the same payout and kind.
+        UUID forgedId = IDS.next();
+        raw(
+                "INSERT INTO merchant.payout_evidence (id, payout_id, kind, content_ciphertext,"
+                        + " content_nonce, key_version, checksum_sha256, content_length, recorded_at,"
+                        + " cipher_format) SELECT ?, payout_id, kind, content_ciphertext, content_nonce,"
+                        + " key_version, checksum_sha256, content_length, recorded_at, cipher_format FROM"
+                        + " merchant.payout_evidence WHERE id = ?",
+                forgedId,
+                original.id());
+        EvidenceRow forged =
+                evidenceRows(payout, PayoutEvidenceKind.QUERY_RESULT, CipherFormat.BOUND).stream()
+                        .filter(row -> row.id().equals(forgedId))
+                        .findFirst()
+                        .orElseThrow();
+        assertThat(forged.encrypted().ciphertext()).as("the very bytes").isEqualTo(original.encrypted().ciphertext());
+        assertThatThrownBy(() -> boundWrites.decrypt(forged.associatedData(), forged.encrypted()))
+                .as("copied into another row, the ciphertext fails to decrypt there")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Could not decrypt payout evidence")
+                .hasNoCause();
+    }
+
+    // -----------------------------------------------------------------
     // Fixtures
     // -----------------------------------------------------------------
 
@@ -1714,6 +1788,48 @@ class MerchantPayoutDatabaseTest {
                         "SELECT destination_reference FROM merchant.payout_destination WHERE id = ?",
                         merchant.destination())
                 .get(0);
+    }
+
+    /** One retained evidence row as a reader rebuilds it (`X-TSK-010`): its id, its associated data and its ciphertext. */
+    private record EvidenceRow(UUID id, byte[] associatedData, PayoutEvidenceCipher.Encrypted encrypted) {}
+
+    /**
+     * The payout's retained rows of {@code kind} stored in {@code format}, each with the associated data rebuilt from the row
+     * read - its id, payout and kind, under the purpose {@code JdbcPayoutEvidenceStore} binds, written out here so a change to
+     * it, which would strand every bound row, goes red.
+     */
+    private static List<EvidenceRow> evidenceRows(MerchantPayoutId payout, PayoutEvidenceKind kind, CipherFormat format)
+            throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT id, kind, content_ciphertext, content_nonce, key_version, cipher_format"
+                                        + " FROM merchant.payout_evidence WHERE payout_id = ? AND kind = ? AND"
+                                        + " cipher_format = ? ORDER BY id")) {
+            read.setObject(1, payout.value());
+            read.setString(2, kind.name());
+            read.setInt(3, format.code());
+            List<EvidenceRow> rows = new ArrayList<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    UUID id = row.getObject("id", UUID.class);
+                    rows.add(
+                            new EvidenceRow(
+                                    id,
+                                    AssociatedData.of(
+                                            "merchant.payout_evidence.content",
+                                            id,
+                                            payout.value().toString(),
+                                            row.getString("kind")),
+                                    new PayoutEvidenceCipher.Encrypted(
+                                            row.getBytes("content_ciphertext"),
+                                            row.getBytes("content_nonce"),
+                                            row.getInt("key_version"),
+                                            CipherFormat.of(row.getInt("cipher_format")))));
+                }
+            }
+            return rows;
+        }
     }
 
     private static List<byte[]> byteArrays(String sql, Object... arguments) throws SQLException {

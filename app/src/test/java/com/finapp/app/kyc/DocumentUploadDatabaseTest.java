@@ -14,13 +14,21 @@ import com.finapp.identity.SessionToken;
 import com.finapp.kyc.DocumentAccess;
 import com.finapp.kyc.DocumentBytes;
 import com.finapp.kyc.DocumentCipher;
+import com.finapp.kyc.DocumentContentType;
+import com.finapp.kyc.DocumentType;
 import com.finapp.kyc.KycCaseKind;
 import com.finapp.kyc.DocumentId;
+import com.finapp.kyc.JdbcDocumentStore;
 import com.finapp.kyc.JdbcKycCaseStore;
 import com.finapp.kyc.KycCase;
+import com.finapp.kyc.KycCaseId;
+import com.finapp.kyc.KycDocument;
 import com.finapp.kyc.KycStorageException;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.ActorType;
+import com.finapp.platform.security.AssociatedData;
+import com.finapp.platform.security.CipherFormat;
+import com.finapp.platform.security.KeyRing;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.sharedkernel.correlation.Correlation;
@@ -53,6 +61,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
@@ -80,6 +89,10 @@ class DocumentUploadDatabaseTest {
     @LocalServerPort private int port;
     @Autowired private DocumentAccess documentAccess;
     @Autowired private DocumentCipher documentCipher;
+
+    @Autowired
+    @Qualifier("documentKeyRing")
+    private KeyRing documentKeyRing;
 
     private final HttpClient http = HttpClient.newHttpClient();
     private final SessionStore<Connection> sessions = new JdbcSessionStore();
@@ -281,16 +294,21 @@ class DocumentUploadDatabaseTest {
         // only the checksum can notice.
         byte[] substitute = original.clone();
         substitute[0] ^= 0x7f;
-        DocumentCipher.Encrypted forged = documentCipher.encrypt(DocumentBytes.of(substitute));
+        // Encrypted under this row's own associated data and stored with its format (X-TSK-010), so it decrypts cleanly
+        // whichever way the switch stands: the forgery is of the content, not of the row.
+        DocumentCipher.Encrypted forged = documentCipher.encrypt(
+                documentRow(documentId, ada.caseId(), "PASSPORT"), DocumentBytes.of(substitute));
         try (Connection bootstrap = DatabaseRoles.bootstrap();
                 PreparedStatement swap =
                         bootstrap.prepareStatement(
                                 "UPDATE kyc.kyc_document SET content_ciphertext = ?,"
-                                        + " content_nonce = ?, key_version = ? WHERE id = ?")) {
+                                        + " content_nonce = ?, key_version = ?, cipher_format = ?"
+                                        + " WHERE id = ?")) {
             swap.setBytes(1, forged.ciphertext());
             swap.setBytes(2, forged.nonce());
             swap.setInt(3, forged.keyVersion());
-            swap.setObject(4, documentId);
+            swap.setInt(4, forged.format().code());
+            swap.setObject(5, documentId);
             assertThat(swap.executeUpdate()).isEqualTo(1);
         }
 
@@ -302,6 +320,64 @@ class DocumentUploadDatabaseTest {
             assertThatExceptionOfType(KycStorageException.class)
                     .isThrownBy(() -> documentAccess.read(app, DocumentId.of(documentId)))
                     .withMessageContaining("checksum");
+        }
+    }
+
+    @Test
+    @DisplayName("X-TSK-010: a document written unbound stays readable, and with bound writes on its ciphertext copied into"
+            + " another row fails to decrypt there")
+    void aBoundDocumentDecryptsOnlyInItsOwnRow() throws Exception {
+        // A replica with the switch on, over the application's own ring: it reads what the application wrote.
+        JdbcDocumentStore bound = new JdbcDocumentStore(new DocumentCipher(documentKeyRing, new SecureRandom(), true));
+        Person ada = givenAPersonWithAnOpenCase();
+        Person bob = givenAPersonWithAnOpenCase();
+
+        // The application's switch is off by default: the upload writes unbound, as the previous release does.
+        byte[] unboundContent = uniqueContent("written unbound");
+        UUID unbound = documentIdOf(upload(ada.session(), body(unboundContent)));
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(((Number) columnValue(app, "cipher_format", unbound)).intValue())
+                    .isEqualTo(CipherFormat.UNBOUND.code());
+            assertThat(bound.readContent(app, DocumentId.of(unbound)).orElseThrow().content())
+                    .as("a bound-writing replica reads a row written unbound").isEqualTo(unboundContent);
+        }
+
+        byte[] boundContent = uniqueContent("written bound");
+        KycDocument written = KycDocument.capture(IDS, CLOCK, KycCaseId.of(ada.caseId()), DocumentType.PASSPORT,
+                DocumentContentType.JPEG, DocumentBytes.of(boundContent));
+        try (Connection app = DatabaseRoles.application()) {
+            // The store's savepoint needs a real transaction, exactly as production gives it one.
+            app.setAutoCommit(false);
+            assertThat(bound.appendOrConverge(app, written, DocumentBytes.of(boundContent)).created()).isTrue();
+            app.commit();
+        }
+
+        // The whole row copied onto Bob's case under a new id - checksum and length included, so every CHECK passes and the
+        // checksum would agree: only the binding can refuse it. Injected as the schema owner, the write-access attacker.
+        UUID copy = IDS.next();
+        try (Connection bootstrap = DatabaseRoles.bootstrap();
+                PreparedStatement forge =
+                        bootstrap.prepareStatement(
+                                "INSERT INTO kyc.kyc_document (id, case_id, document_type, content_type,"
+                                        + " content_ciphertext, content_nonce, key_version, checksum_sha256,"
+                                        + " content_length, uploaded_at, cipher_format)"
+                                        + " SELECT ?, ?, document_type, content_type, content_ciphertext,"
+                                        + " content_nonce, key_version, checksum_sha256, content_length,"
+                                        + " uploaded_at, cipher_format FROM kyc.kyc_document WHERE id = ?")) {
+            forge.setObject(1, copy);
+            forge.setObject(2, bob.caseId());
+            forge.setObject(3, written.id().value());
+            assertThat(forge.executeUpdate()).isEqualTo(1);
+        }
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(((Number) columnValue(app, "cipher_format", written.id().value())).intValue())
+                    .isEqualTo(CipherFormat.BOUND.code());
+            assertThat(bound.readContent(app, written.id()).orElseThrow().content())
+                    .as("a bound row reads in its own place").isEqualTo(boundContent);
+            assertThatIllegalStateException()
+                    .as("copied into another row, it fails to decrypt - never another case's passport")
+                    .isThrownBy(() -> bound.readContent(app, DocumentId.of(copy)));
         }
     }
 
@@ -379,6 +455,14 @@ class DocumentUploadDatabaseTest {
         String body = response.body();
         int start = body.indexOf("\"documentId\":\"") + "\"documentId\":\"".length();
         return UUID.fromString(body.substring(start, body.indexOf('"', start)));
+    }
+
+    /**
+     * A document row's associated data, rebuilt as {@code JdbcDocumentStore} binds it (`X-TSK-010`). Spelled out here rather
+     * than borrowed: a change to the layout leaves every bound row unreadable, and this is where that change goes red.
+     */
+    private static byte[] documentRow(UUID documentId, UUID caseId, String documentType) {
+        return AssociatedData.of("kyc.kyc_document.content", documentId, caseId.toString(), documentType);
     }
 
     private static CorrelationContext.Scope correlationScope() {

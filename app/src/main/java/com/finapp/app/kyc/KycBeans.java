@@ -134,10 +134,19 @@ public class KycBeans {
         return DocumentKey.ring(configuredKey, keyVersion, environment, loopback);
     }
 
-    /** {@code CounterpartyScreeningBeans} reads this one ring too: one key, one ring, both classes rotating together. */
+    /**
+     * {@code CounterpartyScreeningBeans} reads this one ring too: one key, one ring, both classes rotating together.
+     *
+     * <p>Bound writes behind {@code finapp.ciphers.bind-associated-data} (`X-TSK-010`): off by default in the release that reads
+     * both formats, so a replica of the previous release, which reads only unbound ciphertexts, can read every row written
+     * during the roll; on once every replica reads both (`X-TSK-027`).
+     */
     @Bean
-    DocumentCipher documentCipher(com.finapp.platform.security.KeyRing documentKeyRing, SecureRandom kycRandomness) {
-        return new DocumentCipher(documentKeyRing, kycRandomness);
+    DocumentCipher documentCipher(
+            com.finapp.platform.security.KeyRing documentKeyRing,
+            SecureRandom kycRandomness,
+            @Value("${finapp.ciphers.bind-associated-data:false}") boolean bindAssociatedData) {
+        return new DocumentCipher(documentKeyRing, kycRandomness, bindAssociatedData);
     }
 
     @Bean
