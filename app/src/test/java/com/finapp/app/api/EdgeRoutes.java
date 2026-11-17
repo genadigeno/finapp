@@ -75,7 +75,7 @@ final class EdgeRoutes {
 
     static final String CONSOLE_SERVICE = "finapp-console";
 
-    static final String CONSOLE_MIDDLEWARES = "console-headers, internal-only, body-cap";
+    static final String CONSOLE_MIDDLEWARES = "console-headers, internal-only, operator-rate, operator-hold, body-cap";
 
     static final List<String> CONSOLE_CLAUSES =
             List.of("(Method(`GET`) && Path(`" + CONSOLE_PATH + "`))", "(Method(`GET`) && PathPrefix(`" + CONSOLE_PATH + "/`))");
@@ -232,6 +232,8 @@ final class EdgeRoutes {
     /**
      * The internal host's file: every operator route, the doors a session is issued through, and (`X-TSK-020`) the Operator Console's
      * static route, first by name, to the console's own service behind the console's own headers and never {@code edge-headers}.
+     * Every router behind the private ranges first, then (`P17-TSK-103`, the owner's D-7) one source's rate and in-flight bounds, the
+     * settlement upload's in-flight bound its own at its larger body cap.
      */
     static String renderOperator(List<EdgeRoute> routes) {
         Map<String, List<EdgeRoute>> routers = new TreeMap<>(routes.stream()
@@ -240,7 +242,8 @@ final class EdgeRoutes {
         StringBuilder file = new StringBuilder(HEADER).append("http:\n  routers:\n");
         render(file, CONSOLE_ROUTER, CONSOLE_CLAUSES, CONSOLE_SERVICE, CONSOLE_MIDDLEWARES);
         routers.forEach((name, clauses) -> render(file, name, clauses(clauses), APP_SERVICE,
-                "edge-headers, internal-only, " + (clauses.get(0).isSettlementUpload() ? "body-cap-settlement" : "body-cap")));
+                "edge-headers, internal-only, operator-rate, " + (clauses.get(0).isSettlementUpload()
+                        ? "operator-hold-upload, body-cap-settlement" : "operator-hold, body-cap")));
         return file.toString();
     }
 

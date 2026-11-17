@@ -9,7 +9,7 @@ http:
         (Method(`GET`) && Path(`/console`))
         || (Method(`GET`) && PathPrefix(`/console/`))
       service: finapp-console
-      middlewares: [console-headers, internal-only, body-cap]
+      middlewares: [console-headers, internal-only, operator-rate, operator-hold, body-cap]
       tls: {}
     operator-default:
       entryPoints: [websecure]
@@ -341,12 +341,12 @@ http:
         || (Method(`DELETE`) && PathRegexp(`^/v1/sessions/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
         || (Method(`POST`) && PathRegexp(`^/v1/transfers/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/reversal$`))
       service: finapp-app
-      middlewares: [edge-headers, internal-only, body-cap]
+      middlewares: [edge-headers, internal-only, operator-rate, operator-hold, body-cap]
       tls: {}
     operator-settlement-upload:
       entryPoints: [websecure]
       rule: >-
         (Method(`POST`) && Path(`/v1/operator/settlement/files`))
       service: finapp-app
-      middlewares: [edge-headers, internal-only, body-cap-settlement]
+      middlewares: [edge-headers, internal-only, operator-rate, operator-hold-upload, body-cap-settlement]
       tls: {}

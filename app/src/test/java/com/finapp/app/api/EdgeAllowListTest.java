@@ -384,8 +384,9 @@ class EdgeAllowListTest {
         Map<String, Object> console = routers(OPERATOR_FILE).get(EdgeRoutes.CONSOLE_ROUTER);
         assertThat(console).as("the operator file holds the console's router").isNotNull();
         assertThat(console.get("service")).isEqualTo(EdgeRoutes.CONSOLE_SERVICE);
-        assertThat((List<String>) console.get("middlewares")).as("its own headers, the internal ranges and the body cap; never the API's CSP")
-                .containsExactly("console-headers", "internal-only", "body-cap");
+        assertThat((List<String>) console.get("middlewares"))
+                .as("its own headers, the internal ranges, one source's bounds (P17-TSK-103) and the body cap; never the API's CSP")
+                .containsExactly("console-headers", "internal-only", "operator-rate", "operator-hold", "body-cap");
         assertThat(List.of(((String) console.get("rule")).split(Pattern.quote(EdgeRoutes.CLAUSE_SEPARATOR))))
                 .as("GET on the bare path and under the slash, and nothing else").isEqualTo(EdgeRoutes.CONSOLE_CLAUSES);
 
@@ -505,6 +506,51 @@ class EdgeAllowListTest {
             assertThat(org.springframework.util.unit.DataSize.parse(limit.replace("Mi", "MB")).toBytes())
                     .as("the spool counts against the container's memory limit").isGreaterThan(spool);
         }
+    }
+
+    /**
+     * The operator surface's first bound (`P17-TSK-103`; the owner's D-7; finapp-admin-panel ADR-C131 decision 6): the application
+     * exempts it from its shedding (`THREAT_MODEL.md` T14), so every operator router - the console's included - names one source's rate
+     * limit and in-flight bound, each keyed on the connection and never on the Host header, after the private ranges; and what one
+     * source can hold in flight across the operator routers, each at its own body cap, fits the operator controller's spool, as
+     * {@link #oneSourceCannotFillTheSpool()} holds for the public edge. {@code edge.rego}'s {@code [edge-operator-limits]} is the
+     * rendered half.
+     */
+    @Test
+    @DisplayName("every operator router carries one source's rate limit and in-flight bound keyed on the connection, after the private"
+            + " ranges, and what one source holds across them fits the operator controller's spool (P17-TSK-103)")
+    @SuppressWarnings("unchecked")
+    void theOperatorRoutersAreBoundedPerSource() {
+        Map<String, Object> middlewares = (Map<String, Object>) ((Map<String, Object>) yaml(OPERATOR_EDGE).get("http")).get("middlewares");
+        long heldBytes = 0;
+        for (Map.Entry<String, Map<String, Object>> router : routers(OPERATOR_FILE).entrySet()) {
+            List<String> named = (List<String>) router.getValue().get("middlewares");
+            String rate = named.stream().filter(name -> name.startsWith("operator-rate")).findFirst().orElse(null);
+            String hold = named.stream().filter(name -> name.startsWith("operator-hold")).findFirst().orElse(null);
+            assertThat(rate).as("%s: a rate limit per source", router.getKey()).isNotNull();
+            assertThat(hold).as("%s: an in-flight bound per source", router.getKey()).isNotNull();
+            Map<String, Object> rateLimit = (Map<String, Object>) ((Map<String, Object>) middlewares.get(rate)).get("rateLimit");
+            Map<String, Object> inFlight = (Map<String, Object>) ((Map<String, Object>) middlewares.get(hold)).get("inFlightReq");
+            assertThat(((Number) rateLimit.get("average")).intValue()).as("%s's average", rate).isPositive();
+            assertThat(((Number) inFlight.get("amount")).intValue()).as("%s's amount", hold).isPositive();
+            for (Map<String, Object> limit : List.of(rateLimit, inFlight)) {
+                assertThat((Map<String, Object>) limit.get("sourceCriterion"))
+                        .as("%s: keyed on the connection, never the Host header the client chooses", router.getKey())
+                        .containsOnlyKeys("ipStrategy");
+            }
+            assertThat(named.indexOf("internal-only")).as("%s: the private ranges are judged before a bucket is spent", router.getKey())
+                    .isNotNegative().isLessThan(named.indexOf(rate));
+            String bodyCap = named.stream().filter(name -> name.startsWith("body-cap")).findFirst().orElseThrow();
+            heldBytes += ((Number) inFlight.get("amount")).longValue() * cap(OPERATOR_EDGE, bodyCap);
+        }
+        Map<String, Object> operator = deployments().stream()
+                .filter(document -> "finapp-edge-operator".equals(((Map<String, Object>) document.get("metadata")).get("name")))
+                .findFirst().orElseThrow();
+        Map<String, Object> pod = (Map<String, Object>) ((Map<String, Object>) ((Map<String, Object>) operator.get("spec")).get("template")).get("spec");
+        Map<String, Object> tmp = ((List<Map<String, Object>>) pod.get("volumes")).stream().filter(volume -> "tmp".equals(volume.get("name"))).findFirst().orElseThrow();
+        long spool = org.springframework.util.unit.DataSize.parse(((String) ((Map<String, Object>) tmp.get("emptyDir")).get("sizeLimit"))
+                .replace("Mi", "MB")).toBytes();
+        assertThat(heldBytes).as("one operator source in flight at every router's body cap").isLessThan(spool);
     }
 
     @SuppressWarnings("unchecked")
