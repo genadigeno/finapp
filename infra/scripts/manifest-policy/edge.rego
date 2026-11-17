@@ -534,7 +534,7 @@ deny contains sprintf("[edge-quota-compute] %s", [msg]) if {
 
 # ------------------------------------------------------------------------------------------- the Operator Console (X-TSK-020)
 
-# finapp-admin-panel P17-TSK-004, ADR-0131 decision 4. The operator edge serves the console's static assets same-origin, from a workload in a
+# finapp-admin-panel P17-TSK-004, finapp-admin-panel ADR-C131 decision 4. The operator edge serves the console's static assets same-origin, from a workload in a
 # namespace of its own, under headers of its own; the public edge never serves them. The policy below is a copy of the console's one definition
 # (finapp-admin-panel config/console-headers.mjs, CONSOLE_CSP); ConsoleHostingManifestsTest holds the committed files to the same string.
 console_namespace := "finapp-console"

@@ -19,7 +19,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 /**
  * The Operator Console is served same-origin on the operator edge alone, under headers of its own, from a workload that holds nothing and
- * reaches nothing (`X-TSK-020`; finapp-admin-panel `P17-TSK-004`, ADR-0130 decision 2, ADR-0131 decision 4; ADR-0120 decision 6's note).
+ * reaches nothing (`X-TSK-020`; finapp-admin-panel `P17-TSK-004`, finapp-admin-panel ADR-C130 decision 2 and ADR-C131 decision 4; ADR-0120 decision 6's note).
  *
  * <p>Held on the committed files on every build. {@code infra/scripts/edge-check.sh} renders the console's overlays beside the application's
  * and the edge's and runs them through {@code edge.rego}'s {@code [edge-console-*]} rules, each refused by a plant, and asks the pinned proxy

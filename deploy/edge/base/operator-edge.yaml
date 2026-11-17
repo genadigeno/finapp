@@ -49,7 +49,7 @@ http:
           tracestate: ""
           baggage: ""
 
-    # THE OPERATOR CONSOLE'S OWN HEADERS (X-TSK-020; finapp-admin-panel P17-TSK-004, ADR-0131 decision 4), on the operator-console router
+    # THE OPERATOR CONSOLE'S OWN HEADERS (X-TSK-020; finapp-admin-panel P17-TSK-004, finapp-admin-panel ADR-C131 decision 4), on the operator-console router
     # alone: the API routers keep edge-headers and its default-src 'none', and no router runs both. The policy is a copy of the console's one
     # definition, finapp-admin-panel config/console-headers.mjs (CONSOLE_CSP), under which its catalogue proves every component: scripts,
     # styles and fonts from the console's own origin, images from it or data: URLs, the API same-origin, no form posted elsewhere, no

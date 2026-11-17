@@ -31548,6 +31548,1022 @@ parts are `POSTPONED_ISSUES.md` PI-026 and PI-027.*
 
 ---
 
+# Phase 17 — Operator Console (backend half)
+
+Status: `READY` (2026-11-17 — entry gate passed by the Phase 16 → 17 transition: Phase 16 `COMPLETE` by the owner's flip of
+2026-11-17 on its exit review's verdict, "complete with recorded deviations" ([`reviews/PHASE_16_REVIEW.md`](reviews/PHASE_16_REVIEW.md));
+the transition's record is [`reviews/PHASE_16_TO_17_TRANSITION.md`](reviews/PHASE_16_TO_17_TRANSITION.md)), initialised as
+documents only by the same transition (`P17-INIT`, branch `P17-INIT` from master `5227f57e`): forty-four items across eleven
+milestones, two of them `COMPLETE` before the phase opened (`P17-TSK-003` and `-004`, under the owner's decision D-12),
+`P17-TSK-101` marked `READY` and every other item `PLANNED`.
+
+**What this section is.** Phase 17 builds the Operator Console: a single-page application in its own repository,
+`finapp-admin-panel`, served same-origin on the operator edge as a static workload holding no state. That repository holds the
+console's plan (`finapp-admin-panel` `docs/PHASE_17_PLAN.md`), its decisions (ADR-C130…C136, `Proposed` there), its definition of
+done (`DOD-UI`) and **its own tasks** (its `docs/BACKLOG.md`). This section holds **the backend half only**: what only `finapp`
+can do, as the console handed it off in `finapp-admin-panel` `docs/FINAPP_BACKEND_WORK.md` (items B0.1…B11.3, written
+2026-11-15 against master `b23e3212`). Each entry names its B-item and its gap (`G-nn`, the console plan's §7).
+
+**Identifiers.** `P17-TSK-001`…`-044`, `P17-TST-001` and `P17-DOC-001`/`-002` are the console plan's, a namespace both
+repositories share: an identifier names the same task in both, and the backend ones (the plan's §15) are carried here under
+their own numbers. **Tasks only `finapp` has take the reserved block `P17-TSK-101` onward**, which the console's plan does not
+use, so neither repository can mint an identifier the other already holds - the collision that renumbered this repository's
+`X-TSK-019`/`-020` pair on 2026-11-16 (now `X-TSK-022` and `-023`). Milestones M17.1…M17.11 are the console's M1…M11; its M0
+was the transition itself (`P17-INIT`, with B0.1 and B0.2).
+
+**The objective** (the plan's §0): an operator acts on the platform only through real operator endpoints, each authorised,
+factor-proven, audited, and readable before it is decided. **No new financial invariant** (the plan's §19): the console moves no
+money. `-031` and `-116` change who may trigger existing postings and when (four-eyes, thresholds, keys), never the postings,
+and carry `DOD-FIN` for that; `-028` adds a transition to the customer account and carries `DOD-FIN` because a restriction gates
+money movement. The invariants the phase holds under its new doors are the catalogue's existing ones - `INV-AUD-*`,
+`INV-IDN-*`, `INV-IDEM-*`, `INV-HIST-01`, and `INV-LED-*`/`INV-BAL-*` unchanged under `-028` and `-031`.
+
+**The honest environment boundary.** As in Phase 16, the project has no cloud account, and a cluster run is a local `kind`.
+The owner's standing rule postpones every cluster run, so each task's cluster half (`-104`, the `kind` forms of the seeding
+tasks, `-044`'s probe, `P17-TST-001`) is written and held hermetically, and its run is **owed to the owner's run**, as
+`POSTPONED_ISSUES.md` PI-025 records Phase 16's - never claimed as executed.
+
+**Testing.** Per task: the changed classes' tests, and by name the guards that read the changed files and the published
+contract (`OpenApiContractTest`, `EveryEndpointDeclaresARuleTest`, `RoutePermissionRegisterTest`, `EdgeAllowListTest` where
+routes change). **By the owner's grant of 2026-11-17 for this phase's programme, each task runs the database test classes it
+adds or changes** - targeted, never the whole `databaseTest`, `kafkaTest` or own-container tier, which stay PI-023's. Every new
+route is in `docs/api/openapi.json`; every new list is an ADR-C133 §7 collection (`{ items, nextCursor }`, `nextCursor` absent
+at the end, a declared order; `API_CONVENTIONS.md` §7), paged by a key, never an offset; every new read of a customer or of
+staff is audited (ADR-C132 decision 5); every new permission is pinned in `RoleNameTest` and registered in
+`PRIVILEGED_ACCESS_REVIEW.md`; every new act is `MULTI_FACTOR` (D-6, `-102`) and, where it moves or controls money, keyed. The
+ten-instance question is answered per task.
+
+**Milestones** (the console plan's §14):
+- M17.1 Foundation (`-003`, `-004`, `-101`…`-105`)
+- M17.2 First workflows on existing APIs (`-106`, `-107`)
+- M17.3 Administration and audit (`-014`…`-017`, `-108`)
+- M17.4 Risk and AML (`-020`, `-109`, `-110`)
+- M17.5 Finance (`-022`, `-023`, `-111`, `-112`)
+- M17.6 Customers and KYC (`-025`…`-029`, `-113`)
+- M17.7 Payments and merchants (`-031`…`-033`, `-114`, `-115`)
+- M17.8 Credit, lending and BNPL (`-035`, `-116`, `-117`)
+- M17.9 FX, cross-border and integration availability (`-037`, `-118`, `-119`)
+- M17.10 Overview and approvals inbox (`-039`, `-040`, `-042`)
+- M17.11 Hardening and exit (`-044`, `P17-TST-001`, `P17-DOC-002`)
+
+**Order** (the plan's §14). M17.1 first. M17.3, M17.4 and M17.5 may proceed in parallel after M17.2. **M17.6 waits for M17.3**:
+customer reads must be auditable and reviewable before they exist (`-014`'s directory, `-017`'s audit read). M17.7 follows
+M17.6 (`PAYMENT_READ`, the transfer read); M17.8 follows M17.5; M17.9 follows M17.7 (the rails read); M17.10 follows M17.4…M17.9,
+whose pending lists it composes; M17.11 is last. Each milestone's seeding task follows its read tasks and extends `-106`'s
+script.
+
+**Critical path**: `-101` → `-102` → `-014` → `-017` → `-025` → `-027` → `-032` → `-031` → `-040` → `P17-TST-001` →
+`P17-DOC-002`.
+
+**What Phase 17 must not implement** (the plan's §15, "deliberately not in the backlog", and the console's ADRs):
+- a money movement, or a financial rule changed beyond `-031`'s and `-116`'s controls and `-028`'s transition;
+- a free-text search over personal data - lookups match an identifier exactly, the identifier in the body, never a URL
+  (ADR-C132 decision 4);
+- a name, contact detail or document served to staff (D-5: identifier-only through M17.6), the KYC document view (G-62), a
+  request-for-information case state (G-63), operator consent revocation;
+- audit export (G-21, deferred by D-9), generic exports (G-152), a job-status API (G-130);
+- a workforce identity provider (G-13, the existing C13), cookie sessions (D-4);
+- a central approval service - the inbox is composed in the browser from each domain's list (ADR-C133 decision 4);
+- a read from a replica (ADR-0129), or a cross-schema read - each module exposes a query port through `app` (ADR-C132);
+- a test-only seeding path in an image, or on a route production serves;
+- a claim of production readiness or compliance.
+
+A reviewer finding any of it refuses the change.
+
+**Owner decisions this section leaves open** - each the owner's, recorded where it bites, none decided here:
+- which role pairs conflict, for the segregation-of-duties refusal (`-016`, B3.3);
+- whether `ADMINISTRATOR` holds `AUDIT_READ` - ADR-C134 decision 2 says not, unless the owner decides otherwise (`-017`);
+- whether an investigator may see that a regulatory report exists, the tipping-off question (`-109`, B4.5) - if not, a case's
+  reports are served only to `AML_REPORT_APPROVE`;
+- whether staff may read a screening list's entries, classified `RESTRICTED` (ADR-C132 decision 3; `-020`) - metadata only
+  until decided;
+- whether finance approvers also read: `ACCOUNTING_READ` on `FINANCIAL_CONTROLLER`, or a read-only role beside theirs (B5's
+  role note; `-022`, `-023`, `-111`). finapp's finance roles are a partition today - `ACCOUNTANT` reads and proposes,
+  `FINANCIAL_CONTROLLER` approves and holds no `ACCOUNTING_READ`, `REGULATORY_REPORTER` prepares and submits, and the
+  regulatory approver holds no `REGULATORY_REPORT_PREPARE` - so a controller reaches each item by an identifier someone gives
+  them;
+- whether a KYC rejection, or an approval over an adverse provider verdict, needs a second person (ADR-0035; `-029`);
+- **B6.6, not tasks until decided**: personal data shown to staff, field by field with a named operator need (G-31, D-5); a
+  KYC document view (G-62 - it would be `KYC_DOCUMENT_READ`, `MULTI_FACTOR`, an audited, short-lived, non-cacheable read over
+  `DocumentAccess.read`, which deliberately has no HTTP caller); "request more information from the customer" (G-63 - a new
+  case state, `AWAITING_CUSTOMER`, and a customer notification);
+- which identity signs the console's image in a real environment (`-105`) - keyless from CI's identity, as `THREAT_MODEL.md`
+  §6 item 35 records for the platform images, is the proposal;
+- the console's ADR-C130…C136 are `Proposed` in `finapp-admin-panel`. A task that implements one records the decision in this
+  repository's register (an ADR, or a dated note on the ADR it amends) before code, and `P17-DOC-002` proposes their
+  acceptance.
+
+*M17.1 — Foundation*
+
+**P17-TSK-003 — `GET /v1/operator/me`: an operator's own identity, roles, permissions and session (G-01)** — `COMPLETE` (2026-11-13; built and gated as `X-TSK-019`, branch `P17-TSK-003` from master `ce1abd2e`, under the owner's decision D-12 - "complete M1" ahead of the Phase 16 → 17 transition - and merged to master by the owner; recorded here by `P17-INIT` on 2026-11-17, which records its gate as D-12 asked. Its entry and as-built are `X-TSK-019`'s, §Cross-cutting work)
+- **Context**: `identity`, `app`; the console's permission-aware navigation reads it.
+- **Carried forward**: `-014`, `-015`, `-017`, `-025` and `-039` add permissions and roles. It reports them without change,
+  because `RoleName`'s mapping is its source; B6.1's "done when" ("`/v1/operator/me` reports them") is checked by `-025`.
+- **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-004 — The Operator Console served on the operator edge: its own workload, router and headers (G-02, `finapp`'s half)** — `COMPLETE` (2026-11-14; built and gated as `X-TSK-020`, branch `P17-TSK-004` from master `e56d1e69`, under D-12, merged to master by the owner; recorded here by `P17-INIT` on 2026-11-17, which records its gate as D-12 asked. Its entry and as-built are `X-TSK-020`'s, §Cross-cutting work)
+- **Context**: `deploy/console`, `deploy/edge`, `infra/scripts/manifest-policy/edge.rego`, `ConsoleHostingManifestsTest`;
+  ADR-0120 decision 6 (its dated note).
+- **Carried forward to `-104`**: its acceptance on a cluster - a test operator signing in through
+  `https://<operator host>/console/`, the CSP present once on `/console/`, the API routes keeping `default-src 'none'`,
+  `/console` unreachable from the public host - never ran, because the image did not exist in this repository; and
+  `kubeconform` over `deploy/console`, which TLS interception blocked at `X-TSK-020`.
+- **DoD**: `DOD-BUILD`, `DOD-SEC`.
+
+**P17-TSK-101 — `Cache-Control: no-store` on every operator API response (G-05)** — `READY` (marked by the Phase 16 → 17 transition, `P17-INIT`, 2026-11-17: the phase's first task; no dependency open)
+- **Context**: `app` (the web layer) or `deploy/edge` (the operator edge's middleware); ADR-C131 decision 5; B1.1. The
+  console's `P17-TSK-002` found no `Cache-Control` set anywhere in `app/src/main` or `deploy/`: operator responses carry
+  identifiers, amounts and statuses, and nothing tells a browser or an intermediary not to store them.
+- **Scope**: every `/v1/**` response the operator surface serves carries `Cache-Control: no-store`, **error responses
+  included** - problem documents, the session interceptor's `401` and `403`, the shedding `503`. Where: a response filter in
+  the application covering the operator surface, or the operator edge's middleware on **the API routes only**. The design
+  decides and says why: an application filter also covers a response the edge never shapes, and an edge middleware also
+  covers an answer the application never produced. It also states whether the public surface's API responses carry the
+  header; the hand-off asks only for the operator surface.
+- **Exclusions**: `/console/**`. The console's nginx sets its caching per path (`index.html` `no-cache`, hashed assets
+  immutable), and `ConsoleHostingManifestsTest` and `edge.rego` already refuse a `Cache-Control` in `console-headers`; both
+  stay unchanged and green.
+- **Deps**: none.
+- **Accept**:
+  - every `/v1/**` response on the operator surface, error responses included, carries `Cache-Control: no-store`;
+  - a guard holds it: a request per status class through the real filter chain, or the middleware required on every
+    operator API router by `EdgeManifestsTest` and `edge.rego`;
+  - `/console/**` is unchanged, and its guards are green.
+- **Probe**: the header dropped from one error path, or one operator API router left without the middleware → the guard red.
+- **Multi-instance**: stateless; every replica, or every edge instance, sets the header. `PASS` by construction.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-SEC`, `DOD-API`.
+
+**P17-TSK-102 — A second factor on every operator act (D-6)** — `PLANNED`
+- **Context**: `app` (the session interceptor, `@RequiresAssurance`) and every operator controller; ADR-C131 decision 3; D-6
+  ("require `MULTI_FACTOR` for every act on the operator surface, server-enforced"); B1.2. Today many operator commands accept a
+  password-only session.
+- **Scope**: `@RequiresAssurance(AssuranceLevel.MULTI_FACTOR)` on every unsafe handler under `/v1/operator/**`, and on the
+  operator acts outside it (`/v1/identities/**`, `/v1/kyc/cases/**`, `/v1/ledger/**`, payment refund and void, transfer
+  reversal). A guard in the spirit of `EveryEndpointDeclaresARuleTest`: every `POST`, `PUT`, `PATCH` or `DELETE` handler that
+  declares `@RequiresPermission` also declares `@RequiresAssurance` at `MULTI_FACTOR` or above, any exception named in a
+  register beside the guard with its reason. The hand-off's count at `b23e3212` - rough, to be re-derived by the guard:
+  - the M2 screens' controllers: `ReconciliationInvestigationController` 4 of 4 acts, `ReconciliationResolutionController`
+    5 of 5, `SettlementOperationsController` 7 of 7, `ReconciliationAdministrationController` 6 of 6,
+    `ReconciliationOperationsController` 1 of 1 (`DeadLetterController` already requires the factor);
+  - elsewhere: accounting (eight controllers), regulatory (two), BNPL (five), credit (four), lending (five), FX and
+    cross-border (three), merchant (three), disputes and counterparty screening (two), risk (ten). Some are partly done.
+- **Exclusions**: safe methods (reads); a customer's own doors on the public surface, whose step-up stays ADR-0030's.
+- **Deps**: none. Every later task's new act carries the factor from birth.
+- **Accept**:
+  - the guard is green over every handler;
+  - a password-only operator session gets `403 identity.AssuranceRequired` on any act, with a negative test per surface
+    class (the plan's §19 criterion 5);
+  - the console's step-up replays the act once. It already prompts for the factor and replays with the same idempotency key,
+    so the console needs no change.
+- **Failure**: the interceptor refuses before the handler runs, so a replay after step-up cannot double an act. The refusal
+  is recorded where the handler records refusals (`@RecordsRefusals`).
+- **Probe**: the annotation removed from one handler → the guard red, and a password-only session admitted by that
+  handler's negative test → red.
+- **Multi-instance**: a session's assurance is the database's row, read per request; `PASS` by construction.
+- **Risk**: Medium - every operator controller. **Cx**: M. **DoD**: `DOD-SEC`, `DOD-API`.
+
+**P17-TSK-103 — A rate limit and an in-flight bound on the operator edge (D-7)** — `PLANNED`
+- **Context**: `deploy/edge/base/operator-edge.yaml`, `infra/scripts/manifest-policy/edge.rego`, `EdgeManifestsTest`; D-7
+  ("modest"); ADR-C131 decision 6; B1.3. `deploy/edge/base/public-edge.yaml` has `rateLimit` and `inFlightReq`;
+  `operator-edge.yaml` has neither.
+- **Scope**: both middlewares on every operator router, `/console/**` included, keyed by the client address as the public
+  edge states it, never by the `Host` header. `edge.rego` and `EdgeManifestsTest` are taught to require them on the operator
+  edge.
+- **Deps**: none.
+- **Accept**:
+  - the operator routes, `/console/**` included, carry both middlewares;
+  - `edge-check.sh` is green;
+  - a burst beyond the limit answers `429` with `Retry-After`. The console reads `Retry-After` and shows the refusal.
+- **Multi-instance**: the edge's limiters count per edge replica, in memory, so the fleet's effective bound is the configured
+  one times the edge replicas. The task states both figures and claims no global limit; the application's own bound stays
+  its load shedding (`P16-TSK-016`).
+- **Probe**: one operator router without the middleware → `edge.rego` and `EdgeManifestsTest` red.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-SEC`, `DOD-BUILD`.
+
+**P17-TSK-104 — The console image on `kind`: build, sign, attest, load, apply** — `PLANNED`
+- **Context**: `infra/scripts/kind-rehearsal.sh`, `infra/scripts/admission-check.sh`, `deploy/console/overlays/kind`,
+  `deploy/admission/clusterimagepolicies.yaml`; B1.4. It completes `-004`'s acceptance on a cluster and the console's
+  `P17-TSK-009` (its `kind` end-to-end run). What the console provides:
+  - `finapp-admin-panel/Dockerfile`: a two-stage build whose final stage is `nginxinc/nginx-unprivileged` pinned by digest,
+    uid 101. Verified 2026-11-15: it runs with a read-only root and a `/tmp` tmpfs; `/console/` and deep links answer `200`
+    `no-cache`; hashed assets are immutable; everything else is `404`.
+  - the CI job `image`, which keeps the image as an OCI archive (`finapp-console.oci.tar`) with the commit's CycloneDX SBOM
+    (`sbom.cdx.json`), unsigned and unpushed by design: admission trusts an environment's authority, not the console
+    repository's.
+  - the rollout fix recorded at `X-TSK-020`: `scripts/collect-previous-assets.sh <registry>/finapp-console@sha256:<serving
+    digest>` before the build, so the new image also carries the previous release's hashed assets and a page from an old pod
+    never gets a `404` for its asset during a rolling update. With no argument (the first release) the image carries its own
+    assets only.
+- **Scope**:
+  1. obtain the image: build `finapp-admin-panel` at a named commit
+     (`docker build --build-arg VITE_CONSOLE_ENVIRONMENT=kind -t finapp-console .`), or load the CI artefact's archive;
+  2. sign and attest it with the run's key exactly as the platform images are: a signature and two attestations, provenance
+     (`https://slsa.dev/provenance/v1`) and SBOM (`https://cyclonedx.org/bom`, the console's `sbom.cdx.json`). The two
+     policies in `clusterimagepolicies.yaml` already name `finapp-console`;
+  3. load it into the `kind` node, put its digest into the rehearsal's rendered copy of `deploy/console/overlays/kind`
+     (sixty-four zeros today), and apply that overlay after the edge;
+  4. `kubeconform` over `deploy/console`.
+- **Deps**: `-004` (`COMPLETE`); the console repository at a named commit.
+- **Accept** (`-004`'s, and the console's `-009`'s):
+  - on `kind` with three application replicas, a test operator signs in through `https://<operator host>/console/`, steps up,
+    and opens a module;
+  - the CSP header is present once on `/console/`, and the API routes keep `default-src 'none'`;
+  - `/console` is unreachable from the public host;
+  - then the console's `kind` end-to-end run: `CONSOLE_BASE_URL=https://<operator host>/console/ npm run test:e2e`, which
+    selects the Playwright `kind` project;
+  - **the hermetic half** - the rehearsal's new steps, the digest substitution, the admission check's expectations - is held
+    by the rehearsal's contract tests now; **the cluster half is owed to the owner's run** and is never claimed until it runs.
+- **Multi-instance**: the console holds no state, and its replicas serve the same immutable files. The answer is counted on
+  the run; until then the gate records the owner's postponement, not a `PASS`.
+- **Probe**: an unsigned console image, or one without its SBOM attestation, admitted → the admission check red.
+- **Risk**: Medium - another repository's artefact in this repository's supply chain. **Cx**: M. **DoD**: `DOD-BUILD`,
+  `DOD-SEC`, `DOD-TEST`.
+
+**P17-TSK-105 — The console's registry repository and delivery** — `PLANNED`
+- **Context**: `infra/terraform/modules/registry`, `deploy/delivery` (Argo CD), `promote.sh`, `Promotion.java`; B1.5.
+- **Scope**:
+  - a repository named `finapp-<environment>-console` in the registry module; the admission policies already match that name;
+  - an Argo CD Application for `deploy/console`;
+  - the console in `promote.sh` and `Promotion.java`, promoted by digest as the platform images are. Promotion hands the
+    serving digest to the next console build, for `-104`'s rollout fix.
+- **Exclusions**: an apply to a real account (none exists).
+- **Owner's decision**: which identity signs the console in a real environment. The proposal is keyless signing from CI's
+  identity, as `THREAT_MODEL.md` §6 item 35 records for the platform images; the owner ratifies it.
+- **Deps**: `-104`.
+- **Accept**: the module and the Application exist, checked as the platform's are (Terraform with mock providers, the
+  delivery's guards); promotion moves the console by digest and records the serving digest.
+- **Multi-instance**: promotion is a commit to the delivery repository, arbitrated there; no runtime state. `PASS` by
+  construction.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-BUILD`, `DOD-SEC`.
+
+*M17.2 — First workflows on existing APIs*
+
+The console's four M2 screens use only APIs `finapp` already serves: dead letters (`/v1/operator/events/**`); reconciliation
+breaks, resolutions, runs, expectations, settlement status and reports; settlement files, sources, refused deliveries and
+batches. No API change is required. One thing is: the console's end-to-end tests need data to act on.
+
+**P17-TSK-106 — Test-only seeding for the console's end-to-end tests: M2's scenarios** — `PLANNED`
+- **Context**: `infra/scripts/` (a new `e2e-seed.sh <scenario>`, or as the design names it); the compose database locally,
+  and `kind`; B2.1. Each M2 acceptance is end to end against the real application, and an empty platform has nothing to act
+  on. The console's acceptances:
+  - `P17-TSK-010`: "an `EVENT_OPERATOR` pair can discard a parked record end to end on kind";
+  - `P17-TSK-011`: "a break can be resolved by two operators, with a stale attempt refused and re-confirmed";
+  - `P17-TSK-012`: attest and decline a file.
+
+  The console's harness can already register test identities through `finapp`'s own doors, grant roles, and insert the first
+  administrator by the one documented break-glass step (`finapp-admin-panel` `e2e/support/platform.ts`).
+- **Scope**: a **test-only** way to put the following in place, printing the identifiers it created:
+  1. **an abandoned outbox event**: a published-type event whose relay gave up (`dead_lettered_at` set, not discarded, not
+     published), so the console can retry it, and propose and approve its discard;
+  2. **a parked inbox record**: state `PARKED`, re-drivable from the outbox, so the console can release it and discard it by
+     four-eyes;
+  3. **a break with a resolution to decide**: a settlement file for a declared source, ingested through the existing upload
+     door (or `fetch` against a stub collector), producing at least one break of a known type - for example an
+     `AMOUNT_MISMATCH` against a seeded expectation. The console's harness then proposes a `TRANSFER_TO_ACCOUNT` or
+     `ACKNOWLEDGE` resolution, moves the proposal, and checks the stale approval;
+  4. **a `PARSED` uploaded file awaiting attestation**, submitted by a different test identity from the one that attests.
+
+  Every effect goes through the platform's own doors where one exists. A state no door reaches (an abandoned relay, a parked
+  record) is planted against the test database only, by its owning module's rules.
+- **Exclusions**: anything in an image, or on a route production serves - a guard holds that the script and what it needs
+  ship nowhere.
+- **Deps**: none for the local form; `-104` for the `kind` form.
+- **Accept**: `finapp-admin-panel`'s end-to-end tests can run each acceptance above against a running `finapp`, locally (Vite
+  proxy, `npm run test:e2e`) and on `kind` (`CONSOLE_BASE_URL`, after `-104`; owed to the owner's run); the script reruns
+  without collision (fresh identifiers per run).
+- **Multi-instance**: the seeded rows are ordinary rows that every replica's relays and sweepers also see. The script plants a
+  state no live relay or sweep undoes before the test acts (the design says how, for example an attempt count past the
+  relay's limit). `PASS` when the seeded state survives the fleet's sweeps.
+- **Risk**: Medium - a test-only path must stay test-only. **Cx**: M. **DoD**: `DOD-TEST`, `DOD-SEC`.
+
+**P17-TSK-107 — Optional settlement and reconciliation lists: batches, and resolutions awaiting a decision (G-120, G-122)** — `PLANNED` *(low priority: the console works without them; G-121, the breaks' cursor, is `-042`'s)*
+- **Context**: `settlement`, `reconciliation`; B2.2.
+- **Scope**:
+  - `GET /v1/operator/settlement/batches?source=&from=&cursor`, to browse batches. Today the console opens a batch by its
+    exact identifier;
+  - `GET /v1/operator/reconciliation/resolutions?status=PROPOSED&cursor`, in ADR-C133's pending-decision shape
+    (`{ id, kind, proposedBy, proposedAt, reasonSummary, subjectId }`): an approver's queue. Today a pending resolution is
+    reached from its break.
+
+  Each a §7 collection under the permission the existing reads of the same records use (the design names it); the batches
+  with a bounded window.
+- **Deps**: none.
+- **Accept**: both routes in the contract, with tests for the permission, the cursor and the declared order; the resolutions
+  list marks the caller's own proposals.
+- **Multi-instance**: keyset reads of committed rows; `PASS` by construction.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`.
+
+*M17.3 — Administration and audit*
+
+The console has built what `finapp` already serves: an identity opened by its exact identifier; grant and revoke a role,
+suspend and reinstate (`/v1/identities/{id}/roles[/{role}]`, `…/suspension`); the factorless-holdings review
+(`/v1/operator/access-review/factorless-holdings`), with a revoke on each row. The permissions and roles named below are
+ADR-C132's and ADR-C134's. The console's audit trail screens (its `P17-TSK-019`) cannot start until `-017` exists.
+
+**P17-TSK-014 — Staff directory, identity detail, lookup and role catalogue (G-10, G-11)** — `PLANNED`
+- **Context**: `identity` (ADR-0031), `app`; B3.1. An administrator today acts on an identifier obtained elsewhere and cannot
+  see whom they act on: the console's identity page shows no status, no roles and no factor state.
+- **Scope**:
+  - **a new permission, `IDENTITY_READ`**, held by `ADMINISTRATOR`, and by `AUDITOR` when `-017` creates it. Pinned in
+    `RoleNameTest`, registered in `PRIVILEGED_ACCESS_REVIEW.md`;
+  - `GET /v1/operator/identities?role=&status=&cursor`: identities that hold, or held, an operator role. Filters `role` (a
+    `RoleName`) and `status` (`ACTIVE`, `SUSPENDED`, `CLOSED`); ordered by `(createdAt, identityId)` descending.
+    `RoleAssignmentStore.activeHoldingsOf` already exists, unexposed;
+  - `GET /v1/operator/identities/{id}`: `{ identityId, status, suspendedAt?, suspensionCause?, factorEnrolled,
+    roles: [{ role, assignedAt, assignedBy }], createdAt }`. **Identifier-first** (ADR-C132 decision 3): no name, no login
+    identifier, no contact detail;
+  - `POST /v1/operator/identities/lookup` with `{ loginIdentifier }` **in the body, never the URL** (ADR-C132 decision 4),
+    answering `{ identityId }` or `404`;
+  - `GET /v1/operator/roles`: `[{ role, permissions: [...], requiresEnrolledFactor }]`, built from `RoleName` itself. The
+    console shows it as the role catalogue and uses it, in place of the contract's enum, for its role picker.
+- **Audit**: the detail read and the lookup are recorded (`identity.IdentityRead`, `identity.IdentityLookedUp`) with actor and
+  target; the list once per request, with its filter. `AUDITABLE_ACTIONS.md` gains them.
+- **Deps**: `-003` (`COMPLETE`).
+- **Accept**: the four routes in `docs/api/openapi.json`, behind the operator surface, with tests for the permission (a
+  negative per route), the audit, the §7 cursor, no personal-data field served, and the lookup's value never in a URL or a log.
+- **Multi-instance**: reads of committed rows, the audit record written as the existing audited reads write theirs; `PASS` by
+  construction.
+- **Risk**: Medium - the first read of staff data. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-015 — Another identity's sessions: list and revoke (G-12)** — `PLANNED`
+- **Context**: `identity` (the session store), `app`; B3.2. Today an administrator can end someone's sessions only by
+  suspending them, which ends all of them. During an incident they need to end one session - a lost laptop - without locking
+  the person out.
+- **Scope**:
+  - **a new permission, `SESSION_ADMINISTER`**, held by `ADMINISTRATOR`;
+  - `GET /v1/operator/identities/{id}/sessions`: the live sessions, `{ sessionId, issuedAt, lastSeenAt, expiresAt,
+    assurance }`. **No token, and no token hash**;
+  - `DELETE /v1/operator/identities/{id}/sessions/{sessionId}`, with `{ reason }` in the body;
+  - optionally, `DELETE /v1/operator/identities/{id}/sessions` with `{ reason }`, ending them all without suspending.
+- **Controls**: `MULTI_FACTOR` and a reason. Audited as `identity.SessionRevokedByAdministrator`, with refusals recorded
+  (`@RecordsRefusals`). The actor's own identity is refused, as the role doors refuse it. Revoking a session that has already
+  ended answers `204`: idempotent in effect, like the role doors.
+- **Deps**: `-014`.
+- **Accept**: the routes in the contract; a revoked session's next request is `401`; the audit names actor, subject and
+  session; no token material is served.
+- **Multi-instance**: liveness and revocation are the shared `LIVE` predicate on the database's clock (`X-TSK-007`,
+  `X-TSK-008`), so a revocation racing the session's own request, or another administrator's revocation, ends it once, and ten
+  instances agree on which sessions are live. `PASS` with the race in the database tests.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-016 — Segregation-of-duties refusal at grant, and the review read (G-14)** — `PLANNED`
+- **Context**: `identity` (`RoleName`, the grant door `POST /v1/identities/{id}/roles`), `app`; B3.3; the console plan's open
+  item 9. Today the only separation is per act: the proposer cannot approve. Nothing stops one person holding both halves of a
+  four-eyes pair - for example `RECONCILIATION_OPERATOR` and `RECONCILIATION_CONTROLLER`, or `RISK_ANALYST` and `RISK_OFFICER`.
+- **Scope**:
+  1. **a declared conflict table** in `identity`, in code beside `RoleName`, pinned by a test and listed in
+     `PRIVILEGED_ACCESS_REVIEW.md`. **Which pairs conflict is the owner's decision**; the table makes it reviewable;
+  2. **the grant refuses a conflicting role**: `409 identity.RoleConflict`, a new problem code (`ERROR_CONTRACT.md`) naming the
+     role already held, the refusal recorded;
+  3. **the review read**: `GET /v1/operator/access-review/sod-conflicts`, the live holdings that already conflict because they
+     were granted before the rule. Shaped like the factorless review - `{ conflicts: [{ identityId, roles: [a, b], since }],
+     truncated }` - under `ROLE_ASSIGN` and `MULTI_FACTOR`, and recorded, as the factorless review is.
+- **Deps**: `-014`; the owner's conflict pairs.
+- **Accept**: the table pinned; a conflicting grant refused `409` and recorded; the review lists the conflicts that predate the
+  rule. The console shows the `409` by its code with no change, and adds the second list beside the factorless one.
+- **Multi-instance**: **two concurrent grants of the two halves of a pair to one identity must not both succeed.** The check
+  and the insert serialise on the identity's holdings - a lock on the identity's row, or the design's equivalent - never a read
+  and an insert in separate transactions. `PASS` only with that race in the database tests.
+- **Probe**: the serialisation removed → the concurrent-grant case admits both → red.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-SEC`, `DOD-API`.
+
+**P17-TSK-017 — The audit trail query (G-20)** — `PLANNED`
+- **Context**: `platform` (`platform.audit_record`, ADR-0010), `app`; ADR-C134; B3.4. Every act writes to
+  `platform.audit_record`, and nothing reads it: an auditor today needs database access. The console's audit search and the
+  History tab on every detail page (its `P17-TSK-019`) wait for this.
+- **Scope**:
+  - **a new permission, `AUDIT_READ`**, held by **a new read-only role, `AUDITOR`**: no `*_PROPOSE`, no `*_APPROVE`, an
+    enrolled factor required. **`ADMINISTRATOR` does not hold `AUDIT_READ` unless the owner decides otherwise** (ADR-C134
+    decision 2);
+  - `GET /v1/operator/audit-records?from=&to=&actor=&operation=&targetType=&targetId=&correlationId=&outcome=&cursor`.
+    `from` and `to` are **required**; the window is bounded (31 days proposed) and checked with a query plan. A §7 collection
+    ordered by `(occurredAt, auditId)` descending; items `{ auditId, occurredAt, actorId, operation, targetType, targetId,
+    outcome, correlationId, changeSummary }`;
+  - `GET /v1/operator/audit-records/{id}`: one record;
+  - no update and no delete, and a grant that forbids both;
+  - **the read is itself recorded**: each page served is `audit.RecordsRead`, its filter the change summary (ADR-C134
+    decision 3).
+- **Indexes**: decided with `EXPLAIN` plans for the filters above - at least `(occurred_at, audit_id)`, and
+  `(target_type, target_id, occurred_at)` for the History tab - and built without blocking the writers, under the migration
+  lint's rules for a table an earlier release created. The read uses the reporting pool if the plan shows contention, **never
+  a replica** (ADR-0129). Audit records are never deleted (`DATA_RETENTION.md`), so the window, not retention, bounds a query.
+- **Exclusions**: export (G-21, `AUDIT_EXPORT`), deferred to M10 by D-9 and not in this phase's backlog.
+- **Deps**: none; ADR-C134's decisions recorded in this repository's register by the design.
+- **Accept**: the routes in the contract, with tests for the required window and its bound, the cursor, the permission (a
+  negative for every other role: the plan's §19 criterion 7), that a read is itself recorded, and the application role's lack
+  of `UPDATE` and `DELETE` on the table (`42501`); the plans recorded.
+- **Multi-instance**: keyset paging over an append-only table is stable while every replica appends. A writer's stamp can
+  commit after a row with a later stamp, so a page boundary already passed can gain a late row; the design states what a page
+  promises about late commits. `PASS` with that statement and its test.
+- **Risk**: Medium - the busiest table, and an index built on a large one. **Cx**: L. **DoD**: `DOD-API`, `DOD-SEC`,
+  `DOD-KERNEL`.
+
+**P17-TSK-108 — Test-only seeding for M3's end-to-end tests** — `PLANNED`
+- **Context**: `-106`'s script; B3.5. The console's harness already registers identities and grants roles through `finapp`'s
+  doors.
+- **Scope**: `-106`'s script extended with an identity holding a factor-requiring role with **no** factor enrolled, so the
+  factorless review has a row; and, once `-016` exists, an identity holding two conflicting roles from before the rule.
+- **Deps**: `-106`; `-016` for the second.
+- **Accept**: the console's end-to-end tests can grant, revoke, suspend, reinstate and review against a running `finapp`; the
+  `kind` form owed with `-104`'s.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+
+*M17.4 — Risk and AML*
+
+`finapp` already serves almost all of M4: the alert and case queues, a case's file and evidence, the investigator's acts,
+suppressions, dispositions, risk actions, regulatory reports (drafting, approval, filing), assessments with their replays and
+overrides, a party's risk profile, policy versions, screening lists, monitoring reprocessing and the four risk reports. The
+console's screens (its `P17-TSK-021`) need no API change to work; the risk controllers' second factor is `-102`'s.
+
+**P17-TSK-020 — Risk read gaps: alert detail, assessment search, policy versions and screening-list reads (G-90, G-91, G-92)** — `PLANNED`
+- **Context**: `risk`, `app`; B4.1…B4.3.
+- **Scope**:
+  1. **alert detail** (G-90): `GET /v1/operator/risk/alerts/{alertId}`, answering the queue's `RiskAlertView`, under
+     `RISK_INVESTIGATE`, audited as the queue is (`risk.CaseRead`). The operator's own party's alerts are withheld, as the
+     queue withholds them: fail closed, `404`. Today an alert is reachable only as a queue row, so a link to one cannot be
+     opened;
+  2. **assessment search** (G-91): `GET /v1/operator/risk/assessments?partyId=&operation=&decision=&from=&to=&cursor`. A §7
+     collection ordered by `(assessedAt, assessmentId)` descending, with a required, bounded window as ADR-C134 sets for the
+     audit trail; items are the assessment's head (`assessmentId, assessedAt, operation, decision, score, policyVersion,
+     partyId`). Under `RISK_INVESTIGATE`, audited once per request with its filter, the operator's own party's assessments
+     withheld. Indexes decided with `EXPLAIN` plans;
+  3. **policy versions and screening lists** (G-92), all under `RISK_POLICY_ADMINISTER`:
+     `GET /v1/operator/risk/policies/versions?operation=&status=&cursor` (newest first, `status` one of `PROPOSED`, `ACTIVE`,
+     `RETIRED`, `REJECTED` - the approver's queue for policies); `GET /v1/operator/risk/screening-lists?list=&cursor` (list
+     versions: `id, list, version, ordinal, status, recordedAt, activatedAt`); `GET
+     /v1/operator/risk/screening-lists/{listVersionId}` (a version's metadata; `ScreeningListStore.find` exists).
+- **Entries are `RESTRICTED`**: whether staff may read a list's entries is a separate classification decision (ADR-C132
+  decision 3), the owner's. Until it is made, these reads serve metadata only.
+- **Deps**: M17.1 (`-101`, `-102`).
+- **Accept**: the routes in the contract, with tests for permission and audit; self-withholding for alerts and assessments;
+  the window and the cursor for assessments; and no screening-list entry served.
+- **Multi-instance**: reads of committed rows; `PASS` by construction.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-109 — Two additions to existing risk views: a case's reports, and proposals naming their proposer** — `PLANNED`
+- **Context**: `risk`; B4.5.
+- **Scope**:
+  1. **a case's file lists its regulatory reports**: `RiskCaseFileView` gains `reports: [{ reportId, status, jurisdiction,
+     draftedAt }]`, under `RISK_INVESTIGATE` like the rest of the file. Today a report is reached only from the draft's answer
+     or by its exact identifier. **Whether an investigator may see that a report exists at all (tipping-off) is the owner's
+     decision**; if not, the list is served only to `AML_REPORT_APPROVE`;
+  2. **proposals name their proposer**: `RiskSuppressionView`, `RiskDispositionView`, `RiskActionView` and
+     `RiskOverrideView` gain `proposedBy`, so the console disables the proposer's own approval in advance, as it does for
+     reconciliation resolutions. `risk.SelfApprovalRefused` stays the control.
+- **Deps**: the owner's tipping-off answer, for (1).
+- **Accept**: both additive changes in the contract, with tests for the permission split decided in (1) and the proposer
+  named in (2).
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-110 — Test-only seeding for M4's end-to-end tests** — `PLANNED`
+- **Context**: `-106`'s script; B4.4. Every risk queue starts empty.
+- **Scope**: (1) an `OPEN` alert for a seeded party - best, one a rule raises from a seeded transaction; (2) a case in
+  `IN_INVESTIGATION` with that alert attached; (3) a `HOLD` or `REVIEW` assessment that can be overridden; (4) a `PROPOSED`
+  policy version, proposed by a different test identity from the one that activates it.
+- **Deps**: `-106`.
+- **Accept**: the console's end-to-end tests can suppress an alert by four-eyes, dispose a case by four-eyes, and approve an
+  override and a policy activation, against a running `finapp`.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+
+*M17.5 — Finance*
+
+`finapp` already serves almost all of M5: the general ledger (balances, account activity, entries) and the posting-rule
+register; ledger adjustments and projection rebuilds; accounting periods - lock, close, reopen and unlock by four-eyes, the
+close run and its checks, operational reports; prior-period adjustments, report runs and their final statements; GL mapping
+versions, valuation rate sets and accounting breaks; regulatory obligations and submissions. The console's screens (its
+`P17-TSK-024`) are built over those; the finance controllers' second factor is `-102`'s. The finance roles' read question is
+in this section's open decisions.
+
+**P17-TSK-022 — Ledger read gaps: account register, entry search, pending adjustments and rebuilds (G-110, G-111, G-112)** — `PLANNED`
+- **Context**: `ledger`, `app`; B5.1…B5.3.
+- **Scope**:
+  1. **the ledger account register** (G-110): `GET /v1/operator/ledger/accounts?purpose=&currency=&cursor`, items
+     `{ accountId, purpose, ownerKind, ownerRef, currency, openedAt, status }`, a §7 collection under `ACCOUNTING_READ`;
+     customer-owned accounts identifier-first (ADR-C132 decision 3). `LedgerAccountStore.findAllOfPurpose` and
+     `findAllOwned` exist. Today there is no chart of accounts as the ledger sees it;
+  2. **journal entry search** (G-111): `GET /v1/operator/ledger/entries?reference=&financialTransactionId=&accountId=&from=&to=&cursor`,
+     the window required and bounded, ordered by `(postedAt, entryId)` descending, a §7 collection under `ACCOUNTING_READ`
+     (`JournalEntryStore.entriesAfter` exists). Indexes decided with `EXPLAIN` plans;
+  3. **pending adjustments and rebuilds** (G-112): `GET /v1/ledger/adjustments?status=PROPOSED&cursor` and
+     `GET /v1/ledger/projection-rebuilds?status=PROPOSED&cursor`, in ADR-C133's pending-decision shape, under
+     `LEDGER_ADJUST`, the proposer's own items marked so the console can disable self-approval in advance.
+- **Deps**: M17.1.
+- **Accept**: the routes in the contract, with tests for the window, the cursor and the permission; M17.10's inbox can compose
+  (3).
+- **Financial**: reads only. Amounts are decimal strings with their currency, and no balance is computed beyond what the
+  ledger's own reads serve.
+- **Multi-instance**: keyset reads of committed, immutable entries; `PASS` by construction.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-023 — Accounting lists: report runs, mapping versions, valuation rate sets (G-113)** — `PLANNED`
+- **Context**: `accounting`, `app`; B5.4. Report runs, GL mapping versions and valuation rate sets are each opened only by
+  identifier; a mapping version or a rate set awaiting approval cannot be found by its approver.
+- **Scope**:
+  - `GET /v1/operator/accounting/report-runs?periodId=&status=&cursor`, under `ACCOUNTING_READ` - and the approver's read, if
+    the owner decides the finance roles' question that way;
+  - `GET /v1/operator/accounting/mapping-versions?status=&cursor`, under `ACCOUNTING_READ` or `ACCOUNTING_MAPPING_APPROVE`;
+  - `GET /v1/operator/accounting/valuation-rate-sets?status=&cursor`, under `ACCOUNTING_CLOSE_APPROVE`, and
+    `ACCOUNTING_CLOSE_PROPOSE` for the proposer's own.
+
+  Each a §7 collection with a declared order; the `PROPOSED` filter is the approver's queue.
+- **Deps**: M17.1.
+- **Accept**: the routes in the contract, with tests for permission and the cursor.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-111 — Small additions to existing finance and regulatory views** — `PLANNED`
+- **Context**: `accounting`, `ledger`, `regulatory`; B5.6. The console works around each today.
+- **Scope**:
+  1. **proposers named** (`proposedBy`) on a period's close, reopen and unlock requests, prior-period adjustments, GL mapping
+     versions, valuation rate sets, accounting-break acknowledgements, regulatory obligations and submissions.
+     `accounting.SelfApprovalRefused` stays the control;
+  2. **one period by identifier**, under `ACCOUNTING_READ`. Today the list serves the latest 120, and an older period is
+     reached only by a controller, through its requests;
+  3. **"no close proposal" as an answer**: a view with `closeProposal: null`, or a `204`, instead of a `404` on
+     `GET …/close-proposal`;
+  4. **a reason on ledger adjustment rejection**: `DELETE /v1/ledger/adjustments/{id}` takes no body, so a rejection records
+     no reason (the projection rebuild's rejection takes one);
+  5. **a rejection door for accounting-break acknowledgements**: a proposed acknowledgement can be approved but not rejected;
+  6. **a return's period identifier** on a regulatory submission's view, which carries the period's label today, so drafting
+     a correction asks the operator for the identifier again.
+- **Deps**: none. (5) is a new act and carries `-102`'s factor.
+- **Accept**: each addition in the contract with its test; (4) and (5) recorded with actor and reason; existing clients
+  unaffected - additive changes, and for (4) an optional body or a new door, as the design decides under the contract's
+  compatibility rules.
+- **Multi-instance**: (5) is a conditional transition on the acknowledgement's status that races its approval; exactly one
+  wins and the other answers `409`. `PASS` with that race in the database tests.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`, `DOD-DOMAIN`.
+
+**P17-TSK-112 — Test-only seeding for M5's end-to-end tests** — `PLANNED`
+- **Context**: `-106`'s script; B5.5.
+- **Scope**: an open period with a completed close run; a proposed prior-period adjustment; a proposed GL mapping version and
+  a captured valuation rate set; an accounting break; an active regulatory obligation with a draft submission. Each proposal
+  is made by a different test identity from the one that approves it.
+- **Deps**: `-106`.
+- **Accept**: the console's end-to-end tests can close a period by four-eyes, and approve a prior-period adjustment, a mapping
+  version, a rate set and a submission, against a running `finapp`.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+
+*M17.6 — Customers and KYC*
+
+Unlike M17.4 and M17.5, **most of M17.6 needs `finapp` first**. `finapp` serves a KYC case's file by its identifier, as
+references (`kyc.CaseRead`), the resolution of a review task, the case's one decision, and a counterparty screening released or
+blocked by its identifier. What does not exist is any operator read of a customer: no lookup and no profile; no accounts, no
+transfers, no consent history; no KYC queue, no latest case per customer, no screening backlog. **Transfer reversal is not
+offered by the console on purpose**: `POST /v1/transfers/{id}/reversal` exists, but the operator cannot read the transfer first
+(`GET /v1/transfers/{id}` is the caller's own), and the act moves money with one person, no second factor and no idempotency
+key (G-36). It waits for `-027`'s read and `-031`'s remediation.
+
+**P17-TSK-025 — The operator read permissions and roles (ADR-C132)** — `PLANNED`
+- **Context**: `identity` (`RoleName`, the permission catalogue), `app`; ADR-C132; B6.1; G-151 in part. Every M17.6 and
+  M17.7 read needs a permission, and roles to hold it.
+- **Scope**:
+  - **new permissions**, each pinned in `RoleNameTest`: `CUSTOMER_READ`, `ACCOUNT_READ`, `TRANSFER_READ`, `PAYMENT_READ` (the
+    last for M17.7). `IDENTITY_READ` is `-014`'s;
+  - **new roles**, each needing an enrolled factor and registered in `PRIVILEGED_ACCESS_REVIEW.md`:
+    `CUSTOMER_SUPPORT_AGENT` (customer, account, transfer and payment reads); `OPERATIONS_VIEWER` (read-only reports - its
+    report permissions are `-039`'s); `AUDITOR` is `-017`'s;
+  - **proposed holders** are ADR-C132 decision 2's table: `KYC_REVIEWER`, `RISK_ANALYST` and `LEDGER_OPERATOR` also read
+    customers and accounts. The design records the decision in this repository's register;
+  - **audited reads**: every customer-scoped read is recorded as `<module>.<Thing>Read`, with actor, target and correlation;
+    a list once per request, with its filter (ADR-C132 decision 5). One helper the M17.6 and M17.7 reads use, and a guard that
+    every handler under these permissions records its read.
+- **Deps**: M17.3 - `-014`'s `IDENTITY_READ`, and `-017`'s `AUDITOR` and audit read, so a customer read is reviewable before
+  one exists.
+- **Accept**: the permissions and roles exist and are tested (`RoleNameTest`, including
+  `#noRoleProposesAndApprovesTheSameAct`); `/v1/operator/me` reports them; the audited-read guard holds from the first route
+  (`-026`).
+- **Multi-instance**: grants go through the existing role doors; `PASS` by construction.
+- **Risk**: Medium - this decides who may read customers. **Cx**: M. **DoD**: `DOD-SEC`.
+
+**P17-TSK-026 — Customer lookup, profile and consent history (G-30, G-31, G-70)** — `PLANNED`
+- **Context**: `party`, `identity`, `kyc`, `consent`, `app`; ADR-C132; ADR-0037; B6.2.
+- **Scope**, under `CUSTOMER_READ`, audited:
+  1. `POST /v1/operator/customers/lookup` with `{ kind, value }`. `kind` is one of `CUSTOMER_ID`, `PARTY_ID`,
+     `LOGIN_IDENTIFIER` or `ACCOUNT_ID`; the value is matched **exactly** and travels **in the body, never the URL**
+     (ADR-C132 decision 4). It answers `{ customerId }` or `404`;
+  2. `GET /v1/operator/customers/{id}`: the profile, identifiers and statuses only - party state, relationship status,
+     identity status, and the latest KYC case's identifier and status. **No name, contact detail or document** (D-5,
+     identifier-only through M17.6); any such field is a separate classification decision with a named operator need (G-31,
+     the owner's);
+  3. `GET /v1/operator/parties/{id}/consents`: the append-only consent history (ADR-0037), a §7 collection.
+
+  Composed from each module's query port, exposed through `app` (ADR-C132): no cross-schema read.
+- **Deps**: `-025`.
+- **Accept**: the routes in the contract, with tests for the exact match, the identifier never in a URL or a log, the audit,
+  and that no personal-data field is served (checked against `DATA_CLASSIFICATION.md`'s personal-data columns).
+- **Multi-instance**: reads; `PASS` by construction.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-027 — Accounts and transfers operator reads (G-32, G-35)** — `PLANNED`
+- **Context**: `accounts`, `ledger`, `transfers`, `app`; B6.3.
+- **Scope**:
+  1. `GET /v1/operator/customers/{id}/accounts` (`ACCOUNT_READ`);
+  2. `GET /v1/operator/accounts/{id}`: posted, held and available balances, **with the instant they were read as of**;
+  3. `GET /v1/operator/accounts/{id}/entries?cursor`: ledger lines, a §7 collection;
+  4. `GET /v1/operator/transfers?customerId=&status=&from=&to=&cursor` (`TRANSFER_READ`), with a bounded window;
+  5. `GET /v1/operator/transfers/{id}`: the transfer with its journal entry reference.
+
+  Amounts are decimal strings with their currency. Every read is audited.
+- **Deps**: `-025`.
+- **Accept**: the routes in the contract, with tests for permission, audit, the cursor and the as-of instant.
+- **Financial**: the balances are the ledger's own (`INV-BAL-*`); the read computes none of its own.
+- **Multi-instance**: the three balances are read in one statement or one snapshot, so they agree with each other while
+  every replica posts, and the as-of instant is the database's. `PASS` with that.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-029 — The KYC queue, a customer's latest case, the screening backlog, and the decision's controls (G-60, G-61, G-64, G-65)** — `PLANNED`
+- **Context**: `kyc` and counterparty screening, `app`; ADR-0035; D-8; B6.4.
+- **Scope**, every read audited:
+  1. `GET /v1/operator/kyc/cases?status=&cursor` (`KYC_REVIEW`): the review queue, oldest first;
+  2. `GET /v1/operator/customers/{id}/kyc-case` (`KYC_REVIEW`); `KycCaseStore.findLatestFor` exists;
+  3. `GET /v1/operator/kyc/counterparty-screenings?status=IN_REVIEW&cursor` (`COUNTERPARTY_SCREENING_REVIEW`);
+     `reviewBacklog` exists. A row shows the screening's identifier, its status and when it was raised; nothing reaches the
+     customer (tipping-off);
+  4. **the decision's controls** (G-61, D-8): `POST /v1/kyc/cases/{id}/decision` and the task resolution gain an
+     `Idempotency-Key` and `MULTI_FACTOR`. **Whether a rejection, or an approval over an adverse provider verdict, needs a
+     second person is the owner's ruling** (ADR-0035).
+- **Deps**: `-025`; `-102` (the factor).
+- **Accept**: the routes in the contract; the decision and the resolution require the factor and a key - a replay with the
+  same key returns the first outcome, and a different request under the same key is refused (`INV-IDEM-*`). The console moves
+  to keyed dialogs the day the key is required; the design says whether the key is required at once or after a window.
+- **Multi-instance**: the decision is one conditional transition of the case, so of two reviewers deciding at once one wins
+  and the other answers `409`; a duplicate keyed request replays. `PASS` with both races in the database tests.
+- **Risk**: Medium - a key added to an existing door. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-028 — Account restriction: suspension and reinstatement by four-eyes (G-33)** — `PLANNED` *(new domain behaviour)*
+- **Context**: `accounts` (the customer account aggregate), `risk` (its `SUSPEND_ACCOUNT` and `REINSTATE_ACCOUNT` actions,
+  which cannot be carried out today because accounts have no suspension command; ADR-0112), `app`; B6.5. The console does not
+  offer risk's two actions for that reason.
+- **Scope**: **an ADR in the accounts module first** (the next free number, written `Proposed` by the design and decided
+  before code), then:
+  - `POST /v1/operator/accounts/{id}/suspension` with an approval door, and reinstatement;
+  - reason codes, four-eyes, `MULTI_FACTOR` and an `Idempotency-Key`;
+  - new permissions `ACCOUNT_RESTRICT` and `ACCOUNT_RESTRICT_APPROVE`, split across roles;
+  - risk's two actions carried out through it;
+  - **a statement of how a restriction interacts with holds and balances**: which debits and credits a suspended account
+    refuses or admits, and what happens to its open holds and in-flight transfers.
+- **Deps**: `-027` (the operator reads the account first); the ADR.
+- **Accept**: the domain transition exists with an explicit lifecycle, invalid transitions refused and tested; risk's two
+  actions use it; the operator doors are in the contract; a suspended account refuses what the ADR says it refuses **at the
+  posting's own check**, not only at the door.
+- **Financial**: the restriction itself changes no balance; `INV-LED-*` and `INV-BAL-*` hold unchanged. A money movement
+  racing the suspension commits before it or is refused after it, never half.
+- **Multi-instance**: the suspension is a conditional transition on the account row, and the posting path reads the status
+  under the same lock, or by a check the database enforces. Ten instances posting while one suspends: each posting sees the
+  account either before or after. `PASS` only with that race in the database tests.
+- **Probe**: the status check removed from the posting path → a debit against a suspended account admitted → red.
+- **Risk**: High - new behaviour on money's path. **Cx**: L. **DoD**: `DOD-DOMAIN`, `DOD-FIN`, `DOD-SEC`, `DOD-API`.
+
+**P17-TSK-113 — Test-only seeding for M6's end-to-end tests** — `PLANNED`
+- **Context**: `-106`'s script; B6.7.
+- **Scope**: a customer whose KYC case is `IN_REVIEW`, with one `HIT` check and its open review task; a counterparty screening
+  `IN_REVIEW`; and, once `-026` and `-027` exist, the same customer with an account, a few posted transfers and a consent
+  history.
+- **Deps**: `-106`; `-026` and `-027` for the last.
+- **Accept**: the console's end-to-end tests can resolve a task and decide a case, and release or block a screening, against
+  a running `finapp`.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+
+*M17.7 — Payments and merchants*
+
+`finapp` serves the merchant and dispute doors, and the console has built screens over them: merchant onboarding, standing,
+API keys and payout destinations by four-eyes, the fee schedules read; disputes by identifier, with evidence, representment and
+acceptance; a payment's routing decision, rail availability and routing policy versions. **Not offered by the console until
+`-031` changes them** (ADR-C135 decision 3): refund (G-41) and void, which cannot be done without reading the payment first
+(G-40); transfer reversal (G-36); merchant closure; the operator merchant payout; fee-schedule versions and merchant fee
+assignment (G-53).
+
+**P17-TSK-031 — The money-control remediation: transfer reversal, refund and void, fee schedules, merchant closure, the operator payout (G-36, G-41, G-53; ADR-C135)** — `PLANNED`
+- **Context**: `transfers`, `payments`, `merchant`, `app`; ADR-C135 decision 3, as decided; D-8 ("rule now; fix as
+  remediation on their own merit"); ADR-0125 decision 4 (fee schedules by four-eyes); B7.1. Each act is today weaker than the
+  platform's own standard, and a console makes it one click away.
+- **Scope** (ADR-C135 decision 3):
+  - **transfer reversal**: always four-eyes. A new `TRANSFER_REVERSE_APPROVE`; `MULTI_FACTOR` on the approval; a key on the
+    proposal;
+  - **refund**: four-eyes above a threshold pinned per currency in versioned four-eyes configuration (the BNPL dispute
+    threshold's pattern). A new `PAYMENT_REFUND_APPROVE`; `MULTI_FACTOR`; a key;
+  - **void**: stays one person, since it moves no captured money, and gains `MULTI_FACTOR` and a key;
+  - **fee-schedule versions and merchant fee assignment**: four-eyes (ADR-0125 decision 4), with keys;
+  - **merchant closure**: four-eyes. Suspension and reinstatement stay one person, with a reason, `MULTI_FACTOR` and a key;
+  - **the operator merchant payout**: four-eyes above a threshold, as for refunds; `MULTI_FACTOR`;
+  - proposals are **new states before the existing effect** (ADR-C135 decision 4). **No financial rule changes.** The decision
+    is recorded in this repository's register before code.
+- **Deps**: `-027` (the transfer read); `-032` (the payment read, for void and refund).
+- **Accept**:
+  - each door has its proposal and its decision;
+  - the propose and approve permissions are split across roles (`RoleNameTest#noRoleProposesAndApprovesTheSameAct`);
+  - the thresholds are versioned and pinned; a proposal below its threshold executes as today, with the factor and a key;
+  - the plan's scenario 4 holds at the door: a refund whose response is lost, retried with the same key, returns the
+    original outcome, and exactly one refund exists;
+  - the console offers each act through its four-eyes panel.
+- **Financial**: the postings are unchanged - the same journal entries, made at approval instead of at request. A rejected
+  or expired proposal posts nothing. Whether a proposal reserves the funds its effect will need (an approved refund must
+  still find the merchant's funds; so must a payout) is stated by the design for each door. `INV-IDEM-*` on every proposal
+  and approval.
+- **Multi-instance**: approval is a conditional transition from the proposed state, so two approvers, or an approval racing
+  a rejection, produce one winner; the effect runs once, in the approval's transaction or the continuation each door's
+  existing effect already uses; a duplicate keyed request replays. `PASS` only with those races in the database tests, per
+  door.
+- **Probe**: four-eyes skipped above the threshold → the door's above-threshold case executes with one person → red.
+- **Risk**: High - six money doors. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-SEC`, `DOD-API`, `DOD-DOMAIN`.
+
+**P17-TSK-032 — Payment reads, the dispute queue, payment methods, the payments report, routing and rail reads (G-40, G-42…G-47)** — `PLANNED`
+- **Context**: `payments` (payments, disputes, routing, rails), `app`; B7.2.
+- **Scope**:
+  1. `GET /v1/operator/payments?partyId=&merchantId=&status=&rail=&from=&to=&cursor` and `GET /v1/operator/payments/{id}`
+     (the detail with its attempts, refunds, routing decision, disputes and provider reference), under `PAYMENT_READ`
+     (`-025`), audited, the list with a bounded window;
+  2. `GET /v1/operator/disputes?stage=&deadlineBefore=&cursor` (`DISPUTE_ADMINISTER`), ordered by deadline;
+     `DisputeStore.pageAll` exists;
+  3. `GET /v1/operator/parties/{id}/payment-methods`: masked, under `PAYMENT_READ`;
+  4. `GET /v1/operator/reports/payments?date`: success and failure by rail, outcome and provider, and the unknown-state
+     backlog (G-45);
+  5. `GET /v1/operator/routing-policy/versions[/{v}]` (`PAYMENT_ROUTING_ADMINISTER`). Today a version can be created and
+     never read back;
+  6. `GET /v1/operator/rails`: each rail's current availability. Today a rail can be switched and nobody can see its state.
+     The switch gains a key (ADR-C135 decision 2);
+  7. a read-only list of held payments, under `RISK_INVESTIGATE` (G-43). The doors that release or capture them stay risk's
+     (ADR-0112).
+- **Deps**: `-025`.
+- **Accept**: the routes in the contract, with tests for permission, audit and cursors; a method is never served unmasked;
+  the rail switch's key replays.
+- **Multi-instance**: reads, and one keyed switch whose duplicate replays; `PASS` by construction.
+- **Risk**: Medium - the widest read set of the phase. **Cx**: L. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-033 — Merchant list, payouts and transactions (G-50…G-52)** — `PLANNED`
+- **Context**: `merchant`, `app`; B7.3.
+- **Scope**, under `MERCHANT_ADMINISTER`: `GET /v1/operator/merchants?status=&cursor` (an exact name match at most, never
+  free text); `GET /v1/operator/merchants/{id}/payouts[/{payoutId}]`; `GET /v1/operator/merchants/{id}/transactions?cursor`.
+- **Deps**: M17.1.
+- **Accept**: the routes in the contract, with tests for permission and cursors.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-114 — Small additions to existing merchant and dispute views** — `PLANNED`
+- **Context**: `merchant`, `payments`; B7.5. The console works around each today.
+- **Scope**:
+  1. **payout destination changes name their proposer**, so the console disables the proposer's own approval in advance;
+     `merchant.SelfApprovalRefused` stays the control;
+  2. **a destination approver can read the change**: `PAYOUT_DESTINATION_APPROVE` without `MERCHANT_ADMINISTER` decides the
+     change by its identifier, blind. A read of the open change under the approve permission;
+  3. **an API key list names who issued each key**;
+  4. **a dispute says whether its payment has a merchant**: an operator may answer only a dispute whose payment has none
+     (`payments.DisputeAnsweredByItsMerchant`), so the console hides the answer buttons instead of offering an act `finapp`
+     will refuse.
+- **Deps**: none.
+- **Accept**: each addition in the contract with its test; (2) audited as the merchant reads are, and serving the
+  destination masked as the existing views serve it.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-115 — Test-only seeding for M7's end-to-end tests** — `PLANNED`
+- **Context**: `-106`'s script; B7.4.
+- **Scope**: an active merchant with an API key; a proposed payout destination, made by a different test identity from the one
+  that approves it; a payment with an open dispute at a stage that admits evidence and representment.
+- **Deps**: `-106`.
+- **Accept**: the console's end-to-end tests can onboard and suspend a merchant, approve a destination, and represent or
+  accept a dispute, against a running `finapp`.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+
+*M17.8 — Credit, lending and BNPL*
+
+`finapp` serves almost all of M8's acts, nearly all by four-eyes: the underwriting review queue and its decisions, decision
+explanations and replays, credit policies and scorecards; loans by identifier, their servicing and write-offs, lending terms
+and capital contributions; BNPL agreements by identifier, their servicing and write-offs, BNPL disputes, terms and merchant
+enablement; eleven credit, lending and BNPL reports. The console's screens (its `P17-TSK-036`) are built over those.
+
+**P17-TSK-035 — Credit, lending and BNPL read gaps (G-80…G-85)** — `PLANNED`
+- **Context**: `credit`, `lending`, `bnpl`, `app`; B8.1…B8.5. The design may split it by module and says so.
+- **Scope**:
+  1. **credit** (G-80, G-81), under `CREDIT_INVESTIGATE`: `GET /v1/operator/credit/decision-requests?status=&product=&cursor`
+     (today a decision is reached only by its identifier or the review queue); `GET /v1/operator/credit/policies/versions`
+     and `/{versionId}` (today only the version in force at an instant is readable); `GET /v1/operator/credit/scorecards` and
+     `/{versionId}` - **a scorecard has no read at all today**: it can be proposed, approved and rejected, but nobody can see
+     the version they approve. The scorecard read comes first;
+  2. **lending** (G-82), under the lending investigate permission: `GET /v1/operator/loan-applications?status=&cursor`;
+     `GET /v1/operator/loans?partyId=&state=&bucket=&cursor`, filtered by delinquency bucket (`LoanStore.listOwnedBy`
+     exists); a loan's schedule versions and statements for operators (`LoanAccountDesk.schedule` and `statements` exist and
+     are served to the borrower only);
+  3. **BNPL** (G-83), under `BNPL_INVESTIGATE`: `GET /v1/operator/bnpl-applications?cursor`,
+     `GET /v1/operator/bnpl-agreements?status=&merchantId=&cursor`, `GET /v1/operator/bnpl-purchases/{id}/refunds`
+     (`BnplPurchaseStore.ownedBy` and `BnplRefundStore.ofPurchase` exist);
+  4. **pending servicing decisions** (G-84): `GET /v1/operator/loans/servicing-requests?status=PROPOSED&cursor` and the BNPL
+     equivalent, in ADR-C133's pending-decision shape naming the proposer, under the approve permissions. Write-offs already
+     have a pending list; amendments, waivers and repayment reversals are reachable today only through the loan or
+     agreement;
+  5. **lending terms versions** (G-85): `GET /v1/operator/lending/terms/versions`. Today only the terms in force at an
+     instant are readable, so a proposed version cannot be found by its approver.
+
+  Every list a §7 collection; every party-scoped read audited (ADR-C132 decision 5).
+- **Deps**: M17.1; `-025` (the audited-read rule its party-scoped reads follow).
+- **Accept**: the routes in the contract, with tests for permission and cursors; M17.10's inbox can compose (4).
+- **Multi-instance**: reads; `PASS` by construction.
+- **Risk**: Medium - three modules. **Cx**: L. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-116 — Two BNPL acts for the money-control remediation; the reads an approver lacks; proposers named** — `PLANNED`
+- **Context**: `bnpl`, `credit`, `lending`, `merchant`; ADR-C135; B8.7.
+- **Scope**:
+  1. **for `-031`'s remediation** (ADR-C135), not offered by the console until four-eyes:
+     `POST /v1/operator/bnpl-purchases/{id}/refunds` - `finapp`'s own documentation says "no four-eyes and no threshold
+     review"; it is a refund like any other, so ADR-C135's refund rule applies, four-eyes above a pinned threshold; and
+     `PUT /v1/operator/merchants/{merchantId}/bnpl-fee-schedules/{product}` - one person assigns a merchant's fees today, and
+     ADR-C135 makes merchant fee assignment four-eyes;
+  2. **reads an approver lacks** - today each is decided by its identifier alone: a credit policy version by identifier; a
+     lending terms version by identifier, and the BNPL terms versions; a capital contribution by identifier; a merchant's BNPL
+     enablement; the underwriting case by identifier (the queue serves the oldest 50, with no cursor and no truncation flag:
+     G-03, `-042`'s); an agreement read for `BNPL_SERVICING_AGENT`, who proposes and approves servicing without
+     `BNPL_INVESTIGATE`;
+  3. **proposers named**: loan and BNPL amendments, waivers and repayment reversals, terms, capital contributions and policy
+     versions. Only the write-off views name theirs today;
+  4. **credit evidence** gains a `mediaType`; today it comes as bytes with no media type;
+  5. the second factor on M8's approvals is `-102`'s (only write-offs ask for one today).
+- **Deps**: `-031` (the threshold configuration and the four-eyes pattern), `-035`.
+- **Accept**: the two acts four-eyes as `-031`'s doors are, with the same tests; each read and each proposer in the contract,
+  with its test.
+- **Financial**: the BNPL refund's postings unchanged, made at approval; as `-031`.
+- **Multi-instance**: as `-031`: one winner per proposal, the effect once, a keyed duplicate replayed. `PASS` only with the
+  races in the database tests.
+- **Risk**: High - a money door. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-SEC`, `DOD-API`.
+
+**P17-TSK-117 — Test-only seeding for M8's end-to-end tests** — `PLANNED`
+- **Context**: `-106`'s script; B8.6.
+- **Scope**: a credit review case awaiting a decision; an active loan with a posted repayment and a proposed waiver; an active
+  BNPL agreement with a proposed write-off; a BNPL dispute awaiting resolution; proposed versions of a credit policy, lending
+  terms and BNPL terms. Each proposal is made by a different test identity from the one that approves it.
+- **Deps**: `-106`.
+- **Accept**: the console's end-to-end tests can decide a review case, and approve a waiver, a write-off and a terms version,
+  against a running `finapp`.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+
+*M17.9 — FX, cross-border and integration availability*
+
+`finapp` serves the FX and cross-border administration acts: pricing and corridor policies by four-eyes; pair, provider and
+corridor availability switches; enable requests decided by identifier; FX trade provenance and reversal; a cross-border
+payment's trace; the FX and corridor reports. **The console's integration availability view is not built**: `finapp` serves the
+switches, never the state (G-101, G-47).
+
+**P17-TSK-037 — FX and cross-border read gaps: reference rates, availability state, enable requests, trades, payments (G-100…G-103)** — `PLANNED`
+- **Context**: `fx`, `crossborder`, `app`; B9.1…B9.3.
+- **Scope**:
+  1. **reference rates and their age** (G-100): `GET /v1/operator/fx/rates`, the latest reference rate per pair with its
+     snapshot instant and its age; rates are decimal strings; under the FX investigate permission
+     (`RateSnapshotStore.latest` and `age` exist);
+  2. **availability state and pending enable requests** (G-101, with G-47): `GET /v1/operator/fx/providers` and
+     `GET /v1/operator/fx/pairs`, each with its availability and who changed it, when;
+     `GET /v1/operator/fx/enable-requests?status=PENDING&cursor`; `GET /v1/operator/cross-border/corridors`, the operator view
+     with availability; `GET /v1/operator/cross-border/corridor-enable-requests?status=PENDING&cursor`. The rails' state is
+     `-032`'s item 6;
+  3. **trades and payments** (G-102, G-103): `GET /v1/operator/fx/trades?pair=&status=&from=&to=&cursor` and
+     `GET /v1/operator/cross-border/payments?corridor=&status=&cursor`, §7 collections with a bounded window. Today a trade or
+     a payment is reached only by its identifier.
+- **Deps**: M17.1; `-032` (the rails, for the one availability view).
+- **Accept**: the routes in the contract, with tests for permission and cursors. Then the console builds the single
+  availability view the milestone names.
+- **Multi-instance**: the availability served is the committed row, with who and when; reads, `PASS` by construction.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-118 — Small additions to FX and cross-border views** — `PLANNED`
+- **Context**: `fx`, `crossborder`; B9.5.
+- **Scope**:
+  1. **reads an approver lacks**: an FX enable request, a corridor enable request and a pending FX trade reversal, each read
+     by its identifier, so the approver sees what they approve;
+  2. **proposers named** on every FX and corridor proposal, so the console disables the proposer's own approval in advance;
+     `fx.SelfApprovalRefused` and `crossborder.SelfApprovalRefused` stay the control;
+  3. **the pricing-policy list paged** by a §7 cursor; it carries only a `truncated` flag today. `-042` lists it too; whichever
+     lands first does it.
+- **Deps**: none.
+- **Accept**: each addition in the contract with its test.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-119 — Test-only seeding for M9's end-to-end tests** — `PLANNED`
+- **Context**: `-106`'s script; B9.4.
+- **Scope**: a proposed FX pricing policy and a proposed corridor policy, each by a different test identity from its approver;
+  a pending FX enable request and a pending corridor enable request; a booked FX trade; a cross-border payment with a trace.
+- **Deps**: `-106`.
+- **Accept**: the console's end-to-end tests can approve both policies and both enable requests, and read a trade's provenance
+  and a payment's trace, against a running `finapp`.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+
+*M17.10 — Overview and approvals inbox*
+
+The console has built both screens from what `finapp` serves (its `P17-TSK-041`). "My approvals" is composed in the browser from
+the pending-decision lists that exist, as ADR-C133 decision 4 requires - no central approval service - and each decision is still
+taken on its domain's page. The operations overview is composed from the operator reports the operator may read, each tile
+showing how fresh it is. Both say what is missing.
+
+**P17-TSK-039 — Report freshness and the overview reports (G-04, G-150, G-151)** — `PLANNED`
+- **Context**: every module with an operator report, `app`; ADR-C133 decision 5; B10.1.
+- **Scope**:
+  1. **`asOf` (or `generatedAt`) on every operator report**: the instant of the data it read. Today only risk alerts, risk
+     cases and the FX position state one; found without it while building: dead letters, the reconciliation reports,
+     cross-border corridors, credit outcomes, and the lending and BNPL reports;
+  2. **the figures no report covers** (G-150): `GET /v1/operator/reports/customers?date` (customer counts by state);
+     `GET /v1/operator/reports/transfers?date` (volumes and outcomes); the payments report is `-032`'s item 4;
+  3. **one role that can read the overview** (G-151): `OPERATIONS_VIEWER` (created by `-025`), read-only, holding each
+     overview report's read permission and nothing else. Today an overview reader needs about seven permissions spread across
+     roles.
+- **Deps**: `-025`, `-032`.
+- **Accept**: every operator report states its as-of instant, held by a guard over the report views; the three reports
+  exist; the role exists, pinned in `RoleNameTest`.
+- **Multi-instance**: the as-of instant is the database's - the snapshot the report read - never an instance's clock
+  (ADR-0063). `PASS` with that.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-040 — Pending-decision lists in one shape across the four-eyes domains (G-140)** — `PLANNED`
+- **Context**: every four-eyes domain, `app`; ADR-C133 decision 3; B10.2.
+- **The shape**: every four-eyes domain serves its proposals awaiting decision as a §7 collection filtered by
+  `status=PROPOSED`, under the domain's approve permission, items
+  `{ "id", "kind": "<domain>.<ProposalKind>", "proposedBy", "proposedAt", "reasonSummary", "subjectId" }`.
+- **Scope**:
+  - **lists to add**, each first named in its milestone's task; this task builds any not yet built and holds all of them to
+    the shape: reconciliation resolutions (`-107`); ledger adjustments and projection rebuilds (`-022`); mapping versions
+    and valuation rate sets (`-023`); loan and BNPL servicing (`-035`); credit, lending and BNPL terms and scorecards (`-035`,
+    `-116`); FX and corridor enable requests (`-037`); payout destinations (`-114`); alert suppressions, risk dispositions,
+    risk actions and overrides (`risk`); period close, reopen and unlock requests (`-111`);
+  - **lists that exist but not in the shape**, converted in place - the operator surface is internal (ADR-C133 decision 2):
+    regulatory obligations and submissions awaiting a decision, prior-period adjustments, loan and BNPL write-offs,
+    dead-letter discards, FX pricing and corridor policies;
+  - found while building: the write-off, prior-period-adjustment and regulatory lists name no proposer; no list says which
+    BNPL disputes have a resolution awaiting approval;
+  - a guard: every four-eyes domain's pending list exists and matches the shape, by a register beside the guard.
+- **Deps**: the lists' first forms - `-107`, `-022`, `-023`, `-035`, `-037`, `-111`, `-114`, `-116`.
+- **Accept**: every four-eyes domain serves its list in the shape; the console's inbox reads them all through one function and
+  marks the operator's own proposals.
+- **Multi-instance**: reads; a proposal decided between the list and the click answers `409` at its decision door, the
+  existing conditional transitions. `PASS` by construction.
+- **Risk**: Medium - breadth, and lists converted in place (the console is their only client). **Cx**: L. **DoD**:
+  `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-042 — The §7 retrofit of capped operator lists (G-03, G-121)** — `PLANNED`
+- **Context**: every module with a capped operator list; `API_CONVENTIONS.md` §7; ADR-C133; B10.3. Several operator lists are
+  capped, some with a `truncated` flag and some without, and some page by `after`/`limit`. The console shows each as capped and
+  never as complete, but cannot page past the cap.
+- **Scope**: each of these becomes a §7 collection (`{ items, nextCursor }`, a declared order): reconciliation breaks (100;
+  G-121); dead letters (capped, no flag); settlement files and refused deliveries (100); the factorless-holdings review
+  (200); the credit underwriting queue (50, no flag); the risk alert and case queues (`after`/`limit`); the FX pricing policy
+  list (`truncated` only; `-118` if first); periods (120). `API_CONVENTIONS.md` §7 marked implemented for operator lists, and a
+  guard that no operator list answers a bare capped array.
+- **Deps**: none.
+- **Accept**: each list a §7 collection; the console drops its "capped" rendering for each.
+- **Multi-instance**: keyset cursors stay stable while rows are inserted, which offset paging does not. `PASS` by
+  construction.
+- **Risk**: Medium - contracts changed in place. **Cx**: M. **DoD**: `DOD-API`.
+
+*M17.11 — Hardening and exit*
+
+The console's side is done: an accessibility and CSP audit of every route in both themes, an independent security review with
+its findings fixed, a performance budget, the runbook, and its exit review (`finapp-admin-panel`
+`docs/PHASE_17_EXIT_REVIEW.md`), whose verdict is that the phase cannot exit yet - most of the plan's §19 criteria need the items
+in this section.
+
+**P17-TSK-044 — Monitoring for the console (`finapp`'s half)** — `PLANNED`
+- **Context**: the alert catalogue, `deploy/edge`, `OPERATIONS_RUNBOOK.md`; B11.1. The console's runbook
+  (`finapp-admin-panel` `docs/CONSOLE_RUNBOOK.md` § Monitoring) lists what it needs. The console has no server state and emits
+  no metrics, so all four are `finapp`'s monitoring.
+- **Scope**:
+  1. **a synthetic probe** of `/console/` through the operator edge, alerting after five minutes failing;
+  2. **`finapp-console` pod readiness**, alerting below two ready;
+  3. **CSP violation reports**, if the edge collects them (`report-to` on the console's CSP) - the design decides whether to
+     collect, and says why;
+  4. **edge 5xx and 404 rates on `/console/assets/**`**, which rise after a release that forgot the previous assets (`-104`'s
+     rollout fix).
+
+  Each alert routed and in the alert catalogue, with a runbook section.
+- **Deps**: `-104`.
+- **Accept**: the four signals and their alerts exist, held by the alert catalogue's guards; the runbook section written; the
+  probe's run on `kind` owed with `-104`'s.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`, `DOD-DOC`.
+
+**P17-TST-001 — The end-to-end battery on `kind` at three replicas: the seven mandatory scenarios** — `PLANNED`
+- **Context**: the plan's §13 and §19 criteria 2-4; B11.2; both repositories.
+- **Scope**: the seven mandatory scenarios against the real application on `kind` at three replicas, through the operator
+  edge: (1) an unauthorised privileged operation; (2) a permission revoked during a session; (3) two administrators
+  conflicting; (4) a timeout after the backend executed - a refund's response dropped after its commit, the same key returning
+  the original outcome and exactly one refund existing; (5) a stale record submitted; (6) duplicate approval requests; (7) the
+  backend unavailable - the application scaled to zero. `finapp`'s side: the stack (`-104`), every seeding task (`-106`,
+  `-108`, `-110`, `-112`, `-113`, `-115`, `-117`, `-119`), the test proxy that drops a response after the commit, and `-031`
+  (scenario 4: refunds are not in the console until they are four-eyes). The console's side writes the specs when the run can
+  happen; `e2e/local/m1.spec.ts` and `e2e/local/dead-letters.spec.ts` exist. The CSP-violation count across the battery
+  (criterion 3) and no session token at rest in the browser (criterion 4) are read from the same run.
+- **Deps**: `-104`, the seeding tasks, `-031`.
+- **Accept**: the seven scenarios green from a fresh run, read from the run's records; the multi-instance answer counted at
+  three replicas. **The run is owed to the owner** - the owner postponed end-to-end runs on 2026-11-15 (the console's record),
+  and the standing rule postpones cluster runs; the hermetic half (the harness, the proxy, the specs' contracts) is held, and
+  the run is never claimed until it happens.
+- **Risk**: Medium. **Cx**: L. **DoD**: `DOD-TEST`.
+
+**P17-DOC-002 — The Phase 17 exit review** — `PLANNED`
+- **Context**: `PHASE_GATES.md` §5 Phase 17; B11.3's exit half.
+- **Scope**: each of `PHASE_GATES.md` §5 Phase 17's criteria, and the universal criteria, ruled on fresh evidence from both
+  repositories - the console's own exit review found on 2026-11-15 that the phase could not exit yet. ADR-C130…C136 proposed
+  for acceptance as recorded in this repository. `MUTATION_TESTING.md`'s row for the console's money-lint demonstration (the
+  plan's §19 criterion 9: a planted `parseFloat(amount)` and `Number(amountMinor)` both fail lint, demonstrated in
+  `finapp-admin-panel` at its M11), if the transition did not record it. `THREAT_MODEL.md`'s Phase 17 threats re-rated against
+  what was built, with the owner's acceptance of the compromised-workstation threat. The debt register.
+- **Deps**: every other Phase 17 item.
+- **Accept**: every criterion ruled with its evidence; the flip the owner's.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOC`.
+
+---
+
 # Cross-cutting work
 
 Status: items here belong to no phase. They change no roadmap commitment, displace no phase task,
@@ -32609,7 +33625,7 @@ task `READY`, and leaves `CURRENT_STATE.md`, `THREAT_MODEL.md`, `PRODUCTION_READ
 coordinator. The number is the next free one on master and on branch `P17-TSK-003` (`X-TSK-019`); the two entries sit at the
 same place in this file, so whichever merges second takes the other's entry above its own)*
 - **Context**: the edge (ADR-0120 decision 6, `P15-TSK-011`), the delivery's manifests (`deploy/`), admission (ADR-0122
-  decision 3, `P15-TSK-007`). The Operator Console (finapp-admin-panel ADR-0130, ADR-0131) is a static single-page application
+  decision 3, `P15-TSK-007`). The Operator Console (finapp-admin-panel ADR-C130, ADR-C131 *(read "ADR-0130, ADR-0131", that repository's numbers before it renumbered its register, until `P17-INIT`, 2026-11-17)*) is a static single-page application
   that calls the API same-origin, so it must be served by the operator host, and its pages need a Content-Security-Policy the
   API's `default-src 'none'` cannot be. `THREAT_MODEL.md` T1, T3, T5, T31.
 - **Objective**: `GET /console/**` on the operator host alone, from a hardened static server, under the console's own headers,
@@ -32902,3 +33918,4 @@ and the transition's design (C1–C12).)*
 | 14 Accounting and Reporting | Elaborated to the section "Phase 14 — Accounting and Financial Reporting" above by the Phase 13 → 14 transition — initialised 2026-10-29, 24 items (`P14-TSK-001`…`-021`, `P14-TST-001` (`POSTPONED`, PI-004), `P14-TST-002`, `P14-DOC-001`) across M14.1–M14.10, `P14-TSK-001` marked `READY`; the epic wording (GL account model; versioned GL mapping; accounting periods; period close with approval; trial balance and continuous verification; GL drill-down; prior-period adjustment; financial statement production; regulatory reporting abstraction; report reproducibility) superseded by the task decomposition |
 | 15 Production Hardening | Elaborated to the section "Phase 15 — Production Hardening" above by the Phase 14 → 15 transition — initialised 2026-11-07, 37 items (`P15-TSK-001`…`-034`, `P15-TST-001` (`POSTPONED`, PI-004), `P15-TST-002`, `P15-DOC-001`) across M15.1–M15.11, `P15-TSK-001` marked `READY`; the epic wording (threat modelling; security hardening; secret and key rotation; privileged access review; audit completeness verification; rate limiting and quotas; schema registry and compatibility; dead-letter handling; SLO definition and alerting; runbooks and rehearsal; incident response; data retention and deletion) superseded by the task decomposition - a runtime schema registry decided against (C11) and data purges re-dated to a real jurisdiction (C12) |
 | 16 Scale and DR | Elaborated to the section "Phase 16 — Scale, Resilience and Disaster Recovery" above by the Phase 15 → 16 transition — initialised 2026-11-12, 34 items (`P16-TSK-001`…`-031`, `P16-TST-001`, `P16-TST-002`, `P16-DOC-001`) across M16.1–M16.13, `P16-TSK-001` marked `READY`; the epic wording (load characterisation; capacity model; performance testing with invariant assertion; table partitioning and archival; read-replica routing policy; backpressure and load shedding; chaos engineering; database failover; backup and restore rehearsal; DR plan and RPO/RTO; post-recovery financial verification; service extraction evaluation) superseded by the task decomposition - partitioning, a replica route and an extraction each decided by measurement and an ADR, never assumed |
+| 17 Operator Console | Not a row of this table before: the owner appended Phase 17 after the roadmap's last phase (decision D-1, 2026-11-13, recorded in `finapp-admin-panel`). Initialised directly to the section "Phase 17 — Operator Console (backend half)" above by the Phase 16 → 17 transition, 2026-11-17: 44 items (`P17-TSK-003`, `-004` `COMPLETE` under D-12; `P17-TSK-014`…`-044` as the console's plan numbers them; `P17-TSK-101`…`-119` reserved for `finapp`-only work; `P17-TST-001`; `P17-DOC-002`) across M17.1–M17.11, `P17-TSK-101` `READY`. The console's own tasks are in `finapp-admin-panel` |

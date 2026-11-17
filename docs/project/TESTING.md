@@ -128,6 +128,27 @@ never against a fixture constant. `SimulatedInstance` supplies all three.
 
 ---
 
+## 4a. The Operator Console's tests (Phase 17)
+
+*(Added 2026-11-17 by the Phase 16 → 17 transition, P17-INIT.)* The console is a client of the
+operator surface in its own repository, finapp-admin-panel, and so are its tiers: unit and
+component tests (Vitest), contract tests against fixtures generated from this repository's
+`docs/api/openapi.json`, a contract-drift check, and end-to-end tests (Playwright) against the
+real application - locally through a development proxy, and, for a milestone's gate, **on `kind`
+at three application replicas through the real operator edge** (its `PHASE_17_PLAN.md` §13). None
+of them is a tier of this build, and `TestTaxonomyTest` counts none. What this repository owes
+them:
+
+- the operator endpoints themselves, each with its negative authorization test in this build's
+  own tiers (`PHASE_GATES.md` §5 Phase 17 criterion 1);
+- test-only seeding that puts each milestone's scenario data in place on a test database and is
+  carried by no production image or route (`P17-TSK-106` and its milestone siblings);
+- the console's image on `kind`, signed and admitted as the platform's are (`P17-TSK-104`);
+- the battery's run there, the seven mandatory scenarios from a fresh run (`P17-TST-001`), which
+  is a cluster run like Phase 16's and is run or owed at the owner's word.
+
+---
+
 ## 5. Shared test support
 
 Test support lives in `platform`'s `testFixtures`, so both `platform` and `app` reach one

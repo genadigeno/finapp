@@ -62,7 +62,7 @@ final class EdgeRoutes {
     static final String APP_SERVICE = "finapp-app";
 
     /**
-     * The Operator Console's static assets (`X-TSK-020`, finapp-admin-panel `P17-TSK-004`, ADR-0131 decision 4): served on the operator
+     * The Operator Console's static assets (`X-TSK-020`, finapp-admin-panel `P17-TSK-004`, finapp-admin-panel ADR-C131 decision 4): served on the operator
      * host alone, by a workload of its own ({@code deploy/console}), behind headers of its own ({@code console-headers} in
      * {@code operator-edge.yaml}). <strong>Not an API route</strong>: nothing in the handler mapping serves it, so it is stated here once,
      * never derived, never on the public file, and no API route may be served under its path ({@link #derive} refuses one). {@code GET}

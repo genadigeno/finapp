@@ -42,7 +42,7 @@ import org.junit.jupiter.api.Test;
  *
  * <ol>
  *   <li>every line that looks like a row of a register table parses as one, indented or malformed included;
- *   <li>the ten trust boundaries of {@code PHASE_15_PLAN.md} §9.1 are present by id and name;
+ *   <li>the ten trust boundaries of {@code PHASE_15_PLAN.md} §9.1, and B11 (P17-INIT), are present by id and name;
  *   <li>each boundary answers all six STRIDE categories, with threats or {@code N/A} and a reason;
  *   <li>the boundary matrix and the register agree, triple for triple;
  *   <li>every rating is the cell of the written rule, and the rule is the one this test holds;
@@ -98,10 +98,21 @@ class ThreatModelIsCompleteTest {
     /** The register's own task: the model cites it as its author, history rather than a promise. */
     private static final String OWN_TASK = "P15-TSK-001";
 
+    /**
+     * The phases whose own tasks build the register's controls, and so are cited by a {@code PLANNED} row: Phase 15's, and
+     * Phase 17's for the Operator Console's boundary, B11 (P17-INIT, 2026-11-17, a deliberate edit). Any other task -
+     * a remediation entry, a cross-cutting item - is a {@code REMEDIATION} row.
+     */
+    private static final List<String> PLANNING_PHASES = List.of("P15-", "P17-");
+
     /** A completed phase's status line, as `CURRENT_STATE.md` writes it: the token itself, not any mention. */
     private static final Pattern COMPLETED_STATUS = Pattern.compile("^Status:\\s+\\S+\\s+\\*\\*`COMPLETE`\\*\\*");
 
-    /** {@code PHASE_15_PLAN.md} §9.1's ten boundaries, by id and name. A rename is a deliberate edit here. */
+    /**
+     * {@code PHASE_15_PLAN.md} §9.1's ten boundaries, by id and name, and B11, the Operator Console's, added by the Phase 16 → 17
+     * transition (P17-INIT, 2026-11-17; finapp-admin-panel {@code PHASE_17_PLAN.md} §20) as a deliberate edit. A rename is a
+     * deliberate edit here.
+     */
     private static final Map<String, String> BOUNDARIES = orderedMap(
             "B1", "Internet → edge",
             "B2", "Edge → application",
@@ -112,7 +123,8 @@ class ThreatModelIsCompleteTest {
             "B7", "Providers → callback routes",
             "B8", "CI → registry",
             "B9", "GitOps → cluster",
-            "B10", "Humans → cluster and cloud");
+            "B10", "Humans → cluster and cloud",
+            "B11", "Browser → operator edge");
 
     /** The six STRIDE categories as the matrix names them, and their letters in the register. */
     private static final Map<String, String> CATEGORIES = orderedMap(
@@ -221,7 +233,7 @@ class ThreatModelIsCompleteTest {
     }
 
     @Test
-    @DisplayName("the ten trust boundaries of PHASE_15_PLAN.md section 9.1 are modelled, each once, by name")
+    @DisplayName("the trust boundaries - PHASE_15_PLAN.md section 9.1's ten and the console's B11 - are modelled, each once, by name")
     void theTenBoundariesAreModelled() {
         assertThat(boundaryOrder)
                 .as("%s section 2 must model each boundary of PHASE_15_PLAN.md section 9.1 exactly once, in"
@@ -269,7 +281,7 @@ class ThreatModelIsCompleteTest {
             for (String place : threat.where().split(",")) {
                 Matcher where = WHERE.matcher(place.trim());
                 if (!where.matches() || !BOUNDARIES.containsKey(where.group(1))) {
-                    unreadable.put(threat.id(), "'" + place.trim() + "' is not B<1-10>:<S|T|R|I|D|E>");
+                    unreadable.put(threat.id(), "'" + place.trim() + "' is not B<1-11>:<S|T|R|I|D|E>");
                     continue;
                 }
                 fromRegister.add(where.group(1) + ":" + where.group(2) + " " + threat.id());
@@ -645,11 +657,12 @@ class ThreatModelIsCompleteTest {
                     problems.add("`" + task.id() + "`: a task is cited by a PLANNED or REMEDIATION row, never " + state);
                 } else if (!statuses.containsKey(task.id())) {
                     problems.add("`" + task.id() + "` is not an entry header in " + BACKLOG);
-                } else if (state.equals("PLANNED") && !task.id().startsWith("P15-")) {
-                    problems.add("`" + task.id() + "`: a PLANNED row cites a Phase 15 task; an earlier remediation"
-                            + " entry or a cross-cutting item is a REMEDIATION row");
-                } else if (state.equals("REMEDIATION") && task.id().startsWith("P15-")) {
-                    problems.add("`" + task.id() + "`: a Phase 15 task is a PLANNED row");
+                } else if (state.equals("PLANNED") && !plannedByAPhase(task.id())) {
+                    problems.add("`" + task.id() + "`: a PLANNED row cites a task of a phase that builds this"
+                            + " register's controls (" + PLANNING_PHASES + "); an earlier remediation entry or a"
+                            + " cross-cutting item is a REMEDIATION row");
+                } else if (state.equals("REMEDIATION") && plannedByAPhase(task.id())) {
+                    problems.add("`" + task.id() + "`: a task of " + PLANNING_PHASES + " is a PLANNED row");
                 }
             }
             case IssueCitation issue -> {
@@ -835,6 +848,10 @@ class ThreatModelIsCompleteTest {
 
     private static String abbreviate(String text) {
         return text.length() <= 60 ? text : text.substring(0, 57) + "...";
+    }
+
+    private static boolean plannedByAPhase(String taskId) {
+        return PLANNING_PHASES.stream().anyMatch(taskId::startsWith);
     }
 
     @SuppressWarnings("unchecked")

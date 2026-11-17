@@ -1804,6 +1804,18 @@ status is part of what the code *means* — whether the caller did something wro
 retrying could help — so it belongs with the code. It is an `int`, so nothing about this couples
 the platform to a web stack.
 
+**One control, two statuses: the proposer's own approval** *(noted 2026-11-17 by the Phase 16 →
+17 transition, P17-INIT, for the Operator Console)*. The four-eyes refusal of a proposer deciding
+their own proposal is `409` in five modules - `merchant`, `ledger` (both of its codes),
+`reconciliation`, `fx` and `crossborder`, which read it as a conflict with the proposal's state -
+and `403` in six - `deadletter`, `credit`, `lending`, `bnpl`, `risk` and `accounting`, which read
+it as a forbidden act, the credit precedent. Each code is right by its own module's reading, and
+§4 makes every one permanent: harmonising them would be a breaking change for every client, so
+they stay as catalogued. A client tells the refusal by its **code**, never by its status: the
+Operator Console handles both (finapp-admin-panel `PHASE_17_PLAN.md` §13, the workflow tier's
+"403 and 409 variants"). A single status, by new codes and the old ones deprecated, is optional
+debt that no task holds.
+
 ## 6. Where the pieces live
 
 | Piece | Module | Why |

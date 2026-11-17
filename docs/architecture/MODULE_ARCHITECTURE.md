@@ -803,6 +803,14 @@ transition.)*
 - **Transaction:** Flyway's, one per migration; the bootstrap's one. No atomicity is claimed across schemas: a stopped run resumes at the first pending migration.
 - **Failure:** exit codes a Job can act on; a lock not granted within its bound retries, then fails rather than queues.
 
+### `finapp-console` — Phase 17 — *not a module, and not built in this repository*
+*(Added 2026-11-17 by the Phase 16 → 17 transition, P17-INIT; finapp-admin-panel ADR-C130, `Proposed` there. Its deployment was built by X-TSK-020, 2026-11-14: `deploy/console`, the operator edge's `/console/**` route and `console-headers`.)*
+- **Responsibility:** serving the Operator Console's static files - built by finapp-admin-panel from its own source - same-origin on the operator edge. A third deployable unit beside `finapp-app` and the migrator, like the migrator not a business module: it decides nothing, and the console it serves is a client of the operator surface (`SYSTEM_ARCHITECTURE.md` §The Operator Console).
+- **State:** none. No database, no broker, no secret, no service-account token; a read-only root with `/tmp` in memory.
+- **Dependencies:** none in this build. No Gradle project and no `project(...)` edge: no module compiles against it, and it against none. What couples it to this repository is the published contract, `docs/api/openapi.json`, which the console pins by commit.
+- **Transaction:** none. Every act the console sends is the operator API's, under that door's own transaction and idempotency key.
+- **Failure:** a pod lost loses nothing but its in-flight responses; the operator API keeps answering other clients. During a rollout a page from an old pod finds its hashed assets only if the new image carries the previous release's, which finapp-admin-panel's build does when handed the serving digest (`P17-TSK-104` on `kind`, `P17-TSK-105` for promotion). The console's availability signals are `P17-TSK-044`'s.
+
 ### `notification` — deferred, never built
 *(`P15-REM-001`, 2026-11-15: this heading read "Phase 1 onward" until then. ADR-0006's coupling review found the module declared and never built. It is deferred, not struck: no phase of the programme builds it, and `DECISIONS.md` §Deferred "Changing the verified contact channel" waits on the channel notifier it would be. The entry below is the design contract that phase must satisfy, not a description of code; no module emits to it, and no rule or test names it.)*
 - **Responsibility:** telling people things. Never part of a money-moving decision.

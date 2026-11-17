@@ -176,6 +176,22 @@ where enforceable.
 1.13. Plus: accurate against the implementation at the time of writing; no aspirational
 statements presented as current fact.
 
+### `DOD-UI` — the Operator Console (frontend)
+1.8, 1.11 (the correlation identifier surfaced on every outcome), 1.12, 1.13. Plus: no money
+arithmetic in the client (amounts stay decimal strings with their currency, and a lint rule is
+demonstrated to fail on a floating-point conversion); no business rule or state transition
+decided in the client; no session token at rest in the browser; every command path handles the
+unknown outcome and reuses its idempotency key; the console's content security policy intact,
+with no violation in the end-to-end run; axe reporting no serious or critical finding on the
+changed routes; no mock data outside tests; every screen backed by a real operator endpoint,
+exercised end to end against the running application.
+
+*(Added 2026-11-17 by the Phase 16 → 17 transition, P17-INIT, as a pointer. The profile is
+defined and kept in finapp-admin-panel `docs/DEFINITION_OF_DONE.md`, written by its P17-DOC-001
+(2026-11-13); the summary above is that profile, and where the two differ, that one binds. It
+binds the console's own tasks only: this repository's Phase 17 tasks are backend work and carry
+the profiles above.)*
+
 ---
 
 ## 3. Anti-Patterns That Block Done

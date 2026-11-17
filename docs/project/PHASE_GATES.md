@@ -2608,3 +2608,120 @@ else is changed; the measurable form below is added.)*
   - the database and Kafka fleet tiers run as C2 and C11 decide.
 
   **Owners**: `P16-TST-002`.
+
+### Phase 17 — Operator Console
+*(Written by the Phase 16 → 17 transition, P17-INIT, 2026-11-17, from finapp-admin-panel `docs/PHASE_17_PLAN.md` §19, the
+console's draft, read against this tree.)* The Operator Console is an operator-facing single-page application in its own
+repository, finapp-admin-panel, served same-origin by the operator edge (finapp-admin-panel ADR-C130). Its plan, its console
+tasks, its ADRs (ADR-C130…C136, `Proposed`, numbered apart from this repository's register) and the `DOD-UI` profile live there
+by the owner's instruction of 2026-11-13. **This section is the gate both repositories' Phase 17 work answers to**; finapp's half
+of the work is `BACKLOG.md` §Phase 17. Task ids are finapp's backlog entries: `P17-TSK-014`…`-044`, `P17-TST-001` and
+`P17-DOC-002` keep the console plan's numbers, `P17-TSK-101` onward are this repository's own, and a bare `-nnn` means
+`P17-TSK-nnn`.
+
+**Entry** (§2; the record is `reviews/PHASE_16_TO_17_TRANSITION.md`): Phase 16 `COMPLETE`, flipped by the owner on 2026-11-17
+with its recorded deviations; the console plan's backend gaps placed as backlog items with acceptance criteria; ADR-C130…C136
+`Proposed`; `CURRENT_STATE.md` naming Phase 17. **No new financial invariant**: the console moves no money. ADR-C135's tasks
+change who may trigger existing postings, not the postings, and carry `DOD-FIN` for that reason. The universal criteria (§3)
+apply to every task, and the financial-phase supplement to each task carrying `DOD-FIN` (`-031`, and `-028` if its restriction
+meets a balance).
+
+**The ten, as drafted** (finapp-admin-panel `PHASE_17_PLAN.md` §19, kept as written):
+1. Every console module that ships is backed by real operator endpoints: no module's data is simulated, and every gap a shipped
+   module needs is closed in its owning module with negative authorization tests (`DOD-API`, `DOD-SEC`).
+2. The seven mandatory scenarios of the console plan's §13 pass as E2E tests against the real application on `kind` at 3
+   replicas through the operator edge, from a fresh run.
+3. Same-origin hosting holds: `/console/**` is unreachable from the public edge; the console's CSP is served with zero
+   violations across the E2E battery; API routes keep `default-src 'none'`.
+4. No session token at rest in the browser, asserted by E2E across a full session, step-up and logout included.
+5. finapp-admin-panel ADR-C131 decision 3 is in force: every permissioned act on the operator surface refuses a password-only
+   session, with a negative test per surface class.
+6. Accessibility: axe reports zero serious or critical findings on every route in both themes, plus one recorded manual
+   screen-reader pass.
+7. The audit trail is readable by `AUDITOR` and every read of it is audited (ADR-C134), with a negative test for every other
+   role.
+8. Every operator collection the console uses is a §7 collection or renders its cap explicitly (ADR-C133); no capped list is
+   presented as complete.
+9. No floating-point money in the client: the lint rule is demonstrated to fail on a planted `parseFloat(amount)`, recorded in
+   `MUTATION_TESTING.md` beside the backend's rows.
+10. The multi-instance question is answered `PASS` for every backend task of the phase.
+
+**The ten, made measurable** (P17-INIT, 2026-11-17). Each clause is marked by where its evidence lives:
+- **Executable here**: a hermetic test or guard, or a task's own database classes, in this repository; met only by a fresh run
+  recorded at the task's gate.
+- **On `kind`**: executable on the local cluster through the real operator edge at three application replicas; met only by its
+  executed record (date, commit, commands, results). Phase 16's cluster runs are owed under `POSTPONED_ISSUES.md` PI-025 by the
+  owner's choice; whether Phase 17's run or are owed the same way is the owner's at each run, and an owed run leaves its
+  criterion `PARTIAL` at the exit, never `PASS`.
+- **In finapp-admin-panel**: evidenced by that repository's own records - its gates, its CI, its exit review - which
+  `P17-DOC-002` reads and cites; nothing in this repository is claimed for it.
+
+1. *Backed by real endpoints.* **Executable here**, per gap task:
+   - each new route in `docs/api/openapi.json`, behind the operator surface, on the operator edge's list and off the public one
+     (`EdgeAllowListTest`), its permission in the route register;
+   - a negative authorization test per route: a session without the permission refused `403`, a customer's session refused;
+   - identifier-first answers (finapp-admin-panel ADR-C132), every new read classified in `DATA_CLASSIFICATION.md` and every
+     audited one in `AUDITABLE_ACTIONS.md`.
+
+   **In finapp-admin-panel**: no module's data simulated (`DOD-UI`: no mock data outside tests), and which modules ship, read
+   against the contract the console pins. **Owners**: `-014`…`-017`, `-020`, `-022`, `-023`, `-025`…`-029`, `-031`…`-033`,
+   `-035`, `-037`, `-039`, `-040`, `-042`, and the view additions `-107`, `-109`, `-111`, `-114`, `-116`, `-118`.
+2. *The seven scenarios on `kind`.* **On `kind`**: `P17-TST-001` runs the console's Playwright `kind` project against
+   `finapp-console`, loaded by `-104`, and three application replicas through the operator edge, each scenario from a fresh run:
+   - an unauthorised privileged operation refused and audited as a denial;
+   - a permission revoked mid-session, the next act refused;
+   - two operators conflicting on one case, the second refused `409`;
+   - a timeout after the backend committed, retried under the same key to one effect;
+   - a stale record refused and re-confirmed;
+   - duplicate approvals converging on one, with one audit record;
+   - the backend unavailable and recovered without a reload, no command retried on its own.
+
+   **Executable here**: the test-only seeding (`-106`, `-108`, `-110`, `-112`, `-113`, `-115`, `-117`, `-119`) refuses any
+   database but a test one, and no production image or route carries it, each held by a guard. **Owners**: `-104`, the seeding
+   tasks, `P17-TST-001`.
+3. *Same-origin hosting.* **Executable here**, held since the console's hosting was built (X-TSK-020, 2026-11-14): `/console/**`
+   absent from the public edge's routers and services, `console-headers` the console's exact policy, every API route
+   `default-src 'none'` on both hosts (`ConsoleHostingManifestsTest`, `edge.rego`'s console rules); and `-101`'s
+   `Cache-Control: no-store` on every operator API answer, errors included, `/console/**` unchanged. **On `kind`**: `/console`
+   answering `404` on the public host, the console's policy header present once on `/console/`, and zero CSP violations across
+   `P17-TST-001`'s battery. **Owners**: `-101`, `-104`, `P17-TST-001`.
+4. *No token at rest.* **On `kind`**: `P17-TST-001` asserts, across sign-in, step-up, acts and logout, that no session token is
+   in local or session storage, IndexedDB, a cookie or a URL. **In finapp-admin-panel**: the memory-only holder and the lint bans
+   (ADR-C131). **Owners**: `P17-TST-001`.
+5. *A second factor on every act.* **Executable here**: `-102`'s guard - every `POST`, `PUT`, `PATCH` or `DELETE` handler that
+   declares a permission also declares `MULTI_FACTOR` - and a negative test per surface class (the `/v1/operator/**` routes, the
+   identity doors, KYC, the ledger, payment refund and void, transfer reversal): a password-only session refused `403
+   identity.AssuranceRequired` before the permission is read. **On `kind`**: the console's step-up replays the act once under the
+   same idempotency key. **Owners**: `-102`, `-031`.
+6. *Accessibility.* **In finapp-admin-panel** wholly: its accessibility audit of every route in both themes and the recorded
+   screen-reader pass. Nothing here.
+7. *The audit trail.* **Executable here**: `-017`'s database classes -
+   - `AUDITOR` reads within a required, bounded window, a page at a time by the §7 cursor;
+   - each page served recorded as `audit.RecordsRead`, its filter the change summary;
+   - every other role refused `403`, one negative test each, `ADMINISTRATOR` included unless the owner decides otherwise
+     (ADR-C134 decision 2);
+   - no grant lets the application's role update or delete an audit record;
+   - the indexes chosen from recorded `EXPLAIN` plans.
+
+   **Owners**: `-017`.
+8. *Collections.* **Executable here**: every list a Phase 17 task adds is a §7 collection - `{ items, nextCursor }`, a declared
+   order, `nextCursor` absent at the end - with a cursor test; every capped operator list the console uses is retrofitted by
+   `-042` or answers its cap (`truncated`). **In finapp-admin-panel**: no capped list presented as complete. **Owners**: `-042` and
+   every list task.
+9. *No floating-point money in the client.* **In finapp-admin-panel**: the lint rule and its planted failure. `P17-DOC-002`
+   copies that record into `MUTATION_TESTING.md` beside the backend's rows, citing it. **Owners**: `P17-DOC-002`.
+10. *Multi-instance.* **Executable here**: each backend task's gate answers the question `PASS` -
+    - reads on one snapshot through the owning module's query port, with no cross-schema read (ADR-C132);
+    - every new command idempotent and arbitrated in PostgreSQL;
+    - `-028`'s restriction a state machine under the row's lock;
+    - `-016`'s conflict judged under the identity's lock.
+
+    **On `kind`**: `P17-TST-001` at three replicas. **Owners**: every backend task, `P17-DOC-002`.
+
+**Also at the exit**:
+- the threats of `THREAT_MODEL.md` B11 (T48-T54) each controlled or accepted by the owner, and the browser-cache threat registered
+  by `-101` (§6 item 73);
+- `-044`'s console monitoring routed: a synthetic probe of `/console/`, pod readiness, CSP reports and asset `404`s;
+- `-105`'s registry repository and delivery for the console, designed-only, the project having no cloud account;
+- every clause owed or designed-only listed by name in `P17-DOC-002`;
+- no document claiming production readiness, compliance, certification or attestation.

@@ -381,6 +381,15 @@ section's capabilities.)*
   RTO and RPO by tier
 - Not claimed: a managed failover, a region's loss or a real provider's outage executed (designed-only without a cloud account)
 
+*(Phase 16 complete by the owner's flip, 2026-11-17, with its recorded deviations.)*
+
+## Operator Console *(Phase 17, planned at the Phase 16 → 17 transition, 2026-11-17 — finapp-admin-panel `docs/PHASE_17_PLAN.md`; the console's screens over what the platform already serves are built in that repository ahead of the phase, and the backend half below is not built)*
+- Operator access — planned: the console served same-origin on the operator edge, a second factor on every operator act, `Cache-Control: no-store` on operator responses, a rate limit and in-flight bound on the operator edge
+- Administration and audit — planned: a staff directory, a role catalogue, another identity's sessions ended one by one, segregation of duties refused at grant, the audit trail read by an auditor with every read of it audited
+- Operator reads — planned: identifier-first, permissioned and audited reads of customers, accounts, transfers, KYC, payments, merchants, credit, lending, BNPL, FX and the ledger; every list a §7 collection, every pending decision in one shape
+- Money controls — planned: refund, void, transfer reversal, fee schedule versions, merchant closure and the operator payout under a second factor, an idempotency key and four-eyes by value (ADR-C135)
+- Not claimed: a workforce identity provider, PII shown to staff beyond identifiers, exports, or any new financial invariant
+
 ## Platform
 - API gateway *(none: the edge is an ingress, the application authenticates - Phase 15, C9)*
 - Eventing
