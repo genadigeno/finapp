@@ -62,6 +62,9 @@ public final class RoutingAdministration {
      * stream, so a retried creation minting two adjacent identical versions would leave the
      * newer one in force under a number nobody chose — harmless to money, confusing to an
      * explanation — and the platform's one keyed mechanism absorbs exactly that.
+     *
+     * <p>The claim names its operator ({@code payments.routing.version:<keyedType>:<actorId>},
+     * `X-TSK-003`); this bare value is the scope it moved from, consulted until `X-TSK-028`.
      */
     public static final String IDEMPOTENCY_SCOPE = "payments.routing.version";
 
@@ -112,7 +115,12 @@ public final class RoutingAdministration {
             }
         }
 
-        IdempotencyKey key = new IdempotencyKey(IDEMPOTENCY_SCOPE, idempotencyKey);
+        // The claim names its principal, the operator (X-TSK-003): another operator's key value
+        // no longer refuses this one's.
+        IdempotencyKey key =
+                new IdempotencyKey(
+                        IDEMPOTENCY_SCOPE + ":" + actor.keyedType().name() + ":" + actor.id(),
+                        idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(
                         canonicalForm(request, actor).getBytes(StandardCharsets.UTF_8));
@@ -120,6 +128,8 @@ public final class RoutingAdministration {
                 executor.execute(
                         unitOfWork,
                         key,
+                        // The old scope is consulted for X-TSK-003's transition and goes with X-TSK-028.
+                        key.movedFrom(IDEMPOTENCY_SCOPE),
                         fingerprint,
                         uow -> accept(uow, request, actor, correlation));
 

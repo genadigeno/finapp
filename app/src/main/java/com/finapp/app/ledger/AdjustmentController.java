@@ -57,8 +57,9 @@ public class AdjustmentController {
 
     /**
      * Proposes the adjustment, or replays the recorded outcome for a retried key
-     * ({@code INV-IDEM-01}); a reused key from a different operator or with a different
-     * request — the reason included — is a {@code 409} conflict ({@code INV-IDEM-03}).
+     * ({@code INV-IDEM-01}); a reused key with a different request — the reason included —
+     * is a {@code 409} conflict ({@code INV-IDEM-03}). The key is scoped to its operator
+     * (`X-TSK-003`): another operator's equal value is their own proposal, never a conflict.
      * Nothing posts: the entry is the approval's, by a second person.
      */
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)

@@ -31,6 +31,21 @@ public record IdempotencyKey(String scope, String key) implements Serializable {
         key = required(key, "idempotency key");
     }
 
+    /**
+     * This key's value under the scope it moved from (`X-TSK-003`): the claim a command made before its scope named its
+     * principal, which {@link IdempotentExecutor}'s transition consults first, so a retry spanning the move finds it. Every
+     * call is the transition's and goes when it does (`X-TSK-028`).
+     *
+     * @param scope the old scope, which must differ from this key's
+     */
+    public IdempotencyKey movedFrom(String scope) {
+        IdempotencyKey before = new IdempotencyKey(scope, key);
+        if (before.scope.equals(this.scope)) {
+            throw new IllegalArgumentException("a moved scope differs from the one it moved from: " + scope);
+        }
+        return before;
+    }
+
     private static String required(String value, String what) {
         Objects.requireNonNull(value, what + " must not be null");
         if (value.isBlank()) {

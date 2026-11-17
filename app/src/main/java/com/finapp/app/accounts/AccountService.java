@@ -21,6 +21,8 @@ import com.finapp.platform.idempotency.IdempotencyKey;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.idempotency.RequestFingerprint;
 import com.finapp.platform.idempotency.StoredResponse;
+import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
@@ -49,19 +51,27 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p><strong>The open is idempotent at two layers, blind in different directions.</strong> The
  * {@link IdempotentExecutor} replays the recorded outcome for a retried key and refuses a
- * reused key whose request differs ({@code INV-IDEM-01}, {@code INV-IDEM-03}) — the fingerprint
- * binds the <em>party</em> as well as the product and currency (ADR-0004's owning principal),
- * so a stranger replaying a key they saw in a log gets a conflict, never somebody else's
- * account. Underneath, `P3-TSK-012`'s {@code openOrConverge} makes any re-execution — a
- * different key, a racing instance — converge on the one live agreement.
+ * reused key whose request differs ({@code INV-IDEM-01}, {@code INV-IDEM-03}). The claim's scope
+ * names the caller (ADR-0004's owning principal, `X-TSK-003`), so a stranger presenting a key
+ * value they saw in a log claims under their own scope and is never handed somebody else's
+ * account; the fingerprint binds the <em>party</em> as well as the product and currency, which
+ * is how the scope's transition tells that stranger's claim from this caller's. Underneath,
+ * `P3-TSK-012`'s {@code openOrConverge} makes any re-execution — a different key, a racing
+ * instance — converge on the one live agreement.
  */
 @RequiredArgsConstructor
 public final class AccountService {
 
-    /** The idempotency scope (ADR-0004): one command type, one scope. */
+    /**
+     * The idempotency scope's command (ADR-0004): one command type, one scope, which the claim
+     * suffixes with its principal (`X-TSK-003`). Alone, it is the scope before that move.
+     */
     static final String IDEMPOTENCY_SCOPE = "accounts.open";
 
-    /** The add-currency door's own scope (`P9-TSK-004`): another command, another scope. */
+    /**
+     * The add-currency door's own scope (`P9-TSK-004`): another command, another scope — its
+     * principal suffixed by the claim, as the open's is (`X-TSK-003`).
+     */
     static final String ADD_CURRENCY_SCOPE = "accounts.add-currency";
 
     @NonNull private final AccountOpening opening;
@@ -103,7 +113,13 @@ public final class AccountService {
         Objects.requireNonNull(currency, "currency must not be null");
         Objects.requireNonNull(idempotencyKey, "idempotencyKey must not be null");
 
-        IdempotencyKey key = new IdempotencyKey(IDEMPOTENCY_SCOPE, idempotencyKey);
+        // The scope names the session's person, keyed once (`X-TSK-003`, `P15-TSK-021`): one
+        // caller's key value is never another's claim.
+        Actor actor = SecurityContext.require();
+        IdempotencyKey key =
+                new IdempotencyKey(
+                        IDEMPOTENCY_SCOPE + ":" + actor.keyedType().name() + ":" + actor.id(),
+                        idempotencyKey);
 
         // Whether THIS call created the agreement: set only inside the executed effect, so
         // a replayed key (the effect never runs) and a converged open both leave it false.
@@ -125,6 +141,8 @@ public final class AccountService {
                                     executor.execute(
                                             unitOfWork,
                                             key,
+                                            // The old scope is consulted for X-TSK-003's transition and goes with X-TSK-028.
+                                            key.movedFrom(IDEMPOTENCY_SCOPE),
                                             fingerprint,
                                             uow -> {
                                                 CustomerAccountStore.Creation creation =
@@ -179,7 +197,12 @@ public final class AccountService {
         Objects.requireNonNull(currency, "currency must not be null");
         Objects.requireNonNull(idempotencyKey, "idempotencyKey must not be null");
 
-        IdempotencyKey key = new IdempotencyKey(ADD_CURRENCY_SCOPE, idempotencyKey);
+        // The open's principal-named scope (`X-TSK-003`).
+        Actor actor = SecurityContext.require();
+        IdempotencyKey key =
+                new IdempotencyKey(
+                        ADD_CURRENCY_SCOPE + ":" + actor.keyedType().name() + ":" + actor.id(),
+                        idempotencyKey);
         byte[] body;
         try {
             body =
@@ -196,6 +219,8 @@ public final class AccountService {
                                         executor.execute(
                                                 unitOfWork,
                                                 key,
+                                                // The old scope is consulted for X-TSK-003's transition and goes with X-TSK-028.
+                                                key.movedFrom(ADD_CURRENCY_SCOPE),
                                                 fingerprint,
                                                 uow ->
                                                         com.finapp.platform.idempotency

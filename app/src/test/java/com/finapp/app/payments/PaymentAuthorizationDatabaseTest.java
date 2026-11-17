@@ -368,18 +368,74 @@ class PaymentAuthorizationDatabaseTest {
                                         Money.ofMinorUnits(10_00, CurrencyCode.of("USD"))))
                 .isInstanceOf(PaymentCurrencyMismatchException.class);
 
-        // A STRANGER replaying a logged key - same party in the command, same money, a
-        // different proven actor - conflicts rather than reading somebody else's outcome:
-        // the actor is in the fingerprint (ADR-0004's owning principal, INV-IDEM-03).
+        // A STRANGER sending a logged key - same party in the command, same money, a different
+        // proven actor - never reads somebody else's outcome. Until X-TSK-003 it was refused
+        // (the actor is in the fingerprint, INV-IDEM-03); since the claim names its principal
+        // (ADR-0004's owning principal) it claims under its own scope and is a new request
+        // like any other - its own intent, nothing replayed to it.
         SecurityContext.Scope stranger =
                 SecurityContext.enter(
                         new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER));
         try {
-            assertThatThrownBy(() -> create(key, AMOUNT))
-                    .isInstanceOf(IdempotencyConflictException.class);
+            PaymentCreation.CreationResult strangers = create(key, AMOUNT);
+            assertThat(strangers.replayed()).isFalse();
+            assertThat(strangers.intent()).isNotEqualTo(first.intent());
         } finally {
             stranger.close();
         }
+    }
+
+    @Test
+    @DisplayName("X-TSK-003: two customers sending one Idempotency-Key value each create their own"
+            + " intent and each retry replays its own - the claim names its principal, so one"
+            + " client's key value refuses no other's")
+    void twoCustomersOneKeyValueEachActAndReplayTheirOwn() throws SQLException {
+        String key = "shared-" + UUID.randomUUID();
+        // The fixture's participants are actor-blind (both name this suite's party): the
+        // principal the scope names is the proven actor, and that is what differs.
+        Actor other = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
+
+        PaymentCreation.CreationResult mine = create(key, AMOUNT);
+        PaymentCreation.CreationResult theirs = as(other, () -> create(key, AMOUNT));
+        assertThat(mine.replayed()).isFalse();
+        assertThat(theirs.replayed())
+                .as("the second principal acts - before X-TSK-003 it was refused as api.Conflict")
+                .isFalse();
+        assertThat(theirs.intent()).isNotEqualTo(mine.intent());
+
+        PaymentCreation.CreationResult myRetry = create(key, AMOUNT);
+        PaymentCreation.CreationResult theirRetry = as(other, () -> create(key, AMOUNT));
+        assertThat(myRetry.replayed()).isTrue();
+        assertThat(myRetry.intent()).isEqualTo(mine.intent());
+        assertThat(theirRetry.replayed()).isTrue();
+        assertThat(theirRetry.intent()).isEqualTo(theirs.intent());
+        assertThat(intentsOfParty()).as("two acts, two intents - no retry acted twice").isEqualTo(2);
+
+        // Each claim under its own principal's scope.
+        assertThat(recordCount(createScopeOf(person), key)).isEqualTo(1);
+        assertThat(recordCount(createScopeOf(other), key)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("X-TSK-003: a create claimed before its scope moved is replayed - the record under"
+            + " the bare payment.create answers the retry, and no second intent is created")
+    void aCreateClaimedBeforeTheMoveIsReplayed() throws SQLException {
+        String key = "moved-" + UUID.randomUUID();
+        PaymentCreation.CreationResult first = create(key, AMOUNT);
+
+        // The previous release's state: the claim under the old scope alone. The record this
+        // release also wrote under the new scope is removed as only the bootstrap role may.
+        assertThat(recordCount(PaymentCreation.IDEMPOTENCY_SCOPE, key)).isEqualTo(1);
+        assertThat(deleteRecord(createScopeOf(person), key)).isEqualTo(1);
+
+        PaymentCreation.CreationResult retried = create(key, AMOUNT);
+
+        assertThat(retried.replayed()).as("the retry spanning the move finds its claim").isTrue();
+        assertThat(retried.intent()).isEqualTo(first.intent());
+        assertThat(intentsOfParty()).as("nothing created twice").isEqualTo(1);
+        assertThat(recordCount(createScopeOf(person), key))
+                .as("answered from the old scope; the new one was never claimed")
+                .isZero();
     }
 
     @Test
@@ -676,6 +732,63 @@ class PaymentAuthorizationDatabaseTest {
                                 uow,
                                 new PaymentCreation.CreatePaymentCommand(
                                         party, participants.instrumentId, amount, key)));
+    }
+
+    /** {@code work} as {@code actor}, nested in this test's own actor scope. */
+    private static <R> R as(Actor actor, java.util.function.Supplier<R> work) {
+        SecurityContext.Scope entered = SecurityContext.enter(actor);
+        try {
+            return work.get();
+        } finally {
+            entered.close();
+        }
+    }
+
+    /** The scope the public create claims under for {@code actor} since `X-TSK-003`. */
+    private static String createScopeOf(Actor actor) {
+        return PaymentCreation.IDEMPOTENCY_SCOPE + ":" + actor.keyedType().name() + ":" + actor.id();
+    }
+
+    private static long recordCount(String scope, String key) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement count =
+                        app.prepareStatement(
+                                "SELECT count(*) FROM platform.idempotency_record"
+                                        + " WHERE scope = ? AND idempotency_key = ?")) {
+            count.setString(1, scope);
+            count.setString(2, key);
+            try (ResultSet row = count.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    /** One claim's record removed by the bootstrap role: the application role cannot delete. */
+    private static int deleteRecord(String scope, String key) throws SQLException {
+        try (Connection root = DatabaseRoles.bootstrap();
+                PreparedStatement delete =
+                        root.prepareStatement(
+                                "DELETE FROM platform.idempotency_record"
+                                        + " WHERE scope = ? AND idempotency_key = ?")) {
+            delete.setString(1, scope);
+            delete.setString(2, key);
+            return delete.executeUpdate();
+        }
+    }
+
+    /** This test's party's intents: one per act, whatever was retried. */
+    private long intentsOfParty() throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement count =
+                        app.prepareStatement(
+                                "SELECT count(*) FROM payments.payment_intent WHERE party_id = ?")) {
+            count.setObject(1, party);
+            try (ResultSet row = count.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getLong(1);
+            }
+        }
     }
 
     private PaymentConfirmation confirmation(PaymentProvider provider) {

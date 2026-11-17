@@ -270,6 +270,48 @@ class PayoutDestinationDatabaseTest {
     }
 
     @Test
+    @DisplayName("X-TSK-003: two operators presenting ONE key value each propose for their merchant -"
+            + " neither refused as a reused key - and each retry replays its own proposal")
+    void twoOperatorsWithOneKeyValueEachProposeTheirOwn() throws Exception {
+        // Two merchants: one merchant's second open change is V006's refusal, a reason of its
+        // own, and not what this test is about.
+        MerchantId firstMerchant = merchant();
+        MerchantId secondMerchant = merchant();
+        Actor first = person();
+        Actor second = person();
+        String oneValue = UUID.randomUUID().toString();
+
+        PayoutDestinations.ProposalResult firsts =
+                proposeKeyed(firstMerchant, first, "pdr_onekey1", oneValue);
+        PayoutDestinations.ProposalResult seconds =
+                proposeKeyed(secondMerchant, second, "pdr_onekey2", oneValue);
+        assertThat(firsts.replayed()).isFalse();
+        assertThat(seconds.replayed())
+                .as("another operator's key value is no claim of this one's")
+                .isFalse();
+        assertThat(seconds.destinationId()).isNotEqualTo(firsts.destinationId());
+        assertThat(statusOf(firsts.destinationId())).isEqualTo("PROPOSED");
+        assertThat(statusOf(seconds.destinationId())).isEqualTo("PROPOSED");
+
+        // Each retry finds its own claim and replays its own proposal (INV-IDEM-01).
+        PayoutDestinations.ProposalResult firstRetried =
+                proposeKeyed(firstMerchant, first, "pdr_onekey1", oneValue);
+        PayoutDestinations.ProposalResult secondRetried =
+                proposeKeyed(secondMerchant, second, "pdr_onekey2", oneValue);
+        assertThat(firstRetried.replayed()).isTrue();
+        assertThat(firstRetried.destinationId()).isEqualTo(firsts.destinationId());
+        assertThat(secondRetried.replayed()).isTrue();
+        assertThat(secondRetried.destinationId()).isEqualTo(seconds.destinationId());
+        for (MerchantId merchant : List.of(firstMerchant, secondMerchant)) {
+            assertThat(count(
+                            "SELECT count(*) FROM merchant.payout_destination WHERE merchant_id = ?",
+                            merchant.value()))
+                    .as("one proposal each, however many times it was asked")
+                    .isEqualTo(1);
+        }
+    }
+
+    @Test
     @DisplayName("ten distinct approvers racing leave exactly one approval")
     void concurrentApprovalsLeaveOneApproval() throws Exception {
         MerchantId merchant = merchant();
@@ -521,6 +563,23 @@ class PayoutDestinationDatabaseTest {
         } catch (PayoutDestinationChangePendingException pending) {
             return pending;
         }
+    }
+
+    /** A proposal under the caller's own key value - the same command each time it is asked. */
+    private PayoutDestinations.ProposalResult proposeKeyed(
+            MerchantId merchant, Actor proposer, String reference, String idempotencyKey)
+            throws Exception {
+        return as(
+                proposer,
+                uow ->
+                        destinations.propose(
+                                uow,
+                                new PayoutDestinations.ProposeCommand(
+                                        idempotencyKey,
+                                        merchant,
+                                        new PayoutDestinationTokenisation.TokenisedDestination(
+                                                PayoutDestinationReference.of(reference), "3000"),
+                                        "the merchant's new account")));
     }
 
     private void approve(MerchantId merchant, PayoutDestinationId id, Actor approver)

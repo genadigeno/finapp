@@ -394,6 +394,68 @@ class AccountEndpointDatabaseTest {
     }
 
     @Test
+    @DisplayName("X-TSK-003: two callers presenting ONE Idempotency-Key value each open their own"
+            + " account - neither refused as a reused key - and each retry replays its own")
+    void twoCallersWithOneKeyValueEachOpenTheirOwn() throws Exception {
+        Person a = givenAPerson("ACTIVE");
+        Person b = givenAPerson("ACTIVE");
+        String oneValue = key();
+
+        HttpResponse<String> aOpened = post("/me/accounts", a.session(), OPEN_USD, oneValue);
+        HttpResponse<String> bOpened = post("/me/accounts", b.session(), OPEN_USD, oneValue);
+        assertThat(aOpened.statusCode()).as(aOpened.body()).isEqualTo(201);
+        assertThat(bOpened.statusCode())
+                .as("the scope names its principal: another caller's key value is no claim of"
+                        + " this one's - %s", bOpened.body())
+                .isEqualTo(201);
+        assertThat(field(bOpened.body(), "id")).isNotEqualTo(field(aOpened.body(), "id"));
+        assertThat(accountRowsFor(a.customer())).isEqualTo(1);
+        assertThat(accountRowsFor(b.customer())).isEqualTo(1);
+
+        // Each retry finds its own claim and replays its own outcome, byte for byte - never the
+        // other caller's account (INV-IDEM-01).
+        assertThat(post("/me/accounts", a.session(), OPEN_USD, oneValue).body())
+                .isEqualTo(aOpened.body());
+        assertThat(post("/me/accounts", b.session(), OPEN_USD, oneValue).body())
+                .isEqualTo(bOpened.body());
+        assertThat(accountRowsFor(a.customer())).isEqualTo(1);
+        assertThat(accountRowsFor(b.customer())).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("X-TSK-003: two callers presenting ONE Idempotency-Key value each add a currency to"
+            + " their own account, and each retry replays its own")
+    void twoCallersWithOneKeyValueEachAddTheirOwnCurrency() throws Exception {
+        Person a = givenAPerson("ACTIVE");
+        Person b = givenAPerson("ACTIVE");
+        String aAccount = field(post("/me/accounts", a.session(), OPEN_USD, key()).body(), "id");
+        String bAccount = field(post("/me/accounts", b.session(), OPEN_USD, key()).body(), "id");
+        String oneValue = key();
+
+        HttpResponse<String> aAdded =
+                post("/me/accounts/" + aAccount + "/currencies", a.session(), GBP_BODY, oneValue);
+        HttpResponse<String> bAdded =
+                post("/me/accounts/" + bAccount + "/currencies", b.session(), GBP_BODY, oneValue);
+        assertThat(aAdded.statusCode()).as(aAdded.body()).isEqualTo(201);
+        assertThat(bAdded.statusCode())
+                .as("another caller's key value is no claim of this one's - %s", bAdded.body())
+                .isEqualTo(201);
+        assertThat(field(aAdded.body(), "accountId")).isEqualTo(aAccount);
+        assertThat(field(bAdded.body(), "accountId")).isEqualTo(bAccount);
+        assertThat(walletRowsFor(UUID.fromString(aAccount))).isEqualTo(2);
+        assertThat(walletRowsFor(UUID.fromString(bAccount))).isEqualTo(2);
+
+        assertThat(post("/me/accounts/" + aAccount + "/currencies", a.session(), GBP_BODY, oneValue)
+                        .body())
+                .isEqualTo(aAdded.body());
+        assertThat(post("/me/accounts/" + bAccount + "/currencies", b.session(), GBP_BODY, oneValue)
+                        .body())
+                .isEqualTo(bAdded.body());
+        assertThat(walletRowsFor(UUID.fromString(aAccount))).isEqualTo(2);
+        assertThat(walletRowsFor(UUID.fromString(bAccount))).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("every account endpoint refuses an unauthenticated caller")
     void unauthenticatedIsRefused() throws Exception {
         assertThat(post("/me/accounts", null, OPEN_USD, key()).statusCode()).isEqualTo(401);

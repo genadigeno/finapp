@@ -54,7 +54,10 @@ public final class PayoutDestinations {
     /** The audit target type: the aggregate's own name, as the ledger's proposal uses its own. */
     static final String TARGET_TYPE = "merchant.PayoutDestination";
 
-    /** The idempotency scope (ADR-0004): one command type, one scope. */
+    /**
+     * The idempotency scope's command (ADR-0004): one command type, one scope, which the claim
+     * suffixes with its principal (`X-TSK-003`). Alone, it is the scope before that move.
+     */
     static final String PROPOSE_SCOPE = "merchant.payout-destination.propose";
 
     private final PayoutDestinationStore<Connection> destinations;
@@ -134,12 +137,18 @@ public final class PayoutDestinations {
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
 
-        IdempotencyKey key = new IdempotencyKey(PROPOSE_SCOPE, command.idempotencyKey());
+        // The scope names the operator (`X-TSK-003`): another operator's key value is never this one's claim.
+        IdempotencyKey key =
+                new IdempotencyKey(
+                        PROPOSE_SCOPE + ":" + actor.keyedType().name() + ":" + actor.id(),
+                        command.idempotencyKey());
         RequestFingerprint fingerprint = RequestFingerprint.sha256(canonicalForm(command, actor));
         IdempotentExecutor.ExecutionOutcome outcome =
                 executor.execute(
                         unitOfWork,
                         key,
+                        // The old scope is consulted for X-TSK-003's transition and goes with X-TSK-028.
+                        key.movedFrom(PROPOSE_SCOPE),
                         fingerprint,
                         uow -> accept(uow, command, actor, correlation));
         String recorded =
@@ -404,10 +413,12 @@ public final class PayoutDestinations {
     }
 
     /**
-     * The fingerprint's subject: the actor and the request's meaning — a reused key from a
-     * different operator, for another merchant, destination or reason is the distinct 409
-     * ({@code INV-IDEM-03}), never a silent replay. Hashed before it is stored, so the reference
-     * never rests in the idempotency record.
+     * The fingerprint's subject: the actor and the request's meaning — the operator's own key
+     * reused for another merchant, destination or reason is the distinct 409
+     * ({@code INV-IDEM-03}), never a silent replay. Another operator's same key value is their
+     * own claim under their own scope (`X-TSK-003`); the actor stays here because it is how the
+     * old scope's transition tells their claim from this request's. Hashed before it is stored,
+     * so the reference never rests in the idempotency record.
      */
     private static byte[] canonicalForm(ProposeCommand command, Actor actor) {
         return String.join(

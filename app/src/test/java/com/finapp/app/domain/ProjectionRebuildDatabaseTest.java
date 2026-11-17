@@ -376,6 +376,116 @@ class ProjectionRebuildDatabaseTest {
                 .isEqualTo(1);
     }
 
+    @Test
+    @Order(9)
+    @DisplayName("X-TSK-003: two people proposing with one Idempotency-Key value - each on their own drifting account, so"
+            + " the one-standing index refuses neither - both propose, each under their own principal, and each one's"
+            + " retry replays their own rebuild")
+    void twoProposersOneKeyValueEachProposeTheirOwn() throws Exception {
+        LedgerAccount mine = postedWallet(5_000, 1_200);
+        LedgerAccount theirs = postedWallet(5_000, 1_200);
+        drift(mine.id(), 777);
+        drift(theirs.id(), 777);
+        String key = key();
+
+        ProjectionRebuildId first = committedAs(PROPOSER,
+                uow -> rebuilds(real).propose(uow, mine.id(), "one key value", key)).rebuild().id();
+        ProjectionRebuilds.Outcome second = committedAs(APPROVER,
+                uow -> rebuilds(real).propose(uow, theirs.id(), "one key value", key));
+        assertThat(second.replayed()).as("the second person acted, refused nothing for the first's value").isFalse();
+        assertThat(second.rebuild().id()).isNotEqualTo(first);
+        assertThat(second.rebuild().account()).isEqualTo(theirs.id());
+        assertThat(second.rebuild().proposedBy()).isEqualTo(APPROVER.id());
+
+        // A retry finds its own claim: without it the standing rebuild would refuse the proposal (ProjectionRebuildStanding).
+        ProjectionRebuilds.Outcome firstRetry = committedAs(PROPOSER,
+                uow -> rebuilds(real).propose(uow, mine.id(), "one key value", key));
+        ProjectionRebuilds.Outcome secondRetry = committedAs(APPROVER,
+                uow -> rebuilds(real).propose(uow, theirs.id(), "one key value", key));
+        assertThat(firstRetry.replayed()).isTrue();
+        assertThat(firstRetry.rebuild().id()).isEqualTo(first);
+        assertThat(secondRetry.replayed()).isTrue();
+        assertThat(secondRetry.rebuild().id()).isEqualTo(second.rebuild().id());
+        for (ProjectionRebuildId id : List.of(first, second.rebuild().id())) {
+            assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'ledger.ProjectionRebuildProposed'"
+                    + " AND target_id = ?", id.value().toString())).as("proposed once; the retry replayed").isEqualTo(1);
+        }
+        assertClaimedByEach(ProjectionRebuilds.PROPOSE_SCOPE, key, PROPOSER, APPROVER);
+    }
+
+    @Test
+    @Order(10)
+    @DisplayName("X-TSK-003: two approvers with one Idempotency-Key value - on two rebuilds, since four eyes lets neither"
+            + " approve their own - each apply theirs, each under their own principal, and each one's retry replays their"
+            + " own approval")
+    void twoApproversOneKeyValueEachApplyTheirOwn() throws Exception {
+        LedgerAccount one = postedWallet(5_000, 1_200);
+        LedgerAccount other = postedWallet(5_000, 1_200);
+        drift(one.id(), 777);
+        drift(other.id(), 777);
+        ProjectionRebuildId first = proposed(one.id());
+        ProjectionRebuildId second = proposed(other.id());
+        String key = key();
+
+        ProjectionRebuilds.Outcome approved = committedAs(APPROVER, uow -> rebuilds(real).approve(uow, first, key));
+        ProjectionRebuilds.Outcome alsoApproved = committedAs(THIRD, uow -> rebuilds(real).approve(uow, second, key));
+        assertThat(approved.rebuild().id()).isEqualTo(first);
+        assertThat(approved.rebuild().status()).isEqualTo(ProjectionRebuildStatus.APPLIED);
+        assertThat(alsoApproved.replayed()).as("the second approver acted, refused nothing for the first's value").isFalse();
+        assertThat(alsoApproved.rebuild().id()).isEqualTo(second);
+        assertThat(alsoApproved.rebuild().status()).isEqualTo(ProjectionRebuildStatus.APPLIED);
+        assertThat(alsoApproved.rebuild().decidedBy()).contains(THIRD.id());
+
+        ProjectionRebuilds.Outcome retried = committedAs(APPROVER, uow -> rebuilds(real).approve(uow, first, key));
+        ProjectionRebuilds.Outcome alsoRetried = committedAs(THIRD, uow -> rebuilds(real).approve(uow, second, key));
+        assertThat(retried.replayed()).isTrue();
+        assertThat(retried.rebuild().id()).isEqualTo(first);
+        assertThat(alsoRetried.replayed()).isTrue();
+        assertThat(alsoRetried.rebuild().id()).isEqualTo(second);
+        for (ProjectionRebuildId id : List.of(first, second)) {
+            assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'ledger.ProjectionRebuilt'"
+                    + " AND target_id = ?", id.value().toString())).as("applied once; the retry replayed").isEqualTo(1);
+        }
+        assertProjectionIsTheJournal(one.id());
+        assertProjectionIsTheJournal(other.id());
+        assertClaimedByEach(ProjectionRebuilds.APPROVE_SCOPE, key, APPROVER, THIRD);
+    }
+
+    @Test
+    @Order(11)
+    @DisplayName("X-TSK-003: two people rejecting with one Idempotency-Key value - on two rebuilds - each reject theirs,"
+            + " each under their own principal, and each one's retry replays their own rejection")
+    void twoRejectersOneKeyValueEachRejectTheirOwn() throws Exception {
+        LedgerAccount one = postedWallet(5_000, 1_200);
+        LedgerAccount other = postedWallet(5_000, 1_200);
+        drift(one.id(), 777);
+        drift(other.id(), 777);
+        ProjectionRebuildId first = proposed(one.id());
+        ProjectionRebuildId second = proposed(other.id());
+        String key = key();
+
+        ProjectionRebuilds.Outcome rejected = committedAs(APPROVER, uow -> rebuilds(real).reject(uow, first, key));
+        ProjectionRebuilds.Outcome alsoRejected = committedAs(THIRD, uow -> rebuilds(real).reject(uow, second, key));
+        assertThat(rejected.rebuild().id()).isEqualTo(first);
+        assertThat(rejected.rebuild().status()).isEqualTo(ProjectionRebuildStatus.REJECTED);
+        assertThat(alsoRejected.replayed()).as("the second person acted, refused nothing for the first's value").isFalse();
+        assertThat(alsoRejected.rebuild().id()).isEqualTo(second);
+        assertThat(alsoRejected.rebuild().status()).isEqualTo(ProjectionRebuildStatus.REJECTED);
+        assertThat(alsoRejected.rebuild().decidedBy()).contains(THIRD.id());
+
+        ProjectionRebuilds.Outcome retried = committedAs(APPROVER, uow -> rebuilds(real).reject(uow, first, key));
+        ProjectionRebuilds.Outcome alsoRetried = committedAs(THIRD, uow -> rebuilds(real).reject(uow, second, key));
+        assertThat(retried.replayed()).isTrue();
+        assertThat(retried.rebuild().id()).isEqualTo(first);
+        assertThat(alsoRetried.replayed()).isTrue();
+        assertThat(alsoRetried.rebuild().id()).isEqualTo(second);
+        for (ProjectionRebuildId id : List.of(first, second)) {
+            assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'ledger.ProjectionRebuildRejected'"
+                    + " AND target_id = ?", id.value().toString())).as("rejected once; the retry replayed").isEqualTo(1);
+        }
+        assertClaimedByEach(ProjectionRebuilds.REJECT_SCOPE, key, APPROVER, THIRD);
+    }
+
     // ------------------------------------------------------------------ fixtures
 
     /** The real rows, paused after the approval's derivation until released - its row and key share held. */
@@ -609,6 +719,32 @@ class ProjectionRebuildDatabaseTest {
     private static long count(String sql, String parameter) throws SQLException {
         try (Connection app = DatabaseRoles.application(); PreparedStatement select = app.prepareStatement(sql)) {
             select.setString(1, parameter);
+            try (ResultSet row = select.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        }
+    }
+
+    /**
+     * X-TSK-003's claims for one key value: one under each person's own principal - keyed {@code CUSTOMER}, so
+     * {@code THIRD}'s {@code EMPLOYEE} act included - and one under the old scope, the first act's alone, which the
+     * transition recorded for a replica of the previous release.
+     */
+    private static void assertClaimedByEach(String scope, String key, Actor first, Actor second) throws SQLException {
+        for (Actor person : List.of(first, second)) {
+            assertThat(claims(scope + ":" + ActorType.CUSTOMER.name() + ":" + person.id(), key))
+                    .as("the claim under " + person.id() + "'s own principal").isEqualTo(1);
+        }
+        assertThat(claims(scope, key)).as("the old scope: the first act's claim alone").isEqualTo(1);
+    }
+
+    private static long claims(String scope, String key) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select = app.prepareStatement(
+                        "SELECT count(*) FROM platform.idempotency_record WHERE scope = ? AND idempotency_key = ?")) {
+            select.setString(1, scope);
+            select.setString(2, key);
             try (ResultSet row = select.executeQuery()) {
                 row.next();
                 return row.getLong(1);

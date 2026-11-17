@@ -77,6 +77,14 @@ import lombok.RequiredArgsConstructor;
  * the committed work by `V008`'s dispatch key — no second hold, no second row, the wire
  * re-driven with the stored reference ({@code INV-PAY-04}).
  *
+ * <p><strong>The claim names its operator; the dispatch key does not yet</strong>
+ * (`X-TSK-003`). The claim is {@code payment.refund:<keyedType>:<operatorId>}, with the bare
+ * {@code payment.refund} consulted first for the release that moves it. The dispatch key stays
+ * the client's raw value, platform-wide, until `X-TSK-028`: so a second operator reusing a
+ * first's key value is no longer refused by the claim, but meets the first's refund at
+ * {@code dispatchOrConverge} — the same facts converge on it, different facts are
+ * {@link RefundKeyReusedException}.
+ *
  * <h2>The operator commands; the platform applies</h2>
  *
  * <p>The dispatch is the operator's reasoned act ({@code PAYMENT_REFUND} checked at the
@@ -188,7 +196,16 @@ public final class PaymentRefund {
         // (ADR-0046) - with the claim held IN_PROGRESS (the executor's two-transaction
         // shape, P5-TSK-016): the response of record is the JUDGED outcome, so it cannot be
         // written here, where no judgement exists yet.
-        IdempotencyKey claimKey = new IdempotencyKey(IDEMPOTENCY_SCOPE, idempotencyKey);
+        // The claim names its principal, the operator (X-TSK-003): another operator's key value
+        // no longer refuses this one's.
+        IdempotencyKey claimKey =
+                new IdempotencyKey(
+                        IDEMPOTENCY_SCOPE + ":" + operator.keyedType().name() + ":" + operator.id(),
+                        idempotencyKey);
+        // The old scope is consulted for X-TSK-003's transition and goes with X-TSK-028.
+        IdempotencyKey movedFrom = claimKey.movedFrom(IDEMPOTENCY_SCOPE);
+        RequestFingerprint fingerprint =
+                RequestFingerprint.sha256(canonicalForm(operator, intentId, amount, reason));
         Dispatch[] holder = new Dispatch[1];
         IdempotentExecutor.BeginOutcome begun =
                 transactions.inTransaction(
@@ -196,10 +213,15 @@ public final class PaymentRefund {
                                 executor.begin(
                                         uow,
                                         claimKey,
-                                        RequestFingerprint.sha256(
-                                                canonicalForm(
-                                                        operator, intentId, amount, reason)),
+                                        movedFrom,
+                                        fingerprint,
                                         claimed -> {
+                                            // The dispatch key stays the RAW client key this
+                                            // release (V008, platform-wide): a replica of the
+                                            // previous release taking over a crashed flight's
+                                            // old-scope claim re-dispatches by it and must
+                                            // converge on the refund this release wrote.
+                                            // Scoping it waits for X-TSK-028.
                                             Dispatch dispatched =
                                                     dispatchOrConverge(
                                                             claimed, idempotencyKey, intentId,
@@ -277,6 +299,9 @@ public final class PaymentRefund {
                         executor.complete(
                                 uow,
                                 claimKey,
+                                // The old scope is consulted for X-TSK-003's transition and goes with X-TSK-028.
+                                movedFrom,
+                                fingerprint,
                                 true,
                                 StoredResponse.of(
                                         renderedForm(dispatch.refund().id(), committed),

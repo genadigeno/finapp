@@ -597,6 +597,111 @@ class TransferExecutionDatabaseTest {
     }
 
     // ------------------------------------------------------------------
+    // The claim names its principal (X-TSK-003)
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("X-TSK-003: two customers, one key value - both transfers execute, each under its own principal's"
+            + " scope, and each one's retry replays its own judgement, never the other's")
+    void twoPrincipalsWithOneKeyValueEachMoveTheirOwnMoney() throws Exception {
+        Holder first = fundedHolder(10_00);
+        Holder second = fundedHolder(10_00);
+        Holder destination = holder();
+        String key = "transfer-" + IDS.next();
+
+        TransferResult firsts = executeAndCommit(first, command(key, first, destination, usd(3_00)));
+        TransferResult seconds = executeAndCommit(second, command(key, second, destination, usd(4_00)));
+        assertThat(firsts.replayed()).isFalse();
+        assertThat(firsts.status()).isEqualTo(TransferStatus.COMPLETED);
+        assertThat(seconds.replayed())
+                .as("the second customer's request is neither refused by the first's key value nor"
+                        + " answered with the first's judgement")
+                .isFalse();
+        assertThat(seconds.status()).isEqualTo(TransferStatus.COMPLETED);
+        assertThat(seconds.transferId()).isNotEqualTo(firsts.transferId());
+
+        TransferResult firstsRetry =
+                executeAndCommit(first, command(key, first, destination, usd(3_00)));
+        TransferResult secondsRetry =
+                executeAndCommit(second, command(key, second, destination, usd(4_00)));
+        assertThat(firstsRetry.replayed()).isTrue();
+        assertThat(firstsRetry.transferId()).isEqualTo(firsts.transferId());
+        assertThat(secondsRetry.replayed()).isTrue();
+        assertThat(secondsRetry.transferId()).isEqualTo(seconds.transferId());
+
+        try (Connection app = DatabaseRoles.application()) {
+            // Two transfers, each moved once - counted in the tables.
+            assertThat(transferCountFor(app, first.customerId)).isEqualTo(1);
+            assertThat(transferCountFor(app, second.customerId)).isEqualTo(1);
+            assertThat(settledOf(app, first.walletId)).isEqualTo(7_00);
+            assertThat(settledOf(app, second.walletId)).isEqualTo(6_00);
+            assertThat(settledOf(app, destination.walletId)).isEqualTo(7_00);
+            // Each claim under its principal's scope; the old scope held beside the first's
+            // alone, which found it free - so a replica of the previous release replays it.
+            assertThat(scopesOf(app, key))
+                    .containsExactlyInAnyOrder(
+                            TransferExecution.IDEMPOTENCY_SCOPE,
+                            TransferExecution.keyFor(first.actor, key).scope(),
+                            TransferExecution.keyFor(second.actor, key).scope());
+        }
+    }
+
+    @Test
+    @DisplayName("X-TSK-003: a claim the previous release made under the old scope alone is found by its"
+            + " retry and replayed - one transfer, one journal entry, never a second movement")
+    void aClaimMadeBeforeTheMoveIsReplayed() throws Exception {
+        Holder source = fundedHolder(10_00);
+        Holder destination = holder();
+        String key = "transfer-" + IDS.next();
+        TransferResult first =
+                executeAndCommit(source, command(key, source, destination, usd(3_00)));
+        assertThat(first.status()).isEqualTo(TransferStatus.COMPLETED);
+
+        // The previous release claimed under the old scope alone: the new scope's record is
+        // removed, the old one left exactly as that release wrote it - its fingerprint's
+        // canonical form is unchanged by the move. By hand, as the bootstrap role: no
+        // application role deletes an idempotency record (V016).
+        try (Connection root = DatabaseRoles.bootstrap()) {
+            execute(
+                    root,
+                    "DELETE FROM platform.idempotency_record"
+                            + " WHERE scope = ? AND idempotency_key = ?",
+                    TransferExecution.keyFor(source.actor, key).scope(),
+                    key);
+        }
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(scopesOf(app, key)).containsExactly(TransferExecution.IDEMPOTENCY_SCOPE);
+        }
+
+        TransferResult retried =
+                executeAndCommit(source, command(key, source, destination, usd(3_00)));
+        assertThat(retried.replayed()).as("found under the old scope, never run again").isTrue();
+        assertThat(retried.transferId()).isEqualTo(first.transferId());
+        assertThat(retried.status()).isEqualTo(TransferStatus.COMPLETED);
+
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(transferCountFor(app, source.customerId)).isEqualTo(1);
+            assertThat(journalEntriesOn(app, source.walletId))
+                    .as("the funding and the one transfer - no second posting")
+                    .isEqualTo(2);
+            assertThat(settledOf(app, source.walletId)).isEqualTo(7_00);
+            assertThat(settledOf(app, destination.walletId)).isEqualTo(3_00);
+            assertThat(scopesOf(app, key))
+                    .as("resolved where the claim stands; the new scope is not touched")
+                    .containsExactly(TransferExecution.IDEMPOTENCY_SCOPE);
+        }
+    }
+
+    private TransferResult executeAndCommit(Holder caller, TransferCommand command)
+            throws Exception {
+        return asInstance(caller, app -> {
+            TransferResult result = execution().execute(app, command);
+            app.commit();
+            return result;
+        });
+    }
+
+    // ------------------------------------------------------------------
     // Fixtures
     // ------------------------------------------------------------------
 
@@ -888,6 +993,31 @@ class TransferExecutionDatabaseTest {
                 return row.getLong(1);
             }
         }
+    }
+
+    /** The journal entries with a line on {@code accountId} - each posting once. */
+    private static long journalEntriesOn(Connection connection, UUID accountId)
+            throws SQLException {
+        return count(
+                connection,
+                "SELECT count(DISTINCT entry_id) FROM ledger.journal_line WHERE ledger_account_id = ?",
+                accountId);
+    }
+
+    /** Every scope a claim on {@code key} is recorded under. */
+    private static List<String> scopesOf(Connection connection, String key) throws SQLException {
+        List<String> scopes = new ArrayList<>();
+        try (PreparedStatement read =
+                connection.prepareStatement(
+                        "SELECT scope FROM platform.idempotency_record WHERE idempotency_key = ?")) {
+            read.setString(1, key);
+            try (ResultSet rows = read.executeQuery()) {
+                while (rows.next()) {
+                    scopes.add(rows.getString(1));
+                }
+            }
+        }
+        return scopes;
     }
 
     /** Settled, summed over the journal — the conservation count reads the money's own rows. */

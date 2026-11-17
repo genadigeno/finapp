@@ -97,6 +97,12 @@ class PaymentRefundDatabaseTest {
     private static final byte[] EVIDENCE_KEY =
             "abcdef0123456789abcdef0123456789".getBytes(StandardCharsets.UTF_8);
 
+    /**
+     * The refund's bare claim scope, which the command's claim moved from (X-TSK-003) and still
+     * consults until X-TSK-028; also the fingerprint's first segment, which did not move.
+     */
+    private static final String OLD_REFUND_SCOPE = "payment.refund";
+
     private static final byte[] WEBHOOK_KEY =
             "refund-webhook-key-0123456789abcdef".getBytes(
                     java.nio.charset.StandardCharsets.UTF_8);
@@ -983,7 +989,9 @@ class PaymentRefundDatabaseTest {
         // The crashed flight's Tx1, reconstructed as it commits: the hold, the refund row
         // carrying the dispatch key (V008), and the claim IN_PROGRESS whose lease has
         // already expired (the platform suite's negative-lease idiom - the database's own
-        // clock judges expiry).
+        // clock judges expiry). A flight of the PREVIOUS release, deliberately: its claim is
+        // under the bare scope alone, which this release consults first and takes over there
+        // (X-TSK-003's transition; crashedFlight below is this release's, both scopes).
         com.finapp.ledger.Hold hold =
                 runner.inTransaction(uow -> holdService().place(uow, captured.wallet(), amount));
         UUID refundId = IDS.next();
@@ -1010,9 +1018,9 @@ class PaymentRefundDatabaseTest {
                     .claim(
                             other,
                             new com.finapp.platform.idempotency.IdempotencyKey(
-                                    "payment.refund", key),
+                                    OLD_REFUND_SCOPE, key),
                             com.finapp.platform.idempotency.RequestFingerprint.sha256(
-                                    ("payment.refund|" + actor.id() + "|"
+                                    (OLD_REFUND_SCOPE + "|" + actor.id() + "|"
                                                     + captured.intent().value() + "|500|EUR|2|"
                                                     + reason)
                                             .getBytes(java.nio.charset.StandardCharsets.UTF_8)),
@@ -1355,11 +1363,14 @@ class PaymentRefundDatabaseTest {
                 refundCommand().refund(captured.intent(), amount, "the first", key);
         assertThat(first.status()).isEqualTo(RefundStatus.COMPLETED);
         // The claim's retention sweeps it - Phase 16's job at the earliest (debt row #61), done by hand.
+        // Both of its records (X-TSK-003): the operator's scope and the bare one it moved from.
         try (Connection root = DatabaseRoles.bootstrap()) {
             execute(
                     root,
                     "DELETE FROM platform.idempotency_record"
-                            + " WHERE scope = 'payment.refund' AND idempotency_key = ?",
+                            + " WHERE scope IN (?, ?) AND idempotency_key = ?",
+                    OLD_REFUND_SCOPE,
+                    refundScopeOf(SecurityContext.require()),
                     key);
         }
         int wire = psp.requestCount(SimulatedCardPspAdapter.REFUNDS_PATH);
@@ -1384,6 +1395,128 @@ class PaymentRefundDatabaseTest {
         assertThat(psp.requestCount(SimulatedCardPspAdapter.REFUNDS_PATH)).isEqualTo(wire);
         assertThat(refundRowCount(captured.attempt())).isEqualTo(1);
         assertThat(refundEntryCount(captured.attempt())).isEqualTo(1);
+    }
+
+    // -----------------------------------------------------------------
+    // The claim names its operator (X-TSK-003); the dispatch key does not yet (X-TSK-028)
+    // -----------------------------------------------------------------
+
+    /**
+     * Two operators, one key value. The claim no longer refuses the second ({@code api.Conflict}
+     * until X-TSK-003): each claims under its own scope. But the refund's dispatch key ({@code V008})
+     * is still the client's raw value, platform-wide for this release - deliberately, so that a
+     * replica of the previous release taking over a crashed old-scope claim converges on the refund
+     * this release wrote - and it answers what the claim no longer does: the same facts converge on
+     * the first operator's refund (nothing is refunded twice), different facts are
+     * {@code RefundKeyReused}, the 409. That remaining platform-wide scope is X-TSK-028's to remove.
+     */
+    @Test
+    @DisplayName("X-TSK-003: two operators, one key value - neither claim refuses the other, each retry"
+            + " replays its own, and the still platform-wide dispatch key (X-TSK-028) converges the"
+            + " same facts on one refund and refuses different ones as RefundKeyReused")
+    void twoOperatorsOneKeyValue() throws Exception {
+        Captured captured = capturedPayment();
+        Captured elsewhere = capturedPayment();
+        providerRefunds("psp_rfd-two-operators-" + UUID.randomUUID());
+        Money amount = Money.ofMinorUnits(3_00, EUR);
+        String reason = "one key value, two operators";
+        String key = "shared-" + UUID.randomUUID();
+        Actor first = SecurityContext.require();
+        Actor second = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
+
+        PaymentRefund.RefundResult firsts =
+                refundCommand().refund(captured.intent(), amount, reason, key);
+        assertThat(firsts.status()).isEqualTo(RefundStatus.COMPLETED);
+        int wire = psp.requestCount(SimulatedCardPspAdapter.REFUNDS_PATH);
+
+        // A different payment under the first's key value: the second operator's claim is its
+        // own, so the claim does not refuse it - the dispatch key does, with nothing written.
+        assertThatThrownBy(
+                        () ->
+                                as(
+                                        second,
+                                        () ->
+                                                refundCommand()
+                                                        .refund(
+                                                                elsewhere.intent(),
+                                                                amount,
+                                                                reason,
+                                                                key)))
+                .isInstanceOf(com.finapp.payments.RefundKeyReusedException.class);
+        assertThat(refundRowCount(elsewhere.attempt())).isZero();
+        assertThat(holdsEverPlaced(elsewhere.wallet())).isZero();
+        assertThat(recordCount(refundScopeOf(second), key))
+                .as("the refused claim rolled back with its transaction")
+                .isZero();
+
+        // The same facts under the first's key value: not refused, and not a second refund -
+        // the dispatch key converges on the first operator's, which is already finished.
+        PaymentRefund.RefundResult seconds =
+                as(second, () -> refundCommand().refund(captured.intent(), amount, reason, key));
+        assertThat(seconds.replayed()).as("the second operator's own claim, newly made").isFalse();
+        assertThat(seconds.acting()).as("the first operator's refund, not this call's act").isFalse();
+        assertThat(seconds.refund()).isEqualTo(firsts.refund());
+        assertThat(seconds.status()).isEqualTo(RefundStatus.COMPLETED);
+        assertThat(refundRowCount(captured.attempt())).isEqualTo(1);
+        assertThat(holdsEverPlaced(captured.wallet())).isEqualTo(1);
+        assertThat(refundEntryCount(captured.attempt())).isEqualTo(1);
+        assertThat(psp.requestCount(SimulatedCardPspAdapter.REFUNDS_PATH))
+                .as("a finished refund is never sent again")
+                .isEqualTo(wire);
+
+        // Each operator's retry replays its own claim.
+        PaymentRefund.RefundResult secondsRetry =
+                as(second, () -> refundCommand().refund(captured.intent(), amount, reason, key));
+        PaymentRefund.RefundResult firstsRetry =
+                refundCommand().refund(captured.intent(), amount, reason, key);
+        assertThat(secondsRetry.replayed()).isTrue();
+        assertThat(secondsRetry.refund()).isEqualTo(firsts.refund());
+        assertThat(firstsRetry.replayed()).isTrue();
+        assertThat(firstsRetry.refund()).isEqualTo(firsts.refund());
+        assertThat(recordCount(refundScopeOf(first), key)).isEqualTo(1);
+        assertThat(recordCount(refundScopeOf(second), key)).isEqualTo(1);
+        assertThat(refundRowCount(captured.attempt())).isEqualTo(1);
+        assertThat(psp.requestCount(SimulatedCardPspAdapter.REFUNDS_PATH)).isEqualTo(wire);
+    }
+
+    @Test
+    @DisplayName("X-TSK-003: a refund claimed before its scope moved is replayed - the record under the"
+            + " bare payment.refund answers the retry: no second refund, no second hold, no second"
+            + " wire call")
+    void aRefundClaimedBeforeTheMoveIsReplayed() throws Exception {
+        Captured captured = capturedPayment();
+        providerRefunds("psp_rfd-moved-" + UUID.randomUUID());
+        Money amount = Money.ofMinorUnits(3_00, EUR);
+        String key = "moved-" + UUID.randomUUID();
+        PaymentRefund.RefundResult first =
+                refundCommand().refund(captured.intent(), amount, "before the move", key);
+        assertThat(first.status()).isEqualTo(RefundStatus.COMPLETED);
+        int wire = psp.requestCount(SimulatedCardPspAdapter.REFUNDS_PATH);
+
+        // The previous release's state: the claim under the bare scope alone. The record this
+        // release also wrote under the operator's scope is removed as only the bootstrap role may.
+        String moved = refundScopeOf(SecurityContext.require());
+        assertThat(recordCount(OLD_REFUND_SCOPE, key)).isEqualTo(1);
+        try (Connection root = DatabaseRoles.bootstrap()) {
+            execute(
+                    root,
+                    "DELETE FROM platform.idempotency_record"
+                            + " WHERE scope = ? AND idempotency_key = ?",
+                    moved,
+                    key);
+        }
+        assertThat(recordCount(moved, key)).isZero();
+
+        PaymentRefund.RefundResult retried =
+                refundCommand().refund(captured.intent(), amount, "before the move", key);
+
+        assertThat(retried.replayed()).as("the retry spanning the move finds its claim").isTrue();
+        assertThat(retried.refund()).isEqualTo(first.refund());
+        assertThat(retried.status()).isEqualTo(RefundStatus.COMPLETED);
+        assertThat(refundRowCount(captured.attempt())).isEqualTo(1);
+        assertThat(holdsEverPlaced(captured.wallet())).isEqualTo(1);
+        assertThat(refundEntryCount(captured.attempt())).isEqualTo(1);
+        assertThat(psp.requestCount(SimulatedCardPspAdapter.REFUNDS_PATH)).isEqualTo(wire);
     }
 
     // -----------------------------------------------------------------
@@ -1899,13 +2032,36 @@ class PaymentRefundDatabaseTest {
                 "SELECT status FROM payments.payment_attempt WHERE id = ?", attempt.value());
     }
 
+    /** The scope the refund claims under for {@code operator} since X-TSK-003. */
+    private static String refundScopeOf(com.finapp.platform.security.Actor operator) {
+        return OLD_REFUND_SCOPE + ":" + operator.keyedType().name() + ":" + operator.id();
+    }
+
+    /** {@code work} as {@code actor}, nested in this test's own operator scope. */
+    private static <R> R as(Actor actor, java.util.function.Supplier<R> work) {
+        try (SecurityContext.Scope ignored = SecurityContext.enter(actor)) {
+            return work.get();
+        }
+    }
+
+    /** One claim's record count, read as the application role. */
+    private static long recordCount(String scope, String key) throws SQLException {
+        return count(
+                "SELECT count(*) FROM platform.idempotency_record"
+                        + " WHERE scope = ? AND idempotency_key = ?",
+                scope,
+                key);
+    }
+
     /** A crashed flight's Tx1, as it committed: its refund, and the reference it stored. */
     private record CrashedFlight(RefundId refund, String storedReference) {}
 
     /**
      * The crashed flight's Tx1, reconstructed as it commits (the takeover test's idiom): the
-     * hold, the refund row carrying its dispatch key and birth permit (V008, V009), and the claim
-     * IN_PROGRESS whose lease has already expired (the database's own clock judges expiry).
+     * hold, the refund row carrying its dispatch key and birth permit (V008, V009), and the claims
+     * IN_PROGRESS whose lease has already expired (the database's own clock judges expiry) - under
+     * the operator's scope and the bare one it moved from, as this release's Tx1 holds them
+     * (X-TSK-003).
      */
     private CrashedFlight crashedFlight(Captured captured, Money amount, String reason, String key)
             throws Exception {
@@ -1936,26 +2092,35 @@ class PaymentRefundDatabaseTest {
                     storedReference,
                     key);
         }
+        com.finapp.platform.idempotency.IdempotencyKey claimed =
+                new com.finapp.platform.idempotency.IdempotencyKey(refundScopeOf(actor), key);
+        com.finapp.platform.idempotency.RequestFingerprint fingerprint =
+                com.finapp.platform.idempotency.RequestFingerprint.sha256(
+                        (OLD_REFUND_SCOPE + "|" + actor.id() + "|"
+                                        + captured.intent().value() + "|"
+                                        + amount.minorUnits() + "|EUR|2|" + reason)
+                                .getBytes(StandardCharsets.UTF_8));
         try (Connection other = DatabaseRoles.application()) {
             other.setAutoCommit(false);
-            new JdbcIdempotencyRecordStore()
-                    .claim(
-                            other,
-                            new com.finapp.platform.idempotency.IdempotencyKey(
-                                    "payment.refund", key),
-                            com.finapp.platform.idempotency.RequestFingerprint.sha256(
-                                    ("payment.refund|" + actor.id() + "|"
-                                                    + captured.intent().value() + "|"
-                                                    + amount.minorUnits() + "|EUR|2|" + reason)
-                                            .getBytes(StandardCharsets.UTF_8)),
-                            CorrelationId.of("crashed-flow"),
-                            Instant.now(CLOCK),
-                            Instant.now(CLOCK).plus(Duration.ofDays(1)),
-                            // Lapsed a minute ago on the SERVER clock, not one second: the
-                            // takeover is judged by the same clock, and the Docker VM's steps back
-                            // ~1.6 s every ~27 s (measured at P7-TSK-015's gate, whose battery met
-                            // a one-second lease read as still held). A stranded flight is old.
-                            Duration.ofMinutes(-1));
+            // This release's Tx1 holds both claims IN_PROGRESS beside its dispatch: the bare
+            // scope first, then the operator's (X-TSK-003's transition).
+            for (com.finapp.platform.idempotency.IdempotencyKey scoped :
+                    List.of(claimed.movedFrom(OLD_REFUND_SCOPE), claimed)) {
+                new JdbcIdempotencyRecordStore()
+                        .claim(
+                                other,
+                                scoped,
+                                fingerprint,
+                                CorrelationId.of("crashed-flow"),
+                                Instant.now(CLOCK),
+                                Instant.now(CLOCK).plus(Duration.ofDays(1)),
+                                // Lapsed a minute ago on the SERVER clock, not one second: the
+                                // takeover is judged by the same clock, and the Docker VM's steps
+                                // back ~1.6 s every ~27 s (measured at P7-TSK-015's gate, whose
+                                // battery met a one-second lease read as still held). A stranded
+                                // flight is old.
+                                Duration.ofMinutes(-1));
+            }
             other.commit();
         }
         return new CrashedFlight(RefundId.of(refundId), storedReference);

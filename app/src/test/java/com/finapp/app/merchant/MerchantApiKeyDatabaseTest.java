@@ -296,6 +296,59 @@ class MerchantApiKeyDatabaseTest {
     }
 
     @Test
+    @DisplayName("X-TSK-003: two operators presenting ONE Idempotency-Key value each mint their own"
+            + " key for the merchant - neither refused as a reused key - and each retry replays its"
+            + " own, without its secret")
+    void twoOperatorsWithOneKeyValueEachIssueTheirOwn() throws Exception {
+        String first = administrator();
+        String second = administrator();
+        Merchant merchant = onboarded(first);
+        String path = "/v1/operator/merchants/" + merchant.id() + "/api-keys";
+        String oneValue = someKey();
+
+        HttpResponse<String> firsts = post(path, null, first, oneValue);
+        HttpResponse<String> seconds = post(path, null, second, oneValue);
+        assertThat(firsts.statusCode()).as(firsts.body()).isEqualTo(201);
+        assertThat(seconds.statusCode())
+                .as("another operator's key value is no claim of this one's - %s", seconds.body())
+                .isEqualTo(201);
+        String firstKey = field(firsts.body(), "keyId");
+        String secondKey = field(seconds.body(), "keyId");
+        String firstSecret = field(firsts.body(), "secret");
+        String secondSecret = field(seconds.body(), "secret");
+        assertThat(secondKey).isNotEqualTo(firstKey);
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM merchant.merchant_api_key WHERE"
+                                        + " merchant_id = ?",
+                                UUID.fromString(merchant.id())))
+                .isEqualTo(2);
+
+        // Each retry converges on its own credential (INV-IDEM-01) and re-shows no secret.
+        HttpResponse<String> firstRetried = post(path, null, first, oneValue);
+        HttpResponse<String> secondRetried = post(path, null, second, oneValue);
+        assertThat(firstRetried.statusCode()).isEqualTo(201);
+        assertThat(field(firstRetried.body(), "keyId")).isEqualTo(firstKey);
+        assertThat(firstRetried.body())
+                .contains("\"alreadyIssued\":true")
+                .doesNotContain(firstSecret)
+                .doesNotContain(secondSecret);
+        assertThat(secondRetried.statusCode()).isEqualTo(201);
+        assertThat(field(secondRetried.body(), "keyId")).isEqualTo(secondKey);
+        assertThat(secondRetried.body())
+                .contains("\"alreadyIssued\":true")
+                .doesNotContain(firstSecret)
+                .doesNotContain(secondSecret);
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM merchant.merchant_api_key WHERE"
+                                        + " merchant_id = ?",
+                                UUID.fromString(merchant.id())))
+                .as("and no retry minted a third")
+                .isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("every refusal is one 401: unknown key, wrong secret, malformed value, no"
             + " header - an authentication surface is not an oracle")
     void everyRefusalIsOne401() throws Exception {

@@ -463,7 +463,8 @@ class AdjustmentEndpointDatabaseTest {
     }
 
     @Test
-    @DisplayName("a retried key replays the original proposal; another operator's replay"
+    @DisplayName("a retried key replays the original proposal; another operator's equal key"
+            + " value is their own proposal, never the first's (X-TSK-003); a different reason"
             + " conflicts")
     void aReplayIsTheOriginalAndAStrangersConflicts() throws Exception {
         Operator first = givenAnOperator();
@@ -484,11 +485,12 @@ class AdjustmentEndpointDatabaseTest {
                     .isEqualTo(1);
         }
 
-        // The fingerprint binds the ACTOR (ADR-0004's owning principal): a key is not a
-        // secret, and a second operator replaying it must conflict, never inherit the
-        // first's proposal.
+        // The claim names its principal (ADR-0004, X-TSK-003): a key is not a secret, and a
+        // second operator sending the same value never inherits the first's proposal - nor
+        // is refused for it. The fingerprint still binds the actor besides.
         HttpResponse<String> stranger = post(body, second.token(), key);
-        assertThat(stranger.statusCode()).isEqualTo(409);
+        assertThat(proposalIdOf(stranger)).as("the second operator's own proposal")
+                .isNotEqualTo(proposal);
 
         // And it binds the REASON (INV-IDEM-03): the justification is what makes an
         // adjustment defensible, so a key reused with a different one is a materially
@@ -496,6 +498,57 @@ class AdjustmentEndpointDatabaseTest {
         HttpResponse<String> differentReason =
                 post(body(wallet, "7.00", "a different justification"), first.token(), key);
         assertThat(differentReason.statusCode()).isEqualTo(409);
+    }
+
+    @Test
+    @DisplayName("X-TSK-003: two operators sending one Idempotency-Key value each propose their"
+            + " own adjustment, each claim under its own principal, and each one's retry replays"
+            + " their own proposal - one operator's value never refuses the other's")
+    void twoOperatorsOneKeyValueEachProposeTheirOwn() throws Exception {
+        Operator first = givenAnOperator();
+        Operator second = givenAnOperator();
+        LedgerAccount wallet = givenAWallet();
+        String key = "adj-" + IDS.next();
+        String body = body(wallet, "7.00", "one key value, two operators");
+
+        UUID firstProposal = proposalIdOf(post(body, first.token(), key));
+        UUID secondProposal = proposalIdOf(post(body, second.token(), key));
+        assertThat(secondProposal).as("the second operator acted, on a proposal of their own")
+                .isNotEqualTo(firstProposal);
+
+        assertThat(proposalIdOf(post(body, first.token(), key))).isEqualTo(firstProposal);
+        assertThat(proposalIdOf(post(body, second.token(), key))).isEqualTo(secondProposal);
+
+        try (Connection app = DatabaseRoles.application()) {
+            // Each proposal was recorded once: the retries replayed, they did not act again.
+            assertThat(auditRowsFor(app, "ledger.AdjustmentProposed", firstProposal.toString()))
+                    .isEqualTo(1);
+            assertThat(auditRowsFor(app, "ledger.AdjustmentProposed", secondProposal.toString()))
+                    .isEqualTo(1);
+            assertThat(auditColumnFor(app, "ledger.AdjustmentProposed",
+                            secondProposal.toString(), "actor_id"))
+                    .isEqualTo(second.identity().value().toString());
+            // The claims: one under each operator's principal, keyed by keyedType() (an
+            // operator's act is typed EMPLOYEE, keyed CUSTOMER); the old scope holds the
+            // first's alone, recorded by the transition for a previous release's replica.
+            for (Operator operator : List.of(first, second)) {
+                assertThat(count(app,
+                                "SELECT count(*) FROM platform.idempotency_record"
+                                        + " WHERE scope = ? AND idempotency_key = ?",
+                                com.finapp.ledger.AdjustmentService.IDEMPOTENCY_SCOPE + ":"
+                                        + com.finapp.platform.security.ActorType.CUSTOMER.name()
+                                        + ":" + operator.identity().value(),
+                                key))
+                        .as("the claim under the operator's own principal")
+                        .isEqualTo(1);
+            }
+            assertThat(count(app,
+                            "SELECT count(*) FROM platform.idempotency_record"
+                                    + " WHERE scope = ? AND idempotency_key = ?",
+                            com.finapp.ledger.AdjustmentService.IDEMPOTENCY_SCOPE,
+                            key))
+                    .isEqualTo(1);
+        }
     }
 
     @Test

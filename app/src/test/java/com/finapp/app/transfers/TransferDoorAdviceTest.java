@@ -32,6 +32,8 @@ import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
+import com.finapp.transfers.TransferCommand;
+import com.finapp.transfers.TransferExecution;
 import com.finapp.transfers.TransferParticipants;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
@@ -77,6 +79,8 @@ class TransferDoorAdviceTest {
     private final List<TransferStepUpAdvice.Proposed> proposals = new ArrayList<>();
 
     private boolean recorded;
+    /** When set, the key value's one record: under the old, constant scope, with this fingerprint (`X-TSK-003`). */
+    private RequestFingerprint oldScope;
     private boolean owned = true;
     private boolean enrolled = true;
     private boolean stepUp;
@@ -116,6 +120,24 @@ class TransferDoorAdviceTest {
         recorded = true;
         assertThatThrownBy(this::create).isInstanceOf(CommandReached.class);
         assertThat(proposals).isEmpty();
+    }
+
+    @Test
+    @DisplayName("X-TSK-003: a key value another principal claimed under the old scope is no retry of this request's -"
+            + " advised, so a stranger's key cannot skip this customer's step-up; this request's own claim there, known by"
+            + " its fingerprint, is a retry and never advised")
+    void anotherPrincipalsOldScopeClaimIsNoRetry() {
+        stepUp = true;
+        String key = "key-" + RiskEvaluationWorld.IDS.next();
+        oldScope = RequestFingerprint.sha256("another principal's transfer".getBytes(StandardCharsets.UTF_8));
+        ApiException refused = catchThrowableOfType(ApiException.class, () -> create(key));
+        assertThat(refused.errorCode()).isEqualTo(IdentityErrorCode.ASSURANCE_REQUIRED);
+        assertThat(proposals).as("advised, the stranger's record notwithstanding").hasSize(1);
+
+        oldScope = TransferExecution.fingerprintOf(new TransferCommand(key, party, source, destination,
+                Money.ofMinorUnits(600_00, EUR), "rent"), caller());
+        assertThatThrownBy(() -> create(key)).isInstanceOf(CommandReached.class);
+        assertThat(proposals).as("its own claim made before the move: a retry, not advised again").hasSize(1);
     }
 
     @Test
@@ -191,14 +213,21 @@ class TransferDoorAdviceTest {
     // ------------------------------------------------------------------ the door, composed
 
     private TransferService.TransferView create() {
+        return create("key-" + RiskEvaluationWorld.IDS.next());
+    }
+
+    private TransferService.TransferView create(String key) {
         Session current = RiskEvaluationWorld.session(identity.value(), AssuranceLevel.PASSWORD, null);
-        try (SecurityContext.Scope scope = SecurityContext.enter(
-                        new Actor(identity.value().toString(), ActorType.CUSTOMER));
+        try (SecurityContext.Scope scope = SecurityContext.enter(caller());
                 CorrelationContext.Scope flow = CorrelationContext.enter(
                         Correlation.startingWith(CorrelationId.generate(RiskEvaluationWorld.IDS)))) {
             return service().create(current, new TransferCreateRequest(source.toString(), destination.toString(), null,
-                    "600.00", "EUR", "rent"), "key-" + RiskEvaluationWorld.IDS.next());
+                    "600.00", "EUR", "rent"), key);
         }
+    }
+
+    private Actor caller() {
+        return new Actor(identity.value().toString(), ActorType.CUSTOMER);
     }
 
     private TransferStepUpAdvice.Proposed proposed(long minor) {
@@ -221,17 +250,23 @@ class TransferDoorAdviceTest {
         return (IdempotencyRecordStore<Connection>) Proxy.newProxyInstance(getClass().getClassLoader(),
                 new Class<?>[] {IdempotencyRecordStore.class}, (proxy, method, args) -> switch (method.getName()) {
                     case "find" -> recorded
-                            ? Optional.of(new IdempotencyRecord((IdempotencyKey) args[1],
-                                    RequestFingerprint.sha256("original".getBytes(StandardCharsets.UTF_8)),
-                                    IdempotencyState.COMPLETED, StoredResponse.empty(), CorrelationId.of("flow"),
-                                    CLOCK.instant(), CLOCK.instant().plusSeconds(86_400)))
-                            : Optional.empty();
+                            ? Optional.of(record((IdempotencyKey) args[1],
+                                    RequestFingerprint.sha256("original".getBytes(StandardCharsets.UTF_8))))
+                            : oldScope != null
+                                    && ((IdempotencyKey) args[1]).scope().equals(TransferExecution.IDEMPOTENCY_SCOPE)
+                                    ? Optional.of(record((IdempotencyKey) args[1], oldScope))
+                                    : Optional.empty();
                     case "claim" -> {
                         journal.add("claim");
                         throw new CommandReached();
                     }
                     default -> throw new AssertionError("the door reads the key's record only: " + method.getName());
                 });
+    }
+
+    private static IdempotencyRecord record(IdempotencyKey key, RequestFingerprint fingerprint) {
+        return new IdempotencyRecord(key, fingerprint, IdempotencyState.COMPLETED, StoredResponse.empty(),
+                CorrelationId.of("flow"), CLOCK.instant(), CLOCK.instant().plusSeconds(86_400));
     }
 
     @SuppressWarnings("unchecked")
