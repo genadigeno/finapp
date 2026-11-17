@@ -1,6 +1,8 @@
 package com.finapp.kyc;
 
 import com.finapp.platform.persistence.DatabaseFailure;
+import com.finapp.platform.security.AssociatedData;
+import com.finapp.platform.security.CipherFormat;
 import java.security.MessageDigest;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -51,7 +53,9 @@ public final class JdbcDocumentStore implements DocumentStore<Connection> {
             // anyway.
             Savepoint beforeInsert = unitOfWork.setSavepoint("kyc_document_append");
             try {
-                insert(unitOfWork, document, cipher.encrypt(content));
+                // The document's id is minted at capture, so the row's associated data exists before its insert.
+                insert(unitOfWork, document, cipher.encrypt(associatedData(document.id().value(),
+                        document.caseId().value(), document.type().name()), content));
                 unitOfWork.releaseSavepoint(beforeInsert);
                 return new Capture(document, true);
             } catch (SQLException insertFailed) {
@@ -86,8 +90,8 @@ public final class JdbcDocumentStore implements DocumentStore<Connection> {
                         "INSERT INTO " + TABLE
                                 + " (id, case_id, document_type, content_type,"
                                 + " content_ciphertext, content_nonce, key_version,"
-                                + " checksum_sha256, content_length, uploaded_at)"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " checksum_sha256, content_length, uploaded_at, cipher_format)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, document.id().value());
             insert.setObject(2, document.caseId().value());
             insert.setString(3, document.type().name());
@@ -98,6 +102,7 @@ public final class JdbcDocumentStore implements DocumentStore<Connection> {
             insert.setBytes(8, document.checksum());
             insert.setInt(9, document.contentLength());
             insert.setTimestamp(10, Timestamp.from(document.uploadedAt()));
+            insert.setInt(11, encrypted.format().code());
             insert.executeUpdate();
         }
     }
@@ -110,7 +115,7 @@ public final class JdbcDocumentStore implements DocumentStore<Connection> {
                 unitOfWork.prepareStatement(
                         "SELECT id, case_id, document_type, content_type, content_ciphertext,"
                                 + " content_nonce, key_version, checksum_sha256, content_length,"
-                                + " uploaded_at FROM " + TABLE + " WHERE id = ?")) {
+                                + " uploaded_at, cipher_format FROM " + TABLE + " WHERE id = ?")) {
             select.setObject(1, id.value());
             try (ResultSet row = select.executeQuery()) {
                 if (!row.next()) {
@@ -119,10 +124,13 @@ public final class JdbcDocumentStore implements DocumentStore<Connection> {
                 KycDocument document = rehydrate(row);
                 byte[] content =
                         cipher.decrypt(
+                                associatedData(document.id().value(), document.caseId().value(),
+                                        document.type().name()),
                                 new DocumentCipher.Encrypted(
                                         row.getBytes("content_ciphertext"),
                                         row.getBytes("content_nonce"),
-                                        row.getInt("key_version")));
+                                        row.getInt("key_version"),
+                                        CipherFormat.of(row.getInt("cipher_format"))));
                 verifyChecksum(document, content);
                 return Optional.of(new DocumentContent(document, content));
             }
@@ -150,6 +158,17 @@ public final class JdbcDocumentStore implements DocumentStore<Connection> {
                             + " bytes are not the bytes received at capture");
         }
     }
+
+    /**
+     * The row's associated data (`X-TSK-010`): its identity, and the case and document type that name where the content
+     * belongs - so a ciphertext copied into another row, or onto another case, fails to decrypt once writes are bound.
+     */
+    static byte[] associatedData(UUID id, UUID caseId, String documentType) {
+        return AssociatedData.of(PURPOSE, id, caseId.toString(), documentType);
+    }
+
+    /** What the ciphertext is, in its associated data. */
+    static final String PURPOSE = "kyc.kyc_document.content";
 
     private static Optional<KycDocument> findByChecksum(
             Connection unitOfWork, KycCaseId caseId, byte[] checksum) throws SQLException {

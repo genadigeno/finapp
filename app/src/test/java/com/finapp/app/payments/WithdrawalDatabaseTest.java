@@ -597,6 +597,152 @@ class WithdrawalDatabaseTest {
     }
 
     /**
+     * X-TSK-006 (ADR-0063 decision 2) at the database rank: a takeover whose clock trails the STORED
+     * permit by minutes - the renewer ADR-0063's context names. Until X-TSK-013 the renewal bound that
+     * instance's reading ({@code SET last_dispatched_at = ?now ... AND last_dispatched_at <= ?now}) and
+     * so quietly refused it; it is now the refund's form, {@code GREATEST(last_dispatched_at + 1
+     * microsecond, statement_timestamp())}, with no instance clock in it. Proven here end to end: the
+     * trailing takeover renews strictly forward and re-sends OUR reference once; the renewed permit then
+     * postpones NEVER_RECEIVED exactly as ADR-0057 section 4 says (a control row of the seeded age is
+     * concluded by the same sweep), and NEVER_RECEIVED still comes once the renewed permit is past the
+     * declared bound - driven by ageing it on the database's clock, never assumed.
+     */
+    @Test
+    @DisplayName("X-TSK-006 (ADR-0063): a takeover on a clock trailing the stored permit renews it forward"
+            + " and re-sends our reference ONCE; NEVER_RECEIVED waits for the declared bound from the"
+            + " renewed permit, then concludes")
+    void aTrailingTakeoverRenewsAndNeverReceivedWaitsForItsBound() throws Exception {
+        Fixture f = fundedFixture("20.00");
+        // Both permits five minutes old on the DATABASE's clock: each past the declared 90 s + 1 s alone.
+        Instant server = com.finapp.platform.testing.database.SimulatedInstance.serverNow();
+        Seeded taken = seedDispatched(f, "3.00", server.minus(Duration.ofMinutes(5)));
+        Seeded control = seedDispatched(f, "2.00", server.minus(Duration.ofMinutes(5)));
+        Instant seededPermit = permitOf(taken.id());
+        String key = "seed-" + taken.reference();
+        try (Connection other = DatabaseRoles.application()) {
+            other.setAutoCommit(false);
+            new com.finapp.platform.idempotency.JdbcIdempotencyRecordStore()
+                    .claim(
+                            other,
+                            new com.finapp.platform.idempotency.IdempotencyKey(
+                                    "payments.withdrawal:" + f.customerId(), key),
+                            com.finapp.platform.idempotency.RequestFingerprint.sha256(
+                                    ("payments.withdrawal|" + f.customerId() + "|"
+                                                    + f.methodId() + "|300|USD|2")
+                                            .getBytes(java.nio.charset.StandardCharsets.UTF_8)),
+                            CorrelationId.of("crashed-withdrawal"),
+                            Instant.now(CLOCK),
+                            Instant.now(CLOCK).plus(Duration.ofDays(1)),
+                            // Lapsed a minute ago on the server clock (the P7-TSK-015 lesson).
+                            Duration.ofMinutes(-1));
+            other.commit();
+        }
+        java.time.Clock behind = com.finapp.app.database.ServerSkewedClock.of(Duration.ofMinutes(-15));
+        assertThat(Instant.now(behind))
+                .as("precondition: the takeover's clock reads BEFORE the stored permit - the dangerous"
+                        + " direction, the renewer a clock-bound renewal refused")
+                .isBefore(seededPermit);
+        // The re-send reaches the scheme and its answer is lost: UNKNOWN, the hold standing.
+        provider.receivesTheRequestThenLosesTheResponse(SimulatedInstantSchemeAdapter.TRANSFERS_PATH);
+        Withdrawals trailingInstance =
+                new Withdrawals(
+                        withdrawalStore, outcomes, holdService, routingStoreBean, railsBean,
+                        com.finapp.payments.RailOperations.ofPush(RailId.of("instant"), instantRail),
+                        evidenceBean, executorBean, auditWriterBean, ids, behind, transactions,
+                        withdrawalRiskDecisionBean);
+
+        Withdrawals.Initiated retried;
+        Actor person = new Actor(UUID.randomUUID().toString(), ActorType.CUSTOMER);
+        try (SecurityContext.Scope actor = SecurityContext.enter(person);
+                CorrelationContext.Scope scope =
+                        CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(ids)))) {
+            retried = trailingInstance.withdraw(
+                    key, Money.of(new BigDecimal("3.00"), CurrencyCode.of("USD")), uow -> resolvedOf(f));
+        }
+
+        assertThat(retried.id()).isEqualTo(taken.id());
+        assertThat(retried.status())
+                .as("renewed and re-sent, its answer lost - never quietly skipped")
+                .isEqualTo(WithdrawalStatus.UNKNOWN);
+        Instant renewed = permitOf(taken.id());
+        assertThat(renewed)
+                .as("renewed strictly forward of the stored permit - never moved backwards to the"
+                        + " trailing clock's reading")
+                .isAfter(seededPermit);
+        assertThat(provider.headerValues(SimulatedInstantSchemeAdapter.TRANSFERS_PATH, "Idempotency-Key"))
+                .as("the takeover re-sent OUR reference exactly once (INV-PAY-04)")
+                .filteredOn(taken.reference()::equals)
+                .hasSize(1);
+
+        // The scheme has never heard of either reference. A wide sweep, so this test's rows are
+        // reached whatever other suites left resolvable in the shared container.
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.TRANSFER_STATUS_PATH + taken.reference(),
+                200,
+                "{\"status\":\"unrecognised\"}");
+        provider.succeedsWith(
+                SimulatedInstantSchemeAdapter.TRANSFER_STATUS_PATH + control.reference(),
+                200,
+                "{\"status\":\"unrecognised\"}");
+        WithdrawalResolution wide =
+                new WithdrawalResolution(
+                        withdrawalStore, outcomes, instantRail, railsBean, RailId.of("instant"),
+                        evidenceBean,
+                        new WithdrawalResolution.Config(
+                                Duration.ofMillis(50), Duration.ofMillis(50), Duration.ofSeconds(1), 2_000),
+                        ids, CLOCK, transactions);
+        Thread.sleep(80); // past the tiny unknown-age candidacy bound: an UNKNOWN row ages from its event
+        wide.sweep();
+
+        assertThat(provider.requestCount(SimulatedInstantSchemeAdapter.TRANSFER_STATUS_PATH + taken.reference()))
+                .as("the sweep asked about the taken-over row: the judgement below was made, not skipped")
+                .isGreaterThanOrEqualTo(1);
+        assertThat(oneString("SELECT status || '|' || failure_reason FROM payments.withdrawal WHERE id = ?",
+                        control.id().value()))
+                .as("the control: the seeded age with no renewal is concluded by the same sweep")
+                .isEqualTo("FAILED|NEVER_RECEIVED");
+        assertThat(oneString("SELECT status FROM payments.withdrawal WHERE id = ?", taken.id().value()))
+                .as("the renewed permit is younger than the declared bound: absence proves nothing yet"
+                        + " (ADR-0057 section 4)")
+                .isEqualTo("UNKNOWN");
+        assertThat(oneString("SELECT h.status FROM ledger.hold h JOIN payments.withdrawal w"
+                        + " ON w.hold_reference = h.id WHERE w.id = ?", taken.id().value()))
+                .as("the hold stands: the re-send may be in flight")
+                .isEqualTo("ACTIVE");
+
+        // Driven, not assumed: the renewed permit aged past the declared bound on the database's clock.
+        com.finapp.app.database.AgedPermits.age(
+                "payments.withdrawal", "last_dispatched_at", taken.id().value(), Duration.ofMinutes(5));
+        wide.sweep();
+
+        assertThat(oneString("SELECT status || '|' || failure_reason FROM payments.withdrawal WHERE id = ?",
+                        taken.id().value()))
+                .as("past the declared bound from the LATEST permit, UNRECOGNISED is conclusive")
+                .isEqualTo("FAILED|NEVER_RECEIVED");
+        assertThat(oneString("SELECT h.status FROM ledger.hold h JOIN payments.withdrawal w"
+                        + " ON w.hold_reference = h.id WHERE w.id = ?", taken.id().value()))
+                .isEqualTo("RELEASED");
+        assertThat(provider.headerValues(SimulatedInstantSchemeAdapter.TRANSFERS_PATH, "Idempotency-Key"))
+                .as("the sweeps inquired and never re-sent: still the takeover's one transfer")
+                .filteredOn(taken.reference()::equals)
+                .hasSize(1);
+    }
+
+    /** The withdrawal's stored send permit, as the database holds it. */
+    private static Instant permitOf(WithdrawalId id) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement statement =
+                        app.prepareStatement(
+                                "SELECT last_dispatched_at FROM payments.withdrawal WHERE id = ?")) {
+            statement.setObject(1, id.value());
+            try (ResultSet row = statement.executeQuery()) {
+                assertThat(row.next()).as("the withdrawal exists").isTrue();
+                return row.getTimestamp(1).toInstant();
+            }
+        }
+    }
+
+    /**
      * Section 7's last row for the withdrawal sweep (`P7-DOC-001`; A3's find): ten instances
      * sweeping at once over one resolvable withdrawal - the registered leaderless pattern,
      * counted rather than asserted.
@@ -827,6 +973,44 @@ class WithdrawalDatabaseTest {
         schemeAccepts("sch-stepup-" + suffix(), "C1");
         assertThat(withdraw(elevated, body(method, "1.00", "USD"), key).statusCode())
                 .isEqualTo(201);
+    }
+
+    @Test
+    @DisplayName("a client key is each customer's own: two customers withdrawing under the SAME"
+            + " Idempotency-Key each get their own withdrawal, neither converging onto the"
+            + " other's (X-TSK-002)")
+    void aClientKeyIsEachCustomersOwn() throws Exception {
+        Fixture first = fundedFixture("20.00");
+        Fixture second = fundedFixture("20.00");
+        schemeAccepts("sch-shared-" + suffix(), "C1");
+        String shared = someKey();
+
+        // The same amount on purpose: a takeover that found the other's row would see no
+        // differing facts to refuse, and would converge onto it silently.
+        HttpResponse<String> one =
+                withdraw(first.token(), body(first.methodId(), "5.00", "USD"), shared);
+        HttpResponse<String> two =
+                withdraw(second.token(), body(second.methodId(), "5.00", "USD"), shared);
+
+        assertThat(one.statusCode()).isEqualTo(201);
+        // Holds customer_id = ? in findByDispatchKey's statement: without it the second
+        // customer's dispatch finds the first's row under the shared key and takes it over.
+        assertThat(two.statusCode())
+                .as("the claim's scope carries the customer: no cross-customer 409")
+                .isEqualTo(201);
+        assertThat(field(two.body(), "id"))
+                .as("the second customer's own withdrawal, never the first's")
+                .isNotEqualTo(field(one.body(), "id"));
+        assertThat(count("SELECT count(*) FROM payments.withdrawal WHERE customer_id = '"
+                        + first.customerId() + "'::uuid AND dispatch_key = '" + shared + "'"))
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM payments.withdrawal WHERE customer_id = '"
+                        + second.customerId() + "'::uuid AND dispatch_key = '" + shared + "'"))
+                .isEqualTo(1);
+        assertThat(get("/v1/me/withdrawals/" + field(two.body(), "id"), second.token())
+                        .statusCode())
+                .as("the answer the second customer got is a withdrawal they own")
+                .isEqualTo(200);
     }
 
     @Test

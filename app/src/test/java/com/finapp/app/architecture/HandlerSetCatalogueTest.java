@@ -58,7 +58,7 @@ class HandlerSetCatalogueTest {
      * consumer name, topic and type from it, and is composed per handler at wiring, never by a bean of its own. Named, so that a new
      * wrapper is a reviewed change and never a handler class this rule stops seeing. {@code SpannedInboxHandler} is `P15-TSK-023`'s
      * flow span (ADR-0124 decision 8), wrapped around each group's handlers by {@code EventingBeans}' receiver; it arrived after this
-     * rule and was read as an uncomposed handler until `X-TSK-019` (2026-11-14).
+     * rule and was read as an uncomposed handler until `X-TSK-022` (2026-11-14).
      */
     static final Set<String> WRAPPERS = Set.of("com.finapp.app.eventing.SpannedInboxHandler");
 

@@ -695,6 +695,12 @@ on the two terminal states, so an in-flight claim costs it nothing. *(Read "Swee
 ruling", with this record not swept and `V002`'s deliberately absent index waiting for the sweep's
 predicate, until 2026-11-13.)*
 
+**Moving a scope is a migration of its namespace** (`X-TSK-003`, ADR-0004's amendment). A record answers
+retries under its scope alone, so a command whose scope changes would miss every claim made before the change
+and act again. The release that moves a scope claims the old one first, then the new, and records the outcome
+under both; a later release drops the old claim (`X-TSK-028`) once no record under an old scope is inside its
+expiry - a query, run before the release, rather than a reading of the calendar.
+
 **Never sweep a non-terminal record.** An `IN_PROGRESS` claim older than its expiry is not
 garbage; it is a command whose outcome is unknown, and deleting it discards the evidence that
 something was interrupted mid-flight. Those are resolved by the reclaim path (`P0-TSK-016`),

@@ -24,6 +24,14 @@ class SecretCipherTest {
 
     private static final SecureRandom RANDOMNESS = new SecureRandom();
 
+    /** One enrolment's associated data, and another's (`X-TSK-010`). */
+    private static final byte[] ROW = com.finapp.platform.security.AssociatedData.of(
+            "identity.mfa_enrolment.secret_ciphertext", new java.util.UUID(0, 1),
+            new java.util.UUID(0, 7).toString(), "TOTP");
+    private static final byte[] OTHER_ROW = com.finapp.platform.security.AssociatedData.of(
+            "identity.mfa_enrolment.secret_ciphertext", new java.util.UUID(0, 2),
+            new java.util.UUID(0, 8).toString(), "TOTP");
+
     private static byte[] key(byte fill) {
         byte[] key = new byte[SecretCipher.KEY_BYTES];
         java.util.Arrays.fill(key, fill);
@@ -36,7 +44,45 @@ class SecretCipherTest {
         SecretCipher cipher = new SecretCipher(key((byte) 1), 1, RANDOMNESS);
         Sensitive<String> secret = Sensitive.of("JBSWY3DPEHPK3PXP");
 
-        assertThat(cipher.decrypt(cipher.encrypt(secret)).expose()).isEqualTo(secret.expose());
+        assertThat(cipher.decrypt(ROW, cipher.encrypt(ROW, secret)).expose()).isEqualTo(secret.expose());
+    }
+
+    // ---------------------------------------------------------------- bound to its enrolment (X-TSK-010)
+
+    @Test
+    @DisplayName("X-TSK-010: a bound secret decrypts under its own enrolment and nowhere else - one indistinguishable refusal")
+    void aBoundSecretDecryptsOnlyUnderItsOwnEnrolment() {
+        SecretCipher cipher = new SecretCipher(rotatedRing(1), new java.security.SecureRandom(), true);
+        SecretCipher.Encrypted written = cipher.encrypt(ROW, Sensitive.of("JBSWY3DPEHPK3PXP"));
+        assertThat(written.format()).isEqualTo(com.finapp.platform.security.CipherFormat.BOUND);
+        assertThat(cipher.decrypt(ROW, written).expose()).isEqualTo("JBSWY3DPEHPK3PXP");
+        // An attacker's own secret copied over a victim's enrolment: without the binding it would decrypt
+        // there, and the platform would accept the attacker's codes as the victim's second factor.
+        assertThatThrownBy(() -> cipher.decrypt(OTHER_ROW, written))
+                .as("copied into another enrolment, it fails to decrypt")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Could not decrypt an MFA secret")
+                .hasNoCause();
+    }
+
+    @Test
+    @DisplayName("X-TSK-010: a bound secret presented as unbound fails its tag - the stored format is no downgrade path")
+    void aBoundSecretReadAsUnboundFails() {
+        SecretCipher cipher = new SecretCipher(rotatedRing(1), new java.security.SecureRandom(), true);
+        SecretCipher.Encrypted written = cipher.encrypt(ROW, Sensitive.of("JBSWY3DPEHPK3PXP"));
+        SecretCipher.Encrypted downgraded = new SecretCipher.Encrypted(written.ciphertext(), written.nonce(),
+                written.keyVersion(), com.finapp.platform.security.CipherFormat.UNBOUND);
+        assertThatThrownBy(() -> cipher.decrypt(ROW, downgraded)).isInstanceOf(IllegalStateException.class).hasNoCause();
+    }
+
+    @Test
+    @DisplayName("X-TSK-010: with the switch off a write is unbound, as the previous release writes, and both releases read it")
+    void writesAreUnboundWhileTheSwitchIsOff() {
+        SecretCipher cipher = new SecretCipher(rotatedRing(1), new java.security.SecureRandom());
+        SecretCipher.Encrypted written = cipher.encrypt(ROW, Sensitive.of("an unbound secret"));
+        assertThat(written.format()).isEqualTo(com.finapp.platform.security.CipherFormat.UNBOUND);
+        assertThat(new SecretCipher(rotatedRing(1), new java.security.SecureRandom(), true).decrypt(ROW, written).expose())
+                .as("a bound-writing replica reads it").isEqualTo("an unbound secret");
     }
 
     @Test
@@ -67,7 +113,7 @@ class SecretCipherTest {
         java.util.Set<String> nonces = new java.util.HashSet<>();
         java.util.Set<String> ciphertexts = new java.util.HashSet<>();
         for (int i = 0; i < 200; i++) {
-            SecretCipher.Encrypted encrypted = cipher.encrypt(secret);
+            SecretCipher.Encrypted encrypted = cipher.encrypt(ROW, secret);
             nonces.add(java.util.Arrays.toString(encrypted.nonce()));
             ciphertexts.add(java.util.Arrays.toString(encrypted.ciphertext()));
         }
@@ -82,7 +128,7 @@ class SecretCipherTest {
     @DisplayName("a tampered ciphertext is refused, not decrypted to something else")
     void tamperingIsRefused() {
         SecretCipher cipher = new SecretCipher(key((byte) 1), 1, RANDOMNESS);
-        SecretCipher.Encrypted encrypted = cipher.encrypt(Sensitive.of("JBSWY3DPEHPK3PXP"));
+        SecretCipher.Encrypted encrypted = cipher.encrypt(ROW, Sensitive.of("JBSWY3DPEHPK3PXP"));
 
         byte[] tampered = encrypted.ciphertext();
         tampered[0] ^= 0x01;
@@ -93,6 +139,7 @@ class SecretCipherTest {
         assertThatThrownBy(
                         () ->
                                 cipher.decrypt(
+                                        ROW,
                                         new SecretCipher.Encrypted(
                                                 tampered, encrypted.nonce(), 1)))
                 .isInstanceOf(IllegalStateException.class);
@@ -102,10 +149,10 @@ class SecretCipherTest {
     @DisplayName("a different key cannot read it, and says nothing about why")
     void anotherKeyCannotDecrypt() {
         SecretCipher.Encrypted encrypted =
-                new SecretCipher(key((byte) 1), 1, RANDOMNESS).encrypt(Sensitive.of("JBSWY3DPEHPK"));
+                new SecretCipher(key((byte) 1), 1, RANDOMNESS).encrypt(ROW, Sensitive.of("JBSWY3DPEHPK"));
 
         // INV-IDN-08's actual claim, in one line: holding the database is not holding the secret.
-        assertThatThrownBy(() -> new SecretCipher(key((byte) 2), 2, RANDOMNESS).decrypt(encrypted))
+        assertThatThrownBy(() -> new SecretCipher(key((byte) 2), 2, RANDOMNESS).decrypt(ROW, encrypted))
                 .isInstanceOf(IllegalStateException.class)
                 // Indistinguishable from tampering, deliberately: a caller that could tell them
                 // apart could probe which key version a row was written under.
@@ -117,13 +164,14 @@ class SecretCipherTest {
     @DisplayName("nothing about the ciphertext is rendered")
     void theEncryptedFormMasksItself() {
         SecretCipher.Encrypted encrypted =
-                new SecretCipher(key((byte) 1), 7, RANDOMNESS).encrypt(Sensitive.of("JBSWY3DPEHPK"));
+                new SecretCipher(key((byte) 1), 7, RANDOMNESS).encrypt(ROW, Sensitive.of("JBSWY3DPEHPK"));
 
         // A record's generated toString prints every component. The ciphertext is what an offline
         // attacker needs, so it must not reach a log line by nobody writing a log statement
         // (INV-AUD-02, the P1-TSK-005 finding).
         assertThat(encrypted.toString())
                 .contains("keyVersion=7")
+                .contains("format=UNBOUND")
                 .doesNotContain(java.util.Arrays.toString(encrypted.ciphertext()));
     }
 
@@ -171,14 +219,14 @@ class SecretCipherTest {
     @DisplayName("a row written before key rings existed decrypts unchanged, under a ring of one (the code on master, 6a1e9626)")
     void aRowWrittenBeforeRingsDecryptsUnderARingOfOne() {
         SecretCipher cipher = new SecretCipher(ringKey(0x11), 1, new java.security.SecureRandom());
-        assertThat(cipher.decrypt(writtenBeforeRings()).expose()).isEqualTo("golden vector, not a real secret");
+        assertThat(cipher.decrypt(ROW, writtenBeforeRings()).expose()).isEqualTo("golden vector, not a real secret");
     }
 
     @Test
     @DisplayName("a v1 row is read under version 1 after rotation to version 2: the stamp decides, never the active version")
     void aV1RowIsReadUnderItsStampAfterRotation() {
         SecretCipher cipher = new SecretCipher(rotatedRing(2), new java.security.SecureRandom());
-        assertThat(cipher.decrypt(writtenBeforeRings()).expose()).isEqualTo("golden vector, not a real secret");
+        assertThat(cipher.decrypt(ROW, writtenBeforeRings()).expose()).isEqualTo("golden vector, not a real secret");
     }
 
     @Test
@@ -187,22 +235,22 @@ class SecretCipherTest {
         SecretCipher before = new SecretCipher(rotatedRing(1), new java.security.SecureRandom());
         SecretCipher after = new SecretCipher(rotatedRing(2), new java.security.SecureRandom());
 
-        SecretCipher.Encrypted writtenBefore = before.encrypt(Sensitive.of("a later secret"));
-        SecretCipher.Encrypted writtenAfter = after.encrypt(Sensitive.of("a later secret"));
+        SecretCipher.Encrypted writtenBefore = before.encrypt(ROW, Sensitive.of("a later secret"));
+        SecretCipher.Encrypted writtenAfter = after.encrypt(ROW, Sensitive.of("a later secret"));
 
         assertThat(writtenBefore.keyVersion()).as("a known version stays unused until it is activated").isEqualTo(1);
         assertThat(writtenAfter.keyVersion()).as("the active pointer decides the version written").isEqualTo(2);
-        assertThat(after.decrypt(writtenAfter).expose()).isEqualTo("a later secret");
-        assertThat(before.decrypt(writtenAfter).expose()).as("a replica not yet activated reads its neighbour's new row").isEqualTo("a later secret");
-        assertThat(after.decrypt(writtenBefore).expose()).as("an activated replica reads an old row").isEqualTo("a later secret");
+        assertThat(after.decrypt(ROW, writtenAfter).expose()).isEqualTo("a later secret");
+        assertThat(before.decrypt(ROW, writtenAfter).expose()).as("a replica not yet activated reads its neighbour's new row").isEqualTo("a later secret");
+        assertThat(after.decrypt(ROW, writtenBefore).expose()).as("an activated replica reads an old row").isEqualTo("a later secret");
     }
 
     @Test
     @DisplayName("a row stamped with a version the ring does not hold is refused, even when the active key could read it")
     void anUnknownStampedVersionIsRefused() {
         SecretCipher cipher = new SecretCipher(rotatedRing(1), new java.security.SecureRandom());
-        SecretCipher.Encrypted written = cipher.encrypt(Sensitive.of("a later secret"));
-        assertThatThrownBy(() -> cipher.decrypt(new SecretCipher.Encrypted(written.ciphertext(), written.nonce(), 9)))
+        SecretCipher.Encrypted written = cipher.encrypt(ROW, Sensitive.of("a later secret"));
+        assertThatThrownBy(() -> cipher.decrypt(ROW, new SecretCipher.Encrypted(written.ciphertext(), written.nonce(), 9)))
                 .isInstanceOf(com.finapp.platform.security.UnknownKeyVersionException.class)
                 .as("one refusal, whatever went wrong: the version the row claims is not told to a caller")
                 .hasMessageNotContaining("9")

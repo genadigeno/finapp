@@ -62,6 +62,7 @@ import lombok.RequiredArgsConstructor;
 public final class MerchantApiKeys {
 
     static final String TARGET_TYPE = "merchant_api_key";
+    /** The scope's command; the claim suffixes its principal (`X-TSK-003`). Alone, the scope before that move. */
     static final String IDEMPOTENCY_SCOPE = "merchant.api-key.issue";
 
     /**
@@ -131,7 +132,11 @@ public final class MerchantApiKeys {
             throw new MerchantNotKeyableException();
         }
 
-        IdempotencyKey key = new IdempotencyKey(IDEMPOTENCY_SCOPE, idempotencyKey);
+        // The scope names the operator (`X-TSK-003`): another operator's key value is never this one's claim.
+        IdempotencyKey key =
+                new IdempotencyKey(
+                        IDEMPOTENCY_SCOPE + ":" + actor.keyedType().name() + ":" + actor.id(),
+                        idempotencyKey);
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(
                         (IDEMPOTENCY_SCOPE + "|" + actor.keyedType().name() + "|" + actor.id() + "|"
@@ -148,6 +153,8 @@ public final class MerchantApiKeys {
                 executor.execute(
                         unitOfWork,
                         key,
+                        // The old scope is consulted for X-TSK-003's transition and goes with X-TSK-028.
+                        key.movedFrom(IDEMPOTENCY_SCOPE),
                         fingerprint,
                         uow -> mint(uow, merchantId, scopes, actor, correlation, minted));
 

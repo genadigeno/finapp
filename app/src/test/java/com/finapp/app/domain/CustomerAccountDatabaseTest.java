@@ -406,6 +406,64 @@ class CustomerAccountDatabaseTest {
         }
     }
 
+    /**
+     * A move on a clock trailing the agreement's latest stamp - a status change, not only its
+     * birth: the floor at {@code opened_at} alone let the move be stamped before the fact it
+     * follows. Stamped at the predecessor's instant instead.
+     */
+    @Test
+    @DisplayName(
+            "a move on a clock trailing the agreement's latest change is stamped at that change,"
+                    + " never before it (X-TSK-006, ADR-0063 decision 2)")
+    void aMoveTrailingTheLatestChangeIsStampedAtIt() throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            CustomerAccountId agreement = freshAgreement(app);
+            app.commit();
+            // Instants derived from the stored birth, never from a second clock read.
+            Instant opened = stampsOf(app, agreement).openedAt();
+            Instant latest = opened.plusSeconds(10);
+            assertThat(
+                            accounts.moveStatus(
+                                    app,
+                                    agreement,
+                                    CustomerAccountStatus.ACTIVE,
+                                    CustomerAccountStatus.SUSPENDED,
+                                    latest))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(app, agreement).statusChangedAt()).isEqualTo(latest);
+
+            Instant trailing = opened.plusSeconds(5);
+            assertThat(trailing)
+                    .as("precondition: the clock trails the latest change, not the birth")
+                    .isBefore(latest)
+                    .isAfter(opened);
+            assertThat(
+                            accounts.moveStatus(
+                                    app,
+                                    agreement,
+                                    CustomerAccountStatus.SUSPENDED,
+                                    CustomerAccountStatus.ACTIVE,
+                                    trailing))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(app, agreement).statusChangedAt())
+                    .as("the predecessor's instant, not the trailing clock's")
+                    .isEqualTo(latest);
+            assertThat(
+                            accounts.moveStatus(
+                                    app,
+                                    agreement,
+                                    CustomerAccountStatus.ACTIVE,
+                                    CustomerAccountStatus.CLOSED,
+                                    trailing))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(app, agreement).statusChangedAt()).isEqualTo(latest);
+        }
+    }
+
     @Test
     @DisplayName(
             "an illegal move under a behind clock is still the machine's or the conditional's"
@@ -448,6 +506,43 @@ class CustomerAccountDatabaseTest {
                     .isFalse();
             app.commit();
             assertThat(stampsOf(app, closed).statusChangedAt()).isEqualTo(opened);
+        }
+    }
+
+    @Test
+    @DisplayName(
+            "a customer's live wallet is that customer's own: the live read answers A's"
+                    + " agreement for A and B's for B, never the other's (X-TSK-002; INV-AUD-03)")
+    void theLiveReadAnswersOnlyTheCustomersOwnWallet() throws Exception {
+        UUID first = IDS.next();
+        UUID second = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            CustomerAccount firsts =
+                    accounts.openOrConverge(
+                                    app,
+                                    CustomerAccount.open(IDS, CLOCK, first, ProductType.WALLET))
+                            .account();
+            CustomerAccount seconds =
+                    accounts.openOrConverge(
+                                    app,
+                                    CustomerAccount.open(IDS, CLOCK, second, ProductType.WALLET))
+                            .account();
+            app.commit();
+
+            // Holds customer_id = ? in findLive's statement: without it both reads answer the
+            // same first live WALLET, so at least one customer is handed another's agreement.
+            CustomerAccount readForFirst =
+                    accounts.findLive(app, first, ProductType.WALLET).orElseThrow();
+            CustomerAccount readForSecond =
+                    accounts.findLive(app, second, ProductType.WALLET).orElseThrow();
+            assertThat(readForFirst.id()).isEqualTo(firsts.id());
+            assertThat(readForFirst.customerId()).isEqualTo(first);
+            assertThat(readForSecond.id()).isEqualTo(seconds.id());
+            assertThat(readForSecond.customerId()).isEqualTo(second);
+            assertThat(readForFirst.id())
+                    .as("two customers, two agreements - never one shared")
+                    .isNotEqualTo(readForSecond.id());
         }
     }
 

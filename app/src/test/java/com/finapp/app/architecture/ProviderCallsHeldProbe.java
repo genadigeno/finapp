@@ -13,7 +13,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Deliberate violations of ADR-0046, one per way code can hold a connection around a provider call, used by
- * {@code NoTransactionSpansAProviderCallTest} (`X-TSK-020`).
+ * {@code NoTransactionSpansAProviderCallTest} (`X-TSK-023`).
  *
  * <p>Never wired and never run: the test reads this class file beside production's, and each method must be found reaching the
  * network while a connection is held. Each calls a real provider port, so the path the guard finds runs through production's own

@@ -184,8 +184,9 @@ defects besides — and ran the full battery fleet-wide before and after. Phase 
 `PHASE_7_PLAN.md` on ADR-0059…0062: rails that declare their capabilities, routing that is pinned
 and explainable, disputes whose chargebacks can never debit a merchant twice, and account-to-account
 and instant payments that keep bank details out of the platform. Eighteen items across eight
-milestones, all eighteen `COMPLETE` by 2026-09-28. `X-TSK-003` carries the remaining
-idempotency-scope work.
+milestones, all eighteen `COMPLETE` by 2026-09-28. `X-TSK-028` carries the remaining
+idempotency-scope work *(read X-TSK-003 until its gate, 2026-11-17, moved the eleven constant scopes to
+their principal behind a transition)*.
 
 *(This section read "Phase 6 … is `READY`, first task `P6-TSK-001`" through the whole of Phase 6
 — frozen at the Phase 5 → 6 transition, the stale-second-copy class this section has now fallen

@@ -26,15 +26,56 @@ class DocumentCipherTest {
 
     private final DocumentCipher cipher = new DocumentCipher(KEY, 1, new SecureRandom());
 
+    /** One row's associated data, and another's (`X-TSK-010`): the layout {@code JdbcDocumentStore} binds. */
+    private static final byte[] ROW = com.finapp.platform.security.AssociatedData.of(
+            "kyc.kyc_document.content", new java.util.UUID(0, 1), new java.util.UUID(0, 9).toString(), "PASSPORT");
+    private static final byte[] OTHER_ROW = com.finapp.platform.security.AssociatedData.of(
+            "kyc.kyc_document.content", new java.util.UUID(0, 2), new java.util.UUID(0, 9).toString(), "PASSPORT");
+
+    // ---------------------------------------------------------------- bound to its row (X-TSK-010)
+
+    @Test
+    @DisplayName("X-TSK-010: a bound ciphertext decrypts under its own row and nowhere else - one indistinguishable refusal")
+    void aBoundCiphertextDecryptsOnlyUnderItsOwnRow() {
+        DocumentCipher bound = new DocumentCipher(rotatedRing(1), new SecureRandom(), true);
+        DocumentCipher.Encrypted written = bound.encrypt(ROW, DocumentBytes.of(bytes("a bound passport")));
+        assertThat(written.format()).isEqualTo(com.finapp.platform.security.CipherFormat.BOUND);
+        assertThat(new String(bound.decrypt(ROW, written), StandardCharsets.UTF_8)).isEqualTo("a bound passport");
+        assertThatThrownBy(() -> bound.decrypt(OTHER_ROW, written))
+                .as("copied into another row, it fails to decrypt").isInstanceOf(IllegalStateException.class).hasNoCause();
+    }
+
+    @Test
+    @DisplayName("X-TSK-010: a bound ciphertext presented as unbound fails its tag - the stored format is no downgrade path")
+    void aBoundCiphertextReadAsUnboundFails() {
+        DocumentCipher bound = new DocumentCipher(rotatedRing(1), new SecureRandom(), true);
+        DocumentCipher.Encrypted written = bound.encrypt(ROW, DocumentBytes.of(bytes("a bound passport")));
+        DocumentCipher.Encrypted downgraded = new DocumentCipher.Encrypted(written.ciphertext(), written.nonce(),
+                written.keyVersion(), com.finapp.platform.security.CipherFormat.UNBOUND);
+        assertThatThrownBy(() -> bound.decrypt(ROW, downgraded)).isInstanceOf(IllegalStateException.class).hasNoCause();
+    }
+
+    @Test
+    @DisplayName("X-TSK-010: with the switch off a write is unbound, as the previous release writes, and both releases read it")
+    void writesAreUnboundWhileTheSwitchIsOff() {
+        DocumentCipher unbound = new DocumentCipher(rotatedRing(1), new SecureRandom());
+        DocumentCipher.Encrypted written = unbound.encrypt(ROW, DocumentBytes.of(bytes("an unbound passport")));
+        assertThat(written.format()).isEqualTo(com.finapp.platform.security.CipherFormat.UNBOUND);
+        assertThat(new String(new DocumentCipher(rotatedRing(1), new SecureRandom(), true).decrypt(ROW, written),
+                StandardCharsets.UTF_8)).as("a bound-writing replica reads it").isEqualTo("an unbound passport");
+    }
+
+    // ---------------------------------------------------------------- the mechanism (P2-TSK-008)
+
     @Test
     @DisplayName("content round-trips, and the ciphertext is not the plaintext")
     void roundTrips() {
         DocumentBytes content = DocumentBytes.of(bytes("a passport photograph"));
 
-        DocumentCipher.Encrypted encrypted = cipher.encrypt(content);
+        DocumentCipher.Encrypted encrypted = cipher.encrypt(ROW, content);
 
         assertThat(encrypted.ciphertext()).isNotEqualTo(content.value());
-        assertThat(cipher.decrypt(encrypted)).isEqualTo(content.value());
+        assertThat(cipher.decrypt(ROW, encrypted)).isEqualTo(content.value());
         assertThat(encrypted.keyVersion()).isEqualTo(1);
     }
 
@@ -42,7 +83,7 @@ class DocumentCipherTest {
     @DisplayName("a tampered ciphertext is refused, never decrypted to something else")
     void tamperIsRefused() {
         DocumentCipher.Encrypted encrypted =
-                cipher.encrypt(DocumentBytes.of(bytes("evidence to protect")));
+                cipher.encrypt(ROW, DocumentBytes.of(bytes("evidence to protect")));
         byte[] tampered = encrypted.ciphertext();
         tampered[0] ^= 0x01;
         DocumentCipher.Encrypted substituted =
@@ -50,17 +91,17 @@ class DocumentCipherTest {
 
         // GCM's authentication half is the point: evidence an attacker with write access could
         // SUBSTITUTE would defeat INV-HIST-02 entirely.
-        assertThatIllegalStateException().isThrownBy(() -> cipher.decrypt(substituted));
+        assertThatIllegalStateException().isThrownBy(() -> cipher.decrypt(ROW, substituted));
     }
 
     @Test
     @DisplayName("the wrong key cannot read, and is indistinguishable from tampering")
     void wrongKeyIsRefused() {
         DocumentCipher.Encrypted encrypted =
-                cipher.encrypt(DocumentBytes.of(bytes("written under key 7")));
+                cipher.encrypt(ROW, DocumentBytes.of(bytes("written under key 7")));
         DocumentCipher other = new DocumentCipher(OTHER_KEY, 2, new SecureRandom());
 
-        assertThatIllegalStateException().isThrownBy(() -> other.decrypt(encrypted));
+        assertThatIllegalStateException().isThrownBy(() -> other.decrypt(ROW, encrypted));
     }
 
     @Test
@@ -80,8 +121,8 @@ class DocumentCipherTest {
         // this is the assertion a fixed-nonce mutation cannot survive.
         DocumentBytes content = DocumentBytes.of(bytes("the same bytes twice"));
 
-        DocumentCipher.Encrypted first = cipher.encrypt(content);
-        DocumentCipher.Encrypted second = cipher.encrypt(content);
+        DocumentCipher.Encrypted first = cipher.encrypt(ROW, content);
+        DocumentCipher.Encrypted second = cipher.encrypt(ROW, content);
 
         assertThat(first.nonce()).isNotEqualTo(second.nonce());
         assertThat(first.ciphertext()).isNotEqualTo(second.ciphertext());
@@ -94,9 +135,9 @@ class DocumentCipherTest {
                 .isThrownBy(() -> new DocumentCipher.Encrypted(bytes("ct"), new byte[11], 1));
 
         DocumentCipher.Encrypted encrypted =
-                cipher.encrypt(DocumentBytes.of(bytes("never in a log")));
+                cipher.encrypt(ROW, DocumentBytes.of(bytes("never in a log")));
         assertThat(encrypted.toString()).doesNotContain(java.util.Arrays.toString(encrypted.ciphertext()));
-        assertThat(encrypted.toString()).isEqualTo("Encrypted[keyVersion=1]");
+        assertThat(encrypted.toString()).isEqualTo("Encrypted[keyVersion=1, format=UNBOUND]");
     }
 
     private static byte[] key(byte fill) {
@@ -139,14 +180,14 @@ class DocumentCipherTest {
     @DisplayName("a row written before key rings existed decrypts unchanged, under a ring of one (the code on master, 6a1e9626)")
     void aRowWrittenBeforeRingsDecryptsUnderARingOfOne() {
         DocumentCipher cipher = new DocumentCipher(ringKey(0x12), 1, new java.security.SecureRandom());
-        assertThat(new String(cipher.decrypt(writtenBeforeRings()), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
+        assertThat(new String(cipher.decrypt(ROW, writtenBeforeRings()), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
     }
 
     @Test
     @DisplayName("a v1 row is read under version 1 after rotation to version 2: the stamp decides, never the active version")
     void aV1RowIsReadUnderItsStampAfterRotation() {
         DocumentCipher cipher = new DocumentCipher(rotatedRing(2), new java.security.SecureRandom());
-        assertThat(new String(cipher.decrypt(writtenBeforeRings()), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
+        assertThat(new String(cipher.decrypt(ROW, writtenBeforeRings()), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
     }
 
     @Test
@@ -155,22 +196,22 @@ class DocumentCipherTest {
         DocumentCipher before = new DocumentCipher(rotatedRing(1), new java.security.SecureRandom());
         DocumentCipher after = new DocumentCipher(rotatedRing(2), new java.security.SecureRandom());
 
-        DocumentCipher.Encrypted writtenBefore = before.encrypt(DocumentBytes.of("a later document".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        DocumentCipher.Encrypted writtenAfter = after.encrypt(DocumentBytes.of("a later document".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        DocumentCipher.Encrypted writtenBefore = before.encrypt(ROW, DocumentBytes.of("a later document".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        DocumentCipher.Encrypted writtenAfter = after.encrypt(ROW, DocumentBytes.of("a later document".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
 
         assertThat(writtenBefore.keyVersion()).as("a known version stays unused until it is activated").isEqualTo(1);
         assertThat(writtenAfter.keyVersion()).as("the active pointer decides the version written").isEqualTo(2);
-        assertThat(new String(after.decrypt(writtenAfter), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("a later document");
-        assertThat(new String(before.decrypt(writtenAfter), java.nio.charset.StandardCharsets.UTF_8)).as("a replica not yet activated reads its neighbour's new row").isEqualTo("a later document");
-        assertThat(new String(after.decrypt(writtenBefore), java.nio.charset.StandardCharsets.UTF_8)).as("an activated replica reads an old row").isEqualTo("a later document");
+        assertThat(new String(after.decrypt(ROW, writtenAfter), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("a later document");
+        assertThat(new String(before.decrypt(ROW, writtenAfter), java.nio.charset.StandardCharsets.UTF_8)).as("a replica not yet activated reads its neighbour's new row").isEqualTo("a later document");
+        assertThat(new String(after.decrypt(ROW, writtenBefore), java.nio.charset.StandardCharsets.UTF_8)).as("an activated replica reads an old row").isEqualTo("a later document");
     }
 
     @Test
     @DisplayName("a row stamped with a version the ring does not hold is refused, even when the active key could read it")
     void anUnknownStampedVersionIsRefused() {
         DocumentCipher cipher = new DocumentCipher(rotatedRing(1), new java.security.SecureRandom());
-        DocumentCipher.Encrypted written = cipher.encrypt(DocumentBytes.of("a later document".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        assertThatThrownBy(() -> cipher.decrypt(new DocumentCipher.Encrypted(written.ciphertext(), written.nonce(), 9)))
+        DocumentCipher.Encrypted written = cipher.encrypt(ROW, DocumentBytes.of("a later document".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        assertThatThrownBy(() -> cipher.decrypt(ROW, new DocumentCipher.Encrypted(written.ciphertext(), written.nonce(), 9)))
                 .isInstanceOf(com.finapp.platform.security.UnknownKeyVersionException.class)
                 .as("one refusal, whatever went wrong: the version the row claims is not told to a caller")
                 .hasMessageNotContaining("9")

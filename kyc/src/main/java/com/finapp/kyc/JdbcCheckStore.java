@@ -1,6 +1,7 @@
 package com.finapp.kyc;
 
 import com.finapp.platform.persistence.DatabaseFailure;
+import com.finapp.platform.security.AssociatedData;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -183,12 +184,15 @@ public final class JdbcCheckStore implements CheckStore<Connection> {
                 unitOfWork.prepareStatement(
                         "UPDATE " + TABLE
                                 + " SET status = ?,"
-                                // GREATEST(?, requested_at) - the P1-TSK-031 drift, clamped in
-                                // the statement: a callback completes the check on whichever
-                                // instance the provider reaches, whose clock may read behind the
-                                // one that requested it (ADR-0014: skew is bounded, never zero),
-                                // and a legal answer must not die on V004's CHECK.
-                                + " status_changed_at = GREATEST(?, requested_at)"
+                                // GREATEST(?, status_changed_at) - ADR-0063 decision 2
+                                // (X-TSK-006), the P1-TSK-031 drift clamped in the statement: a
+                                // callback completes the check on whichever instance the provider
+                                // reaches, whose clock may read behind the one that stamped the
+                                // check's latest fact - its dispatch (ADR-0014: skew is bounded,
+                                // never zero) - so the move is stamped no earlier than it.
+                                // status_changed_at is never before requested_at (V004's CHECK),
+                                // so a legal answer cannot die on that CHECK either.
+                                + " status_changed_at = GREATEST(?, status_changed_at)"
                                 + " WHERE id = ? AND status = ?")) {
             update.setString(1, to.name());
             update.setTimestamp(2, Timestamp.from(at));
@@ -426,13 +430,16 @@ public final class JdbcCheckStore implements CheckStore<Connection> {
         Objects.requireNonNull(payload, "payload must not be null");
         Objects.requireNonNull(receivedAt, "receivedAt must not be null");
 
-        DocumentCipher.Encrypted encrypted = cipher.encrypt(DocumentBytes.of(payload));
+        // The evidence id is minted by the caller, so the row's associated data exists before its insert.
+        DocumentCipher.Encrypted encrypted =
+                cipher.encrypt(evidenceAssociatedData(id.value(), checkId.value()), DocumentBytes.of(payload));
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO " + EVIDENCE_TABLE
                                 + " (id, check_id, content_ciphertext, content_nonce,"
-                                + " key_version, checksum_sha256, content_length, received_at)"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) {
+                                + " key_version, checksum_sha256, content_length, received_at,"
+                                + " cipher_format)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, id.value());
             insert.setObject(2, checkId.value());
             insert.setBytes(3, encrypted.ciphertext());
@@ -441,6 +448,7 @@ public final class JdbcCheckStore implements CheckStore<Connection> {
             insert.setBytes(6, KycDocument.checksumOf(payload));
             insert.setInt(7, payload.length);
             insert.setTimestamp(8, Timestamp.from(receivedAt));
+            insert.setInt(9, encrypted.format().code());
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new KycStorageException(
@@ -448,6 +456,19 @@ public final class JdbcCheckStore implements CheckStore<Connection> {
                             "retaining evidence for check " + checkId, failure));
         }
     }
+
+    /**
+     * An evidence row's associated data (`X-TSK-010`): its identity, and the check whose answer it is - so a provider answer
+     * copied into another row, or under another check, fails to decrypt once writes are bound. No production path reads
+     * evidence back yet; a reader rebuilds exactly this from the row and presents it when the row's {@code cipher_format}
+     * says {@code BOUND}.
+     */
+    static byte[] evidenceAssociatedData(UUID id, UUID checkId) {
+        return AssociatedData.of(EVIDENCE_PURPOSE, id, checkId.toString());
+    }
+
+    /** What an evidence ciphertext is, in its associated data. */
+    static final String EVIDENCE_PURPOSE = "kyc.verification_evidence.content";
 
     private Optional<VerificationCheck> newestOfType(
             Connection unitOfWork, KycCaseId caseId, CheckType type) throws SQLException {

@@ -46,6 +46,48 @@ thing, and no rule can catch that substitution — it is a design-review questio
 is written here. *(`P14-TSK-006`: a stated posting date may be **floored** - moved forward to the first open
 date, by the ledger, only when the command asks, never backward and never silently; §3 rule 8.)*
 
+**The practice as built, and the rule for a new poster** (*`X-TSK-011`, 2026-11-16*). The rule above is the ledger's; fourteen
+earlier flows do not follow it, and why they are still safe is what keeps a new poster from copying them.
+
+- **Why a date read at completion is dangerous.** A posting's idempotency fingerprint binds its posting and value dates
+  (`PostingService.canonicalForm`; `ReversalService` binds them too), and once the posting's idempotency record is swept
+  (ADR-0141) the journal's own check compares them as well. A poster that reads today's date at each attempt and is driven
+  again on a later day sends the same key with a different date: the ledger refuses it as a conflict instead of converging.
+- **The rule for a new poster.** Both dates come from a stored row - the record of the economic fact, read again at every
+  replay. A flow may read the clock **once** and store what it read, in the transaction that records the fact
+  (`BatchAcceptance`'s `accepted_on`, ADR-0065 §6; `FxConversion`'s `booked_on`; `FxCoverOutcomes`' `recorded_on`;
+  `PayoutReturns`' `accepted_on`), never at completion.
+- **The fourteen that read today's UTC date at completion**, for both dates, each classified `TODAY_CLOCK` by
+  `accounting`'s `PostingRuleCatalogue`. Each posts only inside a single-application conditional transition or claim,
+  committed in the posting's own transaction, so a retry, a sweep, a duplicate webhook or a re-sent approval on a later day
+  leaves before it reads the date: **none can be replayed on a later day**, and none conflicts.
+
+  | Flow | Phase | Posting key | What makes it post once |
+  |---|---|---|---|
+  | `PaymentOutcomes#applyCapture` | 5 | `payment-capture:<attemptId>` | the attempt's conditional capture (`WHERE id = ? AND status = ?`) |
+  | `PaymentOutcomes#applyRefund` (card, push and book) | 5, 7 | `payment-refund:<refundId>` | the refund's conditional completion |
+  | `PaymentOutcomes#settleExecution` (push, instant, A2A, book) | 7 | `payment-execution:<attemptId>` | the attempt's row lock and conditional execution; a book payment's intent moved once |
+  | `UnmatchedConfirmations#park` | 7 | `unmatched-confirmation:<rail>:<schemeRef>` | the scheme execution's claim, `ON CONFLICT DO NOTHING` |
+  | `WithdrawalOutcomes#complete` | 7 | `wallet-withdrawal:<id>` | the locked withdrawal's resolvable check and conditional landing |
+  | `ChargebackAccounting#post` (each stage) | 7 | `dispute-<stage>:<disputeId>`, `dispute-reattribution:<disputeId>:<causeId>` | each stage entered once by a conditional transition; the stage graph has no cycle |
+  | `MerchantPayoutOutcomes#complete` | 6 | `merchant-payout:<payoutId>` | the locked payout's resolvable check and conditional landing |
+  | `OutboundCreditOutcomes#complete` | 9 | `outbound-credit:<creditId>` | the credit's resolvable check and conditional completion |
+  | `OutboundCreditReturns#apply` | 9 | `crossborder-return:<creditId>` | the locked credit, its completed status and one return per credit (`UNIQUE`) |
+  | `CorridorReturnResolutions#record` | 9 | `crossborder-return-fee:<creditId>` | the resolution's lock and proposed status; one return per credit |
+  | `TradeReversals#approve` | 9 | `ledger.reverse:fx-trade:<tradeId>` | the reversal's lock and proposed status; the trade reversed only from `BOOKED` |
+  | `TransferExecution#judge` | 3-4 | `transfer:<transferId>` | the transfer id minted inside the outer `transfer.execute` claim, whose replay never posts |
+  | `TransferReversal#reverse` | 4 | `ledger.reverse:transfer:<id>` | the transfer's lock and conditional reversal |
+
+  The transfers predate the Phase 5–7 practice the item was written for and read the clock the same way, so they are named
+  here too. Their safety rests on the guard, not on the date: **a re-drive path added outside the guard would make the
+  conflict real**, which is why a new poster takes the rule above instead.
+- **Two deviations from the rule, neither a conflict** (found by `X-TSK-011`): a cross-border return posts on its applying
+  day although the provider's report carries the return's settlement date, which the worker already passes as evidence
+  (`OutboundReturnWorker`, `OutboundCreditReturns`), so a return deferred while its credit is in flight is dated by the sweep
+  that applies it; and a corridor return resolved `TRANSFER_TO_ACCOUNT` posts its principal on the date stored at proposal
+  (`ResolutionMachine`, `AdjustmentService`) and its fee refund on the approval's day (`CorridorReturnResolutions`), so a
+  four-eyes approval on a later day dates one return's two entries differently. Each is recorded as its own item.
+
 **The journal is indexed by posting date** (*`P14-TSK-007`*, ledger `V029`): `journal_entry_by_posting_date` on
 `journal_entry (posting_date, id)` serves "the entries of a period" - the General Ledger's month aggregate and its
 drill-down's keyset (`ORDER BY posting_date, id`, then the line's `seq`), and every report run of a locked period. It

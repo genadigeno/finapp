@@ -47,7 +47,8 @@ import java.util.UUID;
  * actors, because both people acted, each on their own record.
  *
  * <p><strong>Idempotency lives where the duplicate hurts.</strong> Propose keeps the full
- * machinery — key, scope {@code ledger.adjust}, fingerprint binding actor, reason and lines
+ * machinery — key, scope {@code ledger.adjust} naming the proposer (`X-TSK-003`),
+ * fingerprint binding actor, reason and lines
  * ({@code INV-IDEM-03}) — because a duplicated <em>proposal</em> is the duplicate-effect
  * vector. Approval carries <strong>no key, deliberately</strong>: the proposal's one-way
  * machine is the idempotency ({@code INV-IDEM-01} through state, the `P2-TSK-008`
@@ -63,7 +64,11 @@ import java.util.UUID;
  */
 public final class AdjustmentService {
 
-    /** The propose command's idempotency scope (ADR-0004): one command type, one scope. */
+    /**
+     * The propose command's idempotency scope (ADR-0004): one command type, one scope. A claim
+     * is made under it followed by the proposer's principal ({@code ledger.adjust:<keyed type>:<id>},
+     * `X-TSK-003`); the bare value is the scope it moved from, consulted for the transition.
+     */
     public static final String IDEMPOTENCY_SCOPE = "ledger.adjust";
 
     /**
@@ -149,7 +154,12 @@ public final class AdjustmentService {
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
 
-        IdempotencyKey key = new IdempotencyKey(IDEMPOTENCY_SCOPE, command.idempotencyKey());
+        // The claim names its principal (ADR-0004, `X-TSK-003`): one operator's key value
+        // neither refuses another's proposal nor is told it is taken.
+        IdempotencyKey key =
+                new IdempotencyKey(
+                        IDEMPOTENCY_SCOPE + ":" + actor.keyedType().name() + ":" + actor.id(),
+                        command.idempotencyKey());
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(canonicalForm(command, actor));
 
@@ -157,6 +167,8 @@ public final class AdjustmentService {
                 executor.execute(
                         unitOfWork,
                         key,
+                        // The old scope is consulted for X-TSK-003's transition and goes with X-TSK-028.
+                        key.movedFrom(IDEMPOTENCY_SCOPE),
                         fingerprint,
                         uow -> recordProposal(uow, command, actor, correlation));
 

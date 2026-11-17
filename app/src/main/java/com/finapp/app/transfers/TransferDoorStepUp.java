@@ -7,7 +7,10 @@ import com.finapp.identity.MfaFactorType;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.idempotency.IdempotencyKey;
 import com.finapp.platform.idempotency.IdempotencyRecordStore;
+import com.finapp.platform.idempotency.RequestFingerprint;
+import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.money.Money;
+import com.finapp.transfers.TransferCommand;
 import com.finapp.transfers.TransferExecution;
 import com.finapp.transfers.TransferParticipants;
 import java.sql.Connection;
@@ -24,11 +27,13 @@ import java.util.UUID;
  * <p><strong>Three answers it must not give.</strong>
  *
  * <ul>
- *   <li><strong>A retry is never advised.</strong> When the command's key ({@code transfer.execute}) already has a
- *       record, the command will replay its original judgement or answer the conflict; advising again would read
+ *   <li><strong>A retry is never advised.</strong> When the command's own claim already has a record - its key under
+ *       the caller's scope, or under the old constant scope with this request's fingerprint ({@link #retried},
+ *       `X-TSK-003`) - the command will replay its original judgement or answer the conflict; advising again would read
  *       windows that now include the original's own count and could turn the retry of a {@code COMPLETED} transfer
  *       into a {@code 403} - a different answer for the same key ({@code INV-IDEM-01}). A claim still in flight is not
- *       visible and the advice runs; the command's in-lock judgement is authoritative either way.</li>
+ *       visible and the advice runs; the command's in-lock judgement is authoritative either way. Somebody else's
+ *       record on the same key value is no retry of this request's, and is advised.</li>
  *   <li><strong>No advice over somebody else's account.</strong> The source must resolve as the caller's own
  *       ({@code TransferParticipants.sourceOwnedBy}, the command's own resolution) before risk is asked anything; an
  *       unowned or unknown source skips the advice, and the command answers {@code transfers.UnknownSource} as it
@@ -65,9 +70,25 @@ final class TransferDoorStepUp {
         this.enrolments = Objects.requireNonNull(enrolments, "enrolments");
     }
 
-    /** True when {@code idempotencyKey} already names a transfer command - a retry, never advised. */
-    boolean retried(Connection unitOfWork, String idempotencyKey) {
-        return records.find(unitOfWork, new IdempotencyKey(TransferExecution.IDEMPOTENCY_SCOPE, idempotencyKey))
+    /**
+     * True when {@code command} is a retry of {@code actor}'s own transfer command - never advised.
+     *
+     * <p>Exactly the claims the command will answer from rather than run (`X-TSK-003`): {@code actor}'s own claim under
+     * its principal's scope, which the command replays or refuses as a conflict; or a claim under the old, constant
+     * scope whose fingerprint is <strong>this request's</strong>, which the transition replays. Any other old-scope
+     * claim on this key value is another principal's - or this one's for a different body - and the command passes it
+     * over and runs under its own scope, so the door must advise it: otherwise a stranger's key value would let this
+     * customer's new transfer skip its step-up.
+     */
+    boolean retried(Connection unitOfWork, Actor actor, TransferCommand command) {
+        IdempotencyKey key = TransferExecution.keyFor(actor, command.idempotencyKey());
+        if (records.find(unitOfWork, key).isPresent()) {
+            return true;
+        }
+        RequestFingerprint fingerprint = TransferExecution.fingerprintOf(command, actor);
+        // The old scope is consulted for X-TSK-003's transition, and goes with X-TSK-028.
+        return records.find(unitOfWork, key.movedFrom(TransferExecution.IDEMPOTENCY_SCOPE))
+                .filter(before -> fingerprint.matches(before.fingerprint()))
                 .isPresent();
     }
 

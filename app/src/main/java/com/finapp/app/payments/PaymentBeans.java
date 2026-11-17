@@ -82,9 +82,17 @@ public class PaymentBeans {
         return PaymentEvidenceKey.ring(configuredKey, keyVersion, environment, loopback);
     }
 
+    /**
+     * Bound writes behind {@code finapp.ciphers.bind-associated-data} (`X-TSK-010`): off by default in the release that reads
+     * both formats, so a replica of the previous release, which reads only unbound ciphertexts, can read every row written
+     * during the roll; on once every replica reads both (`X-TSK-027`).
+     */
     @Bean
-    EvidenceCipher evidenceCipher(com.finapp.platform.security.KeyRing paymentEvidenceKeyRing, SecureRandom paymentsRandomness) {
-        return new EvidenceCipher(paymentEvidenceKeyRing, paymentsRandomness);
+    EvidenceCipher evidenceCipher(
+            com.finapp.platform.security.KeyRing paymentEvidenceKeyRing,
+            SecureRandom paymentsRandomness,
+            @Value("${finapp.ciphers.bind-associated-data:false}") boolean bindAssociatedData) {
+        return new EvidenceCipher(paymentEvidenceKeyRing, paymentsRandomness, bindAssociatedData);
     }
 
     @Bean
@@ -835,10 +843,14 @@ public class PaymentBeans {
         return DisputeEvidenceKey.ring(configuredKey, keyVersion, environment, loopback);
     }
 
+    /** Its cipher's writes bound behind {@code finapp.ciphers.bind-associated-data}, as {@code evidenceCipher}'s (`X-TSK-010`). */
     @Bean
     com.finapp.payments.DisputeEvidenceStore<Connection> disputeEvidenceStore(
-            com.finapp.platform.security.KeyRing disputeEvidenceKeyRing, SecureRandom paymentsRandomness) {
-        return new com.finapp.payments.JdbcDisputeEvidenceStore(new EvidenceCipher(disputeEvidenceKeyRing, paymentsRandomness));
+            com.finapp.platform.security.KeyRing disputeEvidenceKeyRing,
+            SecureRandom paymentsRandomness,
+            @Value("${finapp.ciphers.bind-associated-data:false}") boolean bindAssociatedData) {
+        return new com.finapp.payments.JdbcDisputeEvidenceStore(
+                new EvidenceCipher(disputeEvidenceKeyRing, paymentsRandomness, bindAssociatedData));
     }
 
     @Bean

@@ -125,9 +125,16 @@ public class FxProviderBeans {
                 configuredKey, keyVersion, environment, DatabaseEndpoint.isEntirelyLoopback(DatabaseEndpoint.url(environment)));
     }
 
+    /**
+     * Bound writes behind {@code finapp.ciphers.bind-associated-data} (`X-TSK-010`): off by default in the release that reads
+     * both formats, so a replica of the previous release, which reads only unbound ciphertexts, can read every row written
+     * during the roll; on once every replica reads both (`X-TSK-027`).
+     */
     @Bean
-    FxEvidenceCipher fxEvidenceCipher(com.finapp.platform.security.KeyRing fxEvidenceKeyRing) {
-        return new FxEvidenceCipher(fxEvidenceKeyRing, new SecureRandom());
+    FxEvidenceCipher fxEvidenceCipher(
+            com.finapp.platform.security.KeyRing fxEvidenceKeyRing,
+            @Value("${finapp.ciphers.bind-associated-data:false}") boolean bindAssociatedData) {
+        return new FxEvidenceCipher(fxEvidenceKeyRing, new SecureRandom(), bindAssociatedData);
     }
 
     @Bean

@@ -127,7 +127,7 @@ class CrossBorderBeneficiaryDatabaseTest {
     void anActiveCorridorPolicy() throws Exception {
         if (!activeExists()) {
             String first = sessionWith(RoleName.FX_CONTROLLER);
-            String second = sessionWith(RoleName.FX_CONTROLLER);
+            String second = multiFactorSessionWith(RoleName.FX_CONTROLLER);
             withdrawPending(first);
             HttpResponse<String> proposed = post(POLICIES, CorridorPolicyV1.json("v1 for the beneficiary suite"), first, key());
             assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
@@ -232,6 +232,27 @@ class CrossBorderBeneficiaryDatabaseTest {
         assertThat(get(DOOR + "/not-a-uuid", customer).statusCode()).isEqualTo(404);
         assertThat(get(DOOR, null).statusCode()).isEqualTo(401);
         assertThat(statusOf(mine)).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    @DisplayName("the list is the caller's own: a stranger's lists none of the owner's beneficiaries, and the owner's none"
+            + " of the stranger's")
+    void theListIsTheCallersOwn() throws Exception {
+        String owner = sessionWith(null);
+        String stranger = sessionWith(null);
+        BeneficiaryId mine = registered(owner, grant("match"), "Clear Person");
+        BeneficiaryId theirs = registered(stranger, grant("match"), "Clear Person");
+        // listOwned's owner_party = ?, its only predicate: without it each list is every owner's newest beneficiaries.
+        HttpResponse<String> strangers = get(DOOR, stranger);
+        assertThat(strangers.statusCode()).as(strangers.body()).isEqualTo(200);
+        assertThat(strangers.body()).contains(theirs.value().toString()).doesNotContain(mine.value().toString());
+        assertThat(Pattern.compile("\"id\":").matcher(strangers.body()).results().count())
+                .as("the stranger's one beneficiary, nobody else's").isEqualTo(1);
+        HttpResponse<String> owners = get(DOOR, owner);
+        assertThat(owners.statusCode()).as(owners.body()).isEqualTo(200);
+        assertThat(owners.body()).contains(mine.value().toString()).doesNotContain(theirs.value().toString());
+        assertThat(Pattern.compile("\"id\":").matcher(owners.body()).results().count())
+                .as("the owner's one beneficiary, nobody else's").isEqualTo(1);
     }
 
     // ------------------------------------------------------------------ revocation
@@ -657,7 +678,21 @@ class CrossBorderBeneficiaryDatabaseTest {
     }
 
     /** Enrols and confirms a TOTP factor over the real endpoints - the PayoutDestinationEndpointDatabaseTest helper. */
-    private void enrolAndConfirm(String sessionToken) throws Exception {
+    /**
+     * A role holder on a MULTI_FACTOR session: the corridor policy's approval steps up since `P15-TSK-039` (2026-11-09), and a
+     * password session's is {@code 403 identity.AssuranceRequired} - the fixture's red until `X-TSK-002` ran it. The factor is
+     * enrolled and proven over the real doors, as {@code PayoutDestinationEndpointDatabaseTest} does.
+     */
+    private String multiFactorSessionWith(RoleName role) throws Exception {
+        String password = sessionWith(role);
+        Sensitive<String> secret = enrolAndConfirm(password);
+        HttpResponse<String> elevated = post("/v1/authentications/mfa",
+                "{\"code\":\"" + Authenticator.codeNow(secret, TotpParameters.current(), CLOCK) + "\"}", password, null);
+        assertThat(elevated.body()).as("the factor proven: a MULTI_FACTOR session").contains("sessionToken");
+        return field(elevated.body(), "sessionToken");
+    }
+
+    private Sensitive<String> enrolAndConfirm(String sessionToken) throws Exception {
         Matcher matcher = Pattern.compile("secret=([A-Z2-7]+)").matcher(post("/v1/me/mfa", null, sessionToken, null).body());
         assertThat(matcher.find()).as("the response must carry a base32 secret").isTrue();
         Sensitive<String> secret = Sensitive.of(matcher.group(1));
@@ -666,6 +701,7 @@ class CrossBorderBeneficiaryDatabaseTest {
                 Instant.ofEpochSecond((step - 1) * TotpParameters.current().periodSeconds()));
         assertThat(post("/v1/me/mfa/confirmation", "{\"code\":\"" + confirming + "\"}", sessionToken, null).statusCode())
                 .isEqualTo(204);
+        return secret;
     }
 
     private HttpResponse<String> get(String path, String bearer) throws Exception {

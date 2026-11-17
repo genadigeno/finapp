@@ -19,10 +19,10 @@ import org.objectweb.asm.tree.MethodNode;
 
 /**
  * No transaction spans a provider call, and no connection is held during one (ADR-0046 §1 and its owed "structural assertion";
- * ADR-0008; {@code MODULE_ARCHITECTURE.md} section 6, Transaction boundary; `X-TSK-020`).
+ * ADR-0008; {@code MODULE_ARCHITECTURE.md} section 6, Transaction boundary; `X-TSK-023`).
  *
  * <p>A transaction held open across a provider call pins a connection for the provider's worst latency and buys nothing: the
- * provider's effect is not in the transaction, and a rollback erases the record that anything was asked. Until `X-TSK-020` the
+ * provider's effect is not in the transaction, and a rollback erases the record that anything was asked. Until `X-TSK-023` the
  * rule was held by review alone (`DISTRIBUTED_EXECUTION.md` section 4b, question 5): the payments suite asserted it at the wire for
  * its own flows, and nothing held it for the other twelve modules that call a provider. It fails quietly - a call moved one line,
  * into the lambda beside it, compiles, passes every functional test, and holds a connection for as long as the provider likes.
@@ -51,7 +51,7 @@ import org.objectweb.asm.tree.MethodNode;
  * it, and the code uses neither to reach a provider.
  */
 @Tag("architecture")
-@DisplayName("no transaction spans a provider call, and no connection is held during one (ADR-0046, X-TSK-020)")
+@DisplayName("no transaction spans a provider call, and no connection is held during one (ADR-0046, X-TSK-023)")
 class NoTransactionSpansAProviderCallTest {
 
     /**

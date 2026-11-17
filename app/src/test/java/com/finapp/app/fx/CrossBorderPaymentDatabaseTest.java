@@ -297,6 +297,44 @@ class CrossBorderPaymentDatabaseTest {
                 .isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("a dispatch key is its owner's: another owner's flight under the very key string the first committed takes"
+            + " nothing over - its own payment, never the first owner's (the authorization's own transaction, rolled back);"
+            + " the same Idempotency-Key value at the door is a fresh payment")
+    void aDispatchKeyIsItsOwners() throws Exception {
+        FxTestClient.Customer owner = fundedCustomer("1000.00");
+        String key = FxTestClient.key();
+        HttpResponse<String> paid = pay(owner, offer(owner, beneficiary(owner, "Clear Person")), key);
+        assertThat(paid.statusCode()).as(paid.body()).isEqualTo(202);
+        UUID payment = UUID.fromString(field(paid.body(), "paymentId"));
+        String dispatchKey = scalar("SELECT dispatch_key FROM crossborder.payment WHERE id = ?", payment);
+
+        FxTestClient.Customer stranger = fundedCustomer("1000.00");
+        String quote = offer(stranger, beneficiary(stranger, "Clear Person"));
+        Actor payer = new Actor(stranger.party().toString(), ActorType.CUSTOMER);
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(FxTestClient.IDS)));
+                SecurityContext.Scope acting = SecurityContext.enter(payer);
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            try {
+                // byDispatchKey's owner_party = ?: without it the stranger's flight takes over the owner's payment.
+                com.finapp.crossborder.PaymentAuthorization.Authorized authorized = paymentAuthorization.authorize(app,
+                        dispatchKey, stranger.party(), UUID.fromString(quote), payer, Instant.now(),
+                        CorrelationId.generate(FxTestClient.IDS));
+                assertThat(authorized.takenOver()).as("nothing of the stranger's to take over").isFalse();
+                assertThat(authorized.payment().id()).isNotEqualTo(payment);
+                assertThat(authorized.payment().owner()).isEqualTo(stranger.party());
+            } finally {
+                app.rollback();
+            }
+        }
+        HttpResponse<String> theirs = pay(stranger, quote, key);
+        assertThat(theirs.statusCode()).as(theirs.body()).isEqualTo(202);
+        assertThat(field(theirs.body(), "paymentId")).isNotEqualTo(payment.toString());
+        assertThat(count("SELECT count(*) FROM crossborder.payment WHERE owner_party = ?", owner.party())).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM crossborder.payment WHERE owner_party = ?", stranger.party())).isEqualTo(1);
+    }
+
     // ------------------------------------------------------------------ refusals
 
     @Test
@@ -631,8 +669,23 @@ class CrossBorderPaymentDatabaseTest {
                 .isEqualTo("IN_REVIEW");
     }
 
+    /**
+     * A role holder on a MULTI_FACTOR session: the corridor policy's approval steps up since `P15-TSK-039` (2026-11-09), and a
+     * password session's is {@code 403 identity.AssuranceRequired} - the fixture's red until `X-TSK-002` ran it. The factor is
+     * enrolled and proven over the real doors, as {@code PayoutDestinationEndpointDatabaseTest} does.
+     */
+    private String multiFactorSessionWith(RoleName role) throws Exception {
+        String password = sessionWith(role);
+        Sensitive<String> secret = enrolAndConfirm(password);
+        HttpResponse<String> elevated = client().post("/v1/authentications/mfa",
+                "{\"code\":\"" + Authenticator.codeNow(secret, TotpParameters.current(), java.time.Clock.systemUTC()) + "\"}",
+                password, null);
+        assertThat(elevated.body()).as("the factor proven: a MULTI_FACTOR session").contains("sessionToken");
+        return field(elevated.body(), "sessionToken");
+    }
+
     /** Enrols and confirms a TOTP factor on the session's identity; the session itself stays password-only. */
-    private void enrolAndConfirm(String sessionToken) throws Exception {
+    private Sensitive<String> enrolAndConfirm(String sessionToken) throws Exception {
         Matcher matcher = Pattern.compile("secret=([A-Z2-7]+)").matcher(client().post("/v1/me/mfa", null, sessionToken, null).body());
         assertThat(matcher.find()).as("the response must carry a base32 secret").isTrue();
         Sensitive<String> secret = Sensitive.of(matcher.group(1));
@@ -641,6 +694,7 @@ class CrossBorderPaymentDatabaseTest {
                 java.time.Instant.ofEpochSecond((step - 1) * TotpParameters.current().periodSeconds()));
         assertThat(client().post("/v1/me/mfa/confirmation", "{\"code\":\"" + confirming + "\"}", sessionToken, null).statusCode())
                 .isEqualTo(204);
+        return secret;
     }
 
     private static void assertNothingWritten(FxTestClient.Customer customer) throws Exception {
@@ -742,7 +796,7 @@ class CrossBorderPaymentDatabaseTest {
 
     private void activateCorridorPolicy() throws Exception {
         String first = sessionWith(RoleName.FX_CONTROLLER);
-        String second = sessionWith(RoleName.FX_CONTROLLER);
+        String second = multiFactorSessionWith(RoleName.FX_CONTROLLER);
         try (Connection app = DatabaseRoles.application();
                 PreparedStatement select = app.prepareStatement(
                         "SELECT id FROM crossborder.corridor_policy_version WHERE status = 'PROPOSED'");

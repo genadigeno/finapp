@@ -4,8 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.kyc.CheckStatus;
 import com.finapp.kyc.ChecksAssessment;
+import com.finapp.kyc.DocumentCipher;
 import com.finapp.kyc.DocumentVerificationAdapter;
+import com.finapp.kyc.EvidenceId;
 import com.finapp.kyc.IdentityVerificationAdapter;
+import com.finapp.kyc.JdbcCheckStore;
 import com.finapp.kyc.JdbcKycCaseStore;
 import com.finapp.kyc.KycCase;
 import com.finapp.kyc.KycCaseId;
@@ -14,6 +17,9 @@ import com.finapp.kyc.KycCaseStatus;
 import com.finapp.kyc.ScreeningAdapter;
 import com.finapp.kyc.VerificationCheck;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.security.AssociatedData;
+import com.finapp.platform.security.CipherFormat;
+import com.finapp.platform.security.KeyRing;
 import com.finapp.platform.testing.database.DatabaseRoles;
 import com.finapp.platform.testing.provider.SimulatedProvider;
 import com.finapp.sharedkernel.correlation.Correlation;
@@ -27,6 +33,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,6 +49,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -68,6 +76,10 @@ class VerificationRunDatabaseTest {
     private static SimulatedProvider provider;
 
     @Autowired private VerificationRunService runs;
+
+    @Autowired
+    @Qualifier("documentKeyRing")
+    private KeyRing documentKeyRing;
 
     private final JdbcKycCaseStore cases = new JdbcKycCaseStore();
 
@@ -249,9 +261,109 @@ class VerificationRunDatabaseTest {
         }
     }
 
+    @Test
+    @DisplayName("X-TSK-010: evidence written unbound stays readable, and with bound writes on its ciphertext copied into"
+            + " another row fails to decrypt there")
+    void boundEvidenceDecryptsOnlyInItsOwnRow() throws Exception {
+        // A replica with the switch on, over the application's own ring: it reads what the application wrote.
+        DocumentCipher boundCipher = new DocumentCipher(documentKeyRing, new SecureRandom(), true);
+        JdbcCheckStore bound = new JdbcCheckStore(boundCipher);
+        Case opened = givenAnOpenCase();
+        String identityAnswer = "{\"status\":\"clear\",\"score\":97}";
+        stubEveryPathClear();
+        provider.succeedsWith(IdentityVerificationAdapter.PATH, 200, identityAnswer);
+        VerificationRunService.RunReport report = run(opened);
+        VerificationCheck identity =
+                report.checks().stream().filter(c -> c.type().name().equals("IDENTITY")).findFirst().orElseThrow();
+        VerificationCheck another =
+                report.checks().stream().filter(c -> c.type() != identity.type()).findFirst().orElseThrow();
+
+        // The application's switch is off by default: the run retained its answer unbound, as the previous release does.
+        StoredEvidence unbound = storedEvidence("check_id", identity.id().value());
+        assertThat(unbound.encrypted().format()).isEqualTo(CipherFormat.UNBOUND);
+        assertThat(boundCipher.decrypt(evidenceRow(unbound.id(), unbound.checkId()), unbound.encrypted()))
+                .as("a bound-writing replica reads evidence written unbound")
+                .isEqualTo(identityAnswer.getBytes(StandardCharsets.UTF_8));
+
+        byte[] answer = "{\"status\":\"clear\",\"written\":\"bound\"}".getBytes(StandardCharsets.UTF_8);
+        EvidenceId boundId = EvidenceId.next(IDS);
+        try (Connection app = DatabaseRoles.application()) {
+            bound.appendEvidence(app, boundId, identity.id(), answer, Instant.now(CLOCK));
+        }
+
+        // The whole row copied under another check with a new id - checksum and length included, so every CHECK passes:
+        // only the binding can refuse it. Injected as the schema owner, the write-access attacker GCM exists to refuse
+        // (DocumentUploadDatabaseTest's forged rows).
+        UUID copy = IDS.next();
+        try (Connection bootstrap = DatabaseRoles.bootstrap();
+                PreparedStatement forge =
+                        bootstrap.prepareStatement(
+                                "INSERT INTO kyc.verification_evidence (id, check_id, content_ciphertext,"
+                                        + " content_nonce, key_version, checksum_sha256, content_length,"
+                                        + " received_at, cipher_format)"
+                                        + " SELECT ?, ?, content_ciphertext, content_nonce, key_version,"
+                                        + " checksum_sha256, content_length, received_at, cipher_format"
+                                        + " FROM kyc.verification_evidence WHERE id = ?")) {
+            forge.setObject(1, copy);
+            forge.setObject(2, another.id().value());
+            forge.setObject(3, boundId.value());
+            assertThat(forge.executeUpdate()).isEqualTo(1);
+        }
+
+        StoredEvidence written = storedEvidence("id", boundId.value());
+        assertThat(written.encrypted().format()).isEqualTo(CipherFormat.BOUND);
+        assertThat(boundCipher.decrypt(evidenceRow(written.id(), written.checkId()), written.encrypted()))
+                .as("a bound row reads in its own place").isEqualTo(answer);
+        StoredEvidence copied = storedEvidence("id", copy);
+        org.assertj.core.api.Assertions.assertThatIllegalStateException()
+                .as("copied into another row, it fails to decrypt - never another check's answer")
+                .isThrownBy(() -> boundCipher.decrypt(evidenceRow(copied.id(), copied.checkId()), copied.encrypted()));
+    }
+
     // -----------------------------------------------------------------
 
     private record Case(KycCaseId caseId, UUID customerId) {}
+
+    /** An evidence row as a reader finds it, its ciphertext in the stored format (`X-TSK-010`). */
+    private record StoredEvidence(UUID id, UUID checkId, DocumentCipher.Encrypted encrypted) {}
+
+    /**
+     * The one evidence row whose {@code column} holds {@code value}. No production path reads evidence back yet, so the read
+     * is the test's, rebuilding what a reader must from the row.
+     */
+    private static StoredEvidence storedEvidence(String column, UUID value) throws SQLException {
+        // The column is one of this class's literals, never input.
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select =
+                        app.prepareStatement(
+                                "SELECT id, check_id, content_ciphertext, content_nonce, key_version,"
+                                        + " cipher_format FROM kyc.verification_evidence WHERE "
+                                        + column + " = ?")) {
+            select.setObject(1, value);
+            try (ResultSet rows = select.executeQuery()) {
+                assertThat(rows.next()).as("the evidence must exist").isTrue();
+                StoredEvidence row =
+                        new StoredEvidence(
+                                rows.getObject("id", UUID.class),
+                                rows.getObject("check_id", UUID.class),
+                                new DocumentCipher.Encrypted(
+                                        rows.getBytes("content_ciphertext"),
+                                        rows.getBytes("content_nonce"),
+                                        rows.getInt("key_version"),
+                                        CipherFormat.of(rows.getInt("cipher_format"))));
+                assertThat(rows.next()).as("one evidence row").isFalse();
+                return row;
+            }
+        }
+    }
+
+    /**
+     * An evidence row's associated data, rebuilt as {@code JdbcCheckStore} binds it (`X-TSK-010`). Spelled out here rather
+     * than borrowed: a change to the layout leaves every bound row unreadable, and this is where that change goes red.
+     */
+    private static byte[] evidenceRow(UUID evidenceId, UUID checkId) {
+        return AssociatedData.of("kyc.verification_evidence.content", evidenceId, checkId.toString());
+    }
 
     /** All five questions answer clear; a test then overrides the path it is about. */
     private static void stubEveryPathClear() {

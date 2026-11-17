@@ -3182,12 +3182,15 @@ has sub-headings, so a sub-heading added with its row unchanged is refused. A pr
 the row's author keeps the count.
 
 **Why a section may stand unrehearsed: a closed list.** `no account` (it needs a cloud account or a managed service, which
-Phase 15 never applies); `Phase 16 drill` (the plan gives it to Phase 16's drills: a failover, chaos, load, ten instances);
+Phase 15 never applies); ~~`Phase 16 drill`~~ (the plan gave it to Phase 16's drills: a failover, chaos, load, ten instances;
+*struck at the Phase 16 exit by `P16-REM-005`, 2026-11-16: the phase is over, and its drills' runs are PI-025's, the reason below*);
 `real provider` (it needs a provider's own behaviour, not a simulator's); `real person` (it needs a real environment's people or
 holders); `postponed by the owner (PI-024)` (the owner postponed the platform rehearsals' remaining cluster runs, 2026-11-12:
-the procedure's step was written and not run, or, for §11.11, not yet written). A row rehearsed in part may name one for the rest.
+the procedure's step was written and not run, or, for §11.11, not yet written); `postponed by the owner (PI-025)` (the owner
+postponed Phase 16's cluster runs, 2026-11-13: the drill was built and its run is owed - the reason the 21 rows that read
+`Phase 16 drill` give since `P16-REM-005`, 2026-11-16). A row rehearsed in part may name one for the rest.
 A §1–§10 row may not stand at nought, criterion 4 asking a sample of each, but by the owner's postponement: the test admits that
-reason only while the register holds PI-024 `POSTPONED`.
+reason only while the register holds PI-024 `POSTPONED`, and PI-025's only while it holds PI-025 so.
 
 **The task's runs.** The two platform scopes (`infra/scripts/kind-rehearsal/platform.sh`, `REHEARSAL_SCOPE=signals` and
 `incidents`) ran only as development runs, `REHEARSAL_KEEP=1` on one development machine (`kind` v0.33.0, node `v1.34.11`,
@@ -3258,33 +3261,33 @@ latest; the run, as its record names it.
 | §11.36 | `platform` | 2 | 6 | 8 | kind | 2026-11-12 | `f616b5f8`, `d6168c78` | `the delivery scope's runs of 14:11Z and 14:57Z, the section's last record` | postponed by the owner (PI-024) |
 | §11.37 | `identity`, `accounting` | 2 | 4 | 6 | kind | 2026-11-12 | `5078e612`, `ca4c323a` | `dev3 and dev5, the signals scope's development runs` | postponed by the owner (PI-024) |
 | §11.39 | `payments`, `merchant`, `reconciliation`, `risk` | 1 | 2 | 3 | kind | 2026-11-13 | `e9cdbb3a` | `E28, the incidents scope prefix and platform-poisoned-rows in development mode` | — |
-| §11.40 | `platform` | 0 | 2 | 2 | — | — | — | — | Phase 16 drill |
+| §11.40 | `platform` | 0 | 2 | 2 | — | — | — | — | postponed by the owner (PI-025) |
 | §11.41 | `platform` | 3 | 1 | 4 | kind | 2026-11-13 | `722365ad`, `d8f907c4`, `7231d298` | `§11.41's runs 1 and 2; §11.43's tenth run` | — |
 | §11.42 | `platform` | 4 | 0 | 4 | containers, kind | 2026-11-13 | `d8f907c4`, `7231d298` | `§11.42's record; §11.43's tenth run` | — |
 | §11.43 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `7231d298` | `§11.43's tenth run and its probes` | — |
 | §11.45 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `89b8fc60`, `f021383f` | `§11.45's record: E30 at three replicas and the isolation run` | — |
 | §11.46 | `platform` | 1 | 1 | 2 | kind | 2026-11-13 | `a6fee3a1` | `§11.46's record: E01's run and the probes` | — |
-| §11.53 | `payments`, `fx`, `platform` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
-| §11.47 | `platform` | 0 | 8 | 8 | — | — | — | — | Phase 16 drill |
-| §11.48 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
-| §11.49 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
-| §11.54 | `platform` | 0 | 2 | 2 | — | — | — | — | Phase 16 drill |
-| §11.50 | `platform`, `identity` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
-| §11.51 | `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
-| §11.52 | `platform`, `checkout` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
-| §11.55 | `platform`, `settlement`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
-| §11.56 | `ledger`, `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
-| §11.57 | `platform` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
-| §11.58 | `platform` | 0 | 6 | 6 | — | — | — | — | Phase 16 drill |
-| §11.59 | `platform` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
-| §11.60 | `platform` | 0 | 5 | 5 | — | — | — | — | Phase 16 drill |
-| §11.61 | `platform` | 0 | 6 | 6 | — | — | — | — | Phase 16 drill |
-| §11.62 | `platform`, `identity` | 0 | 6 | 6 | — | — | — | — | Phase 16 drill |
-| §11.63 | `platform`, `payments`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | Phase 16 drill |
-| §11.64 | `platform` | 0 | 11 | 11 | — | — | — | — | Phase 16 drill |
+| §11.53 | `payments`, `fx`, `platform` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.47 | `platform` | 0 | 8 | 8 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.48 | `platform` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.49 | `platform` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.54 | `platform` | 0 | 2 | 2 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.50 | `platform`, `identity` | 0 | 5 | 5 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.51 | `platform` | 0 | 5 | 5 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.52 | `platform`, `checkout` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.55 | `platform`, `settlement`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.56 | `ledger`, `platform` | 0 | 5 | 5 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.57 | `platform` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.58 | `platform` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.59 | `platform` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.60 | `platform` | 0 | 5 | 5 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.61 | `platform` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.62 | `platform`, `identity` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.63 | `platform`, `payments`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.64 | `platform` | 0 | 11 | 11 | — | — | — | — | postponed by the owner (PI-025) |
 | §11.65 | `platform` | 0 | 4 | 4 | — | — | — | — | no account |
-| §11.66 | `platform`, `payments`, `reconciliation` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
-| §11.67 | `platform` | 0 | 3 | 3 | — | — | — | — | Phase 16 drill |
+| §11.66 | `platform`, `payments`, `reconciliation` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.67 | `platform` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-025) |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -4568,7 +4571,8 @@ recorded in the incident with its actor and time:
 
 *(Written by `P16-TSK-027`, 2026-11-14, from `infra/scripts/kind-rehearsal/experiments.sh`'s scenario section (F01 to F15) and
 `RESILIENCE_EXPERIMENTS.md` §4. Not run: by the owner's word of 2026-11-13 every run is owed (`POSTPONED_ISSUES.md` PI-025), and no
-scenario's verdict is claimed here. Each procedure below is read, not rehearsed: section 11.38's reason "Phase 16 drill".)*
+scenario's verdict is claimed here. Each procedure below is read, not rehearsed: section 11.38's reason "Phase 16 drill" *("postponed by the owner (PI-025)"
+since `P16-REM-005`, 2026-11-16)*.)*
 
 **What a scenario is.** One of `PHASE_16_PLAN.md` §13's fifteen failures, driven on `kind` against the deployment under the
 demonstration workload (the engineering workload for F07, F08 and F14, at ten replicas), as an experiment of its own: it runs through
@@ -4628,7 +4632,7 @@ its recovery and census still run. Exactly-once is not claimed: a pass shows eff
 *(Written by `P16-TST-001`, 2026-11-14, from `infra/scripts/kind-rehearsal/experiments.sh`'s soak section, `load.sh`'s declared fault
 window and `load/integrated-soak.json`. Not run: by the owner's word of 2026-11-13 the run is owed (`POSTPONED_ISSUES.md` PI-025;
 `RESILIENCE_EXPERIMENTS.md` E90), and no soak's verdict is claimed here. Each procedure below is read, not rehearsed: section 11.38's
-reason "Phase 16 drill".)*
+reason "Phase 16 drill" *("postponed by the owner (PI-025)" since `P16-REM-005`, 2026-11-16)*.)*
 
 **What the soak is.** Phase 16's substance in one run (owner decision C1): the target's mix held eight hours at the engineering workload,
 at ten replicas, with faults drawn from the register injected during it and the census sampled every 30 s throughout. Every scheduled

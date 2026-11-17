@@ -73,9 +73,17 @@ class MfaBeans {
         return MfaKey.ring(configuredKey, keyVersion, environment, loopback);
     }
 
+    /**
+     * Bound writes behind {@code finapp.ciphers.bind-associated-data} (`X-TSK-010`): off by default in the release that reads
+     * both formats, so a replica of the previous release, which reads only unbound ciphertexts, can read every secret written
+     * during the roll; on once every replica reads both (`X-TSK-027`).
+     */
     @Bean
-    SecretCipher mfaSecretCipher(com.finapp.platform.security.KeyRing mfaKeyRing, SecureRandom mfaRandomness) {
-        return new SecretCipher(mfaKeyRing, mfaRandomness);
+    SecretCipher mfaSecretCipher(
+            com.finapp.platform.security.KeyRing mfaKeyRing,
+            SecureRandom mfaRandomness,
+            @Value("${finapp.ciphers.bind-associated-data:false}") boolean bindAssociatedData) {
+        return new SecretCipher(mfaKeyRing, mfaRandomness, bindAssociatedData);
     }
 
     /**

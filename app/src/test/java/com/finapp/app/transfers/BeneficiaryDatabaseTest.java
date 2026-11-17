@@ -187,6 +187,57 @@ class BeneficiaryDatabaseTest {
     }
 
     @Test
+    @DisplayName("a destination another party saved is never converged onto: each party's create"
+            + " is its own live row, and each repeat converges on its own (X-TSK-002)")
+    void anotherPartysSavedDestinationIsNeverConvergedOnto() throws Exception {
+        UUID party = UUID.randomUUID();
+        UUID stranger = UUID.randomUUID();
+        UUID destination = UUID.randomUUID();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            Beneficiary own = create(app, party, destination);
+            // The stranger saving the same destination account is a NEW row of their own: the
+            // one-live index is per (party, destination), so nothing collides with the owner's.
+            Beneficiary strangers = create(app, stranger, destination);
+            app.commit();
+            assertThat(strangers.id()).isNotEqualTo(own.id());
+
+            // Each repeat meets its own slot in the index and re-reads the committed winner.
+            // Holds party_id = ? in findLive's statement: without it both re-reads answer the
+            // same first row of the destination, and one party converges onto the other's.
+            BeneficiaryStore.Creation ownRepeat =
+                    store.createOrConverge(
+                            app,
+                            Beneficiary.create(
+                                    BeneficiaryId.next(IDS),
+                                    party,
+                                    "Aunt Vera",
+                                    destination,
+                                    CLOCK));
+            BeneficiaryStore.Creation strangersRepeat =
+                    store.createOrConverge(
+                            app,
+                            Beneficiary.create(
+                                    BeneficiaryId.next(IDS),
+                                    stranger,
+                                    "Aunt Vera",
+                                    destination,
+                                    CLOCK));
+            app.commit();
+
+            assertThat(ownRepeat.created()).isFalse();
+            assertThat(ownRepeat.beneficiary().id()).isEqualTo(own.id());
+            assertThat(ownRepeat.beneficiary().partyId()).isEqualTo(party);
+            assertThat(strangersRepeat.created()).isFalse();
+            assertThat(strangersRepeat.beneficiary().id()).isEqualTo(strangers.id());
+            assertThat(strangersRepeat.beneficiary().partyId()).isEqualTo(stranger);
+        }
+        // Counted in the table: one live row each, no third.
+        assertThat(rowsFor(party)).containsExactly(BeneficiaryStatus.ACTIVE.name());
+        assertThat(rowsFor(stranger)).containsExactly(BeneficiaryStatus.ACTIVE.name());
+    }
+
+    @Test
     @DisplayName(
             "a clock behind birth cannot fail a legal removal: removed_at clamps to created_at"
                     + " in the statement (the P1-TSK-031 drift; ADR-0014)")

@@ -111,13 +111,18 @@ public final class MfaEnrolmentService {
         Sensitive<String> secret = Sensitive.of(TotpVerifier.Base32.encode(secretBytes));
 
         TotpParameters parameters = TotpParameters.current();
+        // The id is minted before the secret is encrypted, because the ciphertext is bound to it
+        // (X-TSK-010): copied into another enrolment's row, it fails to decrypt there.
+        MfaEnrolmentId id = MfaEnrolmentId.next(ids);
         MfaEnrolment enrolment =
                 MfaEnrolment.begin(
-                        ids,
+                        id,
                         clock,
                         identityId,
                         MfaFactorType.TOTP,
-                        cipher.encrypt(secret),
+                        cipher.encrypt(
+                                MfaEnrolment.associatedData(id, identityId, MfaFactorType.TOTP),
+                                secret),
                         parameters);
         enrolments.insert(unitOfWork, enrolment);
 
@@ -171,7 +176,8 @@ public final class MfaEnrolmentService {
         }
 
         MfaEnrolment enrolment = pending.get();
-        Sensitive<String> secret = cipher.decrypt(enrolment.encryptedSecret());
+        Sensitive<String> secret =
+                cipher.decrypt(enrolment.associatedData(), enrolment.encryptedSecret());
         java.util.OptionalLong matchedStep =
                 verifier.verify(secret, presentedCode, enrolment.parameters());
         if (matchedStep.isEmpty()) {

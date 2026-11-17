@@ -8,7 +8,7 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * ADR-0046's own shape, which {@code NoTransactionSpansAProviderCallTest} (`X-TSK-020`) must let pass - and one value it must say
+ * ADR-0046's own shape, which {@code NoTransactionSpansAProviderCallTest} (`X-TSK-023`) must let pass - and one value it must say
  * it cannot follow.
  *
  * <p>{@link #confirm} commits the dispatch, calls the provider holding nothing, and applies the answer in a second transaction: the

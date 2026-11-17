@@ -56,12 +56,21 @@ import lombok.RequiredArgsConstructor;
  *
  * <h2>The claim is at the financial boundary</h2>
  *
- * <p>Scope {@code transfer.execute}, the caller's key, and a fingerprint binding <strong>the
- * actor</strong> and the money's meaning — source, destination, amount, currency, scale,
- * reference ({@code INV-IDEM-03}'s subjects; the actor per ADR-0004's owning principal, so a
- * stranger replaying a logged key conflicts rather than reading somebody else's outcome). The
- * stored body replays the <strong>original judgement, success and failure both</strong>: a
- * {@code FAILED} transfer committed, so its claim survives and its retry learns the refusal.
+ * <p>Scope {@code transfer.execute:<keyedType>:<actorId>} — the command type and the owning
+ * principal (ADR-0004; `X-TSK-003`), so one customer's key value never refuses another's — the
+ * caller's key, and a fingerprint binding <strong>the actor</strong> and the money's meaning —
+ * source, destination, amount, currency, scale, reference ({@code INV-IDEM-03}'s subjects; the
+ * actor per ADR-0004's owning principal, so a stranger replaying a logged key conflicts rather
+ * than reading somebody else's outcome). The stored body replays the <strong>original
+ * judgement, success and failure both</strong>: a {@code FAILED} transfer committed, so its
+ * claim survives and its retry learns the refusal.
+ *
+ * <p>The scope moved from the constant {@link #IDEMPOTENCY_SCOPE}, and a retry spanning that
+ * move must still find the claim its first attempt made, or it moves the money twice. So for
+ * `X-TSK-003`'s release the executor consults the old scope first ({@link
+ * IdempotentExecutor#execute(Connection, IdempotencyKey, IdempotencyKey, RequestFingerprint,
+ * com.finapp.platform.idempotency.IdempotentCommand)}), and the transition goes with
+ * `X-TSK-028`.
  *
  * <h2>The reason precedence is the aggregate's, and the constructor teaches it</h2>
  *
@@ -108,7 +117,10 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public final class TransferExecution {
 
-    /** The idempotency scope (ADR-0004): one command type, one scope. */
+    /**
+     * The command type's scope (ADR-0004), and the claim's whole scope before `X-TSK-003`: a claim is now keyed under
+     * it and its principal ({@link #keyFor}), and this, the old scope, is consulted only for the transition.
+     */
     public static final String IDEMPOTENCY_SCOPE = "transfer.execute";
 
     static final String COMPLETED_EVENT_TYPE = "transfers.TransferCompleted";
@@ -146,14 +158,15 @@ public final class TransferExecution {
 
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
-        IdempotencyKey key = new IdempotencyKey(IDEMPOTENCY_SCOPE, command.idempotencyKey());
-        RequestFingerprint fingerprint =
-                RequestFingerprint.sha256(canonicalForm(command, actor));
+        IdempotencyKey key = keyFor(actor, command.idempotencyKey());
+        RequestFingerprint fingerprint = fingerprintOf(command, actor);
 
         IdempotentExecutor.ExecutionOutcome outcome =
                 executor.execute(
                         unitOfWork,
                         key,
+                        // The old scope is consulted for X-TSK-003's transition, and goes with X-TSK-028.
+                        key.movedFrom(IDEMPOTENCY_SCOPE),
                         fingerprint,
                         uow -> judge(uow, command, actor, correlation));
 
@@ -430,6 +443,29 @@ public final class TransferExecution {
         // type's own documented case ("a rejected transfer"): replayed to a retry, never
         // re-attempted.
         return completed ? CommandResult.succeeded(response) : CommandResult.failed(response);
+    }
+
+    /**
+     * The claim a transfer by {@code actor} is keyed by (`X-TSK-003`): the command type and the owning principal —
+     * the authenticated person, by {@link Actor#keyedType()} so a person is keyed once whatever their audit type
+     * ({@code IdempotencyScopesKeyThePersonTest}) — and the caller's key value. Public so the door
+     * ({@code TransferDoorStepUp}) reads the very claim this command makes.
+     */
+    public static IdempotencyKey keyFor(Actor actor, String idempotencyKey) {
+        Objects.requireNonNull(actor, "actor must not be null");
+        return new IdempotencyKey(
+                IDEMPOTENCY_SCOPE + ":" + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
+    }
+
+    /**
+     * The fingerprint this command claims with, over {@code canonicalForm}. Public so the door
+     * ({@code TransferDoorStepUp}) can tell this request's own claim under the old scope from another principal's
+     * (`X-TSK-003`) with the very bytes the executor compares.
+     */
+    public static RequestFingerprint fingerprintOf(TransferCommand command, Actor actor) {
+        Objects.requireNonNull(command, "command must not be null");
+        Objects.requireNonNull(actor, "actor must not be null");
+        return RequestFingerprint.sha256(canonicalForm(command, actor));
     }
 
     /**

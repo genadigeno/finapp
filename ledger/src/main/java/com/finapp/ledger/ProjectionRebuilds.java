@@ -49,8 +49,9 @@ import lombok.RequiredArgsConstructor;
  *
  * <h2>Keyed, and converging</h2>
  *
- * <p>Every act runs under its key ({@link #PROPOSE_SCOPE}, {@link #APPROVE_SCOPE}, {@link #REJECT_SCOPE}); the fingerprint
- * binds the actor, the target and the reason, so a key reused by another person or for another account is a conflict. The
+ * <p>Every act runs under its key ({@link #PROPOSE_SCOPE}, {@link #APPROVE_SCOPE}, {@link #REJECT_SCOPE}, each followed by
+ * the acting person's principal, `X-TSK-003`), so another person's key value is their own claim, never a conflict; the
+ * fingerprint binds the actor, the target and the reason, so a key reused for another account is a conflict. The
  * stored response is the rebuild's id and the outcome is re-read: a decided rebuild is immutable. Beside the key the
  * machine converges: the same approver's retry under a new key on its approved rebuild answers the recorded outcome and
  * writes nothing; a repeated rejection converges.
@@ -102,7 +103,7 @@ public final class ProjectionRebuilds {
         CorrelationId correlation = correlation();
         String canonical = PROPOSE_SCOPE + "|propose|" + principal(actor) + "|" + account.value() + "|"
                 + (reason == null ? "-" : reason.length() + ":" + reason);
-        return keyed(unitOfWork, PROPOSE_SCOPE, idempotencyKey, canonical, new AtomicBoolean(), uow -> {
+        return keyed(unitOfWork, PROPOSE_SCOPE, actor, idempotencyKey, canonical, new AtomicBoolean(), uow -> {
             if (store.standingFor(uow, account).isPresent()) {
                 throw new ProjectionRebuildStandingException(account);
             }
@@ -136,7 +137,7 @@ public final class ProjectionRebuilds {
         Actor actor = person();
         CorrelationId correlation = correlation();
         AtomicBoolean converged = new AtomicBoolean();
-        return keyed(unitOfWork, APPROVE_SCOPE, idempotencyKey,
+        return keyed(unitOfWork, APPROVE_SCOPE, actor, idempotencyKey,
                 APPROVE_SCOPE + "|approve|" + principal(actor) + "|" + id.value(), converged,
                 uow -> applied(uow, id, actor, correlation, converged));
     }
@@ -153,7 +154,8 @@ public final class ProjectionRebuilds {
         Actor actor = person();
         CorrelationId correlation = correlation();
         AtomicBoolean converged = new AtomicBoolean();
-        return keyed(unitOfWork, REJECT_SCOPE, idempotencyKey, REJECT_SCOPE + "|reject|" + principal(actor) + "|" + id.value(),
+        return keyed(unitOfWork, REJECT_SCOPE, actor, idempotencyKey,
+                REJECT_SCOPE + "|reject|" + principal(actor) + "|" + id.value(),
                 converged, uow -> {
                     ProjectionRebuild rebuild = store.lockById(uow, id).orElseThrow(() -> new ProjectionRebuildNotFoundException(id));
                     if (rebuild.status() == ProjectionRebuildStatus.REJECTED) {
@@ -165,8 +167,12 @@ public final class ProjectionRebuilds {
                         throw new RebuildNotOpenException(id, rebuild.status());
                     }
                     Instant now = clock.instant();
-                    rebuild.decided(ProjectionRebuildStatus.REJECTED, actor.id(), now, Optional.empty());
-                    if (!store.decide(uow, id, ProjectionRebuildStatus.REJECTED, actor.id(), now, Optional.empty())) {
+                    // The row takes the image's stamp, max(now, proposedAt) (ADR-0063 decision 2, X-TSK-006); the audit
+                    // record keeps this instance's own reading.
+                    ProjectionRebuild rejected = rebuild.decided(ProjectionRebuildStatus.REJECTED, actor.id(), now,
+                            Optional.empty());
+                    if (!store.decide(uow, id, ProjectionRebuildStatus.REJECTED, actor.id(),
+                            rejected.decidedAt().orElseThrow(), Optional.empty())) {
                         throw new IllegalStateException("the locked rebuild " + id + " was decided by another writer: the FOR"
                                 + " UPDATE protocol was bypassed");
                     }
@@ -273,7 +279,9 @@ public final class ProjectionRebuilds {
                 after.figures());
         ProjectionRebuildStatus to = unchanged ? ProjectionRebuildStatus.UNCHANGED : ProjectionRebuildStatus.APPLIED;
         ProjectionRebuild decided = rebuild.decided(to, actor.id(), now, Optional.of(found));
-        if (!store.decide(unitOfWork, id, to, actor.id(), now, Optional.of(found))) {
+        // The row takes the image's stamp, max(now, proposedAt) (ADR-0063 decision 2, X-TSK-006); the audit record keeps
+        // this instance's own reading.
+        if (!store.decide(unitOfWork, id, to, actor.id(), decided.decidedAt().orElseThrow(), Optional.of(found))) {
             throw new IllegalStateException("the locked rebuild " + id + " was decided by another writer: the FOR UPDATE"
                     + " protocol was bypassed");
         }
@@ -297,15 +305,23 @@ public final class ProjectionRebuilds {
 
     // ------------------------------------------------------------------ plumbing
 
+    /**
+     * Runs {@code act} under the acting person's claim: {@code scope} followed by their principal (ADR-0004, `X-TSK-003`),
+     * so one operator's key value neither refuses another's act nor is told it is taken.
+     */
     private Outcome keyed(
             Connection unitOfWork,
             String scope,
+            Actor actor,
             String idempotencyKey,
             String canonical,
             AtomicBoolean converged,
             Function<Connection, ProjectionRebuildId> act) {
         Objects.requireNonNull(idempotencyKey, "idempotencyKey must not be null");
-        IdempotentExecutor.ExecutionOutcome outcome = executor.execute(unitOfWork, new IdempotencyKey(scope, idempotencyKey),
+        IdempotencyKey claim = new IdempotencyKey(scope + ":" + principal(actor), idempotencyKey);
+        IdempotentExecutor.ExecutionOutcome outcome = executor.execute(unitOfWork, claim,
+                // The old scope is consulted for X-TSK-003's transition and goes with X-TSK-028.
+                claim.movedFrom(scope),
                 RequestFingerprint.sha256(canonical.getBytes(StandardCharsets.UTF_8)),
                 uow -> CommandResult.succeeded(StoredResponse.of(
                         act.apply(uow).value().toString().getBytes(StandardCharsets.UTF_8), "text/plain")));
@@ -341,7 +357,10 @@ public final class ProjectionRebuilds {
         return actor;
     }
 
-    /** The person as an idempotency fingerprint names it - keyed, so an operator's retry across the deploy matches (`P15-TSK-021`). */
+    /**
+     * The person as an idempotency scope and fingerprint name it - keyed, so an operator's retry across the deploy matches
+     * (`P15-TSK-021`, `X-TSK-003`).
+     */
     private static String principal(Actor actor) {
         return actor.keyedType().name() + ":" + actor.id();
     }

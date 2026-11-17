@@ -107,7 +107,8 @@ public final class MfaChallenge {
         }
 
         MfaEnrolment enrolment = active.get();
-        Sensitive<String> secret = cipher.decrypt(enrolment.encryptedSecret());
+        Sensitive<String> secret =
+                cipher.decrypt(enrolment.associatedData(), enrolment.encryptedSecret());
         OptionalLong matchedStep = verifier.verify(secret, presentedCode, enrolment.parameters());
         if (matchedStep.isEmpty()) {
             throttle.recordFailureFor(unitOfWork, identityId);

@@ -170,6 +170,33 @@ class KycCaseDatabaseTest {
     }
 
     @Test
+    @DisplayName("another customer's open case is never found: a customer with none finds nothing, and each"
+            + " customer finds its own")
+    void anotherCustomersOpenCaseIsNeverFound() throws Exception {
+        UUID holder = IDS.next();
+        UUID other = IDS.next();
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            KycCase holders = store.openOrConverge(app, KycCase.open(IDS, CLOCK, holder, KycCaseKind.KYC)).kycCase();
+            app.commit();
+
+            // Holds findOpenFor's customer_id = ?: without it any customer's open case - the
+            // holder's at least - would answer for a customer who has none.
+            assertThat(store.findOpenFor(app, other))
+                    .as("the holder's open case is not the other customer's")
+                    .isEmpty();
+
+            KycCase others = store.openOrConverge(app, KycCase.open(IDS, CLOCK, other, KycCaseKind.KYC)).kycCase();
+            app.commit();
+            assertThat(others.id()).isNotEqualTo(holders.id());
+            assertThat(store.findOpenFor(app, other))
+                    .hasValueSatisfying(open -> assertThat(open.id()).isEqualTo(others.id()));
+            assertThat(store.findOpenFor(app, holder))
+                    .hasValueSatisfying(open -> assertThat(open.id()).isEqualTo(holders.id()));
+        }
+    }
+
+    @Test
     @DisplayName("a status outside the machine is physically unwritable")
     void anUnknownStatusIsUnwritable() throws Exception {
         try (Connection app = DatabaseRoles.application()) {
@@ -256,6 +283,75 @@ class KycCaseDatabaseTest {
                     .isTrue();
             app.commit();
             assertThat(stampsOf(own).statusChangedAt()).isEqualTo(later.plusSeconds(1));
+        }
+    }
+
+    /**
+     * A move on a clock trailing the case's latest stamp - a status change, not only its birth:
+     * the floor at {@code opened_at} alone let a move be stamped before the fact it follows. Both
+     * conditional statements, and the deciding branch of {@code moveStatus}, driven directly.
+     */
+    @Test
+    @DisplayName(
+            "a move on a clock trailing the case's latest change is stamped at that change, never"
+                    + " before it, in both statements (X-TSK-006, ADR-0063 decision 2)")
+    void aMoveTrailingTheLatestChangeIsStampedAtIt() throws Exception {
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            KycCase kycCase =
+                    store.openOrConverge(app, KycCase.open(IDS, CLOCK, IDS.next(), KycCaseKind.KYC))
+                            .kycCase();
+            app.commit();
+            // Instants derived from the stored birth, never from a second clock read.
+            Instant opened = stampsOf(kycCase).openedAt();
+            Instant latest = opened.plusSeconds(10);
+            assertThat(
+                            store.moveStatus(
+                                    app,
+                                    kycCase.id(),
+                                    KycCaseStatus.OPEN,
+                                    KycCaseStatus.CHECKS_IN_PROGRESS,
+                                    latest))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(kycCase).statusChangedAt()).isEqualTo(latest);
+
+            Instant trailing = opened.plusSeconds(5);
+            assertThat(trailing)
+                    .as("precondition: the clock trails the latest change, not the birth")
+                    .isBefore(latest)
+                    .isAfter(opened);
+            // moveStatus, the non-deciding branch.
+            assertThat(
+                            store.moveStatus(
+                                    app,
+                                    kycCase.id(),
+                                    KycCaseStatus.CHECKS_IN_PROGRESS,
+                                    KycCaseStatus.IN_REVIEW,
+                                    trailing))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(kycCase).statusChangedAt())
+                    .as("the predecessor's instant, not the trailing clock's")
+                    .isEqualTo(latest);
+            // moveToReadyForDecision: no open review task, a KYC case.
+            assertThat(
+                            store.moveToReadyForDecision(
+                                    app, kycCase.id(), KycCaseStatus.IN_REVIEW, trailing))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(kycCase).statusChangedAt()).isEqualTo(latest);
+            // moveStatus, the deciding branch (lock first, then the conditional).
+            assertThat(
+                            store.moveStatus(
+                                    app,
+                                    kycCase.id(),
+                                    KycCaseStatus.READY_FOR_DECISION,
+                                    KycCaseStatus.APPROVED,
+                                    trailing))
+                    .isTrue();
+            app.commit();
+            assertThat(stampsOf(kycCase).statusChangedAt()).isEqualTo(latest);
         }
     }
 

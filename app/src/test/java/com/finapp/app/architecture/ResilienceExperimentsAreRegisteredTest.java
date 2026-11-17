@@ -45,6 +45,10 @@ import org.junit.jupiter.api.Test;
  *       of the tasks named is still live: a failure nobody can still act on is not recorded;
  *   <li>every scenario maps to at least one registered experiment, and every scenario experiment serves a scenario;
  *   <li>an {@code N/A} names its reason;
+ *   <li>a run the owner postponed is owed, never {@code N/A}: its result reads {@code OWED under PI-nnn (<date>). <why>},
+ *       the issue stands {@code POSTPONED} in {@code POSTPONED_ISSUES.md} and its own section lists the experiment, and no
+ *       {@code N/A}'s reason is a postponement - so an owed run cannot drop out of its issue's list, nor pass for one that
+ *       does not apply ({@code P16-REM-005});
  *   <li>every experiment states the replica count it runs at, never fewer than three, today's minimum ({@code minReplicas});
  *   <li>every experiment of the plan's section 9.2 and every scenario of its section 13 is in the register, so none is
  *       dropped silently;
@@ -58,8 +62,8 @@ import org.junit.jupiter.api.Test;
  *   <li>the register is not vacuous: every table was read, above floors.
  * </ol>
  *
- * <p>Hermetic: it reads files only (the register, {@code PHASE_16_PLAN.md}, {@code BACKLOG.md} and the tests the scenario
- * table cites). {@code app/build.gradle.kts} declares the documents tree as an input of every test task, so an edited row
+ * <p>Hermetic: it reads files only (the register, {@code PHASE_16_PLAN.md}, {@code BACKLOG.md}, {@code POSTPONED_ISSUES.md}
+ * and the tests the scenario table cites). {@code app/build.gradle.kts} declares the documents tree as an input of every test task, so an edited row
  * re-runs it. It reuses the readiness and threat-model guards' citation grammar ({@link EvidenceCitations}).
  */
 @Tag("architecture")
@@ -69,6 +73,7 @@ class ResilienceExperimentsAreRegisteredTest {
     private static final String REGISTER = "docs/architecture/RESILIENCE_EXPERIMENTS.md";
     private static final String PLAN = "docs/project/PHASE_16_PLAN.md";
     private static final String BACKLOG = "docs/project/BACKLOG.md";
+    private static final String POSTPONED = "docs/project/POSTPONED_ISSUES.md";
 
     /** The day the register was written: no run recorded in it can be older. */
     private static final LocalDate REGISTER_WRITTEN = LocalDate.of(2026, 11, 12);
@@ -129,6 +134,19 @@ class ResilienceExperimentsAreRegisteredTest {
     /** An {@code N/A} with its reason; a bare one, or one with a word for a reason, is refused. */
     private static final Pattern NOT_APPLICABLE = Pattern.compile("^N/A: \\S.{9,}$");
 
+    /** A run the owner postponed: the postponed issue that holds it, the day it was postponed, and why. */
+    private static final Pattern OWED = Pattern.compile("^OWED under (PI-\\d{3}) \\((\\d{4}-\\d{2}-\\d{2})\\)\\. \\S.{9,}$");
+
+    /**
+     * What an {@code N/A} never says: it is an experiment that does not apply, never a run postponed. The issues' file is named,
+     * not read as a postponement ({@code POSTPONED_ISSUES.md}).
+     */
+    private static final Pattern POSTPONEMENT = Pattern.compile("(?i)\\bpostpone(?!d_issues)|\\bowed under PI-");
+
+    /** A postponed issue's row in the issues' own table, with its status; and the heading that opens its section. */
+    private static final Pattern ISSUE_ROW = Pattern.compile("(?m)^\\| (PI-\\d{3}) \\| `([A-Z_]+)` \\|");
+    private static final Pattern ISSUE_HEADING = Pattern.compile("(?m)^## (PI-\\d{3}) — ");
+
     /** An experiment id named in a scenario's or a designed-only row's cell. */
     private static final Pattern EXPERIMENT_ID = Pattern.compile("\\b([EF]\\d{2})\\b");
 
@@ -177,6 +195,8 @@ class ResilienceExperimentsAreRegisteredTest {
     private static Path root;
     private static String register;
     private static Map<String, String> statuses;
+    private static Map<String, String> issueStatuses;
+    private static Map<String, String> issueSections;
     private static Map<Table, List<Row>> tables;
     private static Map<Table, String> headers;
     private static List<String> unparseable;
@@ -188,7 +208,8 @@ class ResilienceExperimentsAreRegisteredTest {
         root = EvidenceCitations.repositoryRoot();
         register = EvidenceCitations.read(root.resolve(REGISTER)).replace("\r\n", "\n");
         statuses = EvidenceCitations.backlogStatuses(root.resolve(BACKLOG));
-        String plan = EvidenceCitations.read(root.resolve(PLAN)).replace("\r\n", "\n");
+        readTheIssues(EvidenceCitations.read(root.resolve(POSTPONED)).replace("\r\n", "\n"));
+        String plan =EvidenceCitations.read(root.resolve(PLAN)).replace("\r\n", "\n");
         planExperiments = idsIn(section(plan, "### 9.2 "), PLAN_EXPERIMENT);
         planScenarios = idsIn(section(plan, "## 13. "), PLAN_SCENARIO);
         parseTables();
@@ -246,8 +267,8 @@ class ResilienceExperimentsAreRegisteredTest {
         Map<String, String> problems = new LinkedHashMap<>();
         for (Row row : experiments()) {
             String result = row.cell(RESULT);
-            if (result.equals(EMPTY) || result.startsWith("N/A")) {
-                continue;
+            if (result.equals(EMPTY) || result.startsWith("N/A") || result.startsWith("OWED")) {
+                continue; // an owed run is judged by anOwedRunIsHeldByItsPostponement
             }
             List<String> rowProblems = new ArrayList<>();
             List<Matcher> runs = runs(result);
@@ -339,6 +360,49 @@ class ResilienceExperimentsAreRegisteredTest {
             }
         }
         assertThat(problems).as("N/A cells in %s: 'N/A: ' and the reason", REGISTER).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a run the owner postponed is owed under its issue, standing and listing it; an N/A is never a postponement"
+            + " (P16-REM-005)")
+    void anOwedRunIsHeldByItsPostponement() {
+        Map<String, String> problems = new LinkedHashMap<>();
+        for (Row row : experiments()) {
+            String result = row.cell(RESULT);
+            if (result.startsWith("N/A") && POSTPONEMENT.matcher(result).find()) {
+                problems.put(row.where(), "an N/A is an experiment that does not apply; a run the owner postponed reads 'OWED"
+                        + " under PI-nnn (<date>). <why>'");
+                continue;
+            }
+            if (!result.startsWith("OWED")) {
+                continue;
+            }
+            Matcher owed = OWED.matcher(result);
+            if (!owed.matches()) {
+                problems.put(row.where(), "its result is not 'OWED under PI-nnn (<date>). <why>'");
+                continue;
+            }
+            List<String> rowProblems = new ArrayList<>();
+            try {
+                if (LocalDate.parse(owed.group(2)).isBefore(REGISTER_WRITTEN)) {
+                    rowProblems.add("postponed on " + owed.group(2) + ", before the register was written");
+                }
+            } catch (DateTimeParseException notADate) {
+                rowProblems.add("'" + owed.group(2) + "' is not a date");
+            }
+            String issue = owed.group(1);
+            String status = issueStatuses.get(issue);
+            if (!"POSTPONED".equals(status)) {
+                rowProblems.add(issue + " is " + (status == null ? "not an issue of " + POSTPONED : status)
+                        + ": a run is owed only while its issue stands POSTPONED; once made, its result is recorded");
+            } else if (!Pattern.compile("\\b" + row.id() + "\\b").matcher(issueSections.getOrDefault(issue, "")).find()) {
+                rowProblems.add(issue + "'s own section does not list it: an owed run its issue does not name is lost");
+            }
+            if (!rowProblems.isEmpty()) {
+                problems.put(row.where(), String.join("; ", rowProblems));
+            }
+        }
+        assertThat(problems).as("owed runs and N/A cells in %s", REGISTER).isEmpty();
     }
 
     @Test
@@ -491,6 +555,10 @@ class ResilienceExperimentsAreRegisteredTest {
     @DisplayName("the register is not vacuous: every table, the plan and the backlog were read, above floors")
     void theRegisterIsNotVacuous() {
         assertThat(statuses).as("backlog entries parsed").hasSizeGreaterThan(400).containsKey("P16-TSK-027");
+        assertThat(issueStatuses).as("the postponed issues' table parsed").containsKeys("PI-023", "PI-025");
+        assertThat(issueSections).as("the postponed issues' sections parsed").containsKeys("PI-023", "PI-025");
+        assertThat(issueSections.get("PI-025")).as("PI-025's section, its owed runs among it").hasSizeGreaterThan(10_000)
+                .contains("Owed runs, by task");
         assertThat(planExperiments).as("the plan's experiments parsed").hasSizeGreaterThanOrEqualTo(MIN_EXPERIMENTS);
         assertThat(planScenarios).as("the plan's scenarios parsed").hasSize(15);
         assertThat(tables.get(Table.EXPERIMENTS)).as("experiments read").hasSizeGreaterThanOrEqualTo(MIN_EXPERIMENTS);
@@ -502,10 +570,31 @@ class ResilienceExperimentsAreRegisteredTest {
 
     // ------------------------------------------------------------------ the rules' parts
 
+    /** Each postponed issue's status from the issues' own table, and its section: from its heading to the next issue's. */
+    private static void readTheIssues(String issues) {
+        issueStatuses = new LinkedHashMap<>();
+        Matcher row = ISSUE_ROW.matcher(issues);
+        while (row.find()) {
+            issueStatuses.putIfAbsent(row.group(1), row.group(2));
+        }
+        issueSections = new LinkedHashMap<>();
+        Matcher heading = ISSUE_HEADING.matcher(issues);
+        List<Integer> starts = new ArrayList<>();
+        List<String> ids = new ArrayList<>();
+        while (heading.find()) {
+            starts.add(heading.start());
+            ids.add(heading.group(1));
+        }
+        for (int i = 0; i < ids.size(); i++) {
+            int end = i + 1 < starts.size() ? starts.get(i + 1) : issues.length();
+            issueSections.put(ids.get(i), issues.substring(starts.get(i), end));
+        }
+    }
+
     /** The runs a result cell records, oldest first; empty when the cell is not wholly runs joined by '; '. */
     private static List<Matcher> runs(String result) {
         List<Matcher> runs = new ArrayList<>();
-        if (result.equals(EMPTY) || result.startsWith("N/A")) {
+        if (result.equals(EMPTY) || result.startsWith("N/A") || result.startsWith("OWED")) {
             return runs;
         }
         for (String part : result.split("; ", -1)) {

@@ -77,6 +77,14 @@ import org.junit.jupiter.api.Test;
  * pins why those two packages are enough: a statement over a tenant column anywhere else fails the
  * build, because the widening would not see it. Widening the other modules is recorded work, not
  * this rule's claim.
+ *
+ * <h2>Widened to the customer-facing modules (`X-TSK-002`)</h2>
+ *
+ * <p>The same two shapes are everywhere a customer's resource lives, so the widening now covers every customer-facing module
+ * ({@link #WIDENED_MODULES}): measured on 2026-11-16, 199 more methods surfaced there, each classified below, and the
+ * statement reader follows the same one hop the detector does, so a predicate is looked for where the statement is. The
+ * operator's books - accounting, platform, reconciliation, risk, settlement, 313 more methods - are named as owed
+ * ({@link #WIDENING_OWED}, `X-TSK-026`), and a new module is decided rather than left unwidened by default.
  */
 @Tag("architecture")
 @DisplayName("every resource-scoped persistence operation is classified (P1-TSK-021)")
@@ -232,6 +240,2116 @@ class OwnershipIsScopedTest {
      */
     private static final Map<String, Entry> REGISTER =
             Map.ofEntries(
+                    // ---- X-TSK-002, batch A: the widened detector's customer-side methods
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.beneficiaryOfRegistration",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.crossborder.Beneficiaries",
+                                    "X-TSK-002. The beneficiary of a registration, read by"
+                                        + " Beneficiaries alone (complete's Tx2 and begin's converge). The"
+                                        + " customer names no registration: Tx1 found it by the exchange"
+                                        + " reference SHA-256(owner party, grant), the owner the session's"
+                                        + " party, or inserted it with that owner, and Begun carries the"
+                                        + " id in memory to Tx2. The key is owner-derived rather than"
+                                        + " owner-predicated (registrationByReference reads"
+                                        + " exchange_reference = ? alone), so the provenance check would"
+                                        + " refuse AUTHORITATIVE_ID; the one caller is the control.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.findOwned",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. GET /v1/me/cross-border/beneficiaries/{id}"
+                                        + " (Beneficiaries.find) and a fixed destination's currency"
+                                        + " (OfferIssuance.destinationOf) - a resource identifier from the"
+                                        + " request; owner_party = ? in the statement, bound to the"
+                                        + " session's party: a stranger's id, an unknown one and a"
+                                        + " malformed one are one 404.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.listOwned",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. GET /v1/me/cross-border/beneficiaries"
+                                        + " (Beneficiaries.list): the UUID is the owner itself - the"
+                                        + " session's party - bound to owner_party = ?, the statement's"
+                                        + " only predicate; no request value names a beneficiary.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.lockById",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.crossborder.Beneficiaries",
+                                    "X-TSK-002. kyc's deciding transaction (T-e), through"
+                                        + " Beneficiaries.screeningDecided alone: the beneficiary id is"
+                                        + " parsed from the screening's own stored request reference"
+                                        + " (xb-beneficiary-<id>, minted by Beneficiaries at registration"
+                                        + " or a re-screen), never from a request - a reviewer's decision"
+                                        + " names a screening, not a beneficiary; a reference naming none"
+                                        + " moves nothing.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.lockOwned",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. POST /v1/me/cross-border/beneficiaries/{id}/revocation"
+                                        + " (Beneficiaries.revoke) - findOwned's statement plus FOR"
+                                        + " UPDATE, owner_party = ? bound to the session's party: a"
+                                        + " stranger's revocation finds nothing to lock and is the same"
+                                        + " 404.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.lockOwnedForShare",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. The beneficiary held FOR SHARE by an offer's claim and"
+                                        + " re-screen judgement (OfferIssuance) and by a payment's"
+                                        + " authorization (PaymentAuthorization) - the id from the request"
+                                        + " body or the owner's own offer, owner_party = ? bound to the"
+                                        + " session's party: another's beneficiary is"
+                                        + " BeneficiaryNotPayable, nothing priced.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.lockRegistration",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.crossborder.Beneficiaries",
+                                    "X-TSK-002. The registration's advisory lock and re-read, in"
+                                        + " Beneficiaries.complete (Tx2) alone: the id is the one Tx1"
+                                        + " (begin) found by the exchange reference SHA-256(owner party,"
+                                        + " grant) - the session's party - or inserted with that owner,"
+                                        + " carried in memory as Begun; the customer names no"
+                                        + " registration. Owner-derived key, not an owner predicate - the"
+                                        + " beneficiaryOfRegistration reasoning.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.selection",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A corridor selection is the platform's routing"
+                                        + " judgement - the policy version, destination country, currency"
+                                        + " and entity type, the corridors available and the rail chosen -"
+                                        + " with no owner column; the owner's registration points at it,"
+                                        + " not the reverse. No production class calls it today"
+                                        + " (CrossBorderBeneficiaryDatabaseTest reads it); a door that"
+                                        + " reads it must reach it through the owner's registration.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcCancellationStore.insert",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.crossborder.JdbcPaymentStore.findOwned",
+                                    "X-TSK-002. The cancellation request, inserted by"
+                                        + " PaymentCancellation.request alone on the payment id findOwned"
+                                        + " resolved as the session party's own (owner_party = ?) in the"
+                                        + " same transaction, the row then held FOR UPDATE by lock; the"
+                                        + " request id is minted, and ON CONFLICT (payment_id) makes ten"
+                                        + " requests one.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcCancellationStore.requestedAt",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.crossborder.JdbcPaymentStore.findOwned",
+                                    "X-TSK-002. Whether a cancellation was requested, read by"
+                                        + " CrossBorderPaymentDesk.read alone on payment.id() of the row"
+                                        + " PaymentAuthorization.read returned through findOwned"
+                                        + " (owner_party = ?, the session's party) in the same transaction"
+                                        + " - never the raw path value.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcCorridorAvailabilityStore.decideRequest",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. PROPOSED -> APPROVED or REJECTED on the enable request"
+                                        + " lockRequest locked FOR UPDATE in the same transaction"
+                                        + " (CorridorAvailability), conditional on PROPOSED. The request"
+                                        + " was named from the operator's path behind"
+                                        + " @RequiresPermission(CROSSBORDER_ADMINISTER); approval is"
+                                        + " four-eyes (EnableSelfApprovalRefused). Corridor availability"
+                                        + " is platform-wide configuration with no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcCorridorAvailabilityStore.insertRequest",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The enable proposal's birth: the id is minted by"
+                                        + " CorridorAvailability.proposeEnable (ids.next()) inside the"
+                                        + " operator's own transaction behind"
+                                        + " @RequiresPermission(CROSSBORDER_ADMINISTER) - never a request"
+                                        + " value; platform-wide configuration with no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcCorridorAvailabilityStore.lockRequest",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. POST"
+                                        + " /v1/operator/cross-border/corridor-enable-requests/{rid}/approval"
+                                        + " and /rejection - the operator names the request from the path"
+                                        + " behind @RequiresPermission(CROSSBORDER_ADMINISTER), asserted"
+                                        + " per route by CorridorAdministrationEndpointDatabaseTest; the"
+                                        + " not-self rule refuses the proposer's approval. Platform-wide"
+                                        + " configuration with no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcCorridorPolicyStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The version an approval or rejection decides"
+                                        + " (CorridorPolicyAdministration), named by the operator's path"
+                                        + " id behind @RequiresPermission(CROSSBORDER_ADMINISTER),"
+                                        + " asserted per route by"
+                                        + " CorridorAdministrationEndpointDatabaseTest; four-eyes in the"
+                                        + " domain and V002. The corridor policy is platform-wide"
+                                        + " configuration with no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcCorridorPolicyStore.one",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The private reader behind lock and lockActive: a"
+                                        + " version by the id the operator's CROSSBORDER_ADMINISTER door"
+                                        + " named, or by its ACTIVE status - platform-wide configuration"
+                                        + " with no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcCorridorPolicyStore.version",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A corridor policy version is platform-wide"
+                                        + " configuration with no owner column. Readers:"
+                                        + " CorridorPolicyAdministration (the id lock just held),"
+                                        + " OfferIssuance.claim (the version the caller's own offer"
+                                        + " request pinned) and PaymentAuthorization (the version the"
+                                        + " owner's offer pinned, read through offerOwned) - none a"
+                                        + " request value.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcCorridorPolicyStore.view",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. The private reader behind active and version: a"
+                                        + " corridor policy version, platform-wide configuration with no"
+                                        + " owner column; the id, when there is one, is version's.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcOfferStore.offer",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The private reader behind offerOwned and"
+                                        + " offerOfRequest; the SQL is the caller's. Through offerOwned"
+                                        + " the statement carries owner_party = ? and the owner is bound"
+                                        + " second; through offerOfRequest the id is the offer request"
+                                        + " OfferIssuance.claim resolved by the actor-scoped claim key or"
+                                        + " inserted with the session's party. No operator names it: none"
+                                        + " of the nine labels is true of a helper split across two"
+                                        + " provenances, and ADMINISTERED is this register's label for a"
+                                        + " private reader (JdbcLoanPayoutStore.one).")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcOfferStore.offerOfRequest",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.crossborder.OfferIssuance",
+                                    "X-TSK-002. A racing flight's offer, read by OfferIssuance.complete"
+                                        + " (Tx2) alone: the request id is the one Tx1 (claim) found by"
+                                        + " the claim key - the idempotency key scoped to the acting"
+                                        + " principal - or inserted with the session's party as owner,"
+                                        + " carried in memory as Claimed; the customer names no offer"
+                                        + " request.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcOfferStore.offerOwned",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. GET /v1/me/cross-border/quotes/{id}"
+                                        + " (OfferIssuance.read) and a payment's authorization"
+                                        + " (PaymentAuthorization) - a quote id from the request;"
+                                        + " owner_party = ? bound to the session's party: another's offer"
+                                        + " is one 404 and OfferNotFound. PaymentProgress and"
+                                        + " CrossBorderMovements bind the owner the payment or instruction"
+                                        + " recorded.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcPaymentStore.appendEvent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The payment's append-only history row. The id is the"
+                                        + " one PaymentAuthorization minted and inserted in the same"
+                                        + " transaction (owner the session's party, after offerOwned and"
+                                        + " lockOwnedForShare), or the row PaymentProgress locked FOR"
+                                        + " UPDATE - an outbound credit's subject, recorded by the"
+                                        + " platform at authorization. Never a request value and no"
+                                        + " operator names it: two caller classes rule out SYSTEM_JOIN,"
+                                        + " and ADMINISTERED follows this register's history-row precedent"
+                                        + " (JdbcBeneficiaryStore.appendEvent).")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcPaymentStore.byDispatchKey",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. A takeover's re-read of the payment the same key's"
+                                        + " flight committed (PaymentAuthorization.authorize): the UUID is"
+                                        + " the owner itself - the session's party - bound to owner_party"
+                                        + " = ? beside dispatch_key = ?, a key scoped to the acting"
+                                        + " principal; no request value names a payment.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcPaymentStore.findOwned",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. GET /v1/me/cross-border/payments/{id}"
+                                        + " (PaymentAuthorization.read) and POST .../{id}/cancellation"
+                                        + " (PaymentCancellation.request) - a resource identifier from the"
+                                        + " request; owner_party = ? bound to the session's party: a"
+                                        + " stranger's payment is one 404, nothing written."
+                                        + " OutboundReturnWorker binds the owner its outbound credit"
+                                        + " recorded.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcPaymentStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Three provenances, none a raw request value."
+                                        + " PaymentCancellation: the id findOwned resolved as the session"
+                                        + " party's own (owner_party = ?) in the same transaction."
+                                        + " PaymentProgress for payments' outcome applier"
+                                        + " (CrossBorderCompletion): the subject of the outbound credit"
+                                        + " the applier locked, recorded by the platform at authorization."
+                                        + " PaymentProgress for a four-eyes corridor-return resolution"
+                                        + " (CorridorReturnResolutions,"
+                                        + " @RequiresPermission(RECONCILIATION_RESOLVE)): the subject of"
+                                        + " the credit the parked line's reference names. Two caller"
+                                        + " classes rule out SYSTEM_JOIN; ADMINISTERED follows the applier"
+                                        + " precedent (JdbcOutboundCreditStore.complete).")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcPaymentStore.move",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.crossborder.PaymentProgress",
+                                    "X-TSK-002. The payment's conditional edge, called by"
+                                        + " PaymentProgress alone on the row its lock just held FOR"
+                                        + " UPDATE: the id is the subject of the outbound credit payments'"
+                                        + " outcome applier (CrossBorderCompletion) or a four-eyes"
+                                        + " corridor-return resolution (CorridorReturnResolutions) locked"
+                                        + " - a reference the platform recorded at authorization, never a"
+                                        + " request value; conditional on the expected status.")),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcPaymentStore.one",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.crossborder.JdbcPaymentStore.findOwned",
+                                    "X-TSK-002. The private reader behind findOwned and byDispatchKey, its only callers:"
+                                        + " the UUID it takes is the owner those two bind, and the statement it runs is"
+                                        + " theirs, owner_party = ? its first predicate - so ownership is established"
+                                        + " where the statement is written (findOwned, OWNER_SCOPED with its negative"
+                                        + " test), never here. The helper's own literals carry no SQL of their own.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcAvailabilityStore.decideRequest",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. PROPOSED -> APPROVED or REJECTED on the enable request"
+                                        + " lockRequest locked FOR UPDATE in the same transaction"
+                                        + " (FxAvailability), conditional on PROPOSED. The request was"
+                                        + " named from the operator's path behind"
+                                        + " @RequiresPermission(FX_ADMINISTER); approval is four-eyes"
+                                        + " (EnableSelfApprovalRefused). Pair and provider availability is"
+                                        + " platform-wide configuration with no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcAvailabilityStore.insertRequest",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The enable proposal's birth: the id is minted by"
+                                        + " FxAvailability.proposeEnable (ids.next()) inside the"
+                                        + " operator's own transaction behind"
+                                        + " @RequiresPermission(FX_ADMINISTER) - never a request value;"
+                                        + " platform-wide configuration with no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcAvailabilityStore.lockRequest",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. POST /v1/operator/fx/enable-requests/{rid}/approval and"
+                                        + " /rejection - the operator names the request from the path"
+                                        + " behind @RequiresPermission(FX_ADMINISTER), asserted per route"
+                                        + " by FxAdministrationEndpointDatabaseTest; the not-self rule"
+                                        + " refuses the proposer's approval. Platform-wide configuration"
+                                        + " with no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcCoverStore.attachExecutionEntry",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A cover is the platform's own position with its"
+                                        + " liquidity provider (ADR-0077): fx.cover, its attempts and its"
+                                        + " execution carry no owner column, and no customer door accepts"
+                                        + " a cover id. Called by FxCoverOutcomes alone, on the cover it"
+                                        + " locked FOR UPDATE, beside the execution fact; set once by"
+                                        + " journal_entry_id IS NULL.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcCoverStore.attempt",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A cover is the platform's own position with its"
+                                        + " liquidity provider (ADR-0077): fx.cover, its attempts and its"
+                                        + " execution carry no owner column, and no customer door accepts"
+                                        + " a cover id. Read by FxCoverDispatch and FxCoverOutcomes on a"
+                                        + " cover they claimed or locked, or the attempt a signed"
+                                        + " callback's client reference resolved (attemptByReference over"
+                                        + " a T the platform minted).")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcCoverStore.claim",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A cover is the platform's own position with its"
+                                        + " liquidity provider (ADR-0077): fx.cover, its attempts and its"
+                                        + " execution carry no owner column, and no customer door accepts"
+                                        + " a cover id. FxCoverDispatch.dispatchNow alone: the id is the"
+                                        + " one the conversion or the cross-border acceptance minted,"
+                                        + " nudged after its commit by FxCoverNudge as the system;"
+                                        + " conditional on an open status.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcCoverStore.find",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A cover is the platform's own position with its"
+                                        + " liquidity provider (ADR-0077): fx.cover, its attempts and its"
+                                        + " execution carry no owner column, and no customer door accepts"
+                                        + " a cover id. FxCoverDispatch and FxCoverOutcomes: a claimed or"
+                                        + " locked cover's id, or the cover of the attempt a signed"
+                                        + " callback's client reference names (hint - the platform minted"
+                                        + " T, and only the inquiry's answer moves it).")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcCoverStore.findByQuote",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A cover is the platform's own position with its"
+                                        + " liquidity provider (ADR-0077): fx.cover, its attempts and its"
+                                        + " execution carry no owner column, and no customer door accepts"
+                                        + " a cover id. No production class calls it today (the suites"
+                                        + " read it); lockByQuote is the production path.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcCoverStore.insertFirstAttempt",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A cover is the platform's own position with its"
+                                        + " liquidity provider (ADR-0077): fx.cover, its attempts and its"
+                                        + " execution carry no owner column, and no customer door accepts"
+                                        + " a cover id. FxCoverDispatch.priceUnwind alone, on the unwind"
+                                        + " it locked FOR UPDATE; T1 is minted there, and ON CONFLICT"
+                                        + " (cover_id, attempt) decides between instances.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcCoverStore.lock",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A cover is the platform's own position with its"
+                                        + " liquidity provider (ADR-0077): fx.cover, its attempts and its"
+                                        + " execution carry no owner column, and no customer door accepts"
+                                        + " a cover id. FxCoverDispatch and FxCoverOutcomes, after the"
+                                        + " quote's lockWanted, on the id of a cover they claimed or found"
+                                        + " - never a request value.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcCoverStore.lockByQuote",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A cover is the platform's own position with its"
+                                        + " liquidity provider (ADR-0077): fx.cover, its attempts and its"
+                                        + " execution carry no owner column, and no customer door accepts"
+                                        + " a cover id. CoverUnwinds.evaluate alone, on a quote whose row"
+                                        + " its caller holds - the cross-border completion's (the"
+                                        + " payment's recorded quote) or the operator's four-eyes reversal"
+                                        + " under FX_TRADE_REVERSE; the rows it answers are the platform's"
+                                        + " covers.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcCoverStore.one",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A cover is the platform's own position with its"
+                                        + " liquidity provider (ADR-0077): fx.cover, its attempts and its"
+                                        + " execution carry no owner column, and no customer door accepts"
+                                        + " a cover id. The private reader behind find and lock; the id is"
+                                        + " theirs.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcCoverStore.recordRequoteFailure",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A cover is the platform's own position with its"
+                                        + " liquidity provider (ADR-0077): fx.cover, its attempts and its"
+                                        + " execution carry no owner column, and no customer door accepts"
+                                        + " a cover id. FxCoverDispatch.requote alone, on the cover the"
+                                        + " sweep claimed; conditional on REJECTED and its attempt.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcCoverStore.requote",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A cover is the platform's own position with its"
+                                        + " liquidity provider (ADR-0077): fx.cover, its attempts and its"
+                                        + " execution carry no owner column, and no customer door accepts"
+                                        + " a cover id. FxCoverDispatch.requoted alone, on the cover it"
+                                        + " locked FOR UPDATE; T(n+1) is minted there; conditional on"
+                                        + " REJECTED and its attempt.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcCoverStore.transition",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A cover is the platform's own position with its"
+                                        + " liquidity provider (ADR-0077): fx.cover, its attempts and its"
+                                        + " execution carry no owner column, and no customer door accepts"
+                                        + " a cover id. CoverUnwinds, FxCoverDispatch and FxCoverOutcomes,"
+                                        + " each on a cover it locked FOR UPDATE; conditional on the"
+                                        + " status and attempt read under that lock, V006's machine"
+                                        + " beneath.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcPricingPolicyStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The version an approval or rejection decides"
+                                        + " (PricingPolicyAdministration), named by the operator's path id"
+                                        + " behind @RequiresPermission(FX_ADMINISTER), asserted per route"
+                                        + " by FxAdministrationEndpointDatabaseTest; four-eyes in the"
+                                        + " domain and V004. The pricing policy is platform-wide"
+                                        + " configuration with no owner.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcPricingPolicyStore.one",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The private reader behind lock and lockActive: a"
+                                        + " version by the id the operator's FX_ADMINISTER door named, or"
+                                        + " by its ACTIVE status - platform-wide configuration with no"
+                                        + " owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcPricingPolicyStore.version",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A pricing policy version is platform-wide configuration"
+                                        + " with no owner column. Readers: QuoteIssuance.claim (the"
+                                        + " version the caller's own quote request pinned),"
+                                        + " FxCoverDispatch (the quote plan's pinned version) and"
+                                        + " FxPlanVerification (each booked trade's) - none a request"
+                                        + " value.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcPricingPolicyStore.view",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. The private reader behind active and version: a pricing"
+                                        + " policy version, platform-wide configuration with no owner"
+                                        + " column; the id, when there is one, is version's.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.abandon",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.fx.CrossBorderCompletionBooking",
+                                    "X-TSK-002. ACCEPTED -> ABANDONED, called by"
+                                        + " CrossBorderCompletionBooking.abandon alone: a cross-border"
+                                        + " credit's failure, applied by payments' outcome applier on the"
+                                        + " quote the crossborder payment recorded - never a request value"
+                                        + " - after lockOwned with the owner the quote's own plan names;"
+                                        + " conditional on ACCEPTED.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.accept",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.fx.JdbcQuoteStore.lockOwned",
+                                    "X-TSK-002. ISSUED -> ACCEPTED on the database clock, called by"
+                                        + " FxConversion.convert and CrossBorderAcceptance.acceptWithin"
+                                        + " only on the id lockOwned resolved, in the same transaction, as"
+                                        + " the session party's own (the row held FOR UPDATE); V005's"
+                                        + " freeze keeps the owner.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.appendEvent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The quote's append-only history row (insertEvent's"
+                                        + " caller). The id is minted and inserted in the same transaction"
+                                        + " (QuoteIssuance.issue, the owner the session's party); locked"
+                                        + " by lockOwned as the session party's own (FxConversion); the"
+                                        + " payment's recorded quote, lockOwned under its own plan's owner"
+                                        + " (CrossBorderCompletionBooking); or the expiry sweep's own page"
+                                        + " (QuoteLifecycle.expirePage). Never a request value; no single"
+                                        + " label is true of all four, and ADMINISTERED follows"
+                                        + " insertEvent's entry.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.appendEventAt",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.fx.JdbcQuoteStore.lockOwned",
+                                    "X-TSK-002. The history row at the instant the conditional judged,"
+                                        + " called by FxConversion.convert,"
+                                        + " CrossBorderAcceptance.acceptWithin and QuoteLifecycle.cancel"
+                                        + " only on the id lockOwned resolved as the session party's own"
+                                        + " in the same transaction.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.cancel",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.fx.JdbcQuoteStore.lockOwned",
+                                    "X-TSK-002. ISSUED -> CANCELLED on the database clock, called by"
+                                        + " QuoteLifecycle.cancel alone on the id lockOwned resolved as"
+                                        + " the session party's own in the same transaction: a stranger's"
+                                        + " cancel finds nothing to lock"
+                                        + " (FxQuoteEndpointDatabaseTest.theQuoteIsItsOwners).")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.execute",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.fx.JdbcQuoteStore.lockOwned",
+                                    "X-TSK-002. ACCEPTED -> EXECUTED beside the trade."
+                                        + " FxConversion.convert: the id lockOwned resolved as the session"
+                                        + " party's own. CrossBorderCompletionBooking.book: lockOwned too,"
+                                        + " but bound to the owner the quote's own plan names, so there"
+                                        + " the predicate proves nothing - that path's control is that the"
+                                        + " id is the quote the crossborder payment recorded, reached by"
+                                        + " payments' outcome applier, never a request value.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.expire",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.fx.JdbcQuoteStore.lockOwned",
+                                    "X-TSK-002. ISSUED -> EXPIRED at acceptance, called by"
+                                        + " FxConversion's expiredOnAcceptance alone, on the plan of the"
+                                        + " quote lockOwned resolved as the session party's own in the"
+                                        + " same transaction.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.insertSteps",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. The sourcing steps are the platform's record of which"
+                                        + " provider it asked and what came back: fx.quote_sourcing_step"
+                                        + " has no owner column and no customer door reads it. Written by"
+                                        + " QuoteIssuance.issue alone, keyed by the request Tx1 (claim)"
+                                        + " found by the actor-scoped claim key or inserted with the"
+                                        + " session's party - never a request value.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.liveCount",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. The open-quote cap's pre-check (QuoteIssuance.claim):"
+                                        + " the UUID is the owner itself - the session's party - bound to"
+                                        + " owner_party_id = ?, the statement's only key; no request value"
+                                        + " names a quote.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.nextAttempt",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. The sourcing steps are the platform's record of which"
+                                        + " provider it asked and what came back: fx.quote_sourcing_step"
+                                        + " has no owner column and no customer door reads it. Numbered by"
+                                        + " QuoteIssuance.issue alone, keyed by the request Tx1 (claim)"
+                                        + " found by the actor-scoped claim key or inserted with the"
+                                        + " session's party - never a request value.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.quoteOfRequest",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.fx.QuoteIssuance",
+                                    "X-TSK-002. The quote a racing flight issued for the same request,"
+                                        + " read by QuoteIssuance.issue alone (and insertQuote's own"
+                                        + " converge): the request id is the one Tx1 (claim) found by the"
+                                        + " claim key - the idempotency key scoped to the acting principal"
+                                        + " - or inserted with the session's party as owner, carried in"
+                                        + " memory as Claimed.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.steps",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. The sourcing steps are the platform's record of which"
+                                        + " provider it asked and what came back: fx.quote_sourcing_step"
+                                        + " has no owner column and no customer door reads it. No"
+                                        + " production class calls it today (the suites read it).")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcRateSnapshotStore.record",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A reference rate snapshot is market data with no owner:"
+                                        + " the id is minted by ReferenceRateFetch (ids.next()), the"
+                                        + " scheduled system fetch and the one caller; ON CONFLICT and"
+                                        + " V002's newer-than-latest trigger decide.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcTradeReversalStore.appendEvent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The reversal's append-only edge row, written by"
+                                        + " TradeReversals on the reversal it just proposed (minted id) or"
+                                        + " locked FOR UPDATE, in the operator's transaction behind"
+                                        + " @RequiresPermission(FX_TRADE_REVERSE); the event id is minted.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcTradeReversalStore.decide",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. PROPOSED -> APPROVED or REJECTED on the reversal"
+                                        + " TradeReversals locked FOR UPDATE in the same transaction,"
+                                        + " behind @RequiresPermission(FX_TRADE_REVERSE): four-eyes"
+                                        + " (SelfApprovalRefused), and the route's trade must be the"
+                                        + " reversal's"
+                                        + " (FxTradeReversalRaceDatabaseTest.aDecisionOnAnotherTradesRouteIsRefused);"
+                                        + " conditional on PROPOSED.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcTradeReversalStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. POST"
+                                        + " /v1/operator/fx/trades/{id}/reversal/{rid}/approval - the"
+                                        + " operator names the reversal from the path behind"
+                                        + " @RequiresPermission(FX_TRADE_REVERSE); an operator acts on any"
+                                        + " customer's trade by design, every act four-eyes and audited,"
+                                        + " and a reversal of a trade other than the route's is NotFound.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcTradeReversalStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The same reversal locked FOR UPDATE by approve (after"
+                                        + " find) and reject (the route's rid, filtered to the route's"
+                                        + " trade) - the JdbcTradeReversalStore.find reasoning; the"
+                                        + " not-self rule refuses the proposer.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcTradeReversalStore.one",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The private reader behind find and lock: a reversal by"
+                                        + " the id the operator's FX_TRADE_REVERSE door named - the"
+                                        + " JdbcTradeReversalStore.find reasoning.")),
+                    // ---- X-TSK-002, batch D: the widened detector's customer-side methods
+// X-TSK-002 batch D - 47 entries for OwnershipIsScopedTest.REGISTER (paste inside Map.ofEntries(...)).
+                    Map.entry(
+                            "com.finapp.consent.JdbcConsentStore.hasCurrentBasis",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. The consent derivation for one party and purpose:"
+                                        + " r.party_id = ? in the statement is the subject of the basis -"
+                                        + " on GET /v1/me/consents the session's own party"
+                                        + " (ConsentService: Session -> Identity.partyId), at ConsentGate"
+                                        + " the party whose processing the gated act is for, resolved by"
+                                        + " its caller. Only a boolean leaves - no record, no text - and"
+                                        + " absence, withdrawal and a lapsed grant are one false"
+                                        + " (INV-CNS-01).")),
+                    Map.entry(
+                            "com.finapp.consent.JdbcConsentStore.latestFor",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. The latest consent record of one party and purpose:"
+                                        + " party_id = ? in the statement. No production caller today -"
+                                        + " ConsentStore's port, read by ConsentHistoryDatabaseTest alone"
+                                        + " - so no request reaches it; the first surface to serve it"
+                                        + " must bind the session's own party and bring its negative test"
+                                        + " here.")),
+                    Map.entry(
+                            "com.finapp.identity.IdentityRegistration.create",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.registration.RegistrationService",
+                                    "X-TSK-002. Seen through its one-hop helper insert: the identity row"
+                                        + " written at registration. The party id is the one"
+                                        + " PartyRegistration.register minted and inserted two statements"
+                                        + " earlier in this transaction, never a request value - the"
+                                        + " registrant is unauthenticated, the request carries a login"
+                                        + " and a name and no identifier, and the flow runs as the"
+                                        + " platform (SecurityContext.enterSystem) under the idempotency"
+                                        + " record; the unique login index arbitrates a taken identifier."
+                                        + " A write of a fresh reference rather than a resolution of a"
+                                        + " recorded one - the nearest label, its one-caller rule the"
+                                        + " control: RegistrationService.registerOnce alone calls it.")),
+                    Map.entry(
+                            "com.finapp.identity.JdbcIdentityStore.findIdsByParty",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The identities a party holds (party_id = ? in the"
+                                        + " statement, bounded), read for a party that is deliberately"
+                                        + " somebody else: IdentityRiskActions dispatches a risk action a"
+                                        + " second holder approved behind"
+                                        + " @RequiresPermission(RISK_CASE_APPROVE) from a MULTI_FACTOR"
+                                        + " session - the party the action's recorded target, identity's"
+                                        + " not-self rule given the approver - and"
+                                        + " IdentitySubjectParties.identitiesOf is the profile sweep's"
+                                        + " system join on the recompute's own connection. Identity ids"
+                                        + " leave, to the platform only; no customer door reaches it.")),
+                    Map.entry(
+                            "com.finapp.identity.JdbcRoleAssignmentStore.liveHolderOfRecovery",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.identity.Authorization",
+                                    "X-TSK-002. Seen through its one-hop helper holderBy: P15-TSK-042's staff check at"
+                                        + " recovery completion - whether the identity a recovery request was made for"
+                                        + " holds a live role. The nearest label, and why: the request id arrives in the"
+                                        + " completion URL, read before the token by design (a staff request's token is"
+                                        + " never spent off the operator surface), so no bearer predicate can be in this"
+                                        + " statement. What stands in: initiation discloses no request id (one 202 for"
+                                        + " every outcome, INV-IDN-07), so the id reaches a caller only in the link sent"
+                                        + " with the token to the identity's verified channel; the answer never reaches"
+                                        + " the caller (refused like a wrong token, nothing consumed); it fails closed;"
+                                        + " and Authorization.roleHolderRecovering alone calls it.")),
+                    Map.entry(
+                            "com.finapp.identity.JdbcSessionStore.revokeAllForExcept",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.identity.JdbcSessionStore.findLive",
+                                    "X-TSK-002. Seen through its one-hop helper revokeAll (OWNER_SCOPED,"
+                                        + " its own entry): the SessionId it takes is the session to"
+                                        + " SPARE, never a target - the caller's own current session,"
+                                        + " authenticated by token at the boundary (findLive, token_hash"
+                                        + " = ?) and held in memory by CredentialChange, the one caller"
+                                        + " through SessionRevocation.revokeAllExcept; every row it"
+                                        + " touches is selected by identity_id = ? in revokeAll's"
+                                        + " statement, the session's own identity.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.complete",
+                            new Entry(
+                                    Scope.SIGNED_CALLBACK,
+                                    "X-TSK-002. Seen through its one-hop helper move. Two provenances,"
+                                        + " labelled for the weaker (rescreenKeyOf's precedent): the"
+                                        + " run's check (VerificationRunService.recordOutcome - minted or"
+                                        + " converged under a case findOpenFor resolved, or the system's"
+                                        + " keyed rescreen) and the provider callback's"
+                                        + " (ProviderCallbackService.effect - the check a signed callback"
+                                        + " named, findById's provenance): the HMAC verified over the raw"
+                                        + " body before any read, the id one the platform handed the"
+                                        + " provider at dispatch, and the move conditional on DISPATCHED,"
+                                        + " a losing branch appending evidence and changing nothing.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCheckStore.dispatch",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.kyc.JdbcKycCaseStore.findOpenFor",
+                                    "X-TSK-002. Seen through its one-hop helper move, whose entry this"
+                                        + " repeats: the CheckId is minted or converged in the same"
+                                        + " transaction - requestOrConverge under the run's case,"
+                                        + " resolved through findOpenFor (customer_id = ?), or"
+                                        + " requestRescreen under the latest case the system resolved for"
+                                        + " risk's permit (findLatestFor); VerificationRunService alone"
+                                        + " calls it and no check id appears in any request. The move is"
+                                        + " conditional on REQUESTED - the concurrency protocol, not an"
+                                        + " ownership predicate.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCounterpartyScreeningStore.find",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. Seen through its one-hop helper one. A counterparty"
+                                        + " screening is kyc's compliance record about a payee: the row"
+                                        + " carries the subject, the requester and crossborder's"
+                                        + " reference, and no party or customer column to scope by. Its"
+                                        + " ids are platform-held - minted by requestWithin, read off"
+                                        + " crossborder's own beneficiary row (OfferIssuance,"
+                                        + " PaymentAuthorization, Beneficiaries.screenNow) or the retry"
+                                        + " sweep's claimed page - and the reviewer's door reaches the"
+                                        + " row only through lock. What leaves to crossborder is the"
+                                        + " clearance of a screening its own row names.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcCounterpartyScreeningStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Seen through its one-hop helper one: the FOR UPDATE behind"
+                                        + " both decisions, decideByReviewer's and decideAutomatically's"
+                                        + " reasoning. On the review door the id comes from the URL of"
+                                        + " POST /v1/operator/kyc/counterparty-screenings/{id}/decision"
+                                        + " behind @RequiresPermission(COUNTERPARTY_SCREENING_REVIEW),"
+                                        + " the requester refused as reviewer (four eyes, kyc V010's"
+                                        + " CHECK); on the automatic path it is the id kyc minted or the"
+                                        + " retry sweep claimed. A screening has no customer owner to"
+                                        + " scope by.")),
+                    // Not OWNER_SCOPED: the declarant path binds somebody else's customer, and statementOf
+                    // cannot read the predicate out of LATEST_FOR_CUSTOMER.
+                    Map.entry(
+                            "com.finapp.kyc.JdbcKycCaseStore.findLatestFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. A customer's latest case - customer_id = ? in"
+                                        + " LATEST_FOR_CUSTOMER, a constant this guard's reader cannot"
+                                        + " resolve (its + TABLE + ends the literal run). Labelled for"
+                                        + " the weakest of its provenances, findLiveCustomerFor's"
+                                        + " precedent: OwnerDeclaration reads the latest case of an owner"
+                                        + " the declarant names in the body of POST /v1/me/kyb/owners -"
+                                        + " somebody else by design - for the session's own"
+                                        + " organisation's KYB case (organisationRegisteredBy), audited"
+                                        + " kyc.OwnerDeclared, the case id pinned on the owner row and"
+                                        + " the declaration answering its outcome. The other callers are"
+                                        + " session-derived (KycCaseService, KybService) or the system's"
+                                        + " (KycPartyRescreening, KycScreeningClearances,"
+                                        + " PlatformRiskInputs).")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcKycCaseStore.findOpenFor",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. A customer's open case: customer_id = ? in the statement."
+                                        + " The customer is the session's own live customer on POST"
+                                        + " /v1/me/kyc/documents (DocumentUploadService), or the opening"
+                                        + " case's own in openOrConverge's post-conflict re-read - the"
+                                        + " read every kyc AUTHORITATIVE_ID entry cites, classified"
+                                        + " itself now that kyc is widened.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcAdjustmentProposalStore.findById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Seen through its one-hop helper read (ADMINISTERED, its own"
+                                        + " entry), whose classification it shares: the unlocked read for"
+                                        + " GET /v1/ledger/adjustments/{id} behind"
+                                        + " @RequiresPermission(LEDGER_ADJUST); a proposal has no single"
+                                        + " owner to scope by, and the four-eyes rule needs the approver"
+                                        + " to read it (INV-AUD-04).")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcAdjustmentProposalStore.lockById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Seen through its one-hop helper read: the decision's"
+                                        + " lock-then-look FOR UPDATE on the proposal a door names -"
+                                        + " LEDGER_ADJUST's /v1/ledger/adjustments/{id}, accounting's"
+                                        + " prior-period door behind ACCOUNTING_ADJUST_APPROVE,"
+                                        + " reconciliation's own resolution - each deciding its own"
+                                        + " origin's proposals only (AdjustmentOriginMismatch),"
+                                        + " self-approval judged on the locked row and V010's approver <>"
+                                        + " initiator CHECK beneath; read's classification.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcBalanceDisplay.balancesFor",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.accounts.JdbcCustomerAccountStore.findOwnedBy",
+                                    "X-TSK-002. The displayed balances of one owner reference (a.owner_ref"
+                                        + " = ?, the ledger's opaque owner, ADR-0042 - no predicate this"
+                                        + " guard counts). AccountService alone calls it, for GET"
+                                        + " /v1/me/accounts/{id}/balance and /balances, and the reference"
+                                        + " is always the product findOwnedBy just returned under"
+                                        + " customer_id = ?, the session's own live customer: another"
+                                        + " customer's account id yields no product and so no read.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcJournalEntryStore.countBeyond",
+                            new Entry(
+                                    Scope.SYSTEM_ENUMERATION,
+                                    "com.finapp.app.risk.LedgerMonitoredLedger",
+                                    "X-TSK-002. The monitoring lag: how many journal entries lie beyond a"
+                                        + " position, capped. The UUID is a keyset cursor - the last"
+                                        + " entry risk's own watermark recorded - never a request's, and"
+                                        + " only a count leaves, to the platform's meters"
+                                        + " (RiskMonitoringMetrics). LedgerMonitoredLedger.entriesBeyond"
+                                        + " alone calls it, and that class depends on risk, so"
+                                        + " NoCustomerSurfaceReadsRiskTest refuses any customer or"
+                                        + " merchant surface reaching it.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcJournalEntryStore.entriesAfter",
+                            new Entry(
+                                    Scope.SYSTEM_ENUMERATION,
+                                    "com.finapp.app.risk.LedgerMonitoredLedger",
+                                    "X-TSK-002. The monitoring intake's journal walk (P13-TSK-019): every"
+                                        + " entry after a keyset cursor - the last entry the monitoring"
+                                        + " watermark recorded - within the settle horizon, by id, for no"
+                                        + " person's request; a journal entry belongs to no single party."
+                                        + " LedgerMonitoredLedger.entriesAfter alone calls it, for risk's"
+                                        + " MonitoringIntake, and that class depends on risk, so"
+                                        + " NoCustomerSurfaceReadsRiskTest refuses any customer or"
+                                        + " merchant surface reaching it.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcLedgerAccountStore.findAllOwned",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. Every account of one owner reference (owner_ref = ?): the"
+                                        + " ledger knows its accounts' owners only as an opaque owner_ref"
+                                        + " (ADR-0042), a predicate this guard does not count -"
+                                        + " moveStatus's and lockForUpdate's stance, ownership the"
+                                        + " commanding surface's. Each caller binds a reference its own"
+                                        + " flow resolved: the product findOwnedBy returned"
+                                        + " (AccountService), the merchant's own payables"
+                                        + " (MerchantPayable, DisputeOperations), the loan or obligation"
+                                        + " its read names (JdbcLoanRecordStore, BnplAccounts,"
+                                        + " LedgerBnplBook), the products payments' and transfers'"
+                                        + " participants resolve - a transfer's destination is"
+                                        + " deliberately another customer's product, answered only as"
+                                        + " whether it can be credited.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcLedgerAccountStore.findOwned",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. One account of an owner reference by purpose and currency"
+                                        + " (owner_ref = ? AND purpose = ? AND currency = ?):"
+                                        + " findAllOwned's stance - the ledger knows only an opaque"
+                                        + " owner_ref (ADR-0042), a predicate this guard does not count,"
+                                        + " so ownership is the commanding surface's. Some forty call"
+                                        + " sites across accounts, payments, transfers, checkout, fx,"
+                                        + " crossborder, lending, bnpl and merchant each bind a reference"
+                                        + " their own flow resolved (a product the customer's"
+                                        + " owner-scoped read returned, a merchant's own key, a loan or"
+                                        + " obligation their transaction holds, a platform operational"
+                                        + " owner); the read answers that owner's account or nothing.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcLedgerAccountStore.lockOwnedForUpdate",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. Every account of an owner reference FOR UPDATE, the"
+                                        + " closers' lock (P3-TSK-014): moveStatus's stance, the ledger"
+                                        + " knowing only an opaque owner_ref (ADR-0042). Two callers:"
+                                        + " AccountClosing, whose reference is the product lockOwnedBy"
+                                        + " holds under customer_id = ? (the session's own customer), and"
+                                        + " MerchantAdministration.close, the merchant an operator names"
+                                        + " behind @RequiresPermission(MERCHANT_ADMINISTER) - its payable"
+                                        + " locked to judge it settled, nothing returned to a customer.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildRows.observe",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The proposal's reading of one account's projection against"
+                                        + " its journal, through the helpers exists, seqOf, entriesOn and"
+                                        + " rowAndHolds - exists' classification: the account is the one"
+                                        + " named in the body of POST /v1/ledger/projection-rebuilds"
+                                        + " behind @RequiresPermission(LEDGER_ADJUST), four eyes at the"
+                                        + " approval; a ledger account has no owner predicate here, and"
+                                        + " the door reads and writes only the derived projection, never"
+                                        + " a journal line.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildStore.findById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Seen through its one-hop helper one: the rebuild GET"
+                                        + " /v1/ledger/projection-rebuilds/{id} names behind"
+                                        + " @RequiresPermission(LEDGER_ADJUST), or the one a keyed act"
+                                        + " just recorded, re-read to answer it - decide's reasoning: a"
+                                        + " rebuild has no owner to scope by, and the proposer must not"
+                                        + " fence the approver out (INV-AUD-04).")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildStore.lockById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Seen through its one-hop helper one: the approval's and"
+                                        + " rejection's FOR UPDATE on the rebuild"
+                                        + " /v1/ledger/projection-rebuilds/{id} names, behind"
+                                        + " @RequiresPermission(LEDGER_ADJUST), the four eyes judged on"
+                                        + " the locked row and V031's CHECK beneath - decide's"
+                                        + " classification.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildStore.one",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The private statement helper behind findById, lockById and"
+                                        + " standingFor, binding the one key its caller hands it - a"
+                                        + " rebuild id from the operator's URL or a keyed act, or the"
+                                        + " account from the proposal's body, behind"
+                                        + " @RequiresPermission(LEDGER_ADJUST); their classification.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcProjectionRebuildStore.standingFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Seen through its one-hop helper one: whether the account"
+                                        + " named in the body of POST /v1/ledger/projection-rebuilds"
+                                        + " already has a rebuild awaiting a decision, read first in the"
+                                        + " proposal's transaction behind"
+                                        + " @RequiresPermission(LEDGER_ADJUST) - exists' classification"
+                                        + " for the same account.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcStatementDerivation.accountsOf",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. The private read of an owner reference's accounts"
+                                        + " (owner_ref = ?) behind statementsFor, its only call site -"
+                                        + " statementsFor's classification: the ledger's opaque owner_ref"
+                                        + " (ADR-0042), ownership the disclosing surface's.")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcStatementDerivation.statementsFor",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. The derived statements of every account of one owner"
+                                        + " reference, periodLines' stance: the rows are the platform's"
+                                        + " accounting record and the ledger knows only an opaque"
+                                        + " owner_ref (ADR-0042). Three callers, each binding a reference"
+                                        + " it answers for: AccountService (the product findOwnedBy"
+                                        + " returned under customer_id = ?, the session's own),"
+                                        + " MerchantTransactionReport (the authenticated merchant's own"
+                                        + " key) and LedgerBnplProofReads (a merchant the BNPL proofs'"
+                                        + " own reading names, platform-run).")),
+                    Map.entry(
+                            "com.finapp.ledger.ProjectionVerification.verdictOf",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. One account's projection verdict, through the helpers"
+                                        + " seqOf, entriesOn and rowOf - their classification: platform"
+                                        + " bookkeeping over the ledger's own rows. The account ids are"
+                                        + " enumerated from the tables themselves - verify's posted"
+                                        + " accounts, and accounting's ProductSourceProofs.projections"
+                                        + " over the same population on its snapshot - never a request;"
+                                        + " only CLEAN, DRIFTING or IN_FLIGHT leaves, no balance.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanApplicationStore.hint",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.lending.LoanOrigination",
+                                    "X-TSK-002. credit's decision events made a hint: the decision request"
+                                        + " id is one the application recorded at submission, resolved by"
+                                        + " LoanOrigination from credit.CreditDecisionRecorded through"
+                                        + " credit's own read or carried by"
+                                        + " credit.CreditDecisionRequestClosed (LoanOriginationHint, the"
+                                        + " inbox consumer) - for no person's request. The write only"
+                                        + " moves next_step_at to now, conditional on AWAITING_DECISION;"
+                                        + " the origination sweep re-judges under the row lock."
+                                        + " LoanOrigination alone calls it.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanDisbursementStore.insertAccrualStart",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The accrual start of a loan the system's own step holds FOR"
+                                        + " UPDATE (L3): the disbursement sweep's path W"
+                                        + " (LoanDisbursements, the loan from its claimed page) or the"
+                                        + " payout step's conclusion (LoanPayoutSteps, likewise) - the"
+                                        + " row id minted here, the loan never a request value, no door"
+                                        + " reaches it. The system's act, labelled as this register"
+                                        + " labels its sweeps (JdbcLoanPayoutStore.insert's precedent);"
+                                        + " two caller classes rule out SYSTEM_JOIN.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanPayoutStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Seen through its one-hop helper one (ADMINISTERED, its own"
+                                        + " entry): the payout of a loan the payout sweep claimed"
+                                        + " (LoanPayoutSteps), or of the loan lending's own recorded"
+                                        + " instruction names inside payments' dispatch of the system"
+                                        + " withdrawal (PaymentsLoanPayouts.resolved) - never a request"
+                                        + " value, no door reaches it; the system's act, two caller"
+                                        + " classes.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanPayoutStore.lock",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.lending.LoanPayoutSteps",
+                                    "X-TSK-002. Seen through its one-hop helper one: the payout's FOR"
+                                        + " UPDATE (L5) on the loan the payout sweep claimed (claimDue)"
+                                        + " and holds under L3 - for no person's request, the loan never"
+                                        + " a request value. LoanPayoutSteps alone calls it.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanRecordStore.query",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The record reader's one statement helper, called by read"
+                                        + " alone: every loan id it binds is read's, each statement"
+                                        + " scoped to it by loan_id = ? or id = ? -"
+                                        + " JdbcBnplRecordStore.query's precedent.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanRecordStore.read",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. A loan's whole record: for the investigator's doors (GET"
+                                        + " /v1/operator/loans/{id}/explanation, POST .../replay) the"
+                                        + " loan from the path behind"
+                                        + " @RequiresPermission(LENDING_INVESTIGATE), the investigator's"
+                                        + " own party's loan refused first (LoanSelfDealing,"
+                                        + " SelfDealingRefused) and the explanation audited"
+                                        + " EXPLANATION_READ; for LendingProofs.prove every id comes from"
+                                        + " loanIds, the population itself. Read-only -"
+                                        + " JdbcBnplRecordStore.read's precedent.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanStore.insertAcceptance",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanOfferStore.lockOwnedBy",
+                                    "X-TSK-002. The acceptance evidence row: its id minted here, its"
+                                        + " agreement's loan either the one LoanAcceptances inserted in"
+                                        + " this transaction for the offer lockOwnedBy holds FOR UPDATE"
+                                        + " under party_id = ? (L2), or - an amendment's acceptance"
+                                        + " (LoanAmendments.accept) - the loan JdbcLoanStore.lockOwnedBy"
+                                        + " holds under party_id = ? (L3); the identity and session in"
+                                        + " the evidence are the proven session's own.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanStore.listOwnedBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. GET /v1/me/loans - l.party_id = ? in the statement is the"
+                                        + " session's own party (LoanAccountDesk -> Loans.list); another"
+                                        + " party's loans never appear, bounded by LISTING_LIMIT.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanTermsStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Seen through its one-hop helper row: A0's first read of the"
+                                        + " version named by POST"
+                                        + " /v1/operator/lending/terms/{versionId}/approval or /rejection"
+                                        + " behind @RequiresPermission(LENDING_ADMINISTER), to learn its"
+                                        + " frozen product before the product's lock"
+                                        + " (LoanTermsAdministration.locked); platform-wide product"
+                                        + " configuration with no owner to scope by -"
+                                        + " JdbcBnplTermsStore.find's precedent.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanTermsStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Seen through its one-hop helper row: A1, the version row"
+                                        + " FOR UPDATE under its product's advisory lock, the decision's"
+                                        + " own row, behind @RequiresPermission(LENDING_ADMINISTER), four"
+                                        + " eyes by CHECK; terms have no owner to scope by -"
+                                        + " JdbcBnplTermsStore.lock's precedent.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanWriteOffStore.oldestPending",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. GET /v1/operator/loans/write-offs behind"
+                                        + " @RequiresPermission(LOAN_WRITE_OFF_APPROVE) - the officer's"
+                                        + " list by permission, audited; its one identifier is the"
+                                        + " officer's own party, left out (l.party_id <> ?), never a"
+                                        + " target, and an officer the platform cannot place reads none -"
+                                        + " JdbcBnplWriteOffStore.oldestPending's precedent.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcRepaymentReversalStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Seen through its one-hop helper one: the reversal this"
+                                        + " transaction just approved or rejected under L3 and L5,"
+                                        + " re-read to answer it - reached only from"
+                                        + " RepaymentReversals.approve and reject, behind"
+                                        + " @RequiresPermission(LOAN_SERVICE_APPROVE) / LOAN_SERVICE, the"
+                                        + " operator's own party's loan refused first"
+                                        + " (SelfDealingRefused); no door names it unlocked.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcRepaymentReversalStore.insertNegations",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The negating rows of the reversal this transaction approved"
+                                        + " under L3 and L5 (RepaymentReversals.approve, behind"
+                                        + " @RequiresPermission(LOAN_SERVICE_APPROVE), self-dealing and"
+                                        + " self-approval refused) - one per allocation of the reversed"
+                                        + " repayment, ids minted here;"
+                                        + " JdbcBnplCorrectionStore.insertNegations' precedent.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcRepaymentReversalStore.live",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Whether a repayment has a live reversal, read by"
+                                        + " RepaymentReversals.propose under L3: the repayment from the"
+                                        + " path of POST"
+                                        + " /v1/operator/loans/{id}/repayments/{repaymentId}/reversal"
+                                        + " behind @RequiresPermission(LOAN_SERVICE), already held to the"
+                                        + " locked loan by JdbcRepaymentStore.findById (loan_id = ? AND"
+                                        + " id = ?), the operator's own party's loan refused first"
+                                        + " (SelfDealingRefused).")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcRepaymentReversalStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Seen through its one-hop helper one: L5, the proposal named"
+                                        + " by the decision's body, locked under the loan's L3 and kept"
+                                        + " only when it is a proposal for this repayment of this loan"
+                                        + " (RepaymentReversals.lockedProposal) - another's is the"
+                                        + " uniform 404, its row locked only until that refusal rolls"
+                                        + " back and nothing of it returned; behind"
+                                        + " @RequiresPermission(LOAN_SERVICE_APPROVE) / LOAN_SERVICE,"
+                                        + " self-dealing refused first.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcRepaymentReversalStore.one",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The private read behind find and lock, binding x.id = ?"
+                                        + " alone: its ids are theirs - the reversal decided in this"
+                                        + " transaction, or the decision body's proposal, filtered to the"
+                                        + " locked loan and repayment after the read (lockedProposal);"
+                                        + " their classification.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcRepaymentStore.closedBy",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanStore.lockOwnedBy",
+                                    "X-TSK-002. The closure a replayed repayment caused: the repayment is"
+                                        + " the one findByKey found under the loan lockOwnedBy holds FOR"
+                                        + " UPDATE under party_id = ? (L3), for the session's own"
+                                        + " Idempotency-Key (Repayments.repay) - never a request's"
+                                        + " identifier.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcWaiverStore.ofAssessment",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The earlier waivers of one fee assessment, read by Waivers'"
+                                        + " room computation under L3: the assessment is the one"
+                                        + " JdbcFeeAssessmentStore.find held to the loan the waiver door"
+                                        + " locked (id = ? AND loan_id = ?), the door behind"
+                                        + " @RequiresPermission(LOAN_SERVICE) / LOAN_SERVICE_APPROVE, the"
+                                        + " operator's own party's loan refused first"
+                                        + " (SelfDealingRefused).")),
+                    Map.entry(
+                            "com.finapp.party.OrganisationRegistration.registerOrConverge",
+                            new Entry(
+                                    Scope.SESSION_DERIVED,
+                                    "com.finapp.app.kyc.OrganisationController",
+                                    "X-TSK-002. Seen through its one-hop helpers findExisting and"
+                                        + " insertRegistrant (SESSION_DERIVED, their own entries): the"
+                                        + " registrant PartyId is the proven session's own"
+                                        + " (KybService.register: Session.identityId() ->"
+                                        + " Identity.partyId()), and POST /v1/me/organisations takes no"
+                                        + " identifier at all - a name is not one; the party and customer"
+                                        + " it writes are minted here, the unique registrant index the"
+                                        + " arbiter.")),
+                    // ---- X-TSK-002, batch B: the widened detector's customer-side methods
+                    // ---------------------------------------------------------- accounts
+                    Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.findAllFor",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. The customer's product list (AccountService.list) - the"
+                                        + " identifier is the owner itself: the customer is session-derived"
+                                        + " (findLiveCustomerFor), and customer_id = ? in the statement is the"
+                                        + " scope, so the list holds the caller's agreements and nobody else's."
+                                        + " The second caller, risk's AccountMonitoredParties.accountsOf, passes"
+                                        + " the live customer of a party the monitoring rule resolved from the"
+                                        + " platform's own records, as the system - never a request value.")),
+                    Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.findLive",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. A customer's one live product of a type (the wallet),"
+                                        + " customer_id = ? in the statement. Every caller passes the customer of"
+                                        + " a party it resolved through findLiveCustomerFor (ExistingWallets,"
+                                        + " PartyConversionParticipants, AccountsLoanWallets,"
+                                        + " JdbcPaymentParticipants, CrossBorderMovements) or of a wallet an"
+                                        + " owner-scoped read just returned (CheckoutDoorStepUp,"
+                                        + " WithdrawalDoorStepUp) - never an identifier from a request.")),
+                    // ---------------------------------------------------------- paymentmethods
+                    Map.entry(
+                            "com.finapp.paymentmethods.JdbcPaymentMethodStore.findLive",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. The attach convergence read for a CARD_TOKEN slot: after the"
+                                        + " one-live index refused the insert, attach re-reads the committed"
+                                        + " winner for fresh.partyId() - the attaching caller's session-derived"
+                                        + " party - so a lost race converges on the caller's own row. party_id ="
+                                        + " ? is in the statement it issues through the one-hop helper"
+                                        + " findLiveBy; the token is the provider's. No production caller outside"
+                                        + " the store.")),
+                    Map.entry(
+                            "com.finapp.paymentmethods.JdbcPaymentMethodStore.findLiveBy",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. The private statement behind findLive and"
+                                        + " findLiveByDestination: party_id = ? in the statement, the slot column"
+                                        + " one of two class constants (never caller text), the party the"
+                                        + " attaching caller's own (fresh.partyId(), session-derived).")),
+                    Map.entry(
+                            "com.finapp.paymentmethods.JdbcPaymentMethodStore.findLiveByDestination",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. findLive's twin for a BANK_ACCOUNT slot: the attach"
+                                        + " convergence read of the committed winner for fresh.partyId(), the"
+                                        + " registering caller's session-derived party; party_id = ? is in the"
+                                        + " statement it issues through findLiveBy. No production caller outside"
+                                        + " the store.")),
+                    Map.entry(
+                            "com.finapp.paymentmethods.JdbcPaymentMethodStore.listLiveFor",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. The customer's instrument list (PaymentMethodService) - the"
+                                        + " identifier is the owner itself, the session's party (partyOf), and"
+                                        + " party_id = ? in the statement is the scope: the list holds the"
+                                        + " caller's live instruments and nobody else's.")),
+                    // ---------------------------------------------------------- payments: callback hints
+                    Map.entry(
+                            "com.finapp.payments.JdbcCallbackHintStore.conclude",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A callback hint (V036) is the inquiry flow's work item, as an"
+                                        + " outbox row is a relay's: kind, the attempt to ask about, what was"
+                                        + " asked and when - no party, customer or amount column. The hint id is"
+                                        + " one the platform minted (insert) and read back (findDue's page), and"
+                                        + " CallbackHintResolution alone passes it; concluded_at IS NULL is the"
+                                        + " arbiter, and stamping a conclusion moves no money.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcCallbackHintStore.concludeRefuted",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. conclude's refutation twin, conditional on the hint having"
+                                        + " outlived its kind's bound on the database clock: the same platform"
+                                        + " work item with no owner, the same minted id passed only by"
+                                        + " CallbackHintResolution - a refuted hint moves nothing.")),
+                    // ---------------------------------------------------------- payments: capture holds
+                    Map.entry(
+                            "com.finapp.payments.JdbcCaptureHoldStore.expire",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.payments.HeldPayments",
+                                    "X-TSK-002. The expiry leg's conditional (resolution IS NULL AND"
+                                        + " held_until <= the database clock, through the one-hop helper"
+                                        + " resolved): the intent id is the hold HeldPayments.expireOne claimed"
+                                        + " FOR UPDATE SKIP LOCKED (claimExpired) in the same transaction, as the"
+                                        + " platform (enterSystem) - a reference the system recorded, for no"
+                                        + " person's request. HeldPayments alone calls it; no HTTP path reaches"
+                                        + " a capture hold.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcCaptureHoldStore.findForIntent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. HeldPayments.attemptOf's read after a door resolved the hold"
+                                        + " (the one-hop helper one): the intent id is the target of a risk"
+                                        + " action that ActionDispatch dispatches as the platform - recorded by"
+                                        + " risk when the payment was held, decided under its four-eyes approval"
+                                        + " - never a request value. What stands in for the owner predicate:"
+                                        + " HeldPayments.requireDoor refuses every actor but SYSTEM and EMPLOYEE,"
+                                        + " and no HTTP path reaches a capture hold.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcCaptureHoldStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The doors' FOR UPDATE on the hold (HeldPayments.decide,"
+                                        + " through the helper one) before the conditional resolution: the"
+                                        + " findForIntent provenance - a risk action's recorded target, the door"
+                                        + " refusing every actor but SYSTEM and EMPLOYEE (requireDoor) - never a"
+                                        + " request value.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcCaptureHoldStore.resolveCapture",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The capture door's conditional OPEN -> CAPTURE within"
+                                        + " held_until on the database clock (through the helper resolved), on"
+                                        + " the row decide locked in the same transaction: the findForIntent"
+                                        + " provenance and requireDoor's SYSTEM/EMPLOYEE check; the caller's key"
+                                        + " recorded, the act audited.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcCaptureHoldStore.resolveVoid",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. resolveCapture's twin, OPEN -> VOID on the row decide locked:"
+                                        + " the findForIntent provenance and requireDoor's SYSTEM/EMPLOYEE"
+                                        + " check; resolution IS NULL the arbiter.")),
+                    // ---------------------------------------------------------- payments: the backfill's pages
+                    Map.entry(
+                            "com.finapp.payments.JdbcClearingRecordStore.page",
+                            new Entry(
+                                    Scope.SYSTEM_ENUMERATION,
+                                    "com.finapp.app.reconciliation.OpeningPosition",
+                                    "X-TSK-002. The opening-position backfill's keyset page of every clearing"
+                                        + " record (WHERE id > ? ORDER BY id): the cursor is the walk's own - the"
+                                        + " zero UUID, then the last row it read - never a request's. The walk is"
+                                        + " begun by an operator's POST /operator/reconciliation/opening-position"
+                                        + " under @RequiresPermission(RECONCILIATION_ADMINISTER), who names no"
+                                        + " subject: the population is all of them by design. OpeningPosition"
+                                        + " alone calls it.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.pageAll",
+                            new Entry(
+                                    Scope.SYSTEM_ENUMERATION,
+                                    "com.finapp.app.reconciliation.OpeningPosition",
+                                    "X-TSK-002. The backfill's keyset page of every dispute, the cursor the"
+                                        + " walk's own (zero UUID, then the last row) - the"
+                                        + " JdbcClearingRecordStore.page reasoning: begun under"
+                                        + " RECONCILIATION_ADMINISTER by an operator who names no subject."
+                                        + " OpeningPosition alone calls it.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentAttemptStore.pageByStatus",
+                            new Entry(
+                                    Scope.SYSTEM_ENUMERATION,
+                                    "com.finapp.app.reconciliation.OpeningPosition",
+                                    "X-TSK-002. The backfill's keyset page of every CAPTURED and every"
+                                        + " EXECUTED attempt (the status a code constant), the cursor the walk's"
+                                        + " own - the JdbcClearingRecordStore.page reasoning. OpeningPosition"
+                                        + " alone calls it.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRefundStore.pageCompleted",
+                            new Entry(
+                                    Scope.SYSTEM_ENUMERATION,
+                                    "com.finapp.app.reconciliation.OpeningPosition",
+                                    "X-TSK-002. The backfill's keyset page of every COMPLETED refund, the"
+                                        + " cursor the walk's own - the JdbcClearingRecordStore.page reasoning."
+                                        + " OpeningPosition alone calls it.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcWithdrawalStore.pageCompleted",
+                            new Entry(
+                                    Scope.SYSTEM_ENUMERATION,
+                                    "com.finapp.app.reconciliation.OpeningPosition",
+                                    "X-TSK-002. The backfill's keyset page of every COMPLETED withdrawal, the"
+                                        + " cursor the walk's own - the JdbcClearingRecordStore.page reasoning."
+                                        + " OpeningPosition alone calls it.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcUnmatchedConfirmationStore.page",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A keyset page of every parked confirmation (WHERE id > ?),"
+                                        + " the cursor the reader's own (zero UUID, then the last row). A parking"
+                                        + " is value a scheme confirmation brought that no operation of ours"
+                                        + " explains (INV-REC-05), held in SUSPENSE_UNMATCHED and owned by no"
+                                        + " party until reconciliation's four-eyes resolution attributes it - at"
+                                        + " most it names the attempt it was compared with. Two readers, so not"
+                                        + " a SYSTEM_ENUMERATION: OpeningPosition's backfill (begun under"
+                                        + " RECONCILIATION_ADMINISTER) and PositionProof's suspense proof;"
+                                        + " neither takes an identifier from a request.")),
+                    // ---------------------------------------------------------- payments: disputes
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.attributedStanding",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The bound's chargeback term, folded through Money over the"
+                                        + " one-hop helper standing (whose entry carries the provenance): called"
+                                        + " only by ChargebackAccounting, on an attempt its caller holds FOR"
+                                        + " UPDATE - reached by the signed dispute door's attribution over OUR"
+                                        + " operation reference, by the refund command's intent read behind"
+                                        + " @RequiresPermission(PAYMENT_REFUND), or from a refund row a resolver"
+                                        + " locked - never a request's identifier. A sum leaves, no row.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcDisputeStore.standingOn",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The re-attribution's read of the chargebacks standing on an"
+                                        + " attempt (ChargebackAccounting.reattributeFreed, through the helper"
+                                        + " standing), on the attempt its caller holds FOR UPDATE - the"
+                                        + " attributedStanding provenance; the rows feed the platform's own"
+                                        + " conditional re-attribution and no surface returns them.")),
+                    // ---------------------------------------------------------- payments: outbound credits
+                    Map.entry(
+                            "com.finapp.payments.JdbcOutboundCreditStore.bySubject",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.crossborder.PaymentsCrossBorderExecution",
+                                    "X-TSK-002. The cross-border takeover's read of the credit a committed"
+                                        + " payment dispatched (subject_id = ?):"
+                                        + " PaymentsCrossBorderExecution.dispatched is called only by"
+                                        + " crossborder's PaymentAuthorization.authorize, on the payment its"
+                                        + " byDispatchKey just resolved under owner_party = ? (the caller's party"
+                                        + " and key) - a reference the platform recorded on the credit at"
+                                        + " insert, never a request value. It runs inside the customer's own"
+                                        + " authorization, but the person names nothing here; owner_party = ? is"
+                                        + " not a spelling the guard accepts, so the read cannot be cited as"
+                                        + " AUTHORITATIVE_ID. PaymentsCrossBorderExecution alone calls it.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcOutboundCreditStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The FOR UPDATE every applier takes before moving a credit"
+                                        + " (the complete/fail/move entries' 'the row it locked'): the credit id"
+                                        + " comes only from this flight's own dispatch"
+                                        + " (PaymentsCrossBorderExecution), our end-to-end reference or a scheme"
+                                        + " execution claim's recorded subject (CorridorReturnResolutions,"
+                                        + " OutboundReturnWorker), the outcome applier's row"
+                                        + " (OutboundCreditOutcomes) or a sweep candidate"
+                                        + " (OutboundCreditResolution) - never a request value. The one operator"
+                                        + " path, a parked return's four-eyes resolution, names the parked line,"
+                                        + " not the credit.")),
+                    // ---------------------------------------------------------- payments: intents
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentIntentStore.listFor",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. The customer's payment list (PaymentService.list) - the"
+                                        + " identifier is the owner itself, the session's party (partyOf), and"
+                                        + " party_id = ? in the statement is the scope: the list holds the"
+                                        + " caller's payments and nobody else's.")),
+                    // ---------------------------------------------------------- payments: provider evidence
+                    Map.entry(
+                            "com.finapp.payments.JdbcProviderEvidenceStore.append",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Retains a provider's raw statement about a card attempt or"
+                                        + " refund, encrypted and append-only, through the one-hop helper"
+                                        + " appendRow. No person names the id - the trail writers' precedent"
+                                        + " (JdbcDisputeStore.appendHistory): it is the operation the writing"
+                                        + " flow holds - minted by a command's own Tx1 (PaymentConfirmation,"
+                                        + " PaymentCapture, PaymentVoid, PaymentRefund), a sweep or inquiry"
+                                        + " candidate (PaymentSweeper, CardCallbackInquiry, PayInResolution,"
+                                        + " ReturnResolution, InstantCallbackInquiry), or a signed callback's"
+                                        + " attribution over OUR minted reference after the HMAC check"
+                                        + " (PaymentWebhookService, InstantCallbackService;"
+                                        + " CorridorCallbackService retains an unattributed body with no subject"
+                                        + " at all) - never a"
+                                        + " request value. Nothing is read back; payloads stay behind"
+                                        + " payloadsFor's decrypt-and-verify read.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcProviderEvidenceStore.appendForDisputeResponse",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. A dispute answer's provider evidence, through appendRow: the"
+                                        + " response id is one DisputeResponses' dispatch minted under the"
+                                        + " locked act, or one DisputeResponseResolution locked (the"
+                                        + " lockForOutcome provenance) - never a request value.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcProviderEvidenceStore.appendForOutboundCredit",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. An outbound credit's provider evidence, through appendRow: the"
+                                        + " credit id is this flight's own dispatched credit"
+                                        + " (PaymentsCrossBorderExecution.recordSend, locked), a sweep"
+                                        + " candidate (OutboundCreditResolution), or the credit a signed corridor"
+                                        + " callback names by OUR end-to-end reference after the HMAC check"
+                                        + " (CorridorCallbackService, byReference) - never a request value.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcProviderEvidenceStore.appendForUnmatched",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. The scheme's raw statement retained beside a parking,"
+                                        + " encrypted and append-only (V023's fifth subject): the parking id is"
+                                        + " the one the same resolution's outcome produced"
+                                        + " (InstantCallbackInquiry, PayInResolution), minted by the platform. A"
+                                        + " parking belongs to no"
+                                        + " party until reconciliation's four-eyes resolution attributes it - the"
+                                        + " JdbcUnmatchedConfirmationStore.page reasoning.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcProviderEvidenceStore.appendForWithdrawal",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. A withdrawal's provider evidence, through appendRow: the"
+                                        + " withdrawal id is this flight's own dispatch (Withdrawals), a"
+                                        + " resolver's or inquiry's locked candidate (WithdrawalResolution,"
+                                        + " InstantCallbackInquiry), or the withdrawal a signed instant callback"
+                                        + " attributes by OUR end-to-end reference after the HMAC check"
+                                        + " (InstantCallbackService) - never a request value; the"
+                                        + " JdbcWithdrawalStore.findForUpdate provenance.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcProviderEvidenceStore.appendRow",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The private insert behind append and the four appendFor*"
+                                        + " doors (the JdbcQuoteStore.insertEvent shape): exactly one subject"
+                                        + " column set per call, by the door that carries its own provenance"
+                                        + " entry; the evidence id is minted here. No caller outside the store.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcProviderEvidenceStore.evidenceExists",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The case file's existence probe: the evidence id IS a request"
+                                        + " value - the targetRef of POST"
+                                        + " /operator/reconciliation/breaks/{id}/evidence-links - deliberately"
+                                        + " cross-tenant, an investigator linking whoever's statement a break"
+                                        + " names. @RequiresPermission(RECONCILIATION_INVESTIGATE) stands in for"
+                                        + " the owner predicate, the link is audited (BREAK_EVIDENCE_LINKED), and"
+                                        + " only a boolean leaves - no metadata, no payload. Reached only through"
+                                        + " ComposedCaseFileEvidence.exists (BreakCaseFile.targetExists).")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcProviderEvidenceStore.evidenceMetadataForUnmatched",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. evidenceMetadataFor's twin for a parking: a break trace's walk"
+                                        + " to the statements retained beside an unmatched confirmation -"
+                                        + " METADATA only (id, kind, recorded_at) - under"
+                                        + " @RequiresPermission(RECONCILIATION_INVESTIGATE) on the trace route."
+                                        + " The parking id is never a request's: ComposedCaseFileEvidence finds it"
+                                        + " by findByReference over the operation_ref reconciliation's own"
+                                        + " expectation stored.")),
+                    // ---------------------------------------------------------- payments: routing decisions
+                    Map.entry(
+                            "com.finapp.payments.JdbcRoutingStore.findLatestDecisionBy",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The private statement behind the three findLatestDecisionFor*"
+                                        + " delegates: the subject column is one of three class constants (never"
+                                        + " caller text), and the subject id arrives only through them - the"
+                                        + " intent delegate's two callers (findLatestDecisionForIntent's entry)"
+                                        + " and the withdrawal and credit delegates, which no production class"
+                                        + " calls today. Its decision steps load through stepsOf.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRoutingStore.findLatestDecisionForIntent",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Two callers, two provenances (the stepsOf entry's reasoning,"
+                                        + " visible here again since the widening sees the one-hop delegate):"
+                                        + " PaymentConfirmation's Tx2 reads the decision its own Tx1 minted for"
+                                        + " an intent that passed findOwnedForUpdate;"
+                                        + " RoutingAdministration.explain reads SOMEBODY ELSE'S payment by design,"
+                                        + " the id from the path of GET"
+                                        + " /operator/payments/{intentId}/routing, with"
+                                        + " @RequiresPermission(PAYMENT_ROUTING_ADMINISTER) standing in for the"
+                                        + " owner predicate (RoutingPolicyDatabaseTest's refusals) and every read"
+                                        + " audited (PAYMENT_ROUTING_EXPLANATION_READ).")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRoutingStore.findLatestDecisionForOutboundCredit",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The typed delegate for a credit's newest routing decision. NO"
+                                        + " production class calls it - only CrossBorderPaymentDatabaseTest"
+                                        + " reads the decision a credit's dispatch pinned - so no request reaches"
+                                        + " it today, and no administrator's door exists. The label follows its"
+                                        + " intent twin and stepsOf rather than a permission; the first"
+                                        + " production caller must re-argue this entry.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRoutingStore.findLatestDecisionForWithdrawal",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The typed delegate for a withdrawal's newest routing decision."
+                                        + " NOTHING calls it - no production class and no test beyond a fake"
+                                        + " implementing the interface - so no request reaches it and no"
+                                        + " administrator's door exists. The label follows its intent twin and"
+                                        + " stepsOf rather than a permission; the first caller must re-argue"
+                                        + " this entry (or the method be removed).")),
+                    // ---------------------------------------------------------- payments: withdrawals
+                    Map.entry(
+                            "com.finapp.payments.JdbcWithdrawalStore.findByDispatchKey",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. A person's withdrawal takeover"
+                                        + " (Withdrawals.dispatchOrConverge): customer_id = ? in the statement"
+                                        + " beside the caller's own client key, the customer the one the door"
+                                        + " resolved for the caller's wallet - a key collides only within its"
+                                        + " owner, and a system row (instruction_reference set) is never a"
+                                        + " person's convergence target.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcWithdrawalStore.findOwned",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. GET /v1/me/withdrawals/{id} (WithdrawalService) - the"
+                                        + " identifier comes from the path, and customer_id = ? in the statement"
+                                        + " is the ownership check (the surface read findForUpdate's entry"
+                                        + " names), the customer the session party's live ACTIVE one: a"
+                                        + " stranger's id, an unknown one and a malformed one are one 404.")),
+                    // ---------------------------------------------------------- payments: sweep bookkeeping
+                    Map.entry(
+                            "com.finapp.payments.SweepRowFailures.record",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A sweep's per-row backoff counter (payments V040): leg, row"
+                                        + " id, a failure count and its class only - operational state, never"
+                                        + " financial truth, owned by no party; it decides only when a listing"
+                                        + " reads the row again. The row id is a candidate the sweep itself"
+                                        + " listed, passed through the four stores' failure delegates"
+                                        + " (JdbcPaymentAttemptStore, JdbcRefundStore, JdbcWithdrawalStore,"
+                                        + " JdbcDisputeResponseStore); WHERE retry_at <= the database clock is"
+                                        + " the arbiter.")),
+                    // ---------------------------------------------------------- transfers
+                    Map.entry(
+                            "com.finapp.transfers.JdbcBeneficiaryStore.findLive",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. The create convergence read (createOrConverge): after the"
+                                        + " one-live index refused the insert, the committed winner is re-read"
+                                        + " for fresh.partyId() - the creating caller's session-derived party -"
+                                        + " and party_id = ? in the statement keeps a lost race converging on"
+                                        + " the caller's own row, never a stranger's saved destination. No"
+                                        + " production caller outside the store.")),
+                    Map.entry(
+                            "com.finapp.transfers.JdbcBeneficiaryStore.listLiveFor",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. The beneficiary list (BeneficiaryService) - the identifier is"
+                                        + " the owner itself, the session's party (partyOf), and party_id = ? in"
+                                        + " the statement is the scope: the list holds the caller's live"
+                                        + " beneficiaries and nobody else's.")),
+                    Map.entry(
+                            "com.finapp.transfers.JdbcTransferStore.listFor",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. The transfer list (TransferService.list) - the identifier is"
+                                        + " the owner itself: the customer is session-derived"
+                                        + " (findLiveCustomerFor), and customer_id = ? in the statement is the"
+                                        + " scope, newest first.")),
+                    Map.entry(
+                            "com.finapp.transfers.JdbcTransferStore.recordTransition",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The append-only transfer_event row beside a transition; the"
+                                        + " UUID the detector sees is the acting identity's id, not a resource's."
+                                        + " Two callers, two provenances: TransferExecution.commit writes it for"
+                                        + " the transfer it minted and inserted in the same transaction (the"
+                                        + " claim's customer); TransferReversal writes it for the transfer"
+                                        + " lockById locked from the URL of POST /v1/transfers/{id}/reversal -"
+                                        + " SOMEBODY ELSE'S transfer by design, with"
+                                        + " @RequiresPermission(TRANSFER_REVERSE) standing in for the owner"
+                                        + " predicate (TransferReversalDatabaseTest's permissionless refusal).")),
+                    // ---- X-TSK-002, batch C: the widened detector's customer-side methods
+                    Map.entry(
+                            "com.finapp.app.accounting.AccountingCloseRecordReads.checks",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. ofRevision's private loader: the close id is the period_close row"
+                                        + " ofRevision just read in the run's read-only snapshot (by the period and"
+                                        + " revision the run pinned at its claim), never a request value. A close's"
+                                        + " check rows (code, status, attempt, check id, judge) are the platform's own"
+                                        + " books for a calendar month - owned by no party.")),
+                    Map.entry(
+                            "com.finapp.app.accounting.LedgerJournalReads.entry",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Two operator doors name the entry from the request, deliberately any"
+                                        + " entry: GET /v1/operator/accounting/gl/entries/{entryId} behind"
+                                        + " @RequiresPermission(ACCOUNTING_READ), each serving recorded; and POST"
+                                        + " /v1/operator/accounting/breaks/{breakId}/resolution behind"
+                                        + " @RequiresPermission(ACCOUNTING_ADJUST_APPROVE) - the correcting entry from"
+                                        + " the body, the subject entry from the locked break's own row. The journal is"
+                                        + " the platform's book: header and lines with each account's opaque owner_ref,"
+                                        + " never the reference, reason or actor.")),
+                    Map.entry(
+                            "com.finapp.app.bnpl.BnplFlowScope.forApplication",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.bnpl.BnplOriginationSchedule",
+                                    "X-TSK-002. The origination sweep leg's span link: the application id is one"
+                                        + " the sweep's own claim returned (claimApplications) under the system actor,"
+                                        + " never a request value; the lookup answers the row's stored correlation id"
+                                        + " alone, read by spans and logs - nothing written, nothing shown to anybody."
+                                        + " BnplOriginationSchedule alone calls it.")),
+                    Map.entry(
+                            "com.finapp.app.bnpl.BnplFlowScope.forDispute",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.bnpl.BnplDisputeSchedule",
+                                    "X-TSK-002. The dispute deadline sweep's span link: dispute -> its obligation's"
+                                        + " stored correlation, the dispute id one the sweep's own claim returned under"
+                                        + " the system actor, never a request value; a correlation id alone is read, by"
+                                        + " spans and logs. BnplDisputeSchedule alone calls it.")),
+                    Map.entry(
+                            "com.finapp.app.bnpl.BnplFlowScope.forObligation",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.bnpl.BnplServicingSchedule",
+                                    "X-TSK-002. The servicing sweep leg's span link: the obligation id is one the"
+                                        + " sweep's own claim returned under the system actor, never a request value; a"
+                                        + " correlation id alone is read, by spans and logs. BnplServicingSchedule alone"
+                                        + " calls it.")),
+                    Map.entry(
+                            "com.finapp.app.bnpl.BnplFlowScope.forOffer",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.bnpl.BnplOriginationSchedule",
+                                    "X-TSK-002. The offer expiry sweep leg's span link: the offer id is one the"
+                                        + " sweep's own claim returned (claimOffers) under the system actor, never a"
+                                        + " request value; a correlation id alone is read, by spans and logs."
+                                        + " BnplOriginationSchedule alone calls it.")),
+                    Map.entry(
+                            "com.finapp.app.bnpl.BnplFlowScope.lookup",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The private read behind the sweep legs and the doors: one row's"
+                                        + " stored correlation id and nothing else, read by spans and logs, never"
+                                        + " written, never shown to the caller. A sweep leg's id is its sweep's own"
+                                        + " claim. A door's id is the path's raw value, read only AFTER the act has"
+                                        + " returned (linked, P15-TSK-023): the act - a customer's owner-scoped command,"
+                                        + " a merchant's tenant-scoped one, an operator's behind its permission - is"
+                                        + " where ownership is judged, and a refused act throws, so a stranger's id is"
+                                        + " never looked up. That ordering is the stand-in, and no build rule checks"
+                                        + " it.")),
+                    Map.entry(
+                            "com.finapp.app.credit.BnplCreditExposure.outstandingFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Credit's PlatformCreditExposure seam (version 4), called only through"
+                                        + " SnapshotFreezer: the party is the decision request's recorded party - the"
+                                        + " progress step's freeze, the deciding transaction's re-read, and an"
+                                        + " underwriter's decision on a review case behind"
+                                        + " @RequiresPermission(CREDIT_UNDERWRITE) under the not-self rule - never a"
+                                        + " request value; a figure leaves, no row. PER_SUBJECT does carry the owner"
+                                        + " (e.party_id = ? and b.party_id = ?), but it concatenates non-literal"
+                                        + " constants, so this rule's constant reader cannot see it.")),
+                    Map.entry(
+                            "com.finapp.app.credit.LendingCreditExposure.outstandingFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The PlatformCreditExposure seam's version 2, no longer wired"
+                                        + " (CreditBeans wires BnplCreditExposure); its only possible caller is"
+                                        + " SnapshotFreezer through the seam, with the decision request's recorded"
+                                        + " party - the freeze, the deciding re-read, an underwriter's decision behind"
+                                        + " CREDIT_UNDERWRITE - never a request value. PER_LOAN carries e.party_id = ?,"
+                                        + " but it concatenates NOT_A_LOAN_WRITE_OFF, so this rule's constant reader"
+                                        + " cannot see it.")),
+                    Map.entry(
+                            "com.finapp.app.lending.LendingFlowScope.forApplication",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.lending.LoanOriginationSchedule",
+                                    "X-TSK-002. The origination sweep leg's span link: the application id is one"
+                                        + " the sweep's own claim returned under the system actor, never a request"
+                                        + " value; a correlation id alone is read, by spans and logs."
+                                        + " LoanOriginationSchedule alone calls it.")),
+                    Map.entry(
+                            "com.finapp.app.lending.LendingFlowScope.forLoan",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Three sweep legs' span link - LoanDisbursementSchedule,"
+                                        + " LoanPayoutSchedule and LoanServicingSchedule, so not a SYSTEM_JOIN: the loan"
+                                        + " id is one each sweep's own claim returned under the system actor, never a"
+                                        + " request value; a correlation id alone is read, by spans and logs. No door,"
+                                        + " customer's or operator's, reaches it.")),
+                    Map.entry(
+                            "com.finapp.app.lending.LendingFlowScope.forOffer",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.app.lending.LoanOriginationSchedule",
+                                    "X-TSK-002. The offer expiry sweep leg's span link: the offer id is one the"
+                                        + " sweep's own claim returned under the system actor, never a request value; a"
+                                        + " correlation id alone is read, by spans and logs. LoanOriginationSchedule"
+                                        + " alone calls it.")),
+                    Map.entry(
+                            "com.finapp.app.lending.LendingFlowScope.lookup",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The private read behind the sweep legs and the doors: one row's"
+                                        + " stored correlation id (the table one of this class's constants), read by"
+                                        + " spans and logs, never shown to the caller. A sweep leg's id is its sweep's"
+                                        + " own claim. A door's id - the customer's loan and application doors - is"
+                                        + " the path's raw value, read only AFTER the owner-scoped act has returned"
+                                        + " (linked, P15-TSK-023); a refused act throws, so a stranger's id is never"
+                                        + " looked up. That ordering is the stand-in, and no build rule checks it.")),
+                    Map.entry(
+                            "com.finapp.app.reconciliation.ReconciliationExplanationController.itemScale",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. The decided item's scale (INV-MON-05) for GET"
+                                        + " /v1/operator/reconciliation/decisions/{id}, behind"
+                                        + " @RequiresPermission(RECONCILIATION_INVESTIGATE): the item id is the"
+                                        + " external_item_id of the match decision this transaction just read, never a"
+                                        + " request value. An external item is a provider's statement line - the"
+                                        + " platform's reconciliation evidence, owned by no party - and only its scale"
+                                        + " leaves.")),
+                    Map.entry(
+                            "com.finapp.app.risk.LedgerMonitoredLedger.entryIds",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. The monitoring census's side of the journal (P13-TSK-023): a"
+                                        + " primary-key range of ledger.journal_entry between a risk day's UUIDv7"
+                                        + " bounds - positions computed from a calendar day, not a resource anybody"
+                                        + " names - answering entry ids alone: no line, account, owner_ref or amount."
+                                        + " MonitoringCensus alone calls it, for the risk operations reports. A journal"
+                                        + " entry is the platform's book, owned by no party.")),
+                    Map.entry(
+                            "com.finapp.app.risk.LedgerMonitoredLedger.firstBeyond",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. The monitoring age gauge's probe (P13-TSK-024): the first journal"
+                                        + " entry id beyond the monitoring watermark - a position risk recorded itself"
+                                        + " - on RiskAgeMetrics' read-only snapshot, no person's request; an entry id"
+                                        + " alone leaves. It is wired as a method reference (RiskProofBeans), which"
+                                        + " the one-caller rule does not read as a call. A journal entry is the"
+                                        + " platform's book, owned by no party.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDataRequestStore.decisionRequestOpen",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.credit.CreditDataCollection",
+                                    "X-TSK-002. The ask's data request -> decision request join: the id is the"
+                                        + " decision_request_id of the data request row find just read in the same"
+                                        + " transaction - a reference credit recorded at the data request's birth,"
+                                        + " never a request value; a boolean leaves. CreditDataCollection alone calls"
+                                        + " it, for the progress step's ask and the retry sweep - no door.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDataRequestStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. byId without the lock, on byId's own ground: the data request id is"
+                                        + " minted by credit when the progress step opens it, or returned by the retry"
+                                        + " sweep's claimDue - never a request value, and no door, customer's or"
+                                        + " operator's, reaches it. Two system callers, so not a SYSTEM_JOIN:"
+                                        + " CreditDataCollection.ask, and CreditFlowScope.forDataRequest, which reads"
+                                        + " the row only to find its decision request's stored correlation.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDataRequestStore.lock",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.credit.CreditDataCollection",
+                                    "X-TSK-002. Tx2's serialization point (record, retry, the unrecordable path):"
+                                        + " the id is one credit minted when the progress step opened the data request"
+                                        + " (DecisionProgress -> ask) or one the retry sweep's own claimDue returned,"
+                                        + " never a request value; no door reaches it. CreditDataCollection alone calls"
+                                        + " it.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDataRequestStore.markUnavailable",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.credit.CreditDataCollection",
+                                    "X-TSK-002. transition's REQUESTED -> UNAVAILABLE edge: the id is the row this"
+                                        + " transaction holds FOR UPDATE through lock - credit-minted or claimed by the"
+                                        + " retry sweep, never a request value - and the statement is conditional on"
+                                        + " REQUESTED. CreditDataCollection alone calls it.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDataRequestStore.receive",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.credit.CreditDataCollection",
+                                    "X-TSK-002. transition's REQUESTED -> RECEIVED edge: the id is the row this"
+                                        + " transaction holds FOR UPDATE through lock - credit-minted or claimed by the"
+                                        + " retry sweep, never a request value - and the statement is conditional on"
+                                        + " REQUESTED. CreditDataCollection alone calls it.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDataRequestStore.withdraw",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.credit.CreditDataCollection",
+                                    "X-TSK-002. transition's -> CONSENT_WITHDRAWN edge, taken when the consent gate"
+                                        + " re-read under the row lock finds no basis: the id is the row this"
+                                        + " transaction holds FOR UPDATE through lock, never a request value, the"
+                                        + " statement conditional on the status read. CreditDataCollection alone calls"
+                                        + " it.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDecisionConsumptions.consume",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.lending.JdbcLoanOfferStore.lockOwnedBy",
+                                    "X-TSK-002. The consumption port's door: the decision id is the offer's own,"
+                                        + " read from the offer the acceptance holds FOR UPDATE under the customer's"
+                                        + " party - LoanAcceptances through JdbcLoanOfferStore.lockOwnedBy via"
+                                        + " CreditLoanDecisions, and BnplAcceptances through"
+                                        + " JdbcBnplOfferStore.lockOwnedBy via CreditBnplDecisions, both o.party_id = ?"
+                                        + " - never a request value. Both callers re-check the consumed decision's"
+                                        + " party and amount against the offer's.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDecisions.byId",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Mixed callers, none taking a customer's value. The investigator's"
+                                        + " doors - GET /v1/operator/credit/decisions/{id}/explanation and POST"
+                                        + " .../decisions/{id}/replay, behind @RequiresPermission(CREDIT_INVESTIGATE) -"
+                                        + " name another party's decision from the path; the replay proof walks every"
+                                        + " decision id. The rest are recorded references: the deciding transaction"
+                                        + " re-reads the decision it just inserted, the consumption port the decision"
+                                        + " the owner-locked offer names, and bnpl's and lending's origination hints a"
+                                        + " credit.CreditDecisionRecorded event's aggregate id.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDecisions.forRequest",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.credit.JdbcDecisionRequestStore.ownedBy",
+                                    "X-TSK-002. The request id always comes from an owner-scoped read: GET"
+                                        + " /v1/me/credit/decision-requests/{id} and the bnpl and lending origination"
+                                        + " steps' decisionFor read the request through DecisionRequests.read (ownedBy,"
+                                        + " party_id = ?) first; the BNPL and loan application reads' reasonTexts take"
+                                        + " it from the row JdbcBnplApplicationStore.ownedBy or"
+                                        + " JdbcLoanApplicationStore.ownedBy (party_id = ?) just returned. Never a"
+                                        + " request value unscoped.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDecisions.one",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. forRequest's and byId's one helper, its key always one of theirs,"
+                                        + " so it carries both provenances - forRequest's owner-scoped request id, and"
+                                        + " byId's CREDIT_INVESTIGATE doors and recorded references - and is classified"
+                                        + " with the weaker.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditDecisions.reasons",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. one's private loader of a decision's reason codes: the id is the"
+                                        + " credit_decision row one just read, never a caller's value - so it inherits"
+                                        + " one's provenance (forRequest's owner-scoped request id, byId's"
+                                        + " CREDIT_INVESTIGATE doors and recorded references).")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditPolicyStore.lock",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A credit policy version is platform-wide configuration with no owner"
+                                        + " to scope by. CreditPolicyAdministration's approve and reject alone call it,"
+                                        + " the id from the path behind @RequiresPermission(CREDIT_POLICY_ADMINISTER),"
+                                        + " the move then conditional on PROPOSED, four eyes by CHECK.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditPolicyStore.sharePinned",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. The pinned policy version shared FOR SHARE by the progress step's"
+                                        + " evaluation and the deciding basis: the id is the one the decision request"
+                                        + " pinned (written once by the V010 trigger's rule), never a request value; a"
+                                        + " policy version is platform-wide configuration owned by no party, and a"
+                                        + " boolean leaves.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditProfiles.ensure",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Not a resource identifier but the owner itself:"
+                                        + " DecisionRequests.submit is the one caller, and its callers - credit's,"
+                                        + " bnpl's and lending's customer submission doors - each resolve the party"
+                                        + " from the proven Session; UNIQUE (party_id) arbitrates every writer, and a"
+                                        + " profile holds no figure (INV-CRD-04). No label says 'the owner,"
+                                        + " session-derived' for doors that also take path ids;"
+                                        + " JdbcDecisionRequestStore.insert's precedent is followed.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditProfiles.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. ensure's and lockForDecision's one helper: the statement is keyed by"
+                                        + " the owner column (party_id = ?), and the party is always theirs - so it"
+                                        + " carries their provenance: the session's own party, the parties credit and"
+                                        + " lending recorded, and the rows the underwriter's and the reversal"
+                                        + " operators' acts reach.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditProfiles.lockForDecision",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Credit's lock order element (1), keyed by the owner itself, a"
+                                        + " presence answer leaving: the party is the decision request's or decision's"
+                                        + " recorded party (the deciding transaction, the consumption port's subjectOf),"
+                                        + " the customer's own session party (bnpl's and lending's acceptances, L0), a"
+                                        + " loan's recorded party (the disbursement sweep), or one an operator's act"
+                                        + " reaches through a row - an underwriter's review case behind"
+                                        + " CREDIT_UNDERWRITE under the not-self rule, and the BNPL and loan repayment"
+                                        + " reversals behind their servicing permissions. Never a request value.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditReads.currentDecisions",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. GET /v1/me/credit/profile - party_id = ? in the statement is the"
+                                        + " session's own party (CreditDecisionRequestDesk.profile, from the proven"
+                                        + " Session), the only caller; another party's decisions are never listed, and"
+                                        + " a stranger's profile reads empty.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditReads.sourcesOnFile",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. GET /v1/me/credit/profile - party_id = ? in the statement is the"
+                                        + " session's own party (CreditDecisionRequestDesk.profile, from the proven"
+                                        + " Session), the only caller; kinds, providers and instants leave, never a"
+                                        + " figure, and a stranger's profile lists no source.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcDecisionRequestStore.openFor",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. POST /v1/me/credit/decision-requests and the bnpl and lending"
+                                        + " submissions: reached only after the insert lost to the partial UNIQUE"
+                                        + " (party_id, product) over the open states, to name the open request the 409"
+                                        + " credit.DecisionRequestOpen cites - party_id = ? in the statement is the"
+                                        + " submitting session's own party, so the request named is always the"
+                                        + " caller's own.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcDecisionSnapshotStore.latestSnapshotOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. SnapshotFreezer.latest's read, for the deciding basis"
+                                        + " (DecisionMaking.basisWithin): the request id is the request that"
+                                        + " transaction holds FOR UPDATE (lock order element (2)) - the progress step's"
+                                        + " claimed request, or the one the review case names that an underwriter acts"
+                                        + " on behind @RequiresPermission(CREDIT_UNDERWRITE) under the not-self rule -"
+                                        + " never a request value; no customer door reaches it.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcDecisionSnapshotStore.lockDataRequestsOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. Lock order element (L4): a decision request's data requests FOR"
+                                        + " UPDATE, the request id the one the progress step holds FOR UPDATE from its"
+                                        + " own claimed page (DecisionProgress's ready step, SnapshotFreezer's lock and"
+                                        + " freeze), never a request value; no door, customer's or operator's, reaches"
+                                        + " it. Two production callers, so not a SYSTEM_JOIN.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcDecisionSnapshotStore.snapshotOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. A snapshot by its (request, sequence) key, every key one credit"
+                                        + " recorded: SnapshotFreezer's freeze and successor pass the request they hold"
+                                        + " FOR UPDATE (the progress step's, and the deciding basis an underwriter's act"
+                                        + " behind CREDIT_UNDERWRITE also reaches); inside this store snapshotById"
+                                        + " passes the decision row's snapshot for the investigator's door"
+                                        + " (CREDIT_INVESTIGATE), latestSnapshotOf its own sequence. Never a request"
+                                        + " value; no customer door.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcReservedExposure.reservedFor",
+                            new Entry(
+                                    Scope.OWNER_SCOPED,
+                                    "X-TSK-002. A party's reserved exposure: d.party_id = ? in the statement is the"
+                                        + " owner, bound to the decision request's own recorded party by the freeze"
+                                        + " and the deciding re-read (SnapshotFreezer, DecisionMaking) under that"
+                                        + " party's profile lock - no door; another party's approvals reserve nothing"
+                                        + " for this one. A figure leaves, no row.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcScorecardStore.lock",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. A scorecard model version is platform-wide configuration with no"
+                                        + " owner to scope by. ScorecardAdministration's approve and reject alone call"
+                                        + " it, the id from the path behind"
+                                        + " @RequiresPermission(CREDIT_POLICY_ADMINISTER), the move then conditional on"
+                                        + " PROPOSED, four eyes by CHECK.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcScorecardStore.sharePinned",
+                            new Entry(
+                                    Scope.NOT_OWNED,
+                                    "X-TSK-002. The pinned model version shared FOR SHARE by the progress step's"
+                                        + " evaluation and the deciding basis: the id is the one the decision request"
+                                        + " pinned, never a request value; a scorecard version is platform-wide"
+                                        + " configuration owned by no party, and a boolean leaves.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcUnderwritingCaseStore.byId",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The underwriter's desk: POST"
+                                        + " /v1/operator/credit/review-cases/{id}/assignment, /release, /decision and"
+                                        + " /second-approval behind @RequiresPermission(CREDIT_UNDERWRITE) name another"
+                                        + " party's case from the path; the not-self rule in UnderwritingCases"
+                                        + " (SelfDealingRefused, recorded FAILED) stands in for the predicate."
+                                        + " UnderwritingCases alone calls it.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcUnderwritingCaseStore.byRequest",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. The replay's question whether a person decided: the request id is"
+                                        + " the replayed decision row's own decision_request_id - the investigator's"
+                                        + " POST /v1/operator/credit/decisions/{id}/replay behind"
+                                        + " @RequiresPermission(CREDIT_INVESTIGATE), and the replay proof's walk of"
+                                        + " every decision; never a request value. DecisionReplayer alone calls it.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcUnderwritingCaseStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. byId's statement FOR UPDATE OF c, lock order element (3), for the"
+                                        + " same underwriter acts behind @RequiresPermission(CREDIT_UNDERWRITE): the"
+                                        + " path's case id, under the not-self rule (SelfDealingRefused, recorded"
+                                        + " FAILED). UnderwritingCases alone calls it.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcUnderwritingCaseStore.lockByRequest",
+                            new Entry(
+                                    Scope.SYSTEM_JOIN,
+                                    "com.finapp.credit.DecisionProgress",
+                                    "X-TSK-002. The progress step's IN_REVIEW edge: request -> its review case FOR"
+                                        + " UPDATE, the request id the one the step holds FOR UPDATE from its own"
+                                        + " claimed page (CreditDecisionProgressSchedule, the system actor) - a"
+                                        + " reference credit recorded when it opened the case, never a request value;"
+                                        + " no door reaches it. DecisionProgress alone calls it.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcUnderwritingCaseStore.one",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002. byId, lock, byRequest and lockByRequest's one helper, its key always"
+                                        + " theirs: the underwriter's path case id behind CREDIT_UNDERWRITE under the"
+                                        + " not-self rule, the replayed decision's request behind CREDIT_INVESTIGATE,"
+                                        + " and the progress step's claimed request.")),
                     Map.entry(
                             "com.finapp.identity.JdbcSessionStore.revokeOwned",
                             new Entry(
@@ -5283,6 +7401,90 @@ class OwnershipIsScopedTest {
     private static final Map<String, String> NEGATIVE_TESTS =
             Map.ofEntries(
                     Map.entry(
+                            "com.finapp.credit.JdbcDecisionRequestStore.openFor",
+                            "com.finapp.app.credit.DecisionRequestDatabaseTest.anotherPartysOpenRequestIsNeverNamed"),
+                    Map.entry(
+                            "com.finapp.consent.JdbcConsentStore.hasCurrentBasis",
+                            "com.finapp.app.domain.ConsentHistoryDatabaseTest.onePartysGrantIsNeverAnotherPartysBasis"),
+                    Map.entry(
+                            "com.finapp.consent.JdbcConsentStore.latestFor",
+                            "com.finapp.app.domain.ConsentHistoryDatabaseTest.theLatestRecordIsThePartysOwn"),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcKycCaseStore.findOpenFor",
+                            "com.finapp.app.domain.KycCaseDatabaseTest.anotherCustomersOpenCaseIsNeverFound"),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.listOwned",
+                            "com.finapp.app.crossborder.CrossBorderBeneficiaryDatabaseTest.theListIsTheCallersOwn"),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcPaymentStore.byDispatchKey",
+                            "com.finapp.app.fx.CrossBorderPaymentDatabaseTest.aDispatchKeyIsItsOwners"),
+                    Map.entry(
+                            "com.finapp.fx.JdbcQuoteStore.liveCount",
+                            "com.finapp.app.fx.FxQuoteEndpointDatabaseTest.theCapIsEachOwnersOwn"),
+                    Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.findLive",
+                            "com.finapp.app.domain.CustomerAccountDatabaseTest.theLiveReadAnswersOnlyTheCustomersOwnWallet"),
+                    Map.entry(
+                            "com.finapp.paymentmethods.JdbcPaymentMethodStore.findLive",
+                            "com.finapp.app.paymentmethods.PaymentMethodEndpointDatabaseTest.anotherPartysLiveTokenIsNeverConvergedOnto"),
+                    Map.entry(
+                            "com.finapp.paymentmethods.JdbcPaymentMethodStore.findLiveBy",
+                            "com.finapp.app.paymentmethods.PaymentMethodEndpointDatabaseTest.anotherPartysLiveTokenIsNeverConvergedOnto"),
+                    Map.entry(
+                            "com.finapp.paymentmethods.JdbcPaymentMethodStore.findLiveByDestination",
+                            "com.finapp.app.paymentmethods.BankAccountRegistrationDatabaseTest.anotherPartysLiveDestinationIsNeverConvergedOnto"),
+                    Map.entry(
+                            "com.finapp.paymentmethods.JdbcPaymentMethodStore.listLiveFor",
+                            "com.finapp.app.paymentmethods.PaymentMethodEndpointDatabaseTest.theListShowsOnlyTheCallersOwnInstruments"),
+                    Map.entry(
+                            "com.finapp.payments.JdbcWithdrawalStore.findByDispatchKey",
+                            "com.finapp.app.payments.WithdrawalDatabaseTest.aClientKeyIsEachCustomersOwn"),
+                    Map.entry(
+                            "com.finapp.transfers.JdbcBeneficiaryStore.findLive",
+                            "com.finapp.app.transfers.BeneficiaryDatabaseTest.anotherPartysSavedDestinationIsNeverConvergedOnto"),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.findOwned",
+                            "com.finapp.app.crossborder.CrossBorderBeneficiaryDatabaseTest.refusals"),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.lockOwned",
+                            "com.finapp.app.crossborder.CrossBorderBeneficiaryDatabaseTest.refusals"),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcBeneficiaryStore.lockOwnedForShare",
+                            "com.finapp.app.fx.CrossBorderOfferDatabaseTest.notPayableIsOneAnswer"),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcOfferStore.offerOwned",
+                            "com.finapp.app.fx.CrossBorderOfferDatabaseTest.aFixedSourceOfferIsFrozen"),
+                    Map.entry(
+                            "com.finapp.crossborder.JdbcPaymentStore.findOwned",
+                            "com.finapp.app.fx.CrossBorderPaymentDatabaseTest.anOfferIsAuthorizedAndDispatched"),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLoanStore.listOwnedBy",
+                            "com.finapp.app.lending.LoanAccountDatabaseTest.aLineIsAcceptedAndOnlyItsOwnerSeesIt"),
+                    Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.findAllFor",
+                            "com.finapp.app.domain.AccountEndpointDatabaseTest.ownershipIsExactlyTheCallers"),
+                    Map.entry(
+                            "com.finapp.payments.JdbcPaymentIntentStore.listFor",
+                            "com.finapp.app.payments.PaymentEndpointDatabaseTest.theListShowsOnlyTheCallersPaymentsNewestFirst"),
+                    Map.entry(
+                            "com.finapp.payments.JdbcWithdrawalStore.findOwned",
+                            "com.finapp.app.payments.WithdrawalDatabaseTest.theSecurityNegativesHold"),
+                    Map.entry(
+                            "com.finapp.transfers.JdbcBeneficiaryStore.listLiveFor",
+                            "com.finapp.app.transfers.BeneficiaryEndpointDatabaseTest.theListShowsOnlyLiveOwnBeneficiaries"),
+                    Map.entry(
+                            "com.finapp.transfers.JdbcTransferStore.listFor",
+                            "com.finapp.app.transfers.TransferEndpointDatabaseTest.theListShowsOnlyTheCallersTransfersNewestFirst"),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditReads.currentDecisions",
+                            "com.finapp.app.credit.DecisionExplanationDatabaseTest.anotherPartysRequestAndProfileAreNotFound"),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditReads.sourcesOnFile",
+                            "com.finapp.app.credit.DecisionExplanationDatabaseTest.anotherPartysRequestAndProfileAreNotFound"),
+                    Map.entry(
+                            "com.finapp.credit.JdbcReservedExposure.reservedFor",
+                            "com.finapp.app.credit.CreditDecisionDatabaseTest.anotherPartysApprovalReservesNothingForThisOne"),
+                    Map.entry(
                             "com.finapp.credit.JdbcDecisionRequestStore.ownedBy",
                             "com.finapp.app.credit.DecisionRequestDatabaseTest.anotherPartysRequestIsNotFound"),
                     Map.entry(
@@ -5531,6 +7733,11 @@ class OwnershipIsScopedTest {
      * authenticated merchant through the ledger's {@code owner_ref = ?} read in the same
      * transaction ({@code MerchantPayable}'s precedent). The spelling differs; the proof is the
      * same, and the tenancy battery's probe is what shows the right set is bound.
+     *
+     * <p>{@code owner_party = ?} is <strong>the fourth</strong> (`X-TSK-002`): {@code crossborder} holds the party that owns a
+     * beneficiary, an offer or a payment by value (ADR-0029), as {@code owner_party}, and binds the session's party to it -
+     * {@code party_id = ?}'s rule, spelled without the {@code _id} ({@code fx}'s {@code owner_party_id = ?} already reads as
+     * {@code party_id = ?}). Seen when the detector widened to {@code crossborder}.
      */
     private static final Set<String> OWNERSHIP_PREDICATES =
             Set.of(
@@ -5540,7 +7747,8 @@ class OwnershipIsScopedTest {
                     "party_id = ?",
                     "merchant_id = ?",
                     "merchant_ref = ?",
-                    "credit_account_id = ANY (?)");
+                    "credit_account_id = ANY (?)",
+                    "owner_party = ?");
 
     /**
      * The tenant's packages (`P6-TST-001`): where every statement over a tenant column lives, and
@@ -5560,6 +7768,23 @@ class OwnershipIsScopedTest {
     private static final Set<String> TENANT_PACKAGES =
             Set.of("com.finapp.merchant", "com.finapp.checkout", "com.finapp.bnpl");
 
+    /**
+     * The modules the detector widens in (`X-TSK-002`, 2026-11-16): the tenant's three and every customer-facing module. Here
+     * too a bare {@code UUID} is a resource identifier and a same-class helper's SQL is the caller's, one hop deep - the two
+     * shapes {@code P6-TST-001} found in the tenant's packages, which the customer-facing modules use as well (measured by
+     * widening everywhere: 199 methods surfaced in these modules, each classified in {@link #REGISTER}).
+     */
+    private static final Set<String> WIDENED_MODULES = Set.of("accounts", "app", "bnpl", "checkout", "consent", "credit",
+            "creditmath", "crossborder", "fx", "identity", "kyc", "ledger", "lending", "merchant", "party",
+            "paymentmethods", "payments", "sharedkernel", "transfers");
+
+    /**
+     * The operator's books, not widened yet: widening them surfaced 313 more methods on 2026-11-16 (reconciliation 186,
+     * settlement 46, accounting 40, risk 25, platform 16), and their classification is `X-TSK-026`'s. Named, so a new module
+     * is decided rather than left unwidened by default ({@link #everyModuleIsWidenedOrOwed}).
+     */
+    private static final Set<String> WIDENING_OWED = Set.of("accounting", "platform", "reconciliation", "risk", "settlement");
+
     /** The tenant columns, as a statement spells them - never as prose about them. */
     private static final java.util.regex.Pattern TENANT_COLUMN =
             java.util.regex.Pattern.compile("\\bmerchant_(?:id|ref)\\b");
@@ -5575,6 +7800,16 @@ class OwnershipIsScopedTest {
     @Test
     @DisplayName("no persistence method takes a resource identifier without being classified")
     void everyResourceScopedOperationIsClassified() {
+        // The differences first, each named: two sets of a thousand-odd methods compared whole print truncated, and a reader
+        // cannot see which method is missing (X-TSK-002). The equality below stays the rule.
+        TreeSet<String> found = resourceScopedPersistenceMethods();
+        TreeSet<String> unclassified = new TreeSet<>(found);
+        unclassified.removeAll(REGISTER.keySet());
+        TreeSet<String> stale = new TreeSet<>(REGISTER.keySet());
+        stale.removeAll(found);
+        assertThat(unclassified).as("persistence methods taking a resource identifier that REGISTER does not classify").isEmpty();
+        assertThat(stale).as("REGISTER entries the detector no longer finds: a renamed or removed method, or a widening undone")
+                .isEmpty();
         assertThat(resourceScopedPersistenceMethods())
                 .as("a persistence method that targets a resource by its own identifier is the"
                         + " shape ADR-0031's ownership defect takes. Classify it in REGISTER as"
@@ -5761,6 +7996,20 @@ class OwnershipIsScopedTest {
                         + " P1-TSK-016 defect, where the signature reads as though the check is"
                         + " enforced and the audit trail is then wrong rather than silent")
                 .isEmpty();
+    }
+
+    @Test
+    @DisplayName("X-TSK-002: every module is widened, or named as owed to X-TSK-026")
+    void everyModuleIsWidenedOrOwed() {
+        assertThat(java.util.Collections.disjoint(WIDENED_MODULES, WIDENING_OWED)).as("a module is widened or owed, never both")
+                .isTrue();
+        assertThat(WIDENED_MODULES).as("the tenant's packages stay widened").contains("merchant", "checkout", "bnpl");
+        TreeSet<String> decided = new TreeSet<>(WIDENED_MODULES);
+        decided.addAll(WIDENING_OWED);
+        assertThat(decided)
+                .as("every module with production code is widened, or named as owed to X-TSK-026 - a new module is decided,"
+                        + " never left unwidened by default")
+                .isEqualTo(new TreeSet<>(ProductionModules.onClasspathWithProductionClasses()));
     }
 
     @Test
@@ -5963,7 +8212,12 @@ class OwnershipIsScopedTest {
                         "com.finapp.merchant.JdbcPaymentFeePinStore.findFor",
                         // a typed id, its statement split across a generic helper
                         "com.finapp.merchant.JdbcMerchantPayoutStore.find",
-                        "com.finapp.merchant.JdbcPayoutDestinationStore.findEffectiveForShare");
+                        "com.finapp.merchant.JdbcPayoutDestinationStore.findEffectiveForShare",
+                        // since X-TSK-002, the customer-facing modules: a statement in a same-class helper, and a bare UUID
+                        "com.finapp.paymentmethods.JdbcPaymentMethodStore.findLive",
+                        "com.finapp.crossborder.JdbcBeneficiaryStore.listOwned");
+        // ...and the statement reader follows the helper's hop too: findLive's party_id = ? is in findLiveBy's literal.
+        assertThat(statementOf("com.finapp.paymentmethods.JdbcPaymentMethodStore.findLive")).contains("party_id = ?");
         // ...and the scanner the guard rests on strips comments and keeps text blocks.
         assertThat(stringLiteralsOf("// merchant_id = ?\n/* merchant_ref */ String x = \"id = ?\";"))
                 .doesNotContain("merchant_");
@@ -6034,6 +8288,12 @@ class OwnershipIsScopedTest {
                 .anyMatch(tenant -> packageName.equals(tenant) || packageName.startsWith(tenant + "."));
     }
 
+    /** Whether the detector widens in this package: a module of {@link #WIDENED_MODULES} (`X-TSK-002`). */
+    private static boolean inWidenedPackage(String packageName) {
+        return WIDENED_MODULES.stream().map(module -> "com.finapp." + module)
+                .anyMatch(widened -> packageName.equals(widened) || packageName.startsWith(widened + "."));
+    }
+
     /**
      * SQL issued by the method itself or, in a tenant package, by a same-class helper it calls.
      *
@@ -6046,7 +8306,7 @@ class OwnershipIsScopedTest {
         if (issuesSql(method)) {
             return true;
         }
-        if (!inTenantPackage(method.getOwner().getPackageName())) {
+        if (!inWidenedPackage(method.getOwner().getPackageName())) {
             return false;
         }
         for (JavaMethodCall call : method.getMethodCallsFromSelf()) {
@@ -6061,12 +8321,12 @@ class OwnershipIsScopedTest {
         return false;
     }
 
-    /** {@link #takesAResourceIdentifier}, and in a tenant package a bare {@code UUID} too. */
+    /** {@link #takesAResourceIdentifier}, and in a widened package a bare {@code UUID} too. */
     private static boolean takesAResourceIdentifierInScope(JavaMethod method, String qualified) {
         if (takesAResourceIdentifier(method, qualified)) {
             return true;
         }
-        return inTenantPackage(method.getOwner().getPackageName())
+        return inWidenedPackage(method.getOwner().getPackageName())
                 && method.getRawParameterTypes().stream()
                         .anyMatch(parameter -> parameter.getName().equals("java.util.UUID"));
     }
@@ -6273,6 +8533,37 @@ class OwnershipIsScopedTest {
                 literals.append(constant.getValue());
             }
         }
+        // ...and, in a widened package, the statement of a same-class helper this method calls that issues SQL itself
+        // (`X-TSK-002`): the detector reads that helper's SQL as the caller's, one hop deep, so the predicate a rule asks
+        // for is looked for where the statement is. JdbcPaymentMethodStore.findLive is the shape - its party_id = ? is in
+        // findLiveBy, the statement it runs.
+        literals.append(helperStatementsOf(owner, qualified.substring(qualified.lastIndexOf('.') + 1)));
+        return literals.toString();
+    }
+
+    /** The literals of the same-class helpers, issuing SQL themselves, that a method of a widened package calls - one hop. */
+    private static String helperStatementsOf(String owner, String method) {
+        JavaClasses production = productionClasses();
+        if (!production.contain(owner) || !inWidenedPackage(production.get(owner).getPackageName())) {
+            return "";
+        }
+        java.util.Set<String> helpers = new java.util.TreeSet<>();
+        for (JavaMethod candidate : production.get(owner).getMethods()) {
+            if (!candidate.getName().equals(method)) {
+                continue;
+            }
+            for (JavaMethodCall call : candidate.getMethodCallsFromSelf()) {
+                if (!call.getTargetOwner().equals(candidate.getOwner())) {
+                    continue;
+                }
+                java.util.Optional<JavaMethod> helper = call.getTarget().resolveMember();
+                if (helper.isPresent() && !helper.get().getName().equals(method) && issuesSql(helper.get())) {
+                    helpers.add(helper.get().getName());
+                }
+            }
+        }
+        StringBuilder literals = new StringBuilder();
+        helpers.forEach(helper -> literals.append(literalsIn(methodSource(owner + "." + helper))));
         return literals.toString();
     }
 

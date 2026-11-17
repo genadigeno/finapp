@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.EnumSet;
@@ -121,6 +122,45 @@ class IdentityLifecycleTest {
         Clock ahead = Clock.fixed(identity.createdAt().plusSeconds(5), ZoneOffset.UTC);
         assertThat(suspended.reinstate(ahead).statusChangedAt())
                 .isEqualTo(identity.createdAt().plusSeconds(5));
+    }
+
+    @Test
+    @DisplayName(
+            "X-TSK-006 (ADR-0063 decision 2): a clock trailing the latest move stamps the next at"
+                    + " that move's instant - the latest stamp is statusChangedAt, not createdAt")
+    void aClockTrailingTheLatestMoveStampsTheNextAtItsInstant() {
+        // Born on one instance, suspended on a second, reinstated on a third whose clock reads
+        // past the birth and behind the suspension. Clamped to createdAt alone (P1-TSK-031), the
+        // reinstatement was stamped five seconds BEFORE the suspension it undoes: V002's CHECK
+        // admits that, and the history then contradicts the order the row lock decided.
+        Instant born = Instant.parse("2026-09-04T10:00:00Z");
+        Instant suspendedAt = born.plusSeconds(10);
+        Identity suspended =
+                Identity.rehydrate(
+                        IdentityId.next(IDS),
+                        UUID.randomUUID(),
+                        new LoginIdentifier("ada.l"),
+                        IdentityStatus.SUSPENDED,
+                        born,
+                        suspendedAt);
+        Clock trailing =
+                Clock.offset(Clock.fixed(suspendedAt, ZoneOffset.UTC), Duration.ofSeconds(-5));
+        assertThat(trailing.instant())
+                .as("precondition: the trailing clock reads past the birth and behind the latest move,"
+                        + " or a createdAt clamp alone would pass")
+                .isAfter(born)
+                .isBefore(suspendedAt);
+
+        Identity reinstated = suspended.reinstate(trailing);
+        assertThat(reinstated.status()).isEqualTo(IdentityStatus.ACTIVE);
+        assertThat(reinstated.statusChangedAt()).isEqualTo(suspendedAt);
+        assertThat(reinstated.close(trailing).statusChangedAt())
+                .as("every later move, the terminal one too")
+                .isEqualTo(suspendedAt);
+
+        // A floor, not a pin: a clock past the latest move stamps its own read.
+        Clock ahead = Clock.offset(Clock.fixed(suspendedAt, ZoneOffset.UTC), Duration.ofSeconds(5));
+        assertThat(suspended.reinstate(ahead).statusChangedAt()).isEqualTo(suspendedAt.plusSeconds(5));
     }
 
     @Test

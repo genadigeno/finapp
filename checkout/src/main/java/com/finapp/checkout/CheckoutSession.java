@@ -293,7 +293,8 @@ public final class CheckoutSession {
                 CheckoutSessionStatus.COMPLETED,
                 expiresAt,
                 createdAt,
-                databaseNow.isBefore(createdAt) ? createdAt : databaseNow);
+                // max(now, latest), ADR-0063 decision 2: from OPEN the latest stamp is the birth's.
+                databaseNow.isBefore(statusChangedAt) ? statusChangedAt : databaseNow);
     }
 
     /**
@@ -327,11 +328,13 @@ public final class CheckoutSession {
         if (!status.canTransitionTo(to)) {
             throw new IllegalCheckoutSessionTransitionException(status, to);
         }
-        // GREATEST(now(), created_at) - the P1-TSK-031 drift, met in domain code rather than
-        // a fixture: the clock that wrote createdAt may read ahead of this one (another
-        // instance's, or this one stepped back by time sync; ADR-0014: skew is bounded,
-        // never zero), and a legal edge moments after the offer opened must not die on the
-        // ordering the constructor and `V002`'s CHECK are right to refuse.
+        // max(now, latest) - ADR-0063 decision 2 (X-TSK-006): the clock that stamped this
+        // session's latest fact may read ahead of this one (another instance's, the database's
+        // reading under another lock, or this one stepped back by time sync; ADR-0014: skew is
+        // bounded, never zero). The latest is statusChangedAt - the previous move's stamp (a
+        // confirmation's, an expiry's), or the birth's, never before createdAt - so the
+        // constructor's and `V002`'s CHECK hold by construction and the history reads in order;
+        // the row lock and the conditional UPDATE decide which move came first.
         return new CheckoutSession(
                 id,
                 merchantRef,
@@ -345,7 +348,7 @@ public final class CheckoutSession {
                 to,
                 expiresAt,
                 createdAt,
-                now.isBefore(createdAt) ? createdAt : now);
+                now.isBefore(statusChangedAt) ? statusChangedAt : now);
     }
 
     /**

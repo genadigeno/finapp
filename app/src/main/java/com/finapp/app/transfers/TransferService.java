@@ -10,6 +10,8 @@ import com.finapp.party.PartyStore;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.idempotency.IdempotencyConflictException;
+import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import com.finapp.sharedkernel.money.MonetaryException;
@@ -50,8 +52,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <h2>One idempotency claim, the command's</h2>
  *
  * <p>{@link TransferExecution} already claims at the financial boundary — scope
- * {@code transfer.execute}, the caller's key, the fingerprint binding the actor and the money's
- * meaning ({@code INV-IDEM-01/-03}) — so this surface deliberately adds <strong>no second
+ * {@code transfer.execute} and the caller's principal (`X-TSK-003`), the caller's key, the
+ * fingerprint binding the actor and the money's meaning ({@code INV-IDEM-01/-03}) — so this
+ * surface deliberately adds <strong>no second
  * layer</strong>: the accounts precedent stacked an HTTP executor over a domain <em>converge</em>,
  * and stacking one over a domain <em>executor</em> would be two claims and two fingerprints for
  * one boundary. What makes the retried {@code POST} body byte-for-byte identical is that the
@@ -225,9 +228,15 @@ public final class TransferService {
     }
 
     /**
-     * The door's step-up (`P13-TSK-008`): a retry is never advised; otherwise the proposal resolved as the command will
-     * resolve it - the caller's party, the destination by either arm (its refusals the command's own 422s) - and
-     * advised. A step-up answer is thrown after the transaction, which wrote nothing.
+     * The door's step-up (`P13-TSK-008`): the proposal resolved as the command will resolve it - the caller's party,
+     * the destination by either arm (its refusals the command's own 422s) - and, unless it is a retry of the caller's
+     * own command, advised. A step-up answer is thrown after the transaction, which wrote nothing.
+     *
+     * <p>The resolution comes first since `X-TSK-003`: whether the request is a retry is asked of the command it
+     * resolves to - the caller's claim, or an old-scope claim with this request's fingerprint, which the door can only
+     * compute from the resolved command ({@link TransferDoorStepUp#retried}). A retry whose beneficiary was removed is
+     * refused here rather than in the command's transaction: the same {@code transfers.UnknownDestination}, nothing
+     * written either way.
      */
     private void stepUpBeforeTheCommand(
             TransferCreateRequest body,
@@ -235,12 +244,10 @@ public final class TransferService {
             Session current,
             Money amount,
             UUID sourceRef) {
+        Actor actor = SecurityContext.require();
         TransferDoorStepUp.Answer answer =
                 inOneTransaction(
                         unitOfWork -> {
-                            if (stepUp.retried(unitOfWork, idempotencyKey)) {
-                                return TransferDoorStepUp.Answer.PROCEED;
-                            }
                             UUID partyId = partyOf(unitOfWork, current);
                             UUID destinationRef =
                                     hasText(body.beneficiaryId())
@@ -249,6 +256,13 @@ public final class TransferService {
                                             : parsedOr(
                                                     body.destinationAccountId(),
                                                     TransferService::unknownDestination);
+                            if (stepUp.retried(
+                                    unitOfWork,
+                                    actor,
+                                    command(idempotencyKey, partyId, sourceRef, destinationRef,
+                                            amount, body))) {
+                                return TransferDoorStepUp.Answer.PROCEED;
+                            }
                             return stepUp.advise(
                                     unitOfWork,
                                     partyId,
@@ -287,13 +301,8 @@ public final class TransferService {
                         result =
                                 execution.execute(
                                         unitOfWork,
-                                        new TransferCommand(
-                                                idempotencyKey,
-                                                partyId,
-                                                sourceRef,
-                                                destinationRef,
-                                                amount,
-                                                normalisedReference(body.reference())));
+                                        command(idempotencyKey, partyId, sourceRef, destinationRef,
+                                                amount, body));
                     } catch (UnknownTransferSourceException unknown) {
                         throw unknownSource();
                     } catch (UnknownTransferDestinationException unknown) {
@@ -511,6 +520,26 @@ public final class TransferService {
                 row.initiatedAt().toString(),
                 reversalEntryId,
                 reversedAt);
+    }
+
+    /**
+     * The command the request resolves to - one construction for the door and the command alike, so the fingerprint the
+     * door computes for its retry check (`X-TSK-003`) is the one the command claims with.
+     */
+    private static TransferCommand command(
+            String idempotencyKey,
+            UUID partyId,
+            UUID sourceRef,
+            UUID destinationRef,
+            Money amount,
+            TransferCreateRequest body) {
+        return new TransferCommand(
+                idempotencyKey,
+                partyId,
+                sourceRef,
+                destinationRef,
+                amount,
+                normalisedReference(body.reference()));
     }
 
     /** An absent reference and a blank one are the same absence. */

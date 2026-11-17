@@ -1,6 +1,8 @@
 package com.finapp.fx;
 
 import com.finapp.platform.persistence.DatabaseFailure;
+import com.finapp.platform.security.AssociatedData;
+import com.finapp.platform.security.CipherFormat;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -46,14 +48,16 @@ public final class JdbcFxProviderEvidenceStore implements FxProviderEvidenceStor
             throw new IllegalArgumentException(
                     "evidence is 1.." + MAX_PAYLOAD_BYTES + " bytes, never empty");
         }
-        FxEvidenceCipher.Encrypted encrypted = cipher.encrypt(payload);
+        java.util.UUID id = ids.next();
+        FxEvidenceCipher.Encrypted encrypted =
+                cipher.encrypt(associatedData(id, providerCode, clientReference, kind.name()), payload);
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO fx.fx_provider_evidence (id, provider_code, client_reference,"
                                 + " kind, content_ciphertext, content_nonce, key_version,"
-                                + " checksum_sha256, content_length, recorded_at)"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
-            insert.setObject(1, ids.next());
+                                + " checksum_sha256, content_length, recorded_at, cipher_format)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+            insert.setObject(1, id);
             insert.setString(2, providerCode);
             insert.setString(3, clientReference);
             insert.setString(4, kind.name());
@@ -63,6 +67,7 @@ public final class JdbcFxProviderEvidenceStore implements FxProviderEvidenceStor
             insert.setBytes(8, sha256(payload));
             insert.setInt(9, payload.length);
             insert.setTimestamp(10, Timestamp.from(recordedAt));
+            insert.setInt(11, encrypted.format().code());
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new FxStorageException(DatabaseFailure.describe("retaining FX provider evidence", failure));
@@ -78,8 +83,8 @@ public final class JdbcFxProviderEvidenceStore implements FxProviderEvidenceStor
         List<byte[]> payloads = new ArrayList<>();
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
-                        "SELECT content_ciphertext, content_nonce, key_version, checksum_sha256"
-                                + " FROM fx.fx_provider_evidence"
+                        "SELECT id, kind, content_ciphertext, content_nonce, key_version, checksum_sha256,"
+                                + " cipher_format FROM fx.fx_provider_evidence"
                                 + " WHERE provider_code = ? AND client_reference = ?"
                                 + " ORDER BY recorded_at, id")) {
             read.setString(1, providerCode);
@@ -88,10 +93,13 @@ public final class JdbcFxProviderEvidenceStore implements FxProviderEvidenceStor
                 while (row.next()) {
                     byte[] plaintext =
                             cipher.decrypt(
+                                    associatedData(row.getObject("id", java.util.UUID.class), providerCode,
+                                            clientReference, row.getString("kind")),
                                     new FxEvidenceCipher.Encrypted(
                                             row.getBytes("content_ciphertext"),
                                             row.getBytes("content_nonce"),
-                                            row.getInt("key_version")));
+                                            row.getInt("key_version"),
+                                            CipherFormat.of(row.getInt("cipher_format"))));
                     if (!MessageDigest.isEqual(sha256(plaintext), row.getBytes("checksum_sha256"))) {
                         throw new IllegalStateException(
                                 "FX evidence failed its checksum - retained bytes changed");
@@ -104,6 +112,17 @@ public final class JdbcFxProviderEvidenceStore implements FxProviderEvidenceStor
         }
         return payloads;
     }
+
+    /**
+     * The row's associated data (`X-TSK-010`): its identity, and the provider, reference and kind that name where the evidence
+     * belongs - so a ciphertext copied into another row, or under another reference, fails to decrypt once writes are bound.
+     */
+    static byte[] associatedData(java.util.UUID id, String providerCode, String clientReference, String kind) {
+        return AssociatedData.of(PURPOSE, id, providerCode, clientReference, kind);
+    }
+
+    /** What the ciphertext is, in its associated data. */
+    static final String PURPOSE = "fx.fx_provider_evidence.content";
 
     private static byte[] sha256(byte[] bytes) {
         try {

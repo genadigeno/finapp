@@ -96,6 +96,44 @@ class FxProviderEvidenceDatabaseTest {
     }
 
     @Test
+    @DisplayName("bound to its row (X-TSK-010): a row written unbound stays readable by a bound-writing store, a bound row reads"
+            + " under its own row, and its ciphertext copied under another reference fails to decrypt there, as format 2 or 1")
+    void evidenceIsBoundToItsRow() throws SQLException {
+        String reference = reference();
+        String elsewhere = reference();
+        String downgraded = reference();
+        byte[] unbound = "written before the binding".getBytes(StandardCharsets.UTF_8);
+        byte[] bound = "written bound to its row".getBytes(StandardCharsets.UTF_8);
+        com.finapp.platform.security.KeyRing ring =
+                com.finapp.platform.security.KeyRing.of(
+                        "fx evidence key", java.util.Map.of(1, KEY), 1, java.util.Set.of());
+        FxProviderEvidenceStore<Connection> boundStore =
+                new JdbcFxProviderEvidenceStore(new FxEvidenceCipher(ring, new SecureRandom(), true), IDS);
+
+        try (Connection app = application()) {
+            store.append(app, "fx-sim-a", reference, FxProviderEvidenceStore.Kind.REQUEST, unbound,
+                    Instant.parse("2026-11-17T10:00:00Z"));
+            boundStore.append(app, "fx-sim-a", reference, FxProviderEvidenceStore.Kind.RESPONSE, bound,
+                    Instant.parse("2026-11-17T10:00:01Z"));
+            app.commit();
+            assertThat(formats(app, reference)).as("the switch off writes 1, on writes 2").containsExactly(1, 2);
+            assertThat(boundStore.payloadsFor(app, "fx-sim-a", reference)).containsExactly(unbound, bound);
+
+            copyResponse(app, reference, elsewhere, 2);
+            copyResponse(app, reference, downgraded, 1);
+            app.commit();
+            assertThatThrownBy(() -> boundStore.payloadsFor(app, "fx-sim-a", elsewhere))
+                    .as("the bound ciphertext under another reference and another id")
+                    .isInstanceOf(IllegalStateException.class);
+            app.rollback();
+            assertThatThrownBy(() -> boundStore.payloadsFor(app, "fx-sim-a", downgraded))
+                    .as("the same, its format rewritten to unbound: no downgrade path")
+                    .isInstanceOf(IllegalStateException.class);
+            app.rollback();
+        }
+    }
+
+    @Test
     @DisplayName("evidence is append-only: the application cannot update or delete it, and the"
             + " migrator is refused by the trigger")
     void evidenceIsAppendOnly() throws SQLException {
@@ -174,6 +212,40 @@ class FxProviderEvidenceDatabaseTest {
             insert.setTimestamp(8, Timestamp.from(Instant.now()));
             insert.executeUpdate();
         }
+    }
+
+    /** A writer with the table's insert grant planting a stored response's ciphertext under another reference and id. */
+    private static void copyResponse(Connection app, String from, String to, int format) throws SQLException {
+        try (PreparedStatement copy =
+                app.prepareStatement(
+                        "INSERT INTO fx.fx_provider_evidence (id, provider_code, client_reference, kind,"
+                                + " content_ciphertext, content_nonce, key_version, checksum_sha256, content_length,"
+                                + " recorded_at, cipher_format)"
+                                + " SELECT ?, provider_code, ?, kind, content_ciphertext, content_nonce, key_version,"
+                                + " checksum_sha256, content_length, recorded_at, ?"
+                                + " FROM fx.fx_provider_evidence WHERE client_reference = ? AND kind = 'RESPONSE'")) {
+            copy.setObject(1, IDS.next());
+            copy.setString(2, to);
+            copy.setInt(3, format);
+            copy.setString(4, from);
+            assertThat(copy.executeUpdate()).isEqualTo(1);
+        }
+    }
+
+    private static List<Integer> formats(Connection connection, String reference) throws SQLException {
+        List<Integer> formats = new java.util.ArrayList<>();
+        try (PreparedStatement select =
+                connection.prepareStatement(
+                        "SELECT cipher_format FROM fx.fx_provider_evidence WHERE client_reference = ?"
+                                + " ORDER BY recorded_at, id")) {
+            select.setString(1, reference);
+            try (ResultSet rows = select.executeQuery()) {
+                while (rows.next()) {
+                    formats.add(rows.getInt(1));
+                }
+            }
+        }
+        return formats;
     }
 
     private static byte[] storedCiphertext(Connection connection, String reference) throws SQLException {

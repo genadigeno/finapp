@@ -46,9 +46,10 @@ import lombok.RequiredArgsConstructor;
  * refused onboarding writes nothing, structurally.
  *
  * <p><strong>Keyed at the financial boundary</strong> ({@code INV-IDEM-01}): scope
- * {@code merchant.onboard}, the operator's key, the fingerprint binding the actor and the
- * request's meaning. Ten instances with one key produce one merchant, one payable account,
- * one audit record and one event; the replay renders the recorded outcome byte-for-byte.
+ * {@code merchant.onboard:<principal>} (`X-TSK-003`), the operator's key, the fingerprint
+ * binding the actor and the request's meaning. Ten instances with one key produce one
+ * merchant, one payable account, one audit record and one event; the replay renders the
+ * recorded outcome byte-for-byte.
  * Two <em>different</em> keys for one organisation are two legitimate shops — no one-live
  * index, deliberately (`PHASE_6_PLAN.md` §4, the decision recorded rather than implied).
  *
@@ -64,6 +65,7 @@ public final class MerchantOnboarding {
     static final String PRODUCER = "merchant";
     static final int EVENT_VERSION = 1;
     static final String TARGET_TYPE = "merchant";
+    /** The scope's command; the claim suffixes its principal (`X-TSK-003`). Alone, the scope before that move. */
     static final String IDEMPOTENCY_SCOPE = "merchant.onboard";
 
     /** The onboarding's judgement, as the surface renders it. */
@@ -109,7 +111,11 @@ public final class MerchantOnboarding {
                         .map(ignored -> command.partyId())
                         .orElseThrow(MerchantNotEligibleException::new);
 
-        IdempotencyKey key = new IdempotencyKey(IDEMPOTENCY_SCOPE, command.idempotencyKey());
+        // The scope names the operator (`X-TSK-003`): another operator's key value is never this one's claim.
+        IdempotencyKey key =
+                new IdempotencyKey(
+                        IDEMPOTENCY_SCOPE + ":" + actor.keyedType().name() + ":" + actor.id(),
+                        command.idempotencyKey());
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(canonicalForm(command, actor));
 
@@ -117,6 +123,8 @@ public final class MerchantOnboarding {
                 executor.execute(
                         unitOfWork,
                         key,
+                        // The old scope is consulted for X-TSK-003's transition and goes with X-TSK-028.
+                        key.movedFrom(IDEMPOTENCY_SCOPE),
                         fingerprint,
                         uow -> accept(uow, command, verifiedParty, actor, correlation));
 
@@ -208,9 +216,11 @@ public final class MerchantOnboarding {
     }
 
     /**
-     * The fingerprint's subject: the actor and the request's meaning — a reused key from a
-     * different operator, for a different party, name or currency is the distinct 409
-     * ({@code INV-IDEM-03}), never a silent replay.
+     * The fingerprint's subject: the actor and the request's meaning — the operator's own key
+     * reused for a different party, name or currency is the distinct 409
+     * ({@code INV-IDEM-03}), never a silent replay. Another operator's same key value is their
+     * own claim under their own scope (`X-TSK-003`); the actor stays here because it is how the
+     * old scope's transition tells their claim from this request's.
      */
     private static byte[] canonicalForm(OnboardMerchantCommand command, Actor actor) {
         return String.join(

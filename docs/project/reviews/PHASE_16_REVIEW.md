@@ -71,7 +71,7 @@ scope's uniqueness, and adds no money movement. The review hunted where the phas
    `X-TSK-020` to the operator console on the operator edge, and its backlog already lists `X-TSK-019` twice (the operator's own
    identity, and the three guards red since Phase 15 and 16 merges). A guard that maps an identifier to a status would read one of
    each pair. **The owner's at the merge** (acceptance F): this stack's two are renumbered when it merges. Recorded, not changed
-   here: this branch cannot see master's entries.
+   here: this branch cannot see master's entries. *(Done 2026-11-16, after the merge: this repository's pair - the three guards' repair and the provider-call guard - renumbered `X-TSK-022` and `X-TSK-023`, since they were the newer and the console's are cited from their own repository; `X-TSK-021` never collided. The merge had also committed conflict markers into `BACKLOG.md` around these entries, removed with them.)*
 5. **`INV-IDEM-01` read unbounded after the owner bounded it.** Since the idempotency records' sweep (ADR-0141, `THREAT_MODEL.md` §6
    item 63, decided 2026-11-13), a transfer's or a card checkout's once-ness lasts its record's 24-hour expiry plus the sweep's
    30-day grace; a posting's is for ever. The catalogue said nothing. **Fixed**: a dated note under the invariant; its second
@@ -94,7 +94,7 @@ scope's uniqueness, and adds no money movement. The review hunted where the phas
   postponement as the reason, and the guard admits any `N/A` with a reason, though §1.2 keeps `N/A` for an experiment that does not
   apply. ADR-0127's note said the guard refuses an unrun experiment once its runners finish; it refuses only an empty cell.
   **ADR-0127 corrected; the guard is `P16-REM-005`'s**, with the runbook count's "Phase 16 drill" reason, which reads at the exit as a
-  drill still to come.
+  drill still to come. *(Built since by `P16-REM-005`, 2026-11-16, on its branch.)*
 - **`P16-REM-002`'s client-answer paragraph sits in §11.35 (the restore)**, not beside the failover it describes. Recorded; moving
   it is the next change to either section.
 - **The FX hot rows have no profile.** `FX_POSITION` and `FX_SPREAD_REVENUE` are hot rows of `PHASE_16_PLAN.md` §6.4 that no load

@@ -218,13 +218,18 @@ public final class ProjectionRebuild {
         return decidedBy.filter(actor::equals).isPresent();
     }
 
-    /** This rebuild decided {@code to} by {@code by} at {@code at}; the store moves the row, this is its image. */
+    /**
+     * This rebuild decided {@code to} by {@code by} at {@code at}; the store moves the row, this is its image, and its
+     * {@link #decidedAt()} is the stamp the store writes. That stamp is {@code max(at, proposedAt)} (ADR-0063 decision 2,
+     * {@code X-TSK-006}): the deciding instance's clock may read behind the proposing one's (ADR-0014: skew is bounded,
+     * never zero), and V031's {@code decided_at >= proposed_at} would refuse the decision for it.
+     */
     public ProjectionRebuild decided(ProjectionRebuildStatus to, String by, Instant at, Optional<Approval> found) {
         if (!status.canMoveTo(to)) {
             throw new RebuildNotOpenException(id, status);
         }
         return new ProjectionRebuild(id, account, currency, scale, to, reason, proposedBy, proposedAt, observedRow,
-                observedDerived, Optional.of(by), Optional.of(at), found);
+                observedDerived, Optional.of(by), Optional.of(at.isBefore(proposedAt) ? proposedAt : at), found);
     }
 
     /**

@@ -39,10 +39,13 @@ import lombok.RequiredArgsConstructor;
  *
  * <h2>The claim is at the financial boundary</h2>
  *
- * <p>Scope {@code payment.create}, the caller's key, and a fingerprint binding <strong>the
- * actor</strong> and the money's meaning — party, wallet account, instrument, amount, currency,
- * scale (the backlog's list; {@code INV-IDEM-03}'s subjects, the actor per ADR-0004). The
- * stored body replays {@code intentId|status}.
+ * <p>Scope {@code payment.create:<keyedType>:<actorId>} — the command and its principal, so one
+ * client's key value never refuses another's (`X-TSK-003`, ADR-0004) — the caller's key, and a
+ * fingerprint binding <strong>the actor</strong> and the money's meaning — party, wallet
+ * account, instrument, amount, currency, scale (the backlog's list; {@code INV-IDEM-03}'s
+ * subjects, the actor per ADR-0004). The stored body replays {@code intentId|status}. For the
+ * release that moves it, the claim under the bare {@code payment.create} is consulted first, so
+ * a retry spanning the move replays rather than creating a second intent.
  *
  * <p><strong>A wiring whose keys are derived claims in a scope of its own</strong> (the
  * Phase 6 → 7 transition): the checkout opens its payment under {@code checkout:<checkoutId>},
@@ -63,7 +66,9 @@ public final class PaymentCreation {
 
     /**
      * The public command's idempotency scope (ADR-0004): one command type, one scope. The
-     * checkout's derived-key wiring claims in its own ({@code CheckoutService}).
+     * checkout's derived-key wiring claims in its own ({@code CheckoutService}). Wired with this
+     * scope, the claim names its principal ({@code payment.create:<keyedType>:<actorId>},
+     * `X-TSK-003`) and this bare value is the scope it moved from, consulted until `X-TSK-028`.
      */
     public static final String IDEMPOTENCY_SCOPE = "payment.create";
 
@@ -81,7 +86,9 @@ public final class PaymentCreation {
 
     /**
      * The claim scope - {@link #IDEMPOTENCY_SCOPE} for the public command, a wiring's own where
-     * it derives its keys. Last, so no existing argument moved.
+     * it derives its keys. Last, so no existing argument moved. It also chooses the claim's
+     * shape (`X-TSK-003`): the public command's is scoped to its principal, a wiring's own is
+     * claimed as given ({@link #principalScoped()}).
      */
     @NonNull private final String scope;
 
@@ -189,17 +196,27 @@ public final class PaymentCreation {
                     command.amount().currency(), wallet.currency());
         }
 
-        IdempotencyKey key = new IdempotencyKey(scope, command.idempotencyKey());
+        IdempotencyKey key = new IdempotencyKey(claimScope(actor), command.idempotencyKey());
         Optional<PaymentParticipants.Wallet> payer = payerWallet;
+        // The fingerprint keeps the wiring's scope, byte for byte: a claim made before the
+        // move must still match this request's (X-TSK-003).
         RequestFingerprint fingerprint =
                 RequestFingerprint.sha256(canonicalForm(scope, command, wallet, payer, actor));
 
         IdempotentExecutor.ExecutionOutcome outcome =
-                executor.execute(
-                        unitOfWork,
-                        key,
-                        fingerprint,
-                        uow -> accept(uow, command, wallet, payer, actor, correlation));
+                principalScoped()
+                        ? executor.execute(
+                                unitOfWork,
+                                key,
+                                // The old scope is consulted for X-TSK-003's transition and goes with X-TSK-028.
+                                key.movedFrom(scope),
+                                fingerprint,
+                                uow -> accept(uow, command, wallet, payer, actor, correlation))
+                        : executor.execute(
+                                unitOfWork,
+                                key,
+                                fingerprint,
+                                uow -> accept(uow, command, wallet, payer, actor, correlation));
 
         String[] body =
                 new String(
@@ -216,6 +233,27 @@ public final class PaymentCreation {
                 PaymentIntentId.of(UUID.fromString(body[0])),
                 PaymentIntentStatus.valueOf(body[1]),
                 outcome.replayed());
+    }
+
+    /**
+     * Whether this wiring's claim names its principal (`X-TSK-003`): exactly when it is the public
+     * command's, whose key a client chooses, so one client's key value must not refuse another's.
+     * A wiring with a scope of its own derives its keys from a resource it already authorised
+     * (the checkout's {@code checkout:<checkoutId>}), and its claim stays unchanged.
+     */
+    private boolean principalScoped() {
+        return IDEMPOTENCY_SCOPE.equals(scope);
+    }
+
+    /**
+     * The scope this request claims under: the public command's names the caller by
+     * {@link Actor#keyedType()}, never the audit type ({@code IdempotencyScopesKeyThePersonTest});
+     * a derived-key wiring's is its own, as given.
+     */
+    private String claimScope(Actor actor) {
+        return principalScoped()
+                ? scope + ":" + actor.keyedType().name() + ":" + actor.id()
+                : scope;
     }
 
     /** The acceptance: the row, the audit record and the event, one commit. */

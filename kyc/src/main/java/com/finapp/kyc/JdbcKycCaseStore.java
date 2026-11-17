@@ -149,11 +149,14 @@ public final class JdbcKycCaseStore implements KycCaseStore<Connection> {
                     unitOfWork.prepareStatement(
                             "UPDATE " + TABLE
                                     + " SET status = ?,"
-                                    // GREATEST(?, opened_at) - the P1-TSK-031 drift, clamped in the
-                                    // statement: the mover's clock may read behind the one that
-                                    // opened the case (ADR-0014: skew is bounded, never zero), and
-                                    // a legal move must not die on V002's CHECK.
-                                    + " status_changed_at = GREATEST(?, opened_at)"
+                                    // GREATEST(?, status_changed_at) - ADR-0063 decision 2
+                                    // (X-TSK-006), the P1-TSK-031 drift clamped in the statement:
+                                    // the mover's clock may read behind the one that stamped the
+                                    // case's latest fact (ADR-0014: skew is bounded, never zero),
+                                    // so the move is stamped no earlier than it. status_changed_at
+                                    // is never before opened_at (V002's CHECK), so a legal move
+                                    // cannot die on that CHECK either.
+                                    + " status_changed_at = GREATEST(?, status_changed_at)"
                                     + " WHERE id = ? AND status = ?"
                                     + (deciding
                                             ? " AND NOT EXISTS (SELECT 1 FROM kyc.review_task"
@@ -256,8 +259,9 @@ public final class JdbcKycCaseStore implements KycCaseStore<Connection> {
                     unitOfWork.prepareStatement(
                             "UPDATE " + TABLE
                                     + " SET status = ?,"
-                                    // GREATEST(?, opened_at), as moveStatus clamps it.
-                                    + " status_changed_at = GREATEST(?, opened_at)"
+                                    // GREATEST(?, status_changed_at), as moveStatus clamps it
+                                    // (ADR-0063 decision 2, X-TSK-006).
+                                    + " status_changed_at = GREATEST(?, status_changed_at)"
                                     + " WHERE id = ? AND status = ?"
                                     // The predicate P2-TSK-010 recorded: in the statement,
                                     // never a read-then-move. Vacuous on the

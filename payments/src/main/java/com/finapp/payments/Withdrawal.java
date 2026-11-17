@@ -406,16 +406,16 @@ public final class Withdrawal {
     /**
      * The keyed release of a held withdrawal (`P13-TSK-009`): {@code HELD → DISPATCHED}, its first real send permit
      * {@code permit} (the database's, never before the birth) and the door's {@code key} recorded - a takeover's
-     * convergence target, as the dispatch key is the person's.
+     * convergence target, as the dispatch key is the person's. The permit is never before the latest one this
+     * withdrawal carries: {@code max(permit, latest)} (ADR-0063 decision 2, `X-TSK-006`).
      */
     public Withdrawal release(Instant permit, String key) {
         Objects.requireNonNull(permit, "permit must not be null");
         Objects.requireNonNull(key, "key must not be null");
         requireHeld(WithdrawalStatus.DISPATCHED);
-        Instant granted = permit.truncatedTo(ChronoUnit.MICROS);
-        if (granted.isBefore(lastDispatchedAt)) {
-            throw new IllegalArgumentException("a send permit only moves forward");
-        }
+        Instant reading = permit.truncatedTo(ChronoUnit.MICROS);
+        // Never before the latest permit, whatever the two instances' clocks said (ADR-0063 decision 2).
+        Instant granted = reading.isBefore(lastDispatchedAt) ? lastDispatchedAt : reading;
         return new Withdrawal(id, partyId, customerId, walletAccountId, paymentMethodId, destination,
                 amount, reference, railId, WithdrawalStatus.DISPATCHED, Optional.empty(),
                 Optional.empty(), Optional.empty(), holdId, createdAt, granted, held,
@@ -467,17 +467,18 @@ public final class Withdrawal {
 
     /**
      * A renewed send permit, committed before a takeover re-sends our reference — only while
-     * the withdrawal still awaits the scheme's word, and only forward in time (ADR-0057 §4).
+     * the withdrawal still awaits the scheme's word (ADR-0057 §4), and never before the latest
+     * permit it carries: {@code max(at, latest)} (ADR-0063 decision 2, `X-TSK-006`). The row's
+     * own renewal is the database's, strictly forward ({@code X-TSK-013}).
      */
     public Withdrawal withSendPermit(Instant at) {
         Objects.requireNonNull(at, "at must not be null");
         if (!status.isResolvable()) {
             throw new IllegalWithdrawalTransitionException(status, status);
         }
-        Instant granted = at.truncatedTo(ChronoUnit.MICROS);
-        if (granted.isBefore(lastDispatchedAt)) {
-            throw new IllegalArgumentException("a send permit only moves forward");
-        }
+        Instant reading = at.truncatedTo(ChronoUnit.MICROS);
+        // Never before the latest permit, whatever the two instances' clocks said (ADR-0063 decision 2).
+        Instant granted = reading.isBefore(lastDispatchedAt) ? lastDispatchedAt : reading;
         return new Withdrawal(
                 id,
                 partyId,

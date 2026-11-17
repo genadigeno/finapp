@@ -34,8 +34,9 @@ import org.springframework.web.bind.annotation.RestController;
  * <p><strong>{@code LEDGER_ADJUST}, the ledger operator's</strong> (least privilege by role: {@code LEDGER_OPERATOR} alone
  * holds it - an accountant who sees the drift hands the account to a ledger operator; a ledger operator closes no month).
  * The approval's {@code MULTI_FACTOR} is the platform's rule for a ledger operator's approval, the adjustment's since
- * `P14-TSK-022`. <strong>Every door keyed</strong>: a lost response replays; a key reused by another operator or for another
- * account is {@code 409 api.IdempotencyConflict}. The handlers' names are distinctive (the springdoc {@code operationId}
+ * `P14-TSK-022`. <strong>Every door keyed</strong>, each key scoped to its operator (`X-TSK-003`): a lost response replays;
+ * a key reused for another account is {@code 409 api.IdempotencyConflict}, and another operator's equal value is their
+ * own act, never a conflict. The handlers' names are distinctive (the springdoc {@code operationId}
  * rule).
  */
 @RestController

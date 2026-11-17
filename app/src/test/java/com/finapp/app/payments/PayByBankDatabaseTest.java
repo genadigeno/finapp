@@ -1213,6 +1213,92 @@ class PayByBankDatabaseTest {
                 .hasSize(2);
     }
 
+    /**
+     * X-TSK-006 (ADR-0063 decision 2) for the pay-in's renewal: a sweep whose clock trails the STORED
+     * initiation permit by minutes. Until X-TSK-013 that sweep wrote its own reading as the new permit,
+     * which V017's forward-only rule refused; the renewal is now the refund's form,
+     * {@code GREATEST(last_dispatched_at + 1 microsecond, statement_timestamp())}, conditional only on the
+     * permit the sweep READ. The trailing sweep renews strictly forward and re-initiates OUR reference
+     * once. The pay-in has no NEVER_RECEIVED conclusion (PayInResolution: re-initiation converges, so
+     * nothing is concluded from silence, INV-LIFE-03); the judgement its permit paces is the next
+     * contact, and that still waits for the bound from the renewed permit - driven by ageing it on the
+     * database's clock, never assumed.
+     */
+    @Test
+    @DisplayName("X-TSK-006 (ADR-0063): a sweep on a clock trailing the stored initiation permit renews it"
+            + " forward and re-initiates our reference ONCE; the next contact waits for the bound from the"
+            + " renewed permit, then comes")
+    void aTrailingSweepRenewsAndTheNextContactWaitsForItsBound() throws Exception {
+        Fixture f = bankFixture();
+        provider.receivesTheRequestThenLosesTheResponse(SimulatedInstantSchemeAdapter.INITIATIONS_PATH);
+        String paymentId = field(confirmedPayment(f, "6.00").body(), "id");
+        String attemptId = attemptIdOf(paymentId);
+        String reference = referenceOf(attemptId);
+        // The lost initiation a minute old on the database's clock: due for a 30 s bound.
+        ageTheAttempt(attemptId);
+        Instant seededPermit = permitOf(attemptId);
+        Duration bound = Duration.ofSeconds(30);
+        Clock behind = com.finapp.app.database.ServerSkewedClock.of(Duration.ofMinutes(-15));
+        assertThat(Instant.now(behind))
+                .as("precondition: the sweep's clock reads BEFORE the stored permit - the dangerous"
+                        + " direction, the renewer a clock-stamped renewal refused")
+                .isBefore(seededPermit);
+
+        // The trailing sweep: its re-initiation's answer is lost too, so the row stays handle-less.
+        PayInResolution.SweepResult trailing = sweepOn(bound, behind, instantRailBean);
+
+        assertThat(trailing.contacted()).isGreaterThanOrEqualTo(1);
+        assertThat(permitOf(attemptId))
+                .as("renewed strictly forward of the stored permit - never moved backwards to the"
+                        + " trailing clock's reading")
+                .isAfter(seededPermit);
+        assertThat(provider.headerValues(
+                                SimulatedInstantSchemeAdapter.INITIATIONS_PATH,
+                                SimulatedInstantSchemeAdapter.IDEMPOTENCY_KEY_HEADER))
+                .as("the lost birth call and ONE re-initiation, our reference both times (INV-PAY-04)")
+                .filteredOn(reference::equals)
+                .hasSize(2);
+        assertThat(oneString(
+                        "SELECT status || '|' || COALESCE(authorization_handle, 'none')"
+                                + " FROM payments.payment_attempt WHERE id = ?",
+                        UUID.fromString(attemptId)))
+                .as("the clamp touches the permit, never the state (INV-LIFE-02)")
+                .isEqualTo("AWAITING_PAYER|none");
+
+        // At once, on an agreeing clock: the renewed permit is younger than the bound - no contact.
+        sweepOn(bound, CLOCK, instantRailBean);
+        assertThat(provider.headerValues(
+                                SimulatedInstantSchemeAdapter.INITIATIONS_PATH,
+                                SimulatedInstantSchemeAdapter.IDEMPOTENCY_KEY_HEADER))
+                .as("the bound runs from the renewed permit: the row is not contacted again yet")
+                .filteredOn(reference::equals)
+                .hasSize(2);
+
+        // Driven, not assumed: the renewed permit aged past the bound - the next sweep contacts it.
+        ageTheAttempt(attemptId);
+        sweepOn(bound, CLOCK, instantRailBean);
+        assertThat(provider.headerValues(
+                                SimulatedInstantSchemeAdapter.INITIATIONS_PATH,
+                                SimulatedInstantSchemeAdapter.IDEMPOTENCY_KEY_HEADER))
+                .as("past the bound the row is contacted once more, by the same reference")
+                .filteredOn(reference::equals)
+                .hasSize(3);
+    }
+
+    /** The attempt's stored initiation permit, as the database holds it. */
+    private static Instant permitOf(String attemptId) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement statement =
+                        app.prepareStatement(
+                                "SELECT last_dispatched_at FROM payments.payment_attempt WHERE id = ?")) {
+            statement.setObject(1, UUID.fromString(attemptId));
+            try (ResultSet row = statement.executeQuery()) {
+                assertThat(row.next()).as("the attempt exists").isTrue();
+                return row.getTimestamp(1).toInstant();
+            }
+        }
+    }
+
     @Test
     @DisplayName("a lost callback is resolved by the initiation inquiry on the current row:"
             + " EXECUTED once, one entry, and a second sweep converges quietly")

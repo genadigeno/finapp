@@ -1,6 +1,8 @@
 package com.finapp.payments;
 
 import com.finapp.platform.persistence.DatabaseFailure;
+import com.finapp.platform.security.AssociatedData;
+import com.finapp.platform.security.CipherFormat;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -109,16 +111,21 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
             Instant recordedAt) {
         Objects.requireNonNull(kind, "kind must not be null");
         Objects.requireNonNull(payload, "payload must not be null");
-        EvidenceCipher.Encrypted encrypted = cipher.encrypt(payload);
+        java.util.UUID id = ids.next();
+        EvidenceCipher.Encrypted encrypted =
+                cipher.encrypt(
+                        associatedData(id, attemptId, refundId, withdrawalId, disputeResponseId,
+                                unmatchedConfirmationId, outboundCreditId, kind.name()),
+                        payload);
         try (PreparedStatement insert =
                 unitOfWork.prepareStatement(
                         "INSERT INTO payments.provider_evidence"
                                 + " (id, attempt_id, refund_id, withdrawal_id,"
                                 + " dispute_response_id, unmatched_confirmation_id, outbound_credit_id, kind,"
                                 + " content_ciphertext, content_nonce, key_version,"
-                                + " checksum_sha256, content_length, recorded_at)"
-                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
-            insert.setObject(1, ids.next());
+                                + " checksum_sha256, content_length, recorded_at, cipher_format)"
+                                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+            insert.setObject(1, id);
             insert.setObject(2, attemptId);
             insert.setObject(3, refundId);
             insert.setObject(4, withdrawalId);
@@ -132,6 +139,7 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
             insert.setBytes(12, sha256(payload));
             insert.setInt(13, payload.length);
             insert.setTimestamp(14, Timestamp.from(recordedAt));
+            insert.setInt(15, encrypted.format().code());
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new PaymentsStorageException(
@@ -144,8 +152,10 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
         Objects.requireNonNull(attempt, "attempt must not be null");
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
-                        "SELECT content_ciphertext, content_nonce, key_version, checksum_sha256"
-                                + " FROM payments.provider_evidence"
+                        "SELECT id, attempt_id, refund_id, withdrawal_id, dispute_response_id,"
+                                + " unmatched_confirmation_id, outbound_credit_id, kind,"
+                                + " content_ciphertext, content_nonce, key_version, checksum_sha256,"
+                                + " cipher_format FROM payments.provider_evidence"
                                 + " WHERE attempt_id = ? ORDER BY recorded_at, id")) {
             read.setObject(1, attempt.value());
             try (ResultSet rows = read.executeQuery()) {
@@ -153,10 +163,20 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
                 while (rows.next()) {
                     byte[] plaintext =
                             cipher.decrypt(
+                                    associatedData(
+                                            rows.getObject("id", java.util.UUID.class),
+                                            rows.getObject("attempt_id", java.util.UUID.class),
+                                            rows.getObject("refund_id", java.util.UUID.class),
+                                            rows.getObject("withdrawal_id", java.util.UUID.class),
+                                            rows.getObject("dispute_response_id", java.util.UUID.class),
+                                            rows.getObject("unmatched_confirmation_id", java.util.UUID.class),
+                                            rows.getObject("outbound_credit_id", java.util.UUID.class),
+                                            rows.getString("kind")),
                                     new EvidenceCipher.Encrypted(
                                             rows.getBytes("content_ciphertext"),
                                             rows.getBytes("content_nonce"),
-                                            rows.getInt("key_version")));
+                                            rows.getInt("key_version"),
+                                            CipherFormat.of(rows.getInt("cipher_format"))));
                     if (!Arrays.equals(sha256(plaintext), rows.getBytes("checksum_sha256"))) {
                         // Verified on every read (INV-HIST-02): bytes that do not match the
                         // capture-time checksum are not the evidence, whatever decrypted.
@@ -269,6 +289,31 @@ public final class JdbcProviderEvidenceStore implements ProviderEvidenceStore<Co
             throw new PaymentsStorageException(
                     DatabaseFailure.describe("probing provider evidence", failure));
         }
+    }
+
+    /**
+     * The row's associated data (`X-TSK-010`): its identity, and what names where the evidence belongs - its six subjects in a
+     * fixed order (an absent one as the empty value, which no identifier is) and its kind - so a ciphertext copied into another
+     * row, or under another subject, fails to decrypt once writes are bound.
+     */
+    static byte[] associatedData(
+            java.util.UUID id,
+            java.util.UUID attemptId,
+            java.util.UUID refundId,
+            java.util.UUID withdrawalId,
+            java.util.UUID disputeResponseId,
+            java.util.UUID unmatchedConfirmationId,
+            java.util.UUID outboundCreditId,
+            String kind) {
+        return AssociatedData.of(PURPOSE, id, subject(attemptId), subject(refundId), subject(withdrawalId),
+                subject(disputeResponseId), subject(unmatchedConfirmationId), subject(outboundCreditId), kind);
+    }
+
+    /** What the ciphertext is, in its associated data. */
+    static final String PURPOSE = "payments.provider_evidence.content";
+
+    private static String subject(java.util.UUID subject) {
+        return subject == null ? "" : subject.toString();
     }
 
     private static byte[] sha256(byte[] payload) {

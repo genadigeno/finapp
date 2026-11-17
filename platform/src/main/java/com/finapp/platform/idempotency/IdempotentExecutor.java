@@ -183,27 +183,200 @@ public final class IdempotentExecutor {
                 return BeginOutcome.dispatched(dispatch.dispatch(unitOfWork));
             }
             case ALREADY_CLAIMED -> {
-                IdempotencyRecord existing =
-                        store.find(unitOfWork, key)
-                                .orElseThrow(() -> new IdempotencyInProgressException(key));
-                if (!fingerprint.matches(existing.fingerprint())) {
-                    throw new IdempotencyConflictException(key);
-                }
-                if (existing.state().isTerminal()) {
-                    // The point of the whole exercise: the response of record, byte for byte.
-                    return BeginOutcome.replayed(existing.response());
-                }
-                if (store.reclaimIfLeaseExpired(
-                        unitOfWork, key, correlationId, now, now.plus(retention), lease)) {
-                    // The crashed flight's key, taken over: the dispatch re-runs and MUST
-                    // converge on the work Tx1 committed (the DispatchCommand contract).
-                    return BeginOutcome.dispatched(dispatch.dispatch(unitOfWork));
-                }
-                throw new IdempotencyInProgressException(key);
+                return resolveExistingBegin(unitOfWork, key, fingerprint, dispatch, correlationId, now);
             }
             case CONTENDED -> throw new IdempotencyInProgressException(key);
         }
         throw new IllegalStateException("unreachable: ClaimOutcome is exhaustive");
+    }
+
+    // -----------------------------------------------------------------
+    // A scope that moved (`X-TSK-003`)
+    // -----------------------------------------------------------------
+
+    /**
+     * {@link #execute(java.sql.Connection, IdempotencyKey, RequestFingerprint, IdempotentCommand)} for a command whose
+     * scope now names its principal and once did not (`X-TSK-003`, ADR-0004's amendment).
+     *
+     * <p>Moving a scope moves its namespace, so a retry spanning the move would look under the new scope, miss the claim
+     * its first attempt made under the old one, and act again - for a transfer, a second money movement. For the release
+     * that moves it, this claims the key under the <strong>old scope first</strong>, then under the new:
+     *
+     * <ul>
+     *   <li>the old claim is <strong>this request's</strong> - same fingerprint, made before the move or by a replica of
+     *       the previous release mid-roll - so it is resolved there exactly as an existing claim always is: replayed,
+     *       taken over once its lease ran out, or reported in progress. The new scope is not touched;
+     *   <li>the old claim is <strong>another principal's</strong> - a different fingerprint, and every moved scope's
+     *       fingerprint names its caller - so it is no claim of this request's, and the command claims under its own
+     *       scope alone. A request that reused its own key for a different body before the move is not told so: it acts
+     *       under the new scope, as a request under a new key would;
+     *   <li>the old scope is free: this request holds both, runs once under the new, and records the outcome under
+     *       both, so a replica of the previous release, which knows only the old scope, replays it.
+     * </ul>
+     *
+     * <p>The old scope is claimed first so every flight of one request, of either release, meets at the same unique
+     * index, and so no two flights wait for each other in opposite orders. A different principal's claim on the old
+     * scope still holds its index while that transaction runs, so its neighbour may be told {@link
+     * IdempotencyInProgressException} for that moment, never refused. On an exception the caller's transaction rolls
+     * back and takes both claims with it.
+     */
+    public ExecutionOutcome execute(
+            java.sql.Connection unitOfWork,
+            IdempotencyKey key,
+            IdempotencyKey movedFrom,
+            RequestFingerprint fingerprint,
+            IdempotentCommand command) {
+
+        requireMoved(key, movedFrom);
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(fingerprint, "fingerprint must not be null");
+        Objects.requireNonNull(command, "command must not be null");
+
+        Instant now = clock.instant();
+        CorrelationId correlationId = currentCorrelationId();
+
+        return switch (store.claim(
+                unitOfWork, movedFrom, fingerprint, correlationId, now, now.plus(retention), lease)) {
+            case CONTENDED -> throw new IdempotencyInProgressException(key);
+            case ALREADY_CLAIMED -> {
+                IdempotencyRecord before =
+                        store.find(unitOfWork, movedFrom)
+                                .orElseThrow(() -> new IdempotencyInProgressException(key));
+                yield fingerprint.matches(before.fingerprint())
+                        ? resolveExistingClaim(unitOfWork, movedFrom, fingerprint, command, correlationId, now)
+                        : execute(unitOfWork, key, fingerprint, command);
+            }
+            case CLAIMED -> {
+                ExecutionOutcome outcome = execute(unitOfWork, key, fingerprint, command);
+                recordUnderTheOldScope(unitOfWork, movedFrom, outcome.state(), outcome.response());
+                yield outcome;
+            }
+        };
+    }
+
+    /**
+     * {@link #begin(java.sql.Connection, IdempotencyKey, RequestFingerprint, DispatchCommand)} for a command whose scope
+     * moved (`X-TSK-003`): the old scope claimed first, resolved there when the claim is this request's, passed over when
+     * it is another principal's, and held beside the new while both are free - as {@link #execute(java.sql.Connection,
+     * IdempotencyKey, IdempotencyKey, RequestFingerprint, IdempotentCommand)} explains. Tx2 is {@link
+     * #complete(java.sql.Connection, IdempotencyKey, IdempotencyKey, RequestFingerprint, boolean, StoredResponse)}.
+     */
+    public BeginOutcome begin(
+            java.sql.Connection unitOfWork,
+            IdempotencyKey key,
+            IdempotencyKey movedFrom,
+            RequestFingerprint fingerprint,
+            DispatchCommand dispatch) {
+
+        requireMoved(key, movedFrom);
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(fingerprint, "fingerprint must not be null");
+        Objects.requireNonNull(dispatch, "dispatch must not be null");
+
+        Instant now = clock.instant();
+        CorrelationId correlationId = currentCorrelationId();
+
+        switch (store.claim(
+                unitOfWork, movedFrom, fingerprint, correlationId, now, now.plus(retention), lease)) {
+            case CONTENDED -> throw new IdempotencyInProgressException(key);
+            case ALREADY_CLAIMED -> {
+                IdempotencyRecord before =
+                        store.find(unitOfWork, movedFrom)
+                                .orElseThrow(() -> new IdempotencyInProgressException(key));
+                return fingerprint.matches(before.fingerprint())
+                        ? resolveExistingBegin(unitOfWork, movedFrom, fingerprint, dispatch, correlationId, now)
+                        : begin(unitOfWork, key, fingerprint, dispatch);
+            }
+            case CLAIMED -> {
+                BeginOutcome outcome = begin(unitOfWork, key, fingerprint, dispatch);
+                if (outcome.replay().isPresent()) {
+                    // The new scope already held this request's finished record (its old claim swept first): the old
+                    // claim records the same, rather than standing IN_PROGRESS for a flight that will never complete it.
+                    IdempotencyRecord recorded =
+                            store.find(unitOfWork, key).orElseThrow(() -> new IdempotencyInProgressException(key));
+                    recordUnderTheOldScope(unitOfWork, movedFrom, recorded.state(), recorded.response());
+                }
+                return outcome;
+            }
+        }
+        throw new IllegalStateException("unreachable: ClaimOutcome is exhaustive");
+    }
+
+    /**
+     * Tx2 for a command whose scope moved (`X-TSK-003`): records the outcome under the new scope, and under the old one
+     * exactly when the old claim is this request's and still in progress - never another principal's, whose fingerprint
+     * differs, and never a finished one.
+     *
+     * @return {@code true} if this call recorded the outcome under either scope; {@code false} when both were already
+     *     terminal or not this request's - a takeover finished first, and the loser converges
+     */
+    public boolean complete(
+            java.sql.Connection unitOfWork,
+            IdempotencyKey key,
+            IdempotencyKey movedFrom,
+            RequestFingerprint fingerprint,
+            boolean succeeded,
+            StoredResponse response) {
+        requireMoved(key, movedFrom);
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(fingerprint, "fingerprint must not be null");
+        Objects.requireNonNull(response, "response must not be null");
+        IdempotencyState state = succeeded ? IdempotencyState.COMPLETED : IdempotencyState.FAILED;
+        Instant at = clock.instant();
+        boolean recorded = store.complete(unitOfWork, key, state, response, at);
+        Optional<IdempotencyRecord> before = store.find(unitOfWork, movedFrom);
+        if (before.isPresent()
+                && !before.get().state().isTerminal()
+                && fingerprint.matches(before.get().fingerprint())) {
+            recorded = store.complete(unitOfWork, movedFrom, state, response, at) || recorded;
+        }
+        return recorded;
+    }
+
+    /** The old claim, held by this request, records the outcome the new one did. */
+    private void recordUnderTheOldScope(
+            java.sql.Connection unitOfWork, IdempotencyKey movedFrom, IdempotencyState state, StoredResponse response) {
+        if (!store.complete(unitOfWork, movedFrom, state, response, clock.instant())) {
+            throw new IdempotencyStorageException(
+                    "The claim for " + movedFrom + " was no longer in progress when its outcome was recorded;"
+                            + " something else modified it inside this transaction",
+                    null);
+        }
+    }
+
+    private static void requireMoved(IdempotencyKey key, IdempotencyKey movedFrom) {
+        Objects.requireNonNull(key, "key must not be null");
+        Objects.requireNonNull(movedFrom, "movedFrom must not be null");
+        if (!key.key().equals(movedFrom.key()) || key.scope().equals(movedFrom.scope())) {
+            throw new IllegalArgumentException(
+                    "a moved claim is the same key value under another scope: " + key + " from " + movedFrom);
+        }
+    }
+
+    private BeginOutcome resolveExistingBegin(
+            java.sql.Connection unitOfWork,
+            IdempotencyKey key,
+            RequestFingerprint fingerprint,
+            DispatchCommand dispatch,
+            CorrelationId correlationId,
+            Instant now) {
+        IdempotencyRecord existing =
+                store.find(unitOfWork, key)
+                        .orElseThrow(() -> new IdempotencyInProgressException(key));
+        if (!fingerprint.matches(existing.fingerprint())) {
+            throw new IdempotencyConflictException(key);
+        }
+        if (existing.state().isTerminal()) {
+            // The point of the whole exercise: the response of record, byte for byte.
+            return BeginOutcome.replayed(existing.response());
+        }
+        if (store.reclaimIfLeaseExpired(
+                unitOfWork, key, correlationId, now, now.plus(retention), lease)) {
+            // The crashed flight's key, taken over: the dispatch re-runs and MUST
+            // converge on the work Tx1 committed (the DispatchCommand contract).
+            return BeginOutcome.dispatched(dispatch.dispatch(unitOfWork));
+        }
+        throw new IdempotencyInProgressException(key);
     }
 
     /**

@@ -33,7 +33,7 @@ interface.**
   timestamps — because this is the material reconciliation and dispute resolution require
   (`INV-HIST-02`).
 - **No transaction spans a provider call.** State is committed before the call; the outcome
-  is applied in a separate transaction. *(ADR-0046 decides how; held since `X-TSK-020`, 2026-11-15, by
+  is applied in a separate transaction. *(ADR-0046 decides how; held since `X-TSK-023`, 2026-11-15, by
   `NoTransactionSpansAProviderCallTest`.)*
 - Every adapter defines explicit timeouts, retry policy and backoff, and declares which
   operations may not be blindly retried.

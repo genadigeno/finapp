@@ -21,23 +21,63 @@ class EvidenceCipherTest {
 
     private final EvidenceCipher cipher = new EvidenceCipher(KEY, 1, new SecureRandom());
 
+    /** One row's associated data, and another's (`X-TSK-010`). */
+    private static final byte[] ROW = com.finapp.platform.security.AssociatedData.of(
+            "payments.provider_evidence.content", new java.util.UUID(0, 1), "", "", "", "", "", "", "RESPONSE");
+    private static final byte[] OTHER_ROW = com.finapp.platform.security.AssociatedData.of(
+            "payments.provider_evidence.content", new java.util.UUID(0, 2), "", "", "", "", "", "", "RESPONSE");
+
+    // ---------------------------------------------------------------- bound to its row (X-TSK-010)
+
+    @Test
+    @DisplayName("X-TSK-010: a bound ciphertext decrypts under its own row and nowhere else - one indistinguishable refusal")
+    void aBoundCiphertextDecryptsOnlyUnderItsOwnRow() {
+        EvidenceCipher cipher = new EvidenceCipher(rotatedRing(1), new SecureRandom(), true);
+        EvidenceCipher.Encrypted written = cipher.encrypt(ROW, "bound evidence".getBytes(StandardCharsets.UTF_8));
+        assertThat(written.format()).isEqualTo(com.finapp.platform.security.CipherFormat.BOUND);
+        assertThat(new String(cipher.decrypt(ROW, written), StandardCharsets.UTF_8)).isEqualTo("bound evidence");
+        assertThatThrownBy(() -> cipher.decrypt(OTHER_ROW, written))
+                .as("copied into another row, it fails to decrypt").isInstanceOf(IllegalStateException.class)
+                .hasMessage("Could not decrypt provider evidence").hasNoCause();
+    }
+
+    @Test
+    @DisplayName("X-TSK-010: a bound ciphertext presented as unbound fails its tag - the stored format is no downgrade path")
+    void aBoundCiphertextReadAsUnboundFails() {
+        EvidenceCipher cipher = new EvidenceCipher(rotatedRing(1), new SecureRandom(), true);
+        EvidenceCipher.Encrypted written = cipher.encrypt(ROW, "bound evidence".getBytes(StandardCharsets.UTF_8));
+        EvidenceCipher.Encrypted downgraded = new EvidenceCipher.Encrypted(written.ciphertext(), written.nonce(),
+                written.keyVersion(), com.finapp.platform.security.CipherFormat.UNBOUND);
+        assertThatThrownBy(() -> cipher.decrypt(ROW, downgraded)).isInstanceOf(IllegalStateException.class).hasNoCause();
+    }
+
+    @Test
+    @DisplayName("X-TSK-010: with the switch off a write is unbound, as the previous release writes, and both releases read it")
+    void writesAreUnboundWhileTheSwitchIsOff() {
+        EvidenceCipher cipher = new EvidenceCipher(rotatedRing(1), new SecureRandom());
+        EvidenceCipher.Encrypted written = cipher.encrypt(ROW, "unbound evidence".getBytes(StandardCharsets.UTF_8));
+        assertThat(written.format()).isEqualTo(com.finapp.platform.security.CipherFormat.UNBOUND);
+        assertThat(new String(new EvidenceCipher(rotatedRing(1), new SecureRandom(), true).decrypt(ROW, written),
+                StandardCharsets.UTF_8)).as("a bound-writing replica reads it").isEqualTo("unbound evidence");
+    }
+
     @Test
     @DisplayName("a payload round-trips, and the ciphertext carries GCM's arithmetic")
     void roundTrips() {
         byte[] payload = "  {\"status\" : \"approved\"}\n".getBytes(StandardCharsets.UTF_8);
-        EvidenceCipher.Encrypted encrypted = cipher.encrypt(payload);
+        EvidenceCipher.Encrypted encrypted = cipher.encrypt(ROW, payload);
         assertThat(encrypted.ciphertext()).hasSize(payload.length + EvidenceCipher.TAG_BYTES);
         assertThat(encrypted.nonce()).hasSize(EvidenceCipher.NONCE_BYTES);
         assertThat(encrypted.keyVersion()).isEqualTo(1);
-        assertThat(cipher.decrypt(encrypted)).isEqualTo(payload);
+        assertThat(cipher.decrypt(ROW, encrypted)).isEqualTo(payload);
     }
 
     @Test
     @DisplayName("a fresh nonce per encryption - two ciphertexts of one payload differ")
     void freshNoncePerCall() {
         byte[] payload = "same bytes".getBytes(StandardCharsets.UTF_8);
-        EvidenceCipher.Encrypted first = cipher.encrypt(payload);
-        EvidenceCipher.Encrypted second = cipher.encrypt(payload);
+        EvidenceCipher.Encrypted first = cipher.encrypt(ROW, payload);
+        EvidenceCipher.Encrypted second = cipher.encrypt(ROW, payload);
         assertThat(first.nonce()).isNotEqualTo(second.nonce());
         assertThat(first.ciphertext()).isNotEqualTo(second.ciphertext());
     }
@@ -46,20 +86,21 @@ class EvidenceCipherTest {
     @DisplayName("tampering and the wrong key are one indistinguishable refusal, yielding nothing")
     void tamperingAndWrongKeyRefuse() {
         byte[] payload = "evidence".getBytes(StandardCharsets.UTF_8);
-        EvidenceCipher.Encrypted encrypted = cipher.encrypt(payload);
+        EvidenceCipher.Encrypted encrypted = cipher.encrypt(ROW, payload);
 
         byte[] tampered = encrypted.ciphertext();
         tampered[0] ^= 1;
         assertThatThrownBy(
                         () ->
                                 cipher.decrypt(
+                                        ROW,
                                         new EvidenceCipher.Encrypted(
                                                 tampered, encrypted.nonce(), 1)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Could not decrypt provider evidence");
 
         EvidenceCipher other = new EvidenceCipher(OTHER_KEY, 2, new SecureRandom());
-        assertThatThrownBy(() -> other.decrypt(encrypted))
+        assertThatThrownBy(() -> other.decrypt(ROW, encrypted))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Could not decrypt provider evidence");
     }
@@ -79,8 +120,8 @@ class EvidenceCipherTest {
     @DisplayName("nothing sensitive prints itself")
     void printsNothingSensitive() {
         EvidenceCipher.Encrypted encrypted =
-                cipher.encrypt("secret payload".getBytes(StandardCharsets.UTF_8));
-        assertThat(encrypted.toString()).isEqualTo("Encrypted[keyVersion=1]");
+                cipher.encrypt(ROW, "secret payload".getBytes(StandardCharsets.UTF_8));
+        assertThat(encrypted.toString()).isEqualTo("Encrypted[keyVersion=1, format=UNBOUND]");
     }
 
     // ---------------------------------------------------------------- key rings (P15-TSK-019)
@@ -113,14 +154,14 @@ class EvidenceCipherTest {
     @DisplayName("a row written before key rings existed decrypts unchanged, under a ring of one (the code on master, 6a1e9626)")
     void aRowWrittenBeforeRingsDecryptsUnderARingOfOne() {
         EvidenceCipher cipher = new EvidenceCipher(ringKey(0x14), 1, new java.security.SecureRandom());
-        assertThat(new String(cipher.decrypt(writtenBeforeRings()), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
+        assertThat(new String(cipher.decrypt(ROW, writtenBeforeRings()), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
     }
 
     @Test
     @DisplayName("a v1 row is read under version 1 after rotation to version 2: the stamp decides, never the active version")
     void aV1RowIsReadUnderItsStampAfterRotation() {
         EvidenceCipher cipher = new EvidenceCipher(rotatedRing(2), new java.security.SecureRandom());
-        assertThat(new String(cipher.decrypt(writtenBeforeRings()), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
+        assertThat(new String(cipher.decrypt(ROW, writtenBeforeRings()), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("golden vector, not real evidence");
     }
 
     @Test
@@ -129,22 +170,22 @@ class EvidenceCipherTest {
         EvidenceCipher before = new EvidenceCipher(rotatedRing(1), new java.security.SecureRandom());
         EvidenceCipher after = new EvidenceCipher(rotatedRing(2), new java.security.SecureRandom());
 
-        EvidenceCipher.Encrypted writtenBefore = before.encrypt("later evidence".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        EvidenceCipher.Encrypted writtenAfter = after.encrypt("later evidence".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        EvidenceCipher.Encrypted writtenBefore = before.encrypt(ROW, "later evidence".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        EvidenceCipher.Encrypted writtenAfter = after.encrypt(ROW, "later evidence".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 
         assertThat(writtenBefore.keyVersion()).as("a known version stays unused until it is activated").isEqualTo(1);
         assertThat(writtenAfter.keyVersion()).as("the active pointer decides the version written").isEqualTo(2);
-        assertThat(new String(after.decrypt(writtenAfter), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("later evidence");
-        assertThat(new String(before.decrypt(writtenAfter), java.nio.charset.StandardCharsets.UTF_8)).as("a replica not yet activated reads its neighbour's new row").isEqualTo("later evidence");
-        assertThat(new String(after.decrypt(writtenBefore), java.nio.charset.StandardCharsets.UTF_8)).as("an activated replica reads an old row").isEqualTo("later evidence");
+        assertThat(new String(after.decrypt(ROW, writtenAfter), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo("later evidence");
+        assertThat(new String(before.decrypt(ROW, writtenAfter), java.nio.charset.StandardCharsets.UTF_8)).as("a replica not yet activated reads its neighbour's new row").isEqualTo("later evidence");
+        assertThat(new String(after.decrypt(ROW, writtenBefore), java.nio.charset.StandardCharsets.UTF_8)).as("an activated replica reads an old row").isEqualTo("later evidence");
     }
 
     @Test
     @DisplayName("a row stamped with a version the ring does not hold is refused, even when the active key could read it")
     void anUnknownStampedVersionIsRefused() {
         EvidenceCipher cipher = new EvidenceCipher(rotatedRing(1), new java.security.SecureRandom());
-        EvidenceCipher.Encrypted written = cipher.encrypt("later evidence".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        assertThatThrownBy(() -> cipher.decrypt(new EvidenceCipher.Encrypted(written.ciphertext(), written.nonce(), 9)))
+        EvidenceCipher.Encrypted written = cipher.encrypt(ROW, "later evidence".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThatThrownBy(() -> cipher.decrypt(ROW, new EvidenceCipher.Encrypted(written.ciphertext(), written.nonce(), 9)))
                 .isInstanceOf(com.finapp.platform.security.UnknownKeyVersionException.class)
                 .as("one refusal, whatever went wrong: the version the row claims is not told to a caller")
                 .hasMessageNotContaining("9")

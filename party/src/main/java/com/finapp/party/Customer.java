@@ -122,7 +122,18 @@ public final class Customer {
         if (!status.canTransitionTo(target)) {
             throw new IllegalCustomerTransitionException(id, status, target);
         }
-        return new Customer(id, partyId, target, openedAt, Instant.now(clock));
+        // max(now, latest) - ADR-0063 decision 2 (X-TSK-006): the database orders this
+        // relationship's facts, and a stamp never contradicts that order. The instance's clock
+        // may read behind the one that stamped the previous fact (ADR-0014: skew is bounded,
+        // never zero), so the later fact is stamped no earlier than the latest stamp it carries
+        // - statusChangedAt, which is never before openedAt. The store clamps the same way.
+        Instant now = Instant.now(clock);
+        return new Customer(
+                id,
+                partyId,
+                target,
+                openedAt,
+                now.isBefore(statusChangedAt) ? statusChangedAt : now);
     }
 
     public CustomerId id() {

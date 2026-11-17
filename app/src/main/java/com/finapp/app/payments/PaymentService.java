@@ -45,8 +45,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <h2>One idempotency claim, the command's</h2>
  *
  * <p>{@link PaymentCreation} already claims at the financial boundary — scope
- * {@code payment.create}, the caller's key, the fingerprint binding the actor and the money's
- * meaning ({@code INV-IDEM-01/-03}) — so this surface adds <strong>no second layer</strong>
+ * {@code payment.create} scoped to the caller (`X-TSK-003`), the caller's key, the fingerprint
+ * binding the actor and the money's meaning ({@code INV-IDEM-01/-03}) — so this surface adds <strong>no second layer</strong>
  * (the {@code TransferService} recorded rule). What makes a retried {@code POST} byte-for-byte
  * identical: the <em>status</em> is rendered from the replayed judgement
  * ({@code CreationResult} — the original {@code REQUIRES_CONFIRMATION}, never a re-read, so a

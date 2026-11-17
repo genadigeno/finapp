@@ -8,6 +8,7 @@ import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
@@ -38,6 +39,24 @@ class HoldTest {
         assertThat(released.status()).isEqualTo(HoldStatus.RELEASED);
         assertThat(released.releasedAt()).isPresent();
         assertThat(released.amount()).isEqualTo(placed.amount());
+    }
+
+    @Test
+    @DisplayName("a release on a clock trailing the placement is stamped at the placement's instant, never before it;"
+            + " a clock past it stamps its own read (X-TSK-006, ADR-0063 decision 2)")
+    void aReleaseOnATrailingClockIsStampedAtThePlacement() {
+        Hold placed = Hold.place(HoldId.next(IDS), ACCOUNT, Money.ofMinorUnits(500, USD), CLOCK);
+        Clock trailing = Clock.offset(CLOCK, Duration.ofSeconds(-5));
+        assertThat(Instant.now(trailing)).as("precondition: the releasing clock trails the placement")
+                .isBefore(placed.placedAt());
+
+        Hold released = placed.release(trailing);
+        assertThat(released.status()).isEqualTo(HoldStatus.RELEASED);
+        assertThat(released.releasedAt()).as("the predecessor's instant").contains(placed.placedAt());
+
+        // A floor, not a pin.
+        Clock ahead = Clock.offset(CLOCK, Duration.ofSeconds(5));
+        assertThat(placed.release(ahead).releasedAt()).contains(placed.placedAt().plusSeconds(5));
     }
 
     @Test

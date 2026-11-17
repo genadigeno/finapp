@@ -671,7 +671,7 @@ class IdempotentExecutorTest {
     @Test
     @DisplayName("a flight whose clock reads behind its takeover's still records the outcome:"
             + " completed_at clamps to created_at in the statement (the P1-TSK-031 drift;"
-            + " ADR-0014)")
+            + " ADR-0014; X-TSK-006, ADR-0063 decision 2)")
     void aFlightBehindItsTakeoverStillRecordsTheOutcome() throws SQLException {
         // The one shape in which two instances write this row's two instants. execute() claims
         // and completes in one transaction on one instance; here a takeover rewrites created_at
@@ -742,6 +742,76 @@ class IdempotentExecutorTest {
     }
 
     @Test
+    @DisplayName("X-TSK-006 (ADR-0063 decision 2): a takeover on a clock trailing the abandoned claim"
+            + " stamps the claim's instant and keeps its retention, and its outcome lands there too")
+    void aTakeoverOnATrailingClockStampsTheAbandonedClaimsInstant() throws SQLException {
+        // The crashed flight claimed at FIXED on its own clock (its own connection); the takeover
+        // runs on an instance whose clock reads five seconds behind it. The lease decided the order
+        // - it expired on the database's clock before the takeover - so the takeover's created_at
+        // never precedes the claim it took over. Unclamped it moved five seconds backwards.
+        IdempotencyKey key = uniqueKey();
+        RequestFingerprint fingerprint =
+                RequestFingerprint.sha256("refund:305".getBytes(StandardCharsets.UTF_8));
+        insertExpiredLeaseClaim(key, fingerprint);
+        Clock trailing = Clock.offset(Clock.fixed(FIXED, ZoneOffset.UTC), Duration.ofSeconds(-5));
+        assertThat(trailing.instant())
+                .as("precondition: the takeover's clock trails the abandoned claim's stamp")
+                .isBefore(stampsOf(key).createdAt());
+        IdempotentExecutor takingOver =
+                new IdempotentExecutor(new JdbcIdempotencyRecordStore(), trailing, RETENTION, LEASE);
+
+        IdempotentExecutor.BeginOutcome takenOver =
+                inScope(
+                        () ->
+                                takingOver.begin(
+                                        connection,
+                                        key,
+                                        fingerprint,
+                                        uow -> "converged".getBytes(StandardCharsets.UTF_8)));
+        connection.commit();
+
+        assertThat(takenOver.dispatched()).contains("converged".getBytes(StandardCharsets.UTF_8));
+        assertThat(stampsOf(key).createdAt()).isEqualTo(FIXED);
+        assertThat(expiryOf(key))
+                .as("expires_at moves with the clamp, so the retention runs from the stamp")
+                .isEqualTo(FIXED.plus(RETENTION));
+
+        assertThat(
+                        takingOver.complete(
+                                connection,
+                                key,
+                                true,
+                                StoredResponse.of(
+                                        "judged".getBytes(StandardCharsets.UTF_8), "text/plain")))
+                .isTrue();
+        connection.commit();
+        assertThat(stampsOf(key).completedAt()).isEqualTo(FIXED);
+
+        // Trailing by more than the retention: clamping created_at alone would leave expires_at
+        // before it, and V002's expires_at > created_at would refuse the takeover outright.
+        IdempotencyKey farBehind = uniqueKey();
+        insertExpiredLeaseClaim(farBehind, fingerprint);
+        inScope(
+                () ->
+                        executorAt(FIXED.minus(RETENTION).minus(Duration.ofHours(1)))
+                                .begin(connection, farBehind, fingerprint, uow -> new byte[0]));
+        connection.commit();
+        assertThat(stampsOf(farBehind).createdAt()).isEqualTo(FIXED);
+        assertThat(expiryOf(farBehind)).isEqualTo(FIXED.plus(RETENTION));
+
+        // A floor, not a pin: a takeover past the claim stamps its own read.
+        IdempotencyKey own = uniqueKey();
+        insertExpiredLeaseClaim(own, fingerprint);
+        inScope(
+                () ->
+                        executorAt(FIXED.plusSeconds(5))
+                                .begin(connection, own, fingerprint, uow -> new byte[0]));
+        connection.commit();
+        assertThat(stampsOf(own).createdAt()).isEqualTo(FIXED.plusSeconds(5));
+        assertThat(expiryOf(own)).isEqualTo(FIXED.plusSeconds(5).plus(RETENTION));
+    }
+
+    @Test
     @DisplayName("begin refuses a different fingerprint whatever the claim's state")
     void beginRefusesADifferentFingerprint() throws SQLException {
         IdempotencyKey key = uniqueKey();
@@ -766,6 +836,218 @@ class IdempotentExecutorTest {
                                                                 uow -> new byte[0])))
                 .isInstanceOf(IdempotencyConflictException.class);
         connection.rollback();
+    }
+
+    // -----------------------------------------------------------------
+    // X-TSK-003 - a scope that moved: the old scope claimed first, for one release
+    // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName("X-TSK-003: a claim made under the old scope before the move is this request's - the retry under the moved"
+            + " scope replays it and never runs again")
+    void aClaimMadeBeforeTheMoveIsReplayed() throws SQLException {
+        Moved moved = movedKeys("A");
+        RequestFingerprint fingerprint = RequestFingerprint.sha256("A|transfer:100".getBytes(StandardCharsets.UTF_8));
+        AtomicInteger executions = new AtomicInteger();
+
+        // The previous release: the constant scope alone.
+        inScope(() -> executor().execute(connection, moved.before(), fingerprint,
+                uow -> recordEffect(uow, executions, "before the move")));
+        connection.commit();
+
+        IdempotentExecutor.ExecutionOutcome retry = inScope(() -> executor().execute(connection, moved.key(),
+                moved.before(), fingerprint, uow -> recordEffect(uow, executions, "after the move")));
+        connection.commit();
+
+        assertThat(retry.replayed()).isTrue();
+        assertThat(retry.body()).contains("before the move".getBytes(StandardCharsets.UTF_8));
+        assertThat(executions.get()).as("the retry spanning the move ran nothing").isEqualTo(1);
+        assertThat(effectCount()).isEqualTo(1);
+        assertThat(exists(moved.key())).as("the moved scope is not touched by a request resolved under the old").isFalse();
+    }
+
+    @Test
+    @DisplayName("X-TSK-003: another principal's claim under the old scope is passed over - the same key value acts once for"
+            + " each principal, and each retry replays its own")
+    void anotherPrincipalsOldClaimIsPassedOver() throws SQLException {
+        Moved a = movedKeys("A");
+        Moved b = a.forPrincipal("B");
+        RequestFingerprint fromA = RequestFingerprint.sha256("A|transfer:100".getBytes(StandardCharsets.UTF_8));
+        RequestFingerprint fromB = RequestFingerprint.sha256("B|transfer:100".getBytes(StandardCharsets.UTF_8));
+        AtomicInteger executions = new AtomicInteger();
+
+        inScope(() -> executor().execute(connection, a.before(), fromA, uow -> recordEffect(uow, executions, "A's")));
+        connection.commit();
+        IdempotentExecutor.ExecutionOutcome forB = inScope(() -> executor().execute(connection, b.key(), b.before(),
+                fromB, uow -> recordEffect(uow, executions, "B's")));
+        connection.commit();
+        IdempotentExecutor.ExecutionOutcome retryB = inScope(() -> executor().execute(connection, b.key(), b.before(),
+                fromB, uow -> recordEffect(uow, executions, "B's again")));
+        connection.commit();
+
+        assertThat(forB.executed()).as("B is not refused for A's key value").isTrue();
+        assertThat(retryB.replayed()).isTrue();
+        assertThat(retryB.body()).contains("B's".getBytes(StandardCharsets.UTF_8));
+        assertThat(executions.get()).as("once for A, once for B").isEqualTo(2);
+        assertThat(stateOf(a.before())).as("A's old claim is A's, finished by A").isEqualTo(IdempotencyState.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("X-TSK-003: while both scopes are free the request holds both and records its outcome under both, so a"
+            + " replica of the previous release replays it rather than acting again")
+    void bothScopesRecordTheOutcome() throws SQLException {
+        Moved moved = movedKeys("A");
+        RequestFingerprint fingerprint = RequestFingerprint.sha256("A|transfer:250".getBytes(StandardCharsets.UTF_8));
+        AtomicInteger executions = new AtomicInteger();
+
+        IdempotentExecutor.ExecutionOutcome first = inScope(() -> executor().execute(connection, moved.key(),
+                moved.before(), fingerprint, uow -> recordEffect(uow, executions, "once")));
+        connection.commit();
+        IdempotentExecutor.ExecutionOutcome previousRelease = inScope(() -> executor().execute(connection,
+                moved.before(), fingerprint, uow -> recordEffect(uow, executions, "again on an old replica")));
+        connection.commit();
+        IdempotentExecutor.ExecutionOutcome nextRelease = inScope(() -> executor().execute(connection, moved.key(),
+                fingerprint, uow -> recordEffect(uow, executions, "again once the transition is gone")));
+        connection.commit();
+
+        assertThat(first.executed()).isTrue();
+        assertThat(previousRelease.replayed()).isTrue();
+        assertThat(nextRelease.replayed()).isTrue();
+        assertThat(previousRelease.response()).isEqualTo(first.response());
+        assertThat(nextRelease.response()).isEqualTo(first.response());
+        assertThat(executions.get()).isEqualTo(1);
+        assertThat(effectCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("X-TSK-003: one request racing across a rolling deploy - replicas of the previous release claiming the old"
+            + " scope alone, replicas of this one the old then the new - acts exactly once")
+    void aRaceAcrossTheRollActsOnce() throws Exception {
+        Moved moved = movedKeys("A");
+        RequestFingerprint fingerprint = RequestFingerprint.sha256("A|transfer:500".getBytes(StandardCharsets.UTF_8));
+        int racers = 8;
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicInteger executions = new AtomicInteger();
+
+        List<Callable<IdempotentExecutor.ExecutionOutcome>> tasks = new ArrayList<>();
+        for (int i = 0; i < racers; i++) {
+            boolean previousRelease = i % 2 == 0;
+            tasks.add(() -> {
+                try (Connection own = DatabaseRoles.bootstrap()) {
+                    own.setAutoCommit(false);
+                    start.await();
+                    IdempotentExecutor.ExecutionOutcome outcome = inScope(() -> previousRelease
+                            ? executor().execute(own, moved.before(), fingerprint,
+                                    uow -> recordEffect(uow, executions, "once"))
+                            : executor().execute(own, moved.key(), moved.before(), fingerprint,
+                                    uow -> recordEffect(uow, executions, "once")));
+                    own.commit();
+                    return outcome;
+                }
+            });
+        }
+
+        List<IdempotentExecutor.ExecutionOutcome> outcomes = new ArrayList<>();
+        try (ExecutorService pool = Executors.newFixedThreadPool(racers)) {
+            List<Future<IdempotentExecutor.ExecutionOutcome>> futures = tasks.stream().map(pool::submit).toList();
+            start.countDown();
+            for (Future<IdempotentExecutor.ExecutionOutcome> future : futures) {
+                outcomes.add(future.get(60, TimeUnit.SECONDS));
+            }
+        }
+
+        assertThat(executions.get()).as("one effect across both releases").isEqualTo(1);
+        assertThat(effectCount()).isEqualTo(1);
+        assertThat(outcomes).filteredOn(IdempotentExecutor.ExecutionOutcome::executed).hasSize(1);
+        assertThat(outcomes).extracting(IdempotentExecutor.ExecutionOutcome::response)
+                .as("every flight of either release answers the one response")
+                .containsOnly(outcomes.getFirst().response());
+    }
+
+    @Test
+    @DisplayName("X-TSK-003: the two-transaction shape - begin holds both scopes, complete records both; another"
+            + " principal's old claim is passed over at begin and never completed by this request")
+    void theTwoTransactionShapeMovesToo() throws SQLException {
+        Moved a = movedKeys("A");
+        Moved b = a.forPrincipal("B");
+        RequestFingerprint fromA = RequestFingerprint.sha256("A|refund:300".getBytes(StandardCharsets.UTF_8));
+        RequestFingerprint fromB = RequestFingerprint.sha256("B|refund:300".getBytes(StandardCharsets.UTF_8));
+        AtomicInteger dispatches = new AtomicInteger();
+        StoredResponse judged = StoredResponse.of("judged".getBytes(StandardCharsets.UTF_8), "text/plain");
+
+        IdempotentExecutor.BeginOutcome begunA = inScope(() -> executor().begin(connection, a.key(), a.before(), fromA,
+                uow -> {
+                    dispatches.incrementAndGet();
+                    return "working".getBytes(StandardCharsets.UTF_8);
+                }));
+        connection.commit();
+        assertThat(begunA.dispatched()).isPresent();
+        assertThat(stateOf(a.key())).isEqualTo(IdempotencyState.IN_PROGRESS);
+        assertThat(stateOf(a.before())).as("A holds the old scope too").isEqualTo(IdempotencyState.IN_PROGRESS);
+
+        // B, the same key value, while A's flight is still IN_PROGRESS: passed over, dispatched under B's own scope.
+        IdempotentExecutor.BeginOutcome begunB = inScope(() -> executor().begin(connection, b.key(), b.before(), fromB,
+                uow -> {
+                    dispatches.incrementAndGet();
+                    return "working".getBytes(StandardCharsets.UTF_8);
+                }));
+        connection.commit();
+        assertThat(begunB.dispatched()).isPresent();
+        assertThat(executor().complete(connection, b.key(), b.before(), fromB, true, judged)).isTrue();
+        connection.commit();
+        assertThat(stateOf(b.key())).isEqualTo(IdempotencyState.COMPLETED);
+        assertThat(stateOf(a.before())).as("B's completion never finishes A's old claim").isEqualTo(IdempotencyState.IN_PROGRESS);
+
+        assertThat(executor().complete(connection, a.key(), a.before(), fromA, true, judged)).isTrue();
+        connection.commit();
+        assertThat(stateOf(a.key())).isEqualTo(IdempotencyState.COMPLETED);
+        assertThat(stateOf(a.before())).isEqualTo(IdempotencyState.COMPLETED);
+        IdempotentExecutor.BeginOutcome oldReplica = inScope(() -> executor().begin(connection, a.before(), fromA,
+                uow -> {
+                    dispatches.incrementAndGet();
+                    return new byte[0];
+                }));
+        connection.commit();
+        assertThat(oldReplica.replay().orElseThrow().bodyBytes()).contains("judged".getBytes(StandardCharsets.UTF_8));
+        assertThat(dispatches.get()).as("one dispatch each for A and B, none on the old replica's retry").isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("X-TSK-003: a moved claim is the same key value under another scope - anything else is refused")
+    void aMovedClaimIsTheSameKeyValue() {
+        Moved moved = movedKeys("A");
+        RequestFingerprint fingerprint = RequestFingerprint.sha256("A".getBytes(StandardCharsets.UTF_8));
+        assertThatThrownBy(() -> moved.key().movedFrom(moved.key().scope()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> inScope(() -> executor().execute(connection, moved.key(),
+                new IdempotencyKey(moved.before().scope(), "another-value"), fingerprint,
+                uow -> CommandResult.succeeded(StoredResponse.of(new byte[0], "text/plain")))))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    /** A key under a scope that moved: the new scope names its principal, the old is the constant every principal shared. */
+    private record Moved(IdempotencyKey key, IdempotencyKey before) {
+        Moved forPrincipal(String principal) {
+            IdempotencyKey moved = new IdempotencyKey(before.scope() + ":CUSTOMER:" + principal, before.key());
+            return new Moved(moved, moved.movedFrom(before.scope()));
+        }
+    }
+
+    private static Moved movedKeys(String principal) {
+        String constant = "exec:moved-" + SUFFIX.incrementAndGet();
+        IdempotencyKey moved = new IdempotencyKey(constant + ":CUSTOMER:" + principal, "client-key");
+        return new Moved(moved, moved.movedFrom(constant));
+    }
+
+    private static boolean exists(IdempotencyKey key) throws SQLException {
+        try (PreparedStatement select = connection.prepareStatement(
+                "SELECT 1 FROM platform.idempotency_record WHERE scope = ? AND idempotency_key = ?")) {
+            select.setString(1, key.scope());
+            select.setString(2, key.key());
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next();
+            }
+        }
     }
 
     // -----------------------------------------------------------------
@@ -799,6 +1081,21 @@ class IdempotentExecutorTest {
                 return new Stamps(
                         rows.getTimestamp(1).toInstant(),
                         completedAt == null ? null : completedAt.toInstant());
+            }
+        }
+    }
+
+    /** The claim's retention bound as stored. */
+    private static Instant expiryOf(IdempotencyKey key) throws SQLException {
+        try (PreparedStatement select =
+                connection.prepareStatement(
+                        "SELECT expires_at FROM platform.idempotency_record"
+                                + " WHERE scope = ? AND idempotency_key = ?")) {
+            select.setString(1, key.scope());
+            select.setString(2, key.key());
+            try (ResultSet rows = select.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                return rows.getTimestamp(1).toInstant();
             }
         }
     }

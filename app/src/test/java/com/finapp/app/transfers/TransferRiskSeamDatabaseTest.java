@@ -101,7 +101,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  * {@code FAILED(LIMIT_REFUSED)}; one assessment per transfer across both seams and across a retried key; ten
  * concurrent transfers of one party from ten accounts counted in the party's window exactly as the counted assessments
  * say (R2a); opposite transfers closing no lock cycle; the unavailable path committing the band's outcome, recorded;
- * a posting refused after the permit leaving the decision standing. <strong>Written and owed</strong> (owner decision
+ * a posting refused after the permit leaving the decision standing; a key value another customer's transfer holds under
+ * the old scope advised, never waved through as a retry (`X-TSK-003`). <strong>Written and owed</strong> (owner decision
  * C5: the database tiers are skipped per task; the owner-authorised database pass before the exit review runs it).
  *
  * <p><strong>Its own container</strong> ({@code own-container}): it activates the C8 EUR {@code TRANSFER} version, and
@@ -180,7 +181,8 @@ class TransferRiskSeamDatabaseTest {
         assertThat(count("SELECT count(*) FROM risk.risk_assessment WHERE party_id = ?", payer.party())).isZero();
         assertThat(count("SELECT count(*) FROM risk.velocity_window WHERE subject_ref = ?", payer.party().toString()))
                 .isZero();
-        assertThat(count("SELECT count(*) FROM platform.idempotency_record WHERE scope = 'transfer.execute'"
+        // Under any scope: the old constant and the caller's own since X-TSK-003.
+        assertThat(count("SELECT count(*) FROM platform.idempotency_record WHERE scope LIKE 'transfer.execute%'"
                 + " AND idempotency_key = ?", key)).as("the key was never claimed").isZero();
 
         String stepped = multiFactor(payer);
@@ -444,6 +446,58 @@ class TransferRiskSeamDatabaseTest {
         assertThat(column("SELECT decision || ',' || velocity_outcome FROM risk.risk_assessment WHERE command_ref = ?",
                 refused.transferId().value().toString())).containsExactly("ALLOW,COUNTED");
         assertThat(windowCount("PARTY", payer.party(), "D1")).isEqualTo(1);
+    }
+
+    // ------------------------------------------------------------------ the claim names its principal (X-TSK-003)
+
+    @Test
+    @Order(11)
+    @DisplayName("X-TSK-003, the door: a key value another customer's transfer holds under the old scope is no retry of"
+            + " this customer's - EUR 600 from a password session is 403 identity.AssuranceRequired with nothing written,"
+            + " and the same key from a MULTI_FACTOR session executes this customer's own transfer, challenged and"
+            + " satisfied")
+    void anotherCustomersKeyValueDoesNotSkipTheStepUp() throws Exception {
+        activateTransferPolicy();
+        Customer first = customer();
+        UUID firstSource = fundedWallet(first, 1_000_00);
+        Customer second = customer();
+        UUID secondSource = fundedWallet(second, 2_000_00);
+        UUID destination = wallet(customer());
+        String key = someKey();
+
+        HttpResponse<String> taken = transfer(multiFactor(first), firstSource, destination, "50.00", key);
+        assertThat(taken.statusCode()).as(taken.body()).isEqualTo(201);
+        assertThat(field(taken.body(), "status")).isEqualTo("COMPLETED");
+        assertThat(count("SELECT count(*) FROM platform.idempotency_record WHERE scope = ? AND idempotency_key = ?",
+                TransferExecution.IDEMPOTENCY_SCOPE, key)).as("the first customer's claim stands under the old scope")
+                .isEqualTo(1);
+
+        HttpResponse<String> refused = transfer(second.token(), secondSource, destination, "600.00", key);
+        assertThat(refused.statusCode()).as("never waved through as a retry of somebody else's claim: %s",
+                refused.body()).isEqualTo(403);
+        assertThat(refused.body()).contains("identity.AssuranceRequired");
+        assertThat(count("SELECT count(*) FROM transfers.transfer t JOIN party.customer c ON c.id = t.customer_id"
+                + " WHERE c.party_id = ?", second.party())).isZero();
+        assertThat(count("SELECT count(*) FROM risk.risk_assessment WHERE party_id = ?", second.party())).isZero();
+        assertThat(count("SELECT count(*) FROM platform.idempotency_record WHERE scope = ? AND idempotency_key = ?",
+                TransferExecution.keyFor(actorOf(second), key).scope(), key)).as("the second customer's key unclaimed")
+                .isZero();
+
+        HttpResponse<String> completed = transfer(multiFactor(second), secondSource, destination, "600.00", key);
+        assertThat(completed.statusCode()).as(completed.body()).isEqualTo(201);
+        assertThat(field(completed.body(), "status")).isEqualTo("COMPLETED");
+        String transferId = field(completed.body(), "id");
+        assertThat(transferId).as("its own transfer, never the first customer's replayed")
+                .isNotEqualTo(field(taken.body(), "id"));
+        assertThat(column("SELECT decision || ',' || challenge_satisfied FROM risk.risk_assessment"
+                + " WHERE operation = 'TRANSFER' AND command_ref = ?", transferId)).containsExactly("CHALLENGE,true");
+        assertThat(count("SELECT count(*) FROM transfers.transfer t JOIN party.customer c ON c.id = t.customer_id"
+                + " WHERE c.party_id = ?", first.party())).as("the first customer's one transfer").isEqualTo(1);
+    }
+
+    /** The actor the session interceptor types a customer's own-account request as. */
+    private static Actor actorOf(Customer customer) {
+        return new Actor(customer.identity().toString(), ActorType.CUSTOMER);
     }
 
     // ------------------------------------------------------------------ the execution, directly

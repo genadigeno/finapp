@@ -140,6 +140,47 @@ class RoutingPolicyDatabaseTest {
     }
 
     @Test
+    @DisplayName("X-TSK-003: two operators sending one Idempotency-Key value each create their own"
+            + " version and each retry replays its own - the claim names its operator, so one"
+            + " operator's key value refuses no other's")
+    void twoOperatorsOneKeyValueEachCreateAndReplayTheirOwn() throws Exception {
+        String first = operator();
+        String second = operator();
+        String key = someKey();
+        // The same body from both: only the principal differs, which until X-TSK-003 was the
+        // 409 api.Conflict (the fingerprint names the operator; the scope did not).
+        String reason = "one key value, two operators " + suffix();
+        String body = versionBody(reason, null);
+
+        HttpResponse<String> firsts = post(VERSIONS_PATH, body, first, key);
+        HttpResponse<String> seconds = post(VERSIONS_PATH, body, second, key);
+        assertThat(firsts.statusCode()).as(firsts.body()).isEqualTo(201);
+        assertThat(seconds.statusCode()).as(seconds.body()).isEqualTo(201);
+        String firstVersion = field(firsts.body(), "routingPolicyVersionId");
+        String secondVersion = field(seconds.body(), "routingPolicyVersionId");
+        assertThat(secondVersion).isNotEqualTo(firstVersion);
+
+        HttpResponse<String> firstsRetry = post(VERSIONS_PATH, body, first, key);
+        HttpResponse<String> secondsRetry = post(VERSIONS_PATH, body, second, key);
+        assertThat(firstsRetry.statusCode()).isEqualTo(201);
+        assertThat(field(firstsRetry.body(), "routingPolicyVersionId")).isEqualTo(firstVersion);
+        assertThat(secondsRetry.statusCode()).isEqualTo(201);
+        assertThat(field(secondsRetry.body(), "routingPolicyVersionId")).isEqualTo(secondVersion);
+        assertThat(count(
+                        "SELECT count(*) FROM payments.routing_policy_version WHERE reason = ?",
+                        reason))
+                .as("two acts, two versions - no retry minted a third")
+                .isEqualTo(2);
+        assertThat(count(
+                        "SELECT count(*) FROM platform.idempotency_record"
+                                + " WHERE scope LIKE 'payments.routing.version:%'"
+                                + " AND idempotency_key = ?",
+                        key))
+                .as("one claim per operator, each under its own scope; no retry acted twice")
+                .isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("ten concurrent creations mint ten distinct, gapless numbers - the unique"
             + " index is the arbiter and the queue (the fee schedule's discipline)")
     void mintingIsGaplessUnderTenWriters() throws Exception {

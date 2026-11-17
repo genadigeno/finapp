@@ -11,7 +11,9 @@ import com.finapp.sharedkernel.money.Money;
 import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
@@ -206,8 +208,7 @@ class WithdrawalTest {
             assertThat(released.lastDispatchedAt()).isEqualTo(held.lastDispatchedAt().plusSeconds(3));
             assertThat(released.heldResolutionKey()).contains("risk.action:a");
             assertThat(released.held()).isEqualTo(held.held());
-            assertThatThrownBy(() -> held.release(held.lastDispatchedAt().minusSeconds(1), "k"))
-                    .isInstanceOf(IllegalArgumentException.class);
+            // A permit before the birth's is clamped, never refused (X-TSK-006): ATrailingClock.
             assertThatThrownBy(() -> released.release(released.lastDispatchedAt(), "k"))
                     .isInstanceOf(IllegalWithdrawalTransitionException.class);
         }
@@ -313,8 +314,9 @@ class WithdrawalTest {
         @DisplayName("a send permit only moves forward, and only while resolvable")
         void permitRules() {
             Withdrawal live = dispatched();
-            assertThatThrownBy(() -> live.withSendPermit(live.lastDispatchedAt().minusSeconds(1)))
-                    .isInstanceOf(IllegalArgumentException.class);
+            // Never backwards: an earlier reading is clamped to the latest (X-TSK-006: ATrailingClock).
+            assertThat(live.withSendPermit(live.lastDispatchedAt().minusSeconds(1)).lastDispatchedAt())
+                    .isEqualTo(live.lastDispatchedAt());
             Withdrawal renewed = live.withSendPermit(live.lastDispatchedAt().plusSeconds(5));
             assertThat(renewed.lastDispatchedAt())
                     .isEqualTo(live.lastDispatchedAt().plusSeconds(5));
@@ -354,6 +356,62 @@ class WithdrawalTest {
                     Optional.empty(),
                     Optional.empty());
         }
+    }
+
+    /** An instance's clock a minute BEHIND {@code latest}: the trailing renewer of ADR-0063's context. */
+    private static Clock trailing(Instant latest) {
+        return Clock.offset(Clock.fixed(latest, ZoneOffset.UTC), Duration.ofMinutes(-1));
+    }
+
+    /**
+     * ADR-0063 decision 2 on the takeover's renewal (`X-TSK-006`). Top-level for the same register
+     * reason as {@link #theMachineIsPinned}: each clamp's probe names its test.
+     */
+    @Test
+    @DisplayName("X-TSK-006 (ADR-0063 decision 2): a renewal read on a clock trailing the latest permit"
+            + " succeeds and stamps the predecessor's instant - refused 'only moves forward' before;"
+            + " the state untouched and NEVER_RECEIVED judged against the latest permit")
+    void aRenewalOnATrailingClockStampsThePredecessorsInstant() {
+        Withdrawal live = dispatched().outcomeUnknown();
+        Clock behind = trailing(live.lastDispatchedAt());
+        Instant reading = Instant.now(behind);
+        assertThat(reading)
+                .as("precondition: the renewer's clock reads BEFORE the latest permit - the dangerous direction")
+                .isBefore(live.lastDispatchedAt());
+
+        Withdrawal renewed = live.withSendPermit(reading);
+
+        assertThat(renewed.lastDispatchedAt())
+                .as("max(now, latest): the predecessor's instant, never the trailing reading")
+                .isEqualTo(live.lastDispatchedAt());
+        assertThat(renewed.status()).as("the clamp touches stamps, never states (INV-LIFE-02)")
+                .isEqualTo(WithdrawalStatus.UNKNOWN);
+        assertThat(renewed.createdAt()).isEqualTo(live.createdAt());
+        assertThat(renewed.sendPermitAtOrBefore(reading))
+                .as("the NEVER_RECEIVED bound is judged against the latest permit, not the trailing reading")
+                .isFalse();
+    }
+
+    /** ADR-0063 decision 2 on the held withdrawal's release (`X-TSK-006`): a later fact's first real permit. */
+    @Test
+    @DisplayName("X-TSK-006 (ADR-0063 decision 2): a release read on a clock trailing the held birth"
+            + " succeeds, DISPATCHED with the birth's instant as its permit - refused 'only moves forward' before")
+    void aReleaseOnATrailingClockStampsThePredecessorsInstant() {
+        Withdrawal held = held();
+        Clock behind = trailing(held.lastDispatchedAt());
+        Instant reading = Instant.now(behind);
+        assertThat(reading)
+                .as("precondition: the releasing instance's clock reads BEFORE the held birth's permit")
+                .isBefore(held.lastDispatchedAt());
+
+        Withdrawal released = held.release(reading, "risk.action:trailing");
+
+        assertThat(released.status()).isEqualTo(WithdrawalStatus.DISPATCHED);
+        assertThat(released.lastDispatchedAt())
+                .as("max(now, latest): the held birth's instant, never the trailing reading")
+                .isEqualTo(held.lastDispatchedAt());
+        assertThat(released.heldResolutionKey()).contains("risk.action:trailing");
+        assertThat(released.held()).isEqualTo(held.held());
     }
 
     /**

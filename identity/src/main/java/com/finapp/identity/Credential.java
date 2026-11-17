@@ -185,6 +185,10 @@ public final class Credential {
         if (!status.canTransitionTo(CredentialStatus.SUPERSEDED)) {
             throw new IllegalCredentialTransitionException(status, CredentialStatus.SUPERSEDED);
         }
+        // max(now, latest) - ADR-0063 decision 2 (X-TSK-006): an ACTIVE credential's only stamp is
+        // createdAt, and the superseding instance's clock may read behind the one that wrote it.
+        // JdbcCredentialStore.supersede clamps the same way in the statement (V003's CHECK).
+        Instant now = Instant.now(clock);
         return new Credential(
                 id,
                 identityId,
@@ -194,7 +198,7 @@ public final class Credential {
                 credentialDerivation,
                 CredentialStatus.SUPERSEDED,
                 createdAt,
-                Instant.now(clock));
+                now.isBefore(createdAt) ? createdAt : now);
     }
 
     /** Whether this credential may currently be used to authenticate. */

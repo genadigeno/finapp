@@ -175,9 +175,15 @@ public final class LedgerAccount {
         if (!status.canTransitionTo(target)) {
             throw new IllegalLedgerAccountTransitionException(id, status, target);
         }
+        // max(now, latest) - ADR-0063 decision 2 (X-TSK-006): the database orders the account's
+        // facts, and a stamp never contradicts that order. The acting instance's clock may read
+        // behind the one that stamped the previous fact (ADR-0014: skew is bounded, never zero),
+        // so the later fact is stamped no earlier than statusChangedAt - never before createdAt.
+        // The store's conditional clamps the same way.
+        Instant now = Instant.now(clock);
         return new LedgerAccount(
                 id, accountType, normalBalance, currency, ownerKind, ownerRef, purpose, glCode,
-                target, createdAt, Instant.now(clock));
+                target, createdAt, now.isBefore(statusChangedAt) ? statusChangedAt : now);
     }
 
     public LedgerAccountId id() {

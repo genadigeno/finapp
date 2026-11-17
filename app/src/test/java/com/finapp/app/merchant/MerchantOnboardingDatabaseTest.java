@@ -209,13 +209,49 @@ class MerchantOnboardingDatabaseTest {
     @DisplayName("a reused key with a different request is the distinct conflict, not a"
             + " silent replay (INV-IDEM-03)")
     void aReusedKeyWithADifferentRequestConflicts() throws Exception {
+        // ONE operator: since X-TSK-003 the scope names its principal, so the same key value
+        // from another operator is their own claim, not a reuse of this one's.
+        Actor operator = new Actor(UUID.randomUUID().toString(), ActorType.EMPLOYEE);
         UUID party = verifiedOrganisation();
         String key = someKey();
-        onboard(party, key);
+        onboard(operator, party, key);
 
         UUID otherParty = verifiedOrganisation();
         assertThatExceptionOfType(IdempotencyConflictException.class)
-                .isThrownBy(() -> onboard(otherParty, key));
+                .isThrownBy(() -> onboard(operator, otherParty, key));
+    }
+
+    @Test
+    @DisplayName("X-TSK-003: two operators presenting ONE key value each onboard their own merchant -"
+            + " neither refused as a reused key - and each retry replays its own")
+    void twoOperatorsWithOneKeyValueEachOnboardTheirOwn() throws Exception {
+        // One organisation and one request body: only the principal differs, and that alone
+        // makes them two acts (two shops for one organisation are legitimate - the class doc).
+        UUID party = verifiedOrganisation();
+        String oneValue = someKey();
+        Actor first = new Actor(UUID.randomUUID().toString(), ActorType.EMPLOYEE);
+        Actor second = new Actor(UUID.randomUUID().toString(), ActorType.EMPLOYEE);
+
+        MerchantOnboarding.OnboardingResult firsts = onboard(first, party, oneValue);
+        MerchantOnboarding.OnboardingResult seconds = onboard(second, party, oneValue);
+        assertThat(firsts.replayed()).isFalse();
+        assertThat(seconds.replayed())
+                .as("another operator's key value is no claim of this one's")
+                .isFalse();
+        assertThat(seconds.merchantId()).isNotEqualTo(firsts.merchantId());
+        assertThat(count("SELECT count(*) FROM merchant.merchant WHERE party_ref = ?", party))
+                .isEqualTo(2);
+
+        // Each retry finds its own claim and replays its own merchant (INV-IDEM-01).
+        MerchantOnboarding.OnboardingResult firstRetried = onboard(first, party, oneValue);
+        MerchantOnboarding.OnboardingResult secondRetried = onboard(second, party, oneValue);
+        assertThat(firstRetried.replayed()).isTrue();
+        assertThat(firstRetried.merchantId()).isEqualTo(firsts.merchantId());
+        assertThat(secondRetried.replayed()).isTrue();
+        assertThat(secondRetried.merchantId()).isEqualTo(seconds.merchantId());
+        assertThat(count("SELECT count(*) FROM merchant.merchant WHERE party_ref = ?", party))
+                .as("and no retry made a third")
+                .isEqualTo(2);
     }
 
     @Test
@@ -531,7 +567,14 @@ class MerchantOnboardingDatabaseTest {
 
     private MerchantOnboarding.OnboardingResult onboard(UUID party, String key)
             throws Exception {
-        return asOperator(
+        return onboard(new Actor(UUID.randomUUID().toString(), ActorType.EMPLOYEE), party, key);
+    }
+
+    /** One onboarding by {@code operator}: the principal its claim is scoped to (`X-TSK-003`). */
+    private MerchantOnboarding.OnboardingResult onboard(Actor operator, UUID party, String key)
+            throws Exception {
+        return as(
+                operator,
                 uow ->
                         onboarding.onboard(
                                 uow,

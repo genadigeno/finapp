@@ -1,6 +1,6 @@
 # ADR-0063 — The order of an aggregate's facts is the database's; a business stamp never contradicts it
 
-Status: Proposed
+Status: Accepted (2026-11-16, by the owner on "do all x-tsks"; implemented by `X-TSK-006`, 2026-11-17 - read "Proposed" until then)
 Date: 2026-09-27
 Phase: cross-cutting (`X-TSK-005` decided it; `X-TSK-006` implements it)
 Context: every module that stamps a later fact on an aggregate: Identity · Party · KYC · Accounts ·

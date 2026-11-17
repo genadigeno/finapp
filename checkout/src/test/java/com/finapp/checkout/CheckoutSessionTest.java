@@ -232,6 +232,44 @@ class CheckoutSessionTest {
 
     @Test
     @DisplayName(
+            "X-TSK-006 (ADR-0063 decision 2): a clock trailing the session's LATEST stamp - the"
+                    + " confirmation's, not only the birth's - stamps that instant: max(now, latest), so a"
+                    + " completion, an expiry and a late completion never read before the move they follow")
+    void aClockTrailingTheLatestMoveStampsItsInstant() {
+        CheckoutSession session = open();
+        // Confirmed on the database's reading ten seconds after the birth.
+        Instant confirmedAt = session.createdAt().plusSeconds(10);
+        CheckoutSession pending = session.confirm(confirmedAt, UUID.randomUUID());
+        Clock trailing = Clock.fixed(session.createdAt().plusSeconds(4), ZoneOffset.UTC);
+        assertThat(trailing.instant())
+                .as("precondition: the capture's instance trails the confirmation, though not the birth -"
+                        + " the case a birth floor let through, stamping the completion before it")
+                .isBefore(pending.statusChangedAt())
+                .isAfter(session.createdAt());
+
+        CheckoutSession completed = pending.complete(trailing);
+        assertThat(completed.status()).isEqualTo(CheckoutSessionStatus.COMPLETED);
+        assertThat(completed.statusChangedAt())
+                .as("stamped at the confirmation's instant, never before it")
+                .isEqualTo(confirmedAt);
+
+        // The sweeper's expiry on a database reading stepped back behind the confirmation, then a
+        // late capture on the trailing instance: each stamps the latest fact before it.
+        CheckoutSession expired = pending.expire(trailing.instant());
+        assertThat(expired.status()).isEqualTo(CheckoutSessionStatus.EXPIRED);
+        assertThat(expired.statusChangedAt()).isEqualTo(confirmedAt);
+        Clock behindBirth = Clock.fixed(session.createdAt().minusSeconds(1), ZoneOffset.UTC);
+        assertThat(expired.completeLate(behindBirth).statusChangedAt())
+                .as("behind the birth as well: still the latest, not the birth")
+                .isEqualTo(confirmedAt);
+
+        // A floor, not a pin: a clock past the latest stamps its own read.
+        Clock ahead = Clock.fixed(confirmedAt.plusSeconds(1), ZoneOffset.UTC);
+        assertThat(pending.complete(ahead).statusChangedAt()).isEqualTo(confirmedAt.plusSeconds(1));
+    }
+
+    @Test
+    @DisplayName(
             "an illegal edge under a behind clock is still the machine's refusal, never the"
                     + " constructor guard's")
     void anIllegalEdgeUnderABehindClockIsStillTheMachinesRefusal() {

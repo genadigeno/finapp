@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.EnumSet;
@@ -106,6 +107,34 @@ class KycCaseLifecycleTest {
     }
 
     // -----------------------------------------------------------------
+
+    @Test
+    @DisplayName(
+            "a move on a clock trailing the case's latest stamp is stamped at that stamp, never"
+                    + " before it; a clock past it stamps its own read (X-TSK-006, ADR-0063"
+                    + " decision 2)")
+    void aMoveOnATrailingClockIsStampedAtTheLatestStamp() {
+        // Opened at 09:00, last moved at 09:01 - by an instance whose clock led this one's.
+        KycCase inProgress = at(KycCaseStatus.CHECKS_IN_PROGRESS);
+        Instant latest = inProgress.statusChangedAt();
+        Clock trailing = Clock.offset(Clock.fixed(latest, ZoneOffset.UTC), Duration.ofSeconds(-5));
+        assertThat(Instant.now(trailing))
+                .as("precondition: the clock trails the latest stamp, and not only birth")
+                .isBefore(latest)
+                .isAfter(inProgress.openedAt());
+
+        KycCase inReview = inProgress.requireReview(trailing);
+        assertThat(inReview.status()).isEqualTo(KycCaseStatus.IN_REVIEW);
+        assertThat(inReview.statusChangedAt()).as("the predecessor's instant").isEqualTo(latest);
+        // Each later fact on the same trailing clock keeps the order.
+        KycCase ready = inReview.readyForDecision(trailing);
+        assertThat(ready.statusChangedAt()).isEqualTo(latest);
+        assertThat(ready.approve(trailing).statusChangedAt()).isEqualTo(latest);
+
+        // A floor, not a pin.
+        Clock ahead = Clock.fixed(latest.plusSeconds(5), ZoneOffset.UTC);
+        assertThat(inProgress.requireReview(ahead).statusChangedAt()).isEqualTo(latest.plusSeconds(5));
+    }
 
     /** A case standing at {@code status}, via rehydration — the storage path, not a back door. */
     private static KycCase at(KycCaseStatus status) {

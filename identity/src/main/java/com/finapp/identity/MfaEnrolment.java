@@ -1,6 +1,6 @@
 package com.finapp.identity;
 
-import com.finapp.sharedkernel.id.IdGenerator;
+import com.finapp.platform.security.AssociatedData;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
@@ -81,16 +81,21 @@ public final class MfaEnrolment {
         }
     }
 
-    /** Begins an enrolment. The factor does nothing until it is confirmed. */
+    /**
+     * Begins an enrolment. The factor does nothing until it is confirmed.
+     *
+     * @param id minted by the caller before the secret is encrypted, because the ciphertext is bound
+     *     to it ({@link #associatedData(MfaEnrolmentId, IdentityId, MfaFactorType)}, `X-TSK-010`)
+     */
     public static MfaEnrolment begin(
-            IdGenerator ids,
+            MfaEnrolmentId id,
             Clock clock,
             IdentityId identityId,
             MfaFactorType type,
             SecretCipher.Encrypted secret,
             TotpParameters parameters) {
         return new MfaEnrolment(
-                MfaEnrolmentId.next(ids),
+                id,
                 identityId,
                 type,
                 secret,
@@ -154,6 +159,27 @@ public final class MfaEnrolment {
     public SecretCipher.Encrypted encryptedSecret() {
         return secret;
     }
+
+    /** The associated data this enrolment's secret is bound to (`X-TSK-010`), rebuilt from the row read. */
+    public byte[] associatedData() {
+        return associatedData(id, identityId, type);
+    }
+
+    /**
+     * An enrolment's associated data (`X-TSK-010`): its identity, and the identity and factor type that
+     * name whose second factor the secret is - so a ciphertext copied into another enrolment's row, an
+     * attacker's own secret over a victim's, fails to decrypt there once writes are bound. The status is
+     * not in it: it moves from PENDING to ACTIVE without the secret being written again.
+     */
+    public static byte[] associatedData(MfaEnrolmentId id, IdentityId identityId, MfaFactorType type) {
+        Objects.requireNonNull(id, "id must not be null");
+        Objects.requireNonNull(identityId, "identityId must not be null");
+        Objects.requireNonNull(type, "type must not be null");
+        return AssociatedData.of(PURPOSE, id.value(), identityId.value().toString(), type.name());
+    }
+
+    /** What the ciphertext is, in its associated data. */
+    static final String PURPOSE = "identity.mfa_enrolment.secret_ciphertext";
 
     public TotpParameters parameters() {
         return parameters;

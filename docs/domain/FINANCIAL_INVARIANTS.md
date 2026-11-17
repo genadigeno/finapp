@@ -329,6 +329,7 @@ and can conceal a fraud attempt.
 **Enforce:** `DOMAIN` — request fingerprint comparison.
 **Verify:** Integration test asserting a distinct conflict error.
 **Phase:** 0
+*(Dated note, X-TSK-003, 2026-11-17: for the release that moves a scope to its principal (ADR-0004's amendment), a claim under the old, shared scope with another fingerprint cannot be told from another principal's - a fingerprint is a hash - so it is passed over. A request reusing its own pre-move key for a different body, inside that claim's expiry, therefore acts under the new scope as a request under a new key would, rather than being refused: no second effect of one command, but a client defect not flagged. The window closes with `X-TSK-028`; within one scope the rule is unchanged.)*
 
 ### INV-IDEM-04 — Duplicate inbound events produce no second effect
 **Statement:** The same external event, webhook or message delivered any number of times

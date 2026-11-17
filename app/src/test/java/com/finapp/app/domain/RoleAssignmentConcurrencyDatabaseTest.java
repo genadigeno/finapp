@@ -176,7 +176,8 @@ class RoleAssignmentConcurrencyDatabaseTest {
      */
     @Test
     @DisplayName("a clock behind the grant cannot fail a legal revocation: revoked_at clamps to"
-            + " assigned_at in the statement (the P1-TSK-031 drift; ADR-0014)")
+            + " assigned_at in the statement (the P1-TSK-031 drift; ADR-0014; X-TSK-006, ADR-0063"
+            + " decision 2)")
     void aClockBehindTheGrantCannotFailALegalRevocation() throws Exception {
         IdentityId clamped = givenAnIdentity();
         IdentityId own = givenAnIdentity();
