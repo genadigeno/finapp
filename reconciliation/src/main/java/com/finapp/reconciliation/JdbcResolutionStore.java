@@ -134,6 +134,46 @@ public final class JdbcResolutionStore implements ResolutionStore {
         }
     }
 
+    /**
+     * The queue walks V026's partial index on {@code (proposed_at, id)} forwards from the cursor: a row comparison, one index range
+     * per page, over the PROPOSED rows alone.
+     */
+    @Override
+    public List<PendingRow> pending(Connection unitOfWork, Optional<PendingCursor> after, int limit) {
+        java.util.Objects.requireNonNull(after, "after must not be null");
+        if (limit < 1) {
+            throw new IllegalArgumentException("a page holds at least one proposal, not " + limit);
+        }
+        String sql = "SELECT id, break_id, settlement_batch_id, kind, reason_code, proposed_by, proposed_at"
+                + " FROM reconciliation.resolution WHERE status = 'PROPOSED'"
+                + (after.isPresent() ? " AND (proposed_at, id) > (?, ?)" : "")
+                + " ORDER BY proposed_at, id LIMIT ?";
+        try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
+            int at = 1;
+            if (after.isPresent()) {
+                read.setTimestamp(at++, Timestamp.from(after.get().proposedAt()));
+                read.setObject(at++, after.get().resolutionId());
+            }
+            read.setInt(at, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                List<PendingRow> page = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    page.add(new PendingRow(
+                            rows.getObject("id", UUID.class),
+                            Optional.ofNullable(rows.getObject("break_id", UUID.class)),
+                            Optional.ofNullable(rows.getObject("settlement_batch_id", UUID.class)),
+                            ResolutionKind.valueOf(rows.getString("kind")),
+                            ResolutionReasonCode.valueOf(rows.getString("reason_code")),
+                            rows.getString("proposed_by"),
+                            rows.getTimestamp("proposed_at").toInstant()));
+                }
+                return page;
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not read the pending resolutions", failure);
+        }
+    }
+
     @Override
     public Optional<ResolutionRow> byId(Connection unitOfWork, UUID resolutionId) {
         return JdbcBreakInquiries.one(

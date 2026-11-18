@@ -1,5 +1,7 @@
 package com.finapp.app.reconciliation;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.correlation.CorrelationContext;
@@ -16,9 +18,12 @@ import com.finapp.reconciliation.ReconciliationErrorCode;
 import com.finapp.reconciliation.ResolutionKind;
 import com.finapp.reconciliation.ResolutionMachine;
 import com.finapp.reconciliation.ResolutionReasonCode;
+import com.finapp.reconciliation.ResolutionStore;
 import com.finapp.sharedkernel.correlation.Correlation;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -312,6 +317,75 @@ public class BreakResolutionDesk {
                             uow, resolutionId, echo, actor, correlation.correlationId()));
                 })));
     }
+
+    /** The approver's queue's collection name, inside its cursors. */
+    static final String PENDING_QUEUE = "reconciliation.resolutions";
+    static final int PENDING_DEFAULT_LIMIT = 50;
+    static final int PENDING_MAXIMUM_LIMIT = 200;
+
+    /**
+     * {@code GET /resolutions} (`P17-TSK-107`, gap G-122; finapp-admin-panel ADR-C133 decision 3): a §7 page of the resolutions
+     * awaiting a second person, in the pending-decision shape - oldest proposal first, the id breaking the tie. {@code status}
+     * is {@code PROPOSED} or absent: the queue is what awaits a decision, and a decided resolution is read from its break. Each
+     * item says whether the caller proposed it, so an approver's own proposals are told apart before the door refuses them. The
+     * reason summary is the reason code; the narrative stays on the resolution's own page. One {@code REPEATABLE READ}
+     * snapshot, recording nothing, as the resolution's own read.
+     */
+    public PendingReconciliationResolutionPage pendingResolutions(String status, String cursor, String limit) {
+        if (status != null && !"PROPOSED".equals(status)) {
+            throw OperatorCollection.invalid("status is PROPOSED: the queue holds what awaits a decision.");
+        }
+        int size = OperatorCollection.limit(limit, PENDING_DEFAULT_LIMIT, PENDING_MAXIMUM_LIMIT);
+        Optional<ResolutionStore.PendingCursor> after = OperatorCollection.key(PENDING_QUEUE, cursor, 2)
+                .map(key -> {
+                    try {
+                        return new ResolutionStore.PendingCursor(
+                                Instant.EPOCH.plus(Long.parseLong(key.get(0)), ChronoUnit.MICROS), UUID.fromString(key.get(1)));
+                    } catch (RuntimeException unreadable) {
+                        throw OperatorCollection.invalidCursor();
+                    }
+                });
+        String caller = SecurityContext.require().id();
+        List<ResolutionStore.PendingRow> rows = reconciliationSnapshotReads.execute(
+                snapshot -> onConnection(uow -> machine.pending(uow, after, size + 1)));
+        List<ResolutionStore.PendingRow> served = rows.subList(0, Math.min(size, rows.size()));
+        String next = null;
+        if (rows.size() > size) {
+            ResolutionStore.PendingRow tail = served.get(served.size() - 1);
+            next = OperatorCollection.cursor(PENDING_QUEUE,
+                    Long.toString(ChronoUnit.MICROS.between(Instant.EPOCH, tail.proposedAt())), tail.id().toString());
+        }
+        return new PendingReconciliationResolutionPage(
+                served.stream().map(row -> pendingView(row, caller)).toList(), next);
+    }
+
+    static PendingReconciliationResolution pendingView(ResolutionStore.PendingRow row, String caller) {
+        boolean ofABatch = row.settlementBatchId().isPresent();
+        return new PendingReconciliationResolution(
+                row.id().toString(),
+                "reconciliation." + row.kind().name(),
+                row.proposedBy(),
+                row.proposedAt().toString(),
+                row.reasonCode().name(),
+                (ofABatch ? row.settlementBatchId() : row.breakId()).map(UUID::toString).orElseThrow(),
+                ofABatch ? "SETTLEMENT_BATCH" : "BREAK",
+                row.proposedBy().equals(caller));
+    }
+
+    /** One proposal in the approver's queue: ADR-C133's pending-decision shape, with its subject's kind and the caller's mark. */
+    public record PendingReconciliationResolution(
+            String id,
+            String kind,
+            String proposedBy,
+            String proposedAt,
+            String reasonSummary,
+            String subjectId,
+            String subjectKind,
+            boolean proposedByCaller) {}
+
+    /** A §7 page: {@code nextCursor} absent, not null, on the last one. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PendingReconciliationResolutionPage(List<PendingReconciliationResolution> items, String nextCursor) {}
 
     /**
      * The approver's read (the Phase 8 -> 9 transition, SEC-01): the resolution with every

@@ -874,6 +874,8 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/settlement/files/{id}/readmission",
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/settlement/files/{id}/verification",
+                        // P17-TSK-107: the batch browse, a section 7 collection (RECONCILIATION_INVESTIGATE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/settlement/batches",
                         ApiVersion.CURRENT_PREFIX + "/operator/settlement/batches/{id}",
                         // P8-TSK-021: an operator's pull (SETTLEMENT_INGEST) - the ingest
                         // permission's other channel, idempotent by the content address.
@@ -933,6 +935,8 @@ class OpenApiContractTest {
                                 + "/operator/reconciliation/resolutions/{id}/approval",
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/reconciliation/resolutions/{id}/rejection",
+                        // P17-TSK-107: the approver's queue, ADR-C133's pending-decision shape (RECONCILIATION_RESOLVE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/resolutions",
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/resolutions/{id}",
                         // P9-TSK-007: the FX controller's doors - the pricing policy under
                         // four-eyes and the kill switch (FX_ADMINISTER).

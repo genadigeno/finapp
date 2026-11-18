@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -106,6 +107,23 @@ public class SettlementOperationsController {
             @PathVariable("id") String fileId,
             @Valid @RequestBody SettlementFileDeclineRequest body) {
         return settlement.decline(fileId, body);
+    }
+
+    /**
+     * The batches, browsed (`P17-TSK-107`, gap G-120): a §7 collection - {@code limit} 50 unless named, 200 at most, the opaque
+     * {@code cursor} of the page before - of the batches whose business date lies in {@code [from, to]} (today and the thirty days
+     * before it unless named, ninety-two days at most), of one declared {@code source} when named, business date newest first
+     * and the batch's id breaking the tie. The permission the batch's own read uses.
+     */
+    @GetMapping("/batches")
+    @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
+    public SettlementOperations.SettlementBatchPage listSettlementBatches(
+            @RequestParam(name = "source", required = false) String source,
+            @RequestParam(name = "from", required = false) String from,
+            @RequestParam(name = "to", required = false) String to,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return settlement.browseBatches(source, from, to, cursor, limit);
     }
 
     /**

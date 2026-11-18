@@ -1,5 +1,7 @@
 package com.finapp.app.settlement;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.correlation.CorrelationContext;
@@ -33,6 +35,10 @@ import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
@@ -500,6 +506,105 @@ public class SettlementOperations {
                                                                 unitOfWork, batch.id()))))
                 .orElseThrow(SettlementOperations::batchNotFound);
     }
+
+    /** The batch browse's collection name, inside its cursors. */
+    static final String BATCH_BROWSE = "settlement.batches";
+    static final int BROWSE_DEFAULT_LIMIT = 50;
+    static final int BROWSE_MAXIMUM_LIMIT = 200;
+    /** The widest window of business dates one browse covers, and the default width when {@code from} is not named. */
+    static final int BROWSE_MAXIMUM_DAYS = 92;
+    static final int BROWSE_DEFAULT_DAYS = 31;
+
+    /**
+     * {@code GET /batches} (`P17-TSK-107`, gap G-120): a §7 page of the batches whose business date lies in {@code [from, to]} -
+     * {@code to} today (UTC) and {@code from} thirty days before it unless named, ninety-two days at most - of one declared
+     * source when {@code source} names one, business date newest first and the batch's id breaking the tie. The identity and the
+     * trailer's declared words of each; the folded totals stay the batch's own read.
+     */
+    public SettlementBatchPage browseBatches(String source, String from, String to, String cursor, String limit) {
+        int size = OperatorCollection.limit(limit, BROWSE_DEFAULT_LIMIT, BROWSE_MAXIMUM_LIMIT);
+        LocalDate last = to == null ? LocalDate.now(clock.withZone(ZoneOffset.UTC)) : date("to", to);
+        LocalDate first = from == null ? last.minusDays(BROWSE_DEFAULT_DAYS - 1L) : date("from", from);
+        if (first.isAfter(last)) {
+            throw OperatorCollection.invalid("from is after to.");
+        }
+        if (ChronoUnit.DAYS.between(first, last) + 1 > BROWSE_MAXIMUM_DAYS) {
+            throw OperatorCollection.invalid(
+                    "the window from " + first + " to " + last + " is wider than " + BROWSE_MAXIMUM_DAYS + " days; narrow it.");
+        }
+        Optional<SettlementBatchStore.BrowseCursor> after = OperatorCollection.key(BATCH_BROWSE, cursor, 2)
+                .map(key -> {
+                    try {
+                        return new SettlementBatchStore.BrowseCursor(LocalDate.parse(key.get(0)), UUID.fromString(key.get(1)));
+                    } catch (RuntimeException unreadable) {
+                        throw OperatorCollection.invalidCursor();
+                    }
+                });
+        return inOneTransaction(unitOfWork -> {
+            Optional<UUID> sourceId = Optional.empty();
+            if (source != null) {
+                sourceId = Optional.of(store.sourceByCode(unitOfWork, source)
+                        .orElseThrow(() -> new ApiException(
+                                SettlementErrorCode.SOURCE_UNKNOWN,
+                                "A settlement batch browse named a source this build does not declare",
+                                "no declared settlement source has this code."))
+                        .id());
+            }
+            List<SettlementBatchStore.BatchRow> rows = batches.browse(unitOfWork, sourceId, first, last, after, size + 1);
+            List<SettlementBatchStore.BatchRow> served = rows.subList(0, Math.min(size, rows.size()));
+            String next = null;
+            if (rows.size() > size) {
+                SettlementBatchStore.BatchRow tail = served.get(served.size() - 1);
+                next = OperatorCollection.cursor(
+                        BATCH_BROWSE, tail.businessDate().toString(), tail.id().toString());
+            }
+            return new SettlementBatchPage(served.stream().map(SettlementOperations::batchSummary).toList(), next);
+        });
+    }
+
+    private static LocalDate date(String name, String value) {
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException unreadable) {
+            throw OperatorCollection.invalid(name + " is a date, YYYY-MM-DD.");
+        }
+    }
+
+    private static SettlementBatchSummary batchSummary(SettlementBatchStore.BatchRow batch) {
+        return new SettlementBatchSummary(
+                batch.id().toString(),
+                batch.fileId().toString(),
+                batch.sourceCode(),
+                // As the batch's own read serves it: a stored value that is not a reference shape is withheld (INV-AUD-02).
+                com.finapp.settlement.ReferenceShape.isReference(batch.externalBatchRef()) ? batch.externalBatchRef() : null,
+                batch.currency().code(),
+                batch.status().name(),
+                batch.businessDate().toString(),
+                batch.formatId().name(),
+                batch.formatVersion(),
+                batch.lineCount(),
+                java.math.BigDecimal.valueOf(batch.netMinor(), batch.netScale()).toPlainString(),
+                batch.createdAt().toString());
+    }
+
+    /** One batch in the browse: its identity and the trailer's declared words, never its lines or totals. */
+    public record SettlementBatchSummary(
+            String batchId,
+            String fileId,
+            String sourceCode,
+            String externalBatchRef,
+            String currency,
+            String status,
+            String businessDate,
+            String formatId,
+            int formatVersion,
+            int lineCount,
+            String declaredNet,
+            String createdAt) {}
+
+    /** A §7 page: {@code nextCursor} absent, not null, on the last one. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record SettlementBatchPage(List<SettlementBatchSummary> items, String nextCursor) {}
 
     // ----------------------------------------------------------------- the reads
 

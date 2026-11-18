@@ -148,6 +148,8 @@ class RoutePermissionRegisterTest {
                     // role's; verification reads content, so it is the investigator's.
                     entry("POST /v1/operator/settlement/files/{id}/readmission", PermissionName.RECONCILIATION_ADMINISTER),
                     entry("POST /v1/operator/settlement/files/{id}/verification", PermissionName.RECONCILIATION_INVESTIGATE),
+                    // P17-TSK-107: the batch browse, under the permission the batch's own read uses.
+                    entry("GET /v1/operator/settlement/batches", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("GET /v1/operator/settlement/batches/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
                     // The reconciliation controller's own door (P8-TSK-007, ADR-0067
                     // section 8): adopting history is the CONTROLLER's act, a population
@@ -201,6 +203,8 @@ class RoutePermissionRegisterTest {
                     // The Phase 8 -> 9 transition (SEC-01): what an approver reads before
                     // approving - every operand and the frozen lines - under the approver's own
                     // permission.
+                    // P17-TSK-107: the approver's queue, under the permission the resolution's read and approval use (ADR-C133).
+                    entry("GET /v1/operator/reconciliation/resolutions", PermissionName.RECONCILIATION_RESOLVE),
                     entry("GET /v1/operator/reconciliation/resolutions/{id}", PermissionName.RECONCILIATION_RESOLVE),
                     entry("POST /v1/operator/reconciliation/resolutions/{id}/approval", PermissionName.RECONCILIATION_RESOLVE),
                     entry("POST /v1/operator/reconciliation/resolutions/{id}/rejection", PermissionName.RECONCILIATION_RESOLVE),

@@ -264,9 +264,21 @@ writes an audit record in an HTTP flow, so there is nothing to record it *on*. W
 key travels as a normal command parameter rather than as ambient state, so no context mechanism is
 needed for it (the distinction `P0-TSK-032` drew for the actor, in the opposite direction).
 
-## 7. Pagination — **Decided, not yet implemented** (first collection endpoint, Phase 3+)
+## 7. Pagination — **Implemented** for the operator collections that follow it (`P17-TSK-107`, finapp-admin-panel ADR-C133)
 
-No endpoint returns a collection today.
+*(Read "Decided, not yet implemented (first collection endpoint, Phase 3+)" and "No endpoint returns a collection today" until
+`P17-TSK-107`, 2026-11-18.)* The first two collections that implement this section exactly:
+
+| Endpoint | Permission | Declared total order | `limit` default / maximum | Filters |
+|---|---|---|---|---|
+| `GET /v1/operator/settlement/batches` | `RECONCILIATION_INVESTIGATE` | business date descending, batch id descending | 50 / 200 | `source` (a declared code); `from`, `to` (business dates, inclusive; `to` today UTC and `from` 30 days before unless named; 92 days at most) |
+| `GET /v1/operator/reconciliation/resolutions` | `RECONCILIATION_RESOLVE` | proposed at ascending, resolution id ascending | 50 / 200 | `status` (`PROPOSED` only: the queue) |
+
+Both are keyset reads. `app`'s `OperatorCollection` is the one implementation of the request rules: the limit is refused above
+its maximum rather than reduced, and the cursor names its collection, so one collection's cursor is refused by another. Every
+refusal is `422 api.ValidationFailed`. A page record carries `nextCursor` only when there is a next page. Older operator lists
+were built before this section was implemented: some take `after`/`limit`, and some are capped with `truncated`. They are
+retrofitted by `P17-TSK-042` (ADR-C133 decision 2), and until then they are what their own entries say.
 
 **Cursor-based, never offset.** `?limit=&cursor=`. The reason is correctness before performance:
 an offset re-reads a moving set, so when rows are inserted or removed between page 1 and page 2, a

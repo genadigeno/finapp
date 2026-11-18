@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -121,6 +122,21 @@ public class ReconciliationResolutionController {
      * manual match's chosen candidate - and the frozen ledger lines, account by account. One
      * snapshot, recording nothing.
      */
+    /**
+     * The approver's queue (`P17-TSK-107`, gap G-122; finapp-admin-panel ADR-C133 decision 3): a §7 collection - {@code limit} 50
+     * unless named, 200 at most, the opaque {@code cursor} of the page before - of the resolutions awaiting a second person, oldest
+     * first, in the pending-decision shape, each marked when the caller proposed it. {@code status} is {@code PROPOSED} or absent.
+     * The permission the resolution's own read and its approval use, so a queue is read only by someone who may decide it.
+     */
+    @GetMapping("/resolutions")
+    @RequiresPermission(PermissionName.RECONCILIATION_RESOLVE)
+    public BreakResolutionDesk.PendingReconciliationResolutionPage listPendingReconciliationResolutions(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.pendingResolutions(status, cursor, limit);
+    }
+
     @GetMapping("/resolutions/{id}")
     @RequiresPermission(PermissionName.RECONCILIATION_RESOLVE)
     public BreakResolutionDesk.ResolutionDetail viewReconciliationResolution(

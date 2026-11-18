@@ -226,35 +226,86 @@ public final class JdbcSettlementBatchStore implements SettlementBatchStore<Conn
                 if (!row.next()) {
                     return Optional.empty();
                 }
-                return Optional.of(
-                        new BatchRow(
-                                row.getObject("id", UUID.class),
-                                row.getObject("file_id", UUID.class),
-                                row.getObject("source_id", UUID.class),
-                                row.getString("source_code"),
-                                row.getString("external_batch_ref"),
-                                CurrencyCode.of(row.getString("currency")),
-                                BatchStatus.valueOf(row.getString("status")),
-                                row.getObject("business_date", LocalDate.class),
-                                SettlementFormatId.valueOf(row.getString("format_id")),
-                                row.getInt("format_version"),
-                                row.getInt("line_count"),
-                                row.getInt("declared_line_count"),
-                                row.getLong("net_minor"),
-                                row.getShort("net_scale"),
-                                Optional.ofNullable(row.getString("remittance_reference")),
-                                row.getTimestamp("created_at").toInstant(),
-                                CorrelationId.of(row.getString("correlation_id")),
-                                row.getObject("statement_sequence") == null
-                                        ? Optional.empty()
-                                        : Optional.of(new StatementRow(
-                                                row.getLong("statement_sequence"),
-                                                row.getLong("opening_minor"),
-                                                row.getLong("closing_minor")))));
+                return Optional.of(batchRow(row));
             }
         } catch (SQLException failure) {
             throw new SettlementStorageException("could not read a settlement batch", failure);
         }
+    }
+
+    /**
+     * The browse walks the declared order backwards from the cursor: a row comparison on {@code (business_date, id)}, which
+     * V021's indexes serve as one range per page (across every source, or within the one named).
+     */
+    @Override
+    public List<BatchRow> browse(
+            Connection unitOfWork,
+            Optional<UUID> sourceId,
+            LocalDate from,
+            LocalDate to,
+            Optional<BrowseCursor> after,
+            int limit) {
+        Objects.requireNonNull(sourceId, "sourceId must not be null");
+        Objects.requireNonNull(from, "from must not be null");
+        Objects.requireNonNull(to, "to must not be null");
+        Objects.requireNonNull(after, "after must not be null");
+        if (limit < 1) {
+            throw new IllegalArgumentException("a page holds at least one batch, not " + limit);
+        }
+        String sql = BATCH_ROW_COLUMNS
+                + " WHERE b.business_date >= ? AND b.business_date <= ?"
+                + (sourceId.isPresent() ? " AND b.source_id = ?" : "")
+                + (after.isPresent() ? " AND (b.business_date, b.id) < (?, ?)" : "")
+                + " ORDER BY b.business_date DESC, b.id DESC LIMIT ?";
+        try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
+            int at = 1;
+            read.setObject(at++, from);
+            read.setObject(at++, to);
+            if (sourceId.isPresent()) {
+                read.setObject(at++, sourceId.get());
+            }
+            if (after.isPresent()) {
+                read.setObject(at++, after.get().businessDate());
+                read.setObject(at++, after.get().batchId());
+            }
+            read.setInt(at, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                List<BatchRow> page = new ArrayList<>();
+                while (rows.next()) {
+                    page.add(batchRow(rows));
+                }
+                return page;
+            }
+        } catch (SQLException failure) {
+            throw new SettlementStorageException("could not browse the settlement batches", failure);
+        }
+    }
+
+    private static BatchRow batchRow(ResultSet row) throws SQLException {
+        return new BatchRow(
+                row.getObject("id", UUID.class),
+                row.getObject("file_id", UUID.class),
+                row.getObject("source_id", UUID.class),
+                row.getString("source_code"),
+                row.getString("external_batch_ref"),
+                CurrencyCode.of(row.getString("currency")),
+                BatchStatus.valueOf(row.getString("status")),
+                row.getObject("business_date", LocalDate.class),
+                SettlementFormatId.valueOf(row.getString("format_id")),
+                row.getInt("format_version"),
+                row.getInt("line_count"),
+                row.getInt("declared_line_count"),
+                row.getLong("net_minor"),
+                row.getShort("net_scale"),
+                Optional.ofNullable(row.getString("remittance_reference")),
+                row.getTimestamp("created_at").toInstant(),
+                CorrelationId.of(row.getString("correlation_id")),
+                row.getObject("statement_sequence") == null
+                        ? Optional.empty()
+                        : Optional.of(new StatementRow(
+                                row.getLong("statement_sequence"),
+                                row.getLong("opening_minor"),
+                                row.getLong("closing_minor"))));
     }
 
     @Override
