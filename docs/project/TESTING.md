@@ -166,6 +166,16 @@ tiers hold it:
 - `E2eSeedStaysTestOnlyTest` (app, `architecture`) holds that the seed ships nowhere and
   refuses any stack but a test one.
 
+*(2026-11-18, `P17-TSK-108`.)* M3's two join them: `factorless-holding` (an identity registered
+with no factor, holding `LEDGER_OPERATOR`) and `sod-conflict` (an identity with a factor holding
+`ACCOUNTANT`, granted through the door, and `FINANCIAL_CONTROLLER`). The grant door refuses both
+states today, so each is a third plant, `held-role.sql`: one live holding, written as one from
+before the rule, its values handed in as psql's quoted variables. `E2eSeedReviewsDatabaseTest`
+(app, `database`) runs `Seed.java` and that plant unchanged. It shows the door's refusal, then
+the factorless or SoD review naming what was planted, then the revocation door taking it away.
+The reviews serve the oldest 200 holdings, so a stack that keeps more than 200 unrevoked seeds
+serves a new one past the page.
+
 ---
 
 ## 5. Shared test support

@@ -24,8 +24,8 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
 /**
- * TEST-ONLY. The HTTP half of the Operator Console's end-to-end seed (P17-TSK-106): every effect the platform has a door for, through
- * that door - registration, a second factor, a step-up, a role grant. A single source file run by {@code infra/scripts/e2e-seed.sh}
+ * TEST-ONLY. The HTTP half of the Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108): every effect the platform has a
+ * door for, through that door - registration, a second factor, a step-up, a role grant. A single source file run by {@code infra/scripts/e2e-seed.sh}
  * ({@code java --source 21}), never compiled into anything and named by no module's main source set (E2eSeedStaysTestOnlyTest).
  *
  * <p>It has no route to the database and must not have one. What only the database can answer - a test identity's id, which no API
@@ -73,6 +73,7 @@ public final class Seed {
         String[] rest = java.util.Arrays.copyOfRange(args, 4, args.length);
         switch (args[3]) {
             case "register" -> seed.register(one(rest));
+            case "register-bare" -> seed.registerBare(one(rest));
             case "grant" -> seed.grant(rest[0], rest[1], java.util.Arrays.copyOfRange(rest, 2, rest.length));
             case "upload" -> seed.upload(rest[0], rest[1]);
             case "await-file" -> seed.awaitFile(rest[0], rest[1], rest[2]);
@@ -97,13 +98,7 @@ public final class Seed {
      * shell to look its id up.
      */
     private void register(String who) throws Exception {
-        String login = "e2e-seed." + who + "." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
-        String password = "E2e-seed-" + UUID.randomUUID();
-        expect("registration of " + who, post(publicBase, "/v1/registrations",
-                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + password + "\",\"displayName\":\"E2E seed " + who + "\"}", null, key()),
-                201);
-        people.setProperty(who + ".login", login);
-        people.setProperty(who + ".password", password);
+        String login = registered(who);
         String session = signIn(publicBase, who);
         String secret = secretFrom(expect("factor enrolment of " + who, post(publicBase, "/v1/me/mfa", null, session, null), 201).body());
         // The previous step's code, inside the verifier's window, as the kind rehearsal confirms: the first step-up may then use the
@@ -115,6 +110,29 @@ public final class Seed {
         people.setProperty(who + ".step", Long.toString(step));
         save();
         System.out.println("LOGIN=" + login);
+    }
+
+    /**
+     * Registers a fresh test identity on the public host and nothing more (P17-TSK-108): no session, no second factor. The holder the
+     * factorless review exists for - the shell plants its role, since the grant door refuses a factor-requiring role to it. Prints its
+     * login for the shell to look its id up.
+     */
+    private void registerBare(String who) throws Exception {
+        String login = registered(who);
+        save();
+        System.out.println("LOGIN=" + login);
+    }
+
+    /** The registration door, for a fresh login and password kept in the run's state. Answers the login. */
+    private String registered(String who) throws Exception {
+        String login = "e2e-seed." + who + "." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        String password = "E2e-seed-" + UUID.randomUUID();
+        expect("registration of " + who, post(publicBase, "/v1/registrations",
+                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + password + "\",\"displayName\":\"E2E seed " + who + "\"}", null, key()),
+                201);
+        people.setProperty(who + ".login", login);
+        people.setProperty(who + ".password", password);
+        return login;
     }
 
     /** The administrator's grant of one role to each identity named, on one stepped-up session, through the identity door. */

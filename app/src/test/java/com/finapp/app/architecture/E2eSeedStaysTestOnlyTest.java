@@ -22,8 +22,9 @@ import org.junit.jupiter.api.Test;
  * <p>The images are built from nothing else by construction: the application image's build context is the boot jar alone
  * ({@code .dockerignore}, held by {@link ApplicationImageTest}), and the migrator image's is every module's
  * {@code src/main/resources/db/migration} ({@code migrator/build.gradle.kts}). So "ships nowhere" is "named by no {@code src/main}
- * file", which this holds by the seed's own markers. What the plants do is held by {@code E2eSeedPlantsDatabaseTest} on a real
- * PostgreSQL; the script's run against a running stack is the console's end-to-end run.
+ * file", which this holds by the seed's own markers. What the plants do is held on a real PostgreSQL - the dead letters by
+ * {@code E2eSeedPlantsDatabaseTest}, the held role (`P17-TSK-108`) by {@code E2eSeedReviewsDatabaseTest}; the script's run against a
+ * running stack is the console's end-to-end run.
  */
 @Tag("architecture")
 @DisplayName("the end-to-end seed is test-only and stays so (P17-TSK-106)")
@@ -72,16 +73,32 @@ class E2eSeedStaysTestOnlyTest {
     void everyPlantIsOneMarkedStatement() {
         List<Path> plants = files(root.resolve(SEED)).filter(file -> file.toString().endsWith(".sql")).toList();
         assertThat(plants).extracting(file -> file.getFileName().toString())
-                .containsExactlyInAnyOrder("abandoned-event.sql", "parked-record.sql");
+                .containsExactlyInAnyOrder("abandoned-event.sql", "parked-record.sql", "held-role.sql");
         for (Path plant : plants) {
             String text = EvidenceCitations.read(plant);
-            assertThat(text).as("%s says what it is", plant.getFileName()).startsWith("-- TEST-ONLY (P17-TSK-106)");
+            assertThat(text).as("%s says what it is", plant.getFileName()).containsPattern("\\A-- TEST-ONLY \\(P17-TSK-10[68]\\)");
             String statements = text.replaceAll("(?m)--.*$", "").replaceAll("'[^']*'", "''").strip();
             assertThat(statements.chars().filter(c -> c == ';').count()).as("%s is one statement", plant.getFileName()).isEqualTo(1);
             assertThat(statements).as("%s ends in that statement", plant.getFileName()).endsWith(";");
-            assertThat(statements).as("%s writes the outbox's tables and nothing else", plant.getFileName())
+            assertThat(statements).as("%s inserts its own module's rows and does nothing else", plant.getFileName())
                     .doesNotContainPattern("(?i)\\b(UPDATE|DELETE|TRUNCATE|ALTER|DROP|GRANT|CREATE)\\b");
         }
+    }
+
+    @Test
+    @DisplayName("a plant's values are the database client's quoted variables, each checked by the shell first, never spliced into it"
+            + " (P17-TSK-108)")
+    void aPlantsValuesAreQuotedVariables() {
+        String held = EvidenceCitations.read(root.resolve(SEED + "held-role.sql")).replaceAll("(?m)--.*$", "");
+        assertThat(held).as("only the quoted form, which psql makes a literal")
+                .contains(":'identity'").contains(":'role'").contains(":'granter'").doesNotContainPattern(":[a-z]");
+        int checked = script.indexOf("uuid_like \"$1\" && uuid_like \"$ADMIN_ID\" ||");
+        int planted = script.indexOf("plant held-role.sql -v identity=\"$1\" -v role=\"$2\" -v granter=\"$ADMIN_ID\"");
+        assertThat(checked).as("the ids are checked").isPositive();
+        assertThat(planted).as("and only then planted, as variables").isGreaterThan(checked);
+        assertThat(script).as("the roles a plant is handed are the script's own words, not a run's input")
+                .contains("held_role \"$holder\" LEDGER_OPERATOR").contains("held_role \"$holder\" FINANCIAL_CONTROLLER")
+                .doesNotContainPattern("held_role \"\\$holder\" \"\\$");
     }
 
     @Test

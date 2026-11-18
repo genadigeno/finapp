@@ -1,9 +1,10 @@
 #!/bin/sh
-# TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106; finapp-admin-panel docs/FINAPP_BACKEND_WORK.md B2.1).
+# TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108; finapp-admin-panel docs/FINAPP_BACKEND_WORK.md B2.1,
+# B3.5).
 #
 #   infra/scripts/e2e-seed.sh <scenario>...
 #
-# Puts in place, on a TEST stack, what the console's M2 end-to-end tests act on, and prints what it created as KEY=value lines on
+# Puts in place, on a TEST stack, what the console's M2 and M3 end-to-end tests act on, and prints what it created as KEY=value lines on
 # stdout - one line per identifier, nothing else there - for the console's harness to read. Everything else goes to stderr.
 #
 #   abandoned-event   an outbox event its relay gave up on: the console retries it, or two persons discard it
@@ -17,10 +18,20 @@
 #                     accepted and matched by the platform's own sweeps. ACKNOWLEDGE admits it, four-eyes, and moves no money; an
 #                     approval echoing an operand the proposal does not name is refused 409 ResolutionStale, and the plain
 #                     re-confirmation approves -> BREAK_ID, BREAK_FILE_ID
+#   factorless-holding  a test identity registered with no second factor, holding LEDGER_OPERATOR - a role that needs one, which
+#                     the grant door now refuses it (409 identity.FactorRequiredForRole) - so planted, as a holding from before the
+#                     rule. The factorless review names it; the console revokes the role, or the person enrols
+#                     -> FACTORLESS_IDENTITY_ID, FACTORLESS_ROLE
+#   sod-conflict      a test identity with a factor holding ACCOUNTANT, granted through the door by the run's administrator, and
+#                     FINANCIAL_CONTROLLER - its pair in the owner's segregation-of-duties table, which the door now refuses
+#                     (409 identity.RoleConflict) - so planted, as a holding from before the rule. The SoD review names the pair;
+#                     the console revokes one half -> SOD_CONFLICT_IDENTITY_ID, SOD_CONFLICT_ROLES (the review's order)
 #   all               each of the above once
 #
 # Every run creates fresh rows, identities and references, so it reruns without collision and two runs never share a row. The two
-# settlement scenarios wait for the platform's sweeps (fifteen seconds each by default): up to a few minutes on a slow stack.
+# settlement scenarios wait for the platform's sweeps (fifteen seconds each by default): up to a few minutes on a slow stack. The two
+# reviews serve the oldest 200 holdings: on a stack that keeps more than 200 unrevoked seeded holdings, a new one is past the page -
+# revoke what a test reviews, as the console does, or start from a fresh stack.
 #
 # WHERE IT RUNS (E2E_SEED_TARGET), and nowhere else - an unknown target is refused, never defaulted:
 #   compose (default)  this checkout's compose stack: PostgreSQL through `docker compose exec`, as finapp_migrator, the role that
@@ -33,10 +44,12 @@
 #                      and operator hosts (PUBLIC_PORT 30443, OPERATOR_PORT 30444 unless set), trusting the edge's local CA read
 #                      from the cluster. Run by the console's battery on kind (P17-TST-001), which owns that cluster.
 #
-# HOW: a state no door reaches - an abandoned relay, a parked record - is planted by its owning module's rules, one SQL statement
-# per plant (infra/scripts/e2e-seed/*.sql, each proven against PostgreSQL and the dead-letter doors by platform's
-# E2eSeedPlantsDatabaseTest). Every other effect goes through the platform's own doors (infra/scripts/e2e-seed/Seed.java, which has
-# no route to the database): registration, a second factor, step-up, the role grant, the settlement upload and attestation. The
+# HOW: a state no door reaches - an abandoned relay, a parked record, a holding from before a rule the grant door now enforces - is
+# planted by its owning module's rules, one SQL statement per plant (infra/scripts/e2e-seed/*.sql: the dead letters proven against
+# PostgreSQL and the dead-letter doors by platform's E2eSeedPlantsDatabaseTest, the holding against the reviews and the revocation
+# door by app's E2eSeedReviewsDatabaseTest; a plant's values are the database client's variables, quoted by the client itself,
+# after the shell has checked their shape). Every other effect goes through the platform's own doors (infra/scripts/e2e-seed/Seed.java,
+# which has no route to the database): registration, a second factor, step-up, the role grant, the settlement upload and attestation. The
 # two things only the database can answer are asked here, as the console's own harness asks them: a test identity's id (no API
 # exposes it before it holds a role - the console's gap G-10) and the run's first administrator, by the one documented break-glass
 # step (README section 5e).
@@ -50,7 +63,7 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 SEED="$ROOT/infra/scripts/e2e-seed"
 TARGET=${E2E_SEED_TARGET:-compose}
-SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break or all"
+SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict or all"
 
 say() { printf '%s\n' "e2e-seed: $*" >&2; }
 refuse() { printf '%s\n' "e2e-seed: refused: $*" >&2; exit 2; }
@@ -67,7 +80,7 @@ HTTP=no
 for scenario in "$@"; do
     case "$scenario" in
         abandoned-event|parked-record) ;;
-        parsed-file|fee-break|all) HTTP=yes ;;
+        parsed-file|fee-break|factorless-holding|sod-conflict|all) HTTP=yes ;;
         *) refuse "unknown scenario '$scenario': $SCENARIOS" ;;
     esac
 done
@@ -83,7 +96,7 @@ case "$TARGET" in
         FINAPP_BACKEND_URL=${FINAPP_BACKEND_URL%/}
         [ -f "$ROOT/compose.yaml" ] || refuse "no compose.yaml at $ROOT"
         command -v docker >/dev/null 2>&1 || refuse "docker is not on the PATH"
-        [ "$HTTP" = no ] || command -v java >/dev/null 2>&1 || refuse "java (21 or later) is not on the PATH, and the settlement scenarios need it"
+        [ "$HTTP" = no ] || command -v java >/dev/null 2>&1 || refuse "java (21 or later) is not on the PATH, and the scenarios through the doors need it"
         ;;
     kind)
         [ -n "${E2E_SEED_NODE:-}" ] || refuse "E2E_SEED_NODE is unset: name the kind cluster's control-plane node container"
@@ -113,9 +126,12 @@ psql_seed() {
     esac
 }
 
-# plant <file>: runs one plant, its one statement, and prints the row it returned (fields separated by '|').
+# plant <file> [psql options]: runs one plant, its one statement, and prints the row it returned (fields separated by '|'). Its
+# values, if any, are psql variables (-v name=value), never text spliced into the statement.
 plant() {
-    psql_seed -f - < "$SEED/$1"
+    file=$1
+    shift
+    psql_seed "$@" -f - < "$SEED/$file"
 }
 
 uuid_like() {
@@ -142,7 +158,7 @@ seed_parked_record() {
 }
 
 # ---------------------------------------------------------------------------------------------------
-# The settlement scenarios: through the doors, as the seed's own test operators.
+# Through the doors, as the seed's own test identities.
 STATE=
 cleanup() { [ -z "$STATE" ] || rm -rf "$STATE"; }
 trap cleanup EXIT
@@ -167,19 +183,28 @@ value() {
     printf '%s\n' "$2" | sed -n "s/^$1=//p" | head -1
 }
 
-# operator <who>: a fresh test identity with a factor, registered through the door. Prints its identity id.
-operator() {
-    login=$(value LOGIN "$(seed_http register "$1")")
+# identity_of <login>: the id of a test identity Seed.java registered. Prints the id.
+identity_of() {
+    login=$1
     # Checked before it reaches SQL: the shape Seed.java makes and nothing else.
-    printf '%s' "$login" | grep -Eq '^e2e-seed\.[a-z]+\.[0-9a-f]{12}$' || { say "registration of $1 printed '$login'"; exit 1; }
+    printf '%s' "$login" | grep -Eq '^e2e-seed\.[a-z]+\.[0-9a-f]{12}$' || { say "a registration printed '$login'"; exit 1; }
     id=$(psql_seed -c "SELECT id FROM identity.identity WHERE login_identifier = '$login'" | tr -d '[:space:]')
     uuid_like "$id" || { say "no identity found for $login"; exit 1; }
+    printf '%s\n' "$id"
+}
+
+# operator <who>: a fresh test identity with a factor, registered through the door. Prints its identity id and login.
+operator() {
+    login=$(value LOGIN "$(seed_http register "$1")")
+    id=$(identity_of "$login")
     printf '%s %s\n' "$id" "$login"
 }
 
-SETTLEMENT_READY=no
-settlement_operators() {
-    [ "$SETTLEMENT_READY" = no ] || return 0
+# The run's first administrator: README section 5e's break-glass step, the one effect here with no door by design. Each assignment
+# below takes its command substitution's status, so a failed step stops the run under set -e rather than handing on an empty id.
+ADMIN_READY=no
+administrator() {
+    [ "$ADMIN_READY" = no ] || return 0
     STATE=$(mktemp -d)
     if [ "$TARGET" = kind ]; then
         JDK_IMAGE=$(sed -n 's/^FROM \(eclipse-temurin:[^ ]*\) AS builder$/\1/p' "$ROOT/Dockerfile")
@@ -191,14 +216,22 @@ settlement_operators() {
             -o jsonpath='{.data.ca\.crt}' | base64 -d > "$STATE/edge-ca.crt"
         [ -s "$STATE/edge-ca.crt" ] || { say "the edge's local CA could not be read"; exit 1; }
     fi
-    set -- $(operator admin)
-    admin_login=$2
-    # The run's first administrator: README section 5e's break-glass step, the one effect here with no door by design.
+    admin=$(operator admin)
+    ADMIN_ID=${admin%% *}
+    admin_login=${admin#* }
     psql_seed -c "INSERT INTO identity.role_assignment (id, identity_id, role_name, assigned_by, assigned_at) SELECT gen_random_uuid(), i.id, 'ADMINISTRATOR', i.id, now() FROM identity.identity i WHERE i.login_identifier = '$admin_login'" >/dev/null
-    set -- $(operator submitter)
-    SUBMITTER_ID=$1
-    set -- $(operator attester)
-    ATTESTER_ID=$1
+    say "the run's administrator: $ADMIN_ID"
+    ADMIN_READY=yes
+}
+
+SETTLEMENT_READY=no
+settlement_operators() {
+    [ "$SETTLEMENT_READY" = no ] || return 0
+    administrator
+    submitter=$(operator submitter)
+    SUBMITTER_ID=${submitter%% *}
+    attester=$(operator attester)
+    ATTESTER_ID=${attester%% *}
     seed_http grant admin RECONCILIATION_OPERATOR "$SUBMITTER_ID" "$ATTESTER_ID" >/dev/null
     say "the run's operators: submitter $SUBMITTER_ID and attester $ATTESTER_ID, each RECONCILIATION_OPERATOR with a factor"
     SETTLEMENT_READY=yes
@@ -228,12 +261,45 @@ seed_fee_break() {
     printf 'BREAK_FILE_ID=%s\n' "$file"
 }
 
+# ---------------------------------------------------------------------------------------------------
+# The access reviews' rows: holdings from before the rules the grant door now enforces.
+
+# held_role <identity id> <role>: plants a live holding of <role>, granted by the run's administrator (held-role.sql).
+held_role() {
+    uuid_like "$1" && uuid_like "$ADMIN_ID" || { say "held_role was handed '$1' by '$ADMIN_ID'"; exit 1; }
+    held=$(plant held-role.sql -v identity="$1" -v role="$2" -v granter="$ADMIN_ID" | tr -d '[:space:]')
+    uuid_like "$held" || { say "the holding's plant printed '$held'"; exit 1; }
+}
+
+seed_factorless_holding() {
+    administrator
+    login=$(value LOGIN "$(seed_http register-bare unenrolled)")
+    holder=$(identity_of "$login")
+    held_role "$holder" LEDGER_OPERATOR
+    say "identity $holder holds LEDGER_OPERATOR with no second factor: the factorless review names it; revoke the role, or the person enrols"
+    printf 'FACTORLESS_IDENTITY_ID=%s\n' "$holder"
+    printf 'FACTORLESS_ROLE=%s\n' LEDGER_OPERATOR
+}
+
+seed_sod_conflict() {
+    administrator
+    conflicted=$(operator conflicted)
+    holder=${conflicted%% *}
+    seed_http grant admin ACCOUNTANT "$holder" >/dev/null
+    held_role "$holder" FINANCIAL_CONTROLLER
+    say "identity $holder holds ACCOUNTANT, granted through the door, and FINANCIAL_CONTROLLER, planted from before the rule: the SoD review names the pair; revoke one half"
+    printf 'SOD_CONFLICT_IDENTITY_ID=%s\n' "$holder"
+    printf 'SOD_CONFLICT_ROLES=%s\n' ACCOUNTANT,FINANCIAL_CONTROLLER
+}
+
 for scenario in "$@"; do
     case "$scenario" in
         abandoned-event) seed_abandoned_event ;;
         parked-record) seed_parked_record ;;
         parsed-file) seed_parsed_file ;;
         fee-break) seed_fee_break ;;
-        all) seed_abandoned_event; seed_parked_record; seed_parsed_file; seed_fee_break ;;
+        factorless-holding) seed_factorless_holding ;;
+        sod-conflict) seed_sod_conflict ;;
+        all) seed_abandoned_event; seed_parked_record; seed_parsed_file; seed_fee_break; seed_factorless_holding; seed_sod_conflict ;;
     esac
 done
