@@ -86,6 +86,19 @@
 # common prefix, which always runs (REHEARSAL_REUSE_CLUSTER=1 and REHEARSAL_SKIP_BUILD=1 make it quick). Refused unless REHEARSAL_KEEP=1, so
 # that a kept cluster is what it is used against, and refused whenever CI is set: a record is only ever of a whole run.
 #
+# THE OPERATOR CONSOLE (P17-TSK-104; X-TSK-020 hosts it, finapp-admin-panel builds it). Step `console`, of the common prefix, after the edge
+# that routes /console to it: the console's image loaded into every node, its digest put into the run's own rendered copy of
+# deploy/console/overlays/kind (the committed overlay keeps its sixty-four zeros), that copy applied and rolled out, and then asked through
+# the real edge - /console/ answering 200 on the operator host under the console's own Content-Security-Policy exactly once, an API route on
+# the same host keeping the API's default-src 'none', and /console not served on the public host. The image is named by the variables
+# admission-check.sh reads, one of three: CONSOLE_IMAGE, an image in this Docker; CONSOLE_ARCHIVE, the console CI's finapp-console.oci.tar,
+# loaded; or CONSOLE_REPOSITORY, a checkout of finapp-admin-panel, its CONSOLE_COMMIT exported and built for kind. Obtained at build-images,
+# before the cluster, and refused there when two are named or half of one is; a later run can name the one a run left, finapp-console:rehearsal.
+# This run signs nothing - the cluster has no policy controller - so CONSOLE_SBOM is admission-check.sh's alone. With none named the step
+# is SKIPPED, and said to be, at the step and again beside the result (skipped.txt): never a pass. It is skipped too in the delivery scope,
+# whose edge is Argo CD's, and in the disaster-recovery exercise, whose images are its vault's alone. THE CLUSTER RUN IS OWED (the owner's
+# postponement): KindRehearsalContractTest holds the step; what the step shows is claimed only once a run with a console image has ended green.
+#
 # Usage:   infra/scripts/kind-rehearsal.sh
 # Needs:   Docker with buildx, kind (KIND, default `kind`), git, openssl, a JDK for Gradle, sha256sum, tar, base64.
 # Exit:    0 every assertion held; 1 an assertion failed; 2 a step could not run. A step that cannot run never looks like a pass.
@@ -212,6 +225,27 @@ if [ -n "$STEPS" ]; then
     [ "$KEEP" = 1 ] || { echo "?? REHEARSAL_STEPS needs REHEARSAL_KEEP=1: it is run against a kept cluster" >&2; exit 2; }
 fi
 
+# The console's image (P17-TSK-104): which of the three names it, refused before anything is built when two do or half of one does.
+# CONSOLE_FROM is empty when none does, and step console is then skipped, and said to be. The same names admission-check.sh reads.
+CONSOLE_IMAGE=${CONSOLE_IMAGE:-}
+CONSOLE_ARCHIVE=${CONSOLE_ARCHIVE:-}
+CONSOLE_REPOSITORY=${CONSOLE_REPOSITORY:-}
+CONSOLE_COMMIT=${CONSOLE_COMMIT:-}
+CONSOLE_FROM=""
+[ -z "$CONSOLE_IMAGE" ] || CONSOLE_FROM="$CONSOLE_FROM image"
+[ -z "$CONSOLE_ARCHIVE" ] || CONSOLE_FROM="$CONSOLE_FROM archive"
+[ -z "$CONSOLE_REPOSITORY" ] || CONSOLE_FROM="$CONSOLE_FROM repository"
+CONSOLE_FROM=${CONSOLE_FROM# }
+case $CONSOLE_FROM in
+    "")
+        [ -z "$CONSOLE_COMMIT" ] || { echo "?? CONSOLE_COMMIT goes with CONSOLE_REPOSITORY, and no console image is named" >&2; exit 2; } ;;
+    image | archive)
+        [ -z "$CONSOLE_COMMIT" ] || { echo "?? CONSOLE_COMMIT is the commit CONSOLE_REPOSITORY is built at; the $CONSOLE_FROM named is built already" >&2; exit 2; } ;;
+    repository)
+        [ -n "$CONSOLE_COMMIT" ] || { echo "?? CONSOLE_REPOSITORY is built at a named commit, and CONSOLE_COMMIT names none" >&2; exit 2; } ;;
+    *) echo "?? one console image at a time: $CONSOLE_FROM are all named" >&2; exit 2 ;;
+esac
+
 # wanted <step>: whether a scope's own step runs. Every one does, unless REHEARSAL_STEPS names some.
 wanted() {
     [ -z "$STEPS" ] && return 0
@@ -248,6 +282,9 @@ dr_resolve
 mkdir -p "$ART"
 : > "$ART/rehearsal.log"
 : > "$ART/not-exercised.txt"
+# What this run was not asked to show (P17-TSK-104: the console, with no console image named), said again beside its result. Not
+# not-exercised.txt, which turns the release red: a step that ran and could not show its case is a different thing from one not asked for.
+: > "$ART/skipped.txt"
 : > "$ART/timings.tsv"
 : > "$ART/assertions.tsv"
 # The exercise's instants (P16-TSK-025): a record of this run alone.
@@ -327,6 +364,12 @@ finish() {
         "$KIND_BIN" delete cluster --name "$CLUSTER" >/dev/null 2>&1
     fi
     rm -rf "$WORK"
+    # A skip beside the result, whatever the result (P17-TSK-104): a green run without the console never reads as one that showed it.
+    if [ -s "$ART/skipped.txt" ]; then
+        while IFS= read -r skipped; do
+            log "SKIPPED: $skipped"
+        done < "$ART/skipped.txt"
+    fi
     if [ "$FAILED" -eq 2 ]; then
         log "RESULT: COULD NOT RUN"
         exit 2
@@ -462,6 +505,53 @@ build_tree() {
                 --build-arg SOURCE_DATE_EPOCH="$epoch" --build-arg REVISION="$revision" \
                 --build-arg SOURCE=rehearsal --build-arg VERSION="$version" --tag "finapp-migrator:rehearsal-$suffix" --load migrator
     ) >> "$ART/build-$suffix.log" 2>&1 || cannot "the $suffix image build failed: see build-$suffix.log"
+}
+
+# console_obtain <local tag> (P17-TSK-104): the Operator Console's image under that tag in this host's Docker, from the one source
+# CONSOLE_FROM names; admission-check.sh's console_obtain is the same three ways, by the same names. A build exports the named commit's files
+# into this run's directory - the checkout is read, never changed, and no worktree of it is left behind - and builds them as the console's
+# own CI does, for kind, as the first release: no image serves yet, so collect-previous-assets.sh with no argument leaves no previous
+# release's assets to ride along.
+CONSOLE_TREE="$WORK/console-tree"
+console_obtain() {
+    case $CONSOLE_FROM in
+        image)
+            dock image inspect "$CONSOLE_IMAGE" >/dev/null 2>&1 || cannot "no image $CONSOLE_IMAGE in this Docker (CONSOLE_IMAGE)"
+            [ "$CONSOLE_IMAGE" = "$1" ] || dock tag "$CONSOLE_IMAGE" "$1" || cannot "could not tag $CONSOLE_IMAGE as $1"
+            log "the console's image: $CONSOLE_IMAGE, given (not built by this run)"
+            ;;
+        archive)
+            [ -s "$CONSOLE_ARCHIVE" ] || cannot "no archive at $CONSOLE_ARCHIVE (CONSOLE_ARCHIVE)"
+            co_loaded=$(dock load --input "$(dpath "$CONSOLE_ARCHIVE")" 2>> "$ART/build-console.log") \
+                || cannot "Docker could not load $CONSOLE_ARCHIVE: see build-console.log"
+            printf '%s\n' "$co_loaded" >> "$ART/build-console.log"
+            # The console's CI tags nothing, so Docker reports the loaded image by its id; a tagged archive, by its name.
+            co_ref=$(printf '%s\n' "$co_loaded" | sed -n -e 's/^Loaded image: \(.*\)$/\1/p' -e 's/^Loaded image ID: \(sha256:[0-9a-f]\{64\}\)$/\1/p' | tail -1)
+            [ -n "$co_ref" ] || cannot "Docker loaded no image from $CONSOLE_ARCHIVE: see build-console.log"
+            dock tag "$co_ref" "$1" || cannot "could not tag the loaded console image $co_ref as $1"
+            log "the console's image: loaded from $CONSOLE_ARCHIVE ($co_ref), the console CI's artefact (not built by this run)"
+            ;;
+        repository)
+            co_revision=$(git -C "$(dpath "$CONSOLE_REPOSITORY")" rev-parse --verify "$CONSOLE_COMMIT^{commit}" 2>> "$ART/build-console.log") \
+                || cannot "$CONSOLE_COMMIT is not a commit of $CONSOLE_REPOSITORY (CONSOLE_COMMIT, CONSOLE_REPOSITORY)"
+            rm -rf "$CONSOLE_TREE"
+            mkdir -p "$CONSOLE_TREE"
+            git -C "$(dpath "$CONSOLE_REPOSITORY")" archive --format=tar -o "$(dpath "$WORK/console.tar")" "$co_revision" 2>> "$ART/build-console.log" \
+                || cannot "could not export $co_revision of $CONSOLE_REPOSITORY: see build-console.log"
+            tar -xf "$WORK/console.tar" -C "$CONSOLE_TREE" || cannot "could not unpack the export of $co_revision"
+            rm -f "$WORK/console.tar"
+            sh "$CONSOLE_TREE/scripts/collect-previous-assets.sh" >> "$ART/build-console.log" 2>&1 \
+                || cannot "the console's collect-previous-assets.sh failed: see build-console.log"
+            (
+                cd "$CONSOLE_TREE"
+                dock build --build-arg VITE_CONSOLE_ENVIRONMENT=kind --label "org.opencontainers.image.revision=$co_revision" -t "$1" .
+            ) >> "$ART/build-console.log" 2>&1 || cannot "the console's image build failed: see build-console.log"
+            rm -rf "$CONSOLE_TREE"
+            printf '%s\n' "$co_revision" > "$ART/console.ref"
+            log "the console's image: built from $CONSOLE_REPOSITORY at $co_revision, for kind"
+            ;;
+    esac
+    dock image inspect "$1" >/dev/null 2>&1 || cannot "no image $1"
 }
 
 # The handler release N has and N - 1 does not. The one change made to the older tree: the capture hint's bean, so that a payments.PaymentCaptured
@@ -723,6 +813,11 @@ elif [ -n "${REHEARSAL_NMINUS1_REF:-}" ]; then
     # A reused build still has to say which tree N - 1 was: the hold step reads it, and without it reports itself not exercised.
     printf '%s\n' "$REHEARSAL_NMINUS1_REF" > "$ART/nminus1.ref"
 fi
+# The Operator Console's image (P17-TSK-104), before the cluster: a console that cannot be had fails before anything is made. Not this tree's
+# build, so REHEARSAL_SKIP_BUILD leaves it alone; CONSOLE_IMAGE=finapp-console:rehearsal names the one a run left.
+if [ -n "$CONSOLE_FROM" ]; then
+    console_obtain finapp-console:rehearsal
+fi
 
 step cluster
 REUSING=""
@@ -738,7 +833,8 @@ if [ -n "$REUSING" ]; then
     # A rotations run (P15-TSK-020) leaves ExternalSecrets whose finalizer only the operator clears: removed while it still runs, or the
     # namespace never finishes terminating.
     kube -n finapp delete externalsecrets.external-secrets.io --all --ignore-not-found --wait=true --timeout=120s >> "$ART/cluster.log" 2>&1 || true
-    kube delete namespace finapp finapp-edge finapp-observability finapp-rehearsal finapp-experiments cert-manager --ignore-not-found --wait=true --timeout=300s >> "$ART/cluster.log" 2>&1 \
+    # finapp-console since P17-TSK-104: a console a kept cluster still serves is never this run's.
+    kube delete namespace finapp finapp-edge finapp-console finapp-observability finapp-rehearsal finapp-experiments cert-manager --ignore-not-found --wait=true --timeout=300s >> "$ART/cluster.log" 2>&1 \
         || cannot "the cluster's namespaces could not be removed"
 else
 dock pull --quiet "$KIND_NODE_IMAGE" >/dev/null || cannot "could not pull the node image"
@@ -1212,6 +1308,66 @@ client() {
     dock run --rm --network kind --add-host "public.finapp.test:$NODE_IP" --add-host "operator.finapp.test:$OPERATOR_IP" \
         -v "$(dpath "$CLIENT"):/work" -v "$(dpath "$DIR"):/src:ro" "$JDK_IMAGE" java --source 21 /src/Rehearsal.java /work "$@"
 }
+
+# ---------------------------------------------------------------------------------------------------
+# The Operator Console (P17-TSK-104): after the edge that routes /console to it, its image in every node, the kind overlay rendered with that
+# image's digest in the run's own copy, applied, rolled out, and asked through the real edge by the client above.
+# ---------------------------------------------------------------------------------------------------
+# The two policies, as the edge states them (deploy/edge/base/operator-edge.yaml's console-headers and edge-headers): the console's is a copy
+# of finapp-admin-panel's config/console-headers.mjs, as edge-check.sh's and edge.rego's are, and KindRehearsalContractTest holds all three
+# to ConsoleHostingManifestsTest's.
+CONSOLE_CSP="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'"
+API_CSP="default-src 'none'; frame-ancestors 'none'"
+# console_skipped <why>: said at the step, and again beside the run's result (finish), never counted as a pass.
+console_skipped() {
+    log "CONSOLE SKIPPED: $1"
+    printf 'the console (P17-TSK-104): %s\n' "$1" >> "$ART/skipped.txt"
+}
+step console
+if [ -z "$CONSOLE_FROM" ]; then
+    console_skipped "no console image was named (CONSOLE_IMAGE, CONSOLE_ARCHIVE, or CONSOLE_REPOSITORY at CONSOLE_COMMIT), so /console on the operator host answers the proxy's 502 in this run"
+elif [ "$SCOPE" = delivery ]; then
+    console_skipped "the delivery scope's edge and release are Argo CD's, and no Application of it syncs deploy/console"
+elif [ "$SCOPE" = dr ]; then
+    console_skipped "the disaster-recovery exercise's images are its vault's alone, and the vault holds no console"
+else
+    IMAGE_CONSOLE=$(load_built finapp-console:rehearsal)
+    log "console $IMAGE_CONSOLE"
+    printf 'console=%s\n' "$IMAGE_CONSOLE" >> "$ART/images.txt"
+    render_overlay console console/overlays/kind
+    CONSOLE_RENDER="$WORK/render/console"
+    # The digest in the run's own rendered copy, never the committed overlay, which keeps its sixty-four zeros - read back after.
+    sed -i "s#finapp-console@sha256:0\{64\}#$IMAGE_CONSOLE#" "$CONSOLE_RENDER/all.yaml" "$CONSOLE_RENDER/Deployment.finapp-console.yaml"
+    grep -q "image: $IMAGE_CONSOLE\$" "$CONSOLE_RENDER/Deployment.finapp-console.yaml" && ! grep -q 'finapp-console@sha256:0\{64\}' "$CONSOLE_RENDER/all.yaml" \
+        || cannot "the console's digest could not be put into the run's rendered copy of deploy/console/overlays/kind"
+    grep -q '^    digest: sha256:0\{64\}$' "$ROOT/deploy/console/overlays/kind/kustomization.yaml" \
+        || cannot "the committed deploy/console/overlays/kind no longer names sixty-four zeros: a run writes its own copy, never that file"
+    apply_files "$CONSOLE_RENDER/all.yaml"
+    if ! kube -n finapp-console rollout status deployment/finapp-console --timeout=240s >> "$ART/apply.log" 2>&1; then
+        kube -n finapp-console get pods -o wide > "$ART/console-pods.txt" 2>&1 || true
+        kube -n finapp-console get events --sort-by=.lastTimestamp >> "$ART/console-pods.txt" 2>&1 || true
+        fail "the console did not become ready: see console-pods.txt"
+    fi
+    console_replicas=$(sed -n 's/^  replicas: \([0-9]*\)$/\1/p' "$CONSOLE_RENDER/Deployment.finapp-console.yaml" | head -1)
+    console_ready=$(kube -n finapp-console get deployment finapp-console -o jsonpath='{.status.readyReplicas}' 2>/dev/null || true)
+    console_images=$(kube -n finapp-console get pods -l app.kubernetes.io/name=finapp-console -o jsonpath='{range .items[*]}{.spec.containers[0].image}{"\n"}{end}' | sort -u)
+    [ -n "$console_replicas" ] && [ "${console_ready:-0}" = "$console_replicas" ] && [ "$console_images" = "$IMAGE_CONSOLE" ] \
+        || fail "the console: ${console_ready:-0} of ${console_replicas:-?} replicas ready, running '$(printf '%s' "$console_images" | tr '\n' ' ')', not $IMAGE_CONSOLE alone"
+    pass "the console is up: $console_replicas replicas at $IMAGE_CONSOLE, from the run's rendered copy of deploy/console/overlays/kind"
+    # Through the real edge: the operator host's console router and its console-headers, an API router beside it, and the public host.
+    client console > "$ART/console.txt" 2>&1 || fail "the console's probes could not run: see console.txt"
+    grep -qxF "console page-on-operator status=200 csp-count=1 csp=$CONSOLE_CSP" "$ART/console.txt" \
+        && pass "console: /console/ answers 200 on the operator host, under the console's own Content-Security-Policy, exactly once" \
+        || fail "console: the page on the operator host: $(grep 'page-on-operator' "$ART/console.txt")"
+    grep -qxF "console api-on-operator status=401 csp-count=1 csp=$API_CSP" "$ART/console.txt" \
+        && pass "console: an API route on the operator host keeps the API's own default-src 'none', exactly once" \
+        || fail "console: the API route beside it: $(grep 'api-on-operator' "$ART/console.txt")"
+    for console_path in /console/ /console; do
+        grep -qxF "console page-on-public path=$console_path status=404" "$ART/console.txt" \
+            && pass "console: $console_path is not served on the public host" \
+            || fail "console: $console_path on the public host: $(grep "page-on-public path=$console_path " "$ART/console.txt")"
+    done
+fi
 
 # ---------------------------------------------------------------------------------------------------
 # The census: what the database says, after the outbox has drained.

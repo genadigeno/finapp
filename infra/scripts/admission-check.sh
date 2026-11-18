@@ -22,6 +22,23 @@
 #   edge                  the edge's own controller, Traefik at its pinned digest      admitted in finapp-edge
 #   edge other image      the same controller running another image                    refused (control: admitted outside)
 #   controller down       the webhook scaled to zero, the signed app                   refused; admitted again once it is back
+#   console signed        deploy/console/overlays/kind's own Deployment, at the        admitted in finapp-console, and its pod
+#                         console's signed digest                                      created at that digest
+#   console unsigned      the same object at a console image nobody signed             refused (control: admitted outside)
+#   console unattested    the same object at a console image signed and given its      refused (control: admitted outside)
+#                         provenance, and no SBOM attestation
+#
+# THE OPERATOR CONSOLE'S IMAGE (P17-TSK-104; THREAT_MODEL.md T54). finapp-console is built by finapp-admin-panel, not by this tree: its CI
+# keeps it as an OCI archive with the commit's CycloneDX SBOM, unsigned and unpushed by design, because admission trusts an environment's
+# authority and never the console repository's. So this run is that authority on kind: it obtains the image from one of three - CONSOLE_IMAGE,
+# an image in this Docker; CONSOLE_ARCHIVE, the console CI's finapp-console.oci.tar, loaded; or CONSOLE_REPOSITORY, a checkout of
+# finapp-admin-panel, its CONSOLE_COMMIT exported and built for kind - and pushes, signs and attests it exactly as the platform's two: a
+# signature and two attestations, SLSA provenance v1 and the console's own SBOM (CONSOLE_SBOM, or the sbom.cdx.json beside the archive, or
+# the one npm writes from the built commit's lockfile), under this run's key, verified before anything deploys it. Its three cases run
+# beside the platform's. With no console image named they are SKIPPED, and said to be, at the cases and again beside the run's result:
+# a skip is never a pass, and CI, which has no console image, says so on every run. kind-rehearsal.sh reads the same variables.
+# THE CLUSTER RUN IS OWED (the owner's postponement): what a hermetic test holds is the script (ImageAdmissionTest); the console's cases
+# are claimed only once a run with a console image named has ended green.
 #
 # THE PROBES (ADMISSION_PROBE), each a deliberate break that must turn the run red: `warn` (every policy's mode warn), `second-key`
 # (the other key trusted beside this run's), `migrator-out` (the migrator's glob removed from both platform policies),
@@ -43,6 +60,11 @@
 #          developer's aids; CI sets neither, which ImageAdmissionTest holds, and the provenance of a run that used them says so);
 #          ADMISSION_CA_BUNDLE names a CA bundle for a machine whose TLS is intercepted (the chart pull, the node's pull of the
 #          controller); TRIVY_IMAGE likewise (OPERATIONS_RUNBOOK.md section 11.9); ADMISSION_KEEP keeps the cluster.
+#          The console's image (P17-TSK-104), one of three, the same names kind-rehearsal.sh reads: CONSOLE_IMAGE, a local image;
+#          CONSOLE_ARCHIVE, the console CI's finapp-console.oci.tar; or CONSOLE_REPOSITORY, a finapp-admin-panel checkout, built at
+#          CONSOLE_COMMIT. CONSOLE_SBOM names its CycloneDX SBOM: required beside CONSOLE_IMAGE, the archive's sbom.cdx.json otherwise,
+#          and the commit's npm SBOM for a build. Two at once, or half of one, is refused before anything is built; none skips the
+#          console's cases, loudly.
 # Names:   the cluster, the registry, the Trivy volume and the artefacts (build/admission/<run>) are this run's own, so two runs never
 #          meet; a cluster of the chosen name that already exists is refused, never deleted.
 # Exit:    0 every assertion held; 1 an assertion failed; 2 a step could not run. A step that cannot run never looks like a pass.
@@ -68,6 +90,32 @@ SBOMS_GIVEN=${ADMISSION_SBOM_DIR:-}
 case $PROBE in
     "" | warn | second-key | migrator-out | no-match-allow) ;;
     *) echo "?? ADMISSION_PROBE=$PROBE is not a probe this script knows" >&2; exit 2 ;;
+esac
+
+# The console's image (P17-TSK-104): which of the three names it, refused before anything is built when two do or half of one does.
+# CONSOLE_FROM is empty when none does, and the console's cases are then skipped, and said to be.
+CONSOLE_IMAGE=${CONSOLE_IMAGE:-}
+CONSOLE_ARCHIVE=${CONSOLE_ARCHIVE:-}
+CONSOLE_REPOSITORY=${CONSOLE_REPOSITORY:-}
+CONSOLE_COMMIT=${CONSOLE_COMMIT:-}
+CONSOLE_SBOM=${CONSOLE_SBOM:-}
+CONSOLE_FROM=""
+[ -z "$CONSOLE_IMAGE" ] || CONSOLE_FROM="$CONSOLE_FROM image"
+[ -z "$CONSOLE_ARCHIVE" ] || CONSOLE_FROM="$CONSOLE_FROM archive"
+[ -z "$CONSOLE_REPOSITORY" ] || CONSOLE_FROM="$CONSOLE_FROM repository"
+CONSOLE_FROM=${CONSOLE_FROM# }
+case $CONSOLE_FROM in
+    "")
+        [ -z "$CONSOLE_COMMIT$CONSOLE_SBOM" ] \
+            || { echo "?? CONSOLE_COMMIT and CONSOLE_SBOM go with a console image, and none is named (CONSOLE_IMAGE, CONSOLE_ARCHIVE, CONSOLE_REPOSITORY)" >&2; exit 2; } ;;
+    image)
+        [ -z "$CONSOLE_COMMIT" ] || { echo "?? CONSOLE_COMMIT is the commit CONSOLE_REPOSITORY is built at; CONSOLE_IMAGE is built already" >&2; exit 2; }
+        [ -n "$CONSOLE_SBOM" ] || { echo "?? a console image named by CONSOLE_IMAGE brings no SBOM: name its CycloneDX file in CONSOLE_SBOM" >&2; exit 2; } ;;
+    archive)
+        [ -z "$CONSOLE_COMMIT" ] || { echo "?? CONSOLE_COMMIT is the commit CONSOLE_REPOSITORY is built at; CONSOLE_ARCHIVE is built already" >&2; exit 2; } ;;
+    repository)
+        [ -n "$CONSOLE_COMMIT" ] || { echo "?? CONSOLE_REPOSITORY is built at a named commit, and CONSOLE_COMMIT names none" >&2; exit 2; } ;;
+    *) echo "?? one console image at a time: $CONSOLE_FROM are all named" >&2; exit 2 ;;
 esac
 
 KIND_NODE_IMAGE="$KIND_NODE_REPOSITORY:$KIND_NODE_VERSION@$KIND_NODE_DIGEST"
@@ -98,6 +146,8 @@ dpath() {
 mkdir -p "$ART"
 : > "$ART/admission.log"
 : > "$ART/assertions.tsv"
+# What this run was not asked to show (P17-TSK-104: the console's cases, with no console image named), said again beside its result.
+: > "$ART/skipped.txt"
 
 # To standard error, so that a line logged inside a command substitution reaches the log and the terminal, not the value.
 log() {
@@ -130,9 +180,15 @@ finish() {
     dock volume rm -f "$TRIVY_VOLUME" >/dev/null 2>&1
     # What this run built and tagged; images it was given are the caller's.
     dock image ls --format '{{.Repository}}:{{.Tag}}' \
-        | grep -E "^(finapp-admission-variant-$RUN-|finapp-(app|migrator):admission-$RUN\$|$PUSH/finapp-)" \
+        | grep -E "^(finapp-admission-variant-$RUN-|finapp-(app|migrator|console):admission-$RUN\$|$PUSH/finapp-)" \
         | while read -r image; do dock image rm -f "$image" >/dev/null 2>&1; done
     rm -rf "$WORK"
+    # A skip beside the result, whatever the result: a green run that did not run the console's cases never reads as one that passed them.
+    if [ -s "$ART/skipped.txt" ]; then
+        while IFS= read -r skipped; do
+            log "SKIPPED: $skipped"
+        done < "$ART/skipped.txt"
+    fi
     if [ "$FAILED" -eq 2 ]; then
         log "RESULT: COULD NOT RUN"
         exit 2
@@ -229,6 +285,55 @@ fi
 dock image inspect "$APP_LOCAL" >/dev/null 2>&1 || cannot "no image $APP_LOCAL"
 dock image inspect "$MIGRATOR_LOCAL" >/dev/null 2>&1 || cannot "no image $MIGRATOR_LOCAL"
 
+# The Operator Console's image (P17-TSK-104), under this run's own tag whichever of the three it came from. kind-rehearsal.sh's
+# console_obtain is the same three ways, by the same names. A build exports the named commit's files into this run's directory - the
+# checkout is read, never changed, and no worktree of it is left behind - and builds them as the console's own CI does, for kind, as the
+# first release: no image serves yet, so collect-previous-assets.sh with no argument leaves no previous release's assets to ride along.
+CONSOLE_LOCAL="finapp-console:admission-$RUN"
+CONSOLE_TREE="$WORK/console-tree"
+CONSOLE_REVISION=""
+console_obtain() {
+    case $CONSOLE_FROM in
+        image)
+            dock image inspect "$CONSOLE_IMAGE" >/dev/null 2>&1 || cannot "no image $CONSOLE_IMAGE in this Docker (CONSOLE_IMAGE)"
+            dock tag "$CONSOLE_IMAGE" "$1" || cannot "could not tag $CONSOLE_IMAGE as $1"
+            log "the console's image: $CONSOLE_IMAGE, given (not built by this run)"
+            ;;
+        archive)
+            [ -s "$CONSOLE_ARCHIVE" ] || cannot "no archive at $CONSOLE_ARCHIVE (CONSOLE_ARCHIVE)"
+            co_loaded=$(dock load --input "$(dpath "$CONSOLE_ARCHIVE")" 2>> "$ART/console-build.log") \
+                || cannot "Docker could not load $CONSOLE_ARCHIVE: see console-build.log"
+            printf '%s\n' "$co_loaded" >> "$ART/console-build.log"
+            # The console's CI tags nothing, so Docker reports the loaded image by its id; a tagged archive, by its name.
+            co_ref=$(printf '%s\n' "$co_loaded" | sed -n -e 's/^Loaded image: \(.*\)$/\1/p' -e 's/^Loaded image ID: \(sha256:[0-9a-f]\{64\}\)$/\1/p' | tail -1)
+            [ -n "$co_ref" ] || cannot "Docker loaded no image from $CONSOLE_ARCHIVE: see console-build.log"
+            dock tag "$co_ref" "$1" || cannot "could not tag the loaded console image $co_ref as $1"
+            log "the console's image: loaded from $CONSOLE_ARCHIVE ($co_ref), the console CI's artefact (not built by this run)"
+            ;;
+        repository)
+            CONSOLE_REVISION=$(git -C "$(dpath "$CONSOLE_REPOSITORY")" rev-parse --verify "$CONSOLE_COMMIT^{commit}" 2>> "$ART/console-build.log") \
+                || cannot "$CONSOLE_COMMIT is not a commit of $CONSOLE_REPOSITORY (CONSOLE_COMMIT, CONSOLE_REPOSITORY)"
+            rm -rf "$CONSOLE_TREE"
+            mkdir -p "$CONSOLE_TREE"
+            git -C "$(dpath "$CONSOLE_REPOSITORY")" archive --format=tar -o "$(dpath "$WORK/console.tar")" "$CONSOLE_REVISION" 2>> "$ART/console-build.log" \
+                || cannot "could not export $CONSOLE_REVISION of $CONSOLE_REPOSITORY: see console-build.log"
+            tar -xf "$WORK/console.tar" -C "$CONSOLE_TREE" || cannot "could not unpack the export of $CONSOLE_REVISION"
+            rm -f "$WORK/console.tar"
+            sh "$CONSOLE_TREE/scripts/collect-previous-assets.sh" >> "$ART/console-build.log" 2>&1 \
+                || cannot "the console's collect-previous-assets.sh failed: see console-build.log"
+            (
+                cd "$CONSOLE_TREE"
+                dock build --build-arg VITE_CONSOLE_ENVIRONMENT=kind --label "org.opencontainers.image.revision=$CONSOLE_REVISION" -t "$1" .
+            ) >> "$ART/console-build.log" 2>&1 || cannot "the console's image build failed: see console-build.log"
+            log "the console's image: built from $CONSOLE_REPOSITORY at $CONSOLE_REVISION, for kind"
+            ;;
+    esac
+    dock image inspect "$1" >/dev/null 2>&1 || cannot "no image $1"
+}
+if [ -n "$CONSOLE_FROM" ]; then
+    console_obtain "$CONSOLE_LOCAL"
+fi
+
 # The variants a policy must refuse: each image again, one label added, so a different digest that nobody signed (or another key did).
 variant() {
     tag="finapp-admission-variant-$RUN-$1:$2"
@@ -272,6 +377,38 @@ sbom() {
 }
 sbom finapp-app "$APP_LOCAL"
 sbom finapp-migrator "$MIGRATOR_LOCAL"
+
+# The console's SBOM (P17-TSK-104) is the console's own, never one this run writes from the image: CONSOLE_SBOM when named; the CI
+# artefact's sbom.cdx.json beside its archive; or, for a build, what the console's `npm run sbom` lists (package.json: npm sbom
+# --sbom-format cyclonedx --omit dev), read from the built commit's lockfile alone, by the npm of the console's own pinned build stage,
+# with no network.
+console_sbom() {
+    if [ -n "$CONSOLE_SBOM" ]; then
+        co_sbom=$CONSOLE_SBOM
+        co_said="given (CONSOLE_SBOM), not written by this run"
+    elif [ "$CONSOLE_FROM" = archive ]; then
+        co_sbom="$(dirname "$CONSOLE_ARCHIVE")/sbom.cdx.json"
+        co_said="the console CI's, beside its archive"
+    else
+        co_node=$(sed -n 's/^FROM \(node:[^ ]*@sha256:[0-9a-f]\{64\}\) AS build$/\1/p' "$CONSOLE_TREE/Dockerfile")
+        [ -n "$co_node" ] || cannot "the console's Dockerfile at $CONSOLE_REVISION has no node build stage pinned by digest"
+        co_sbom="$WORK/console.cdx.json"
+        dock run --rm --network none --user "$(id -u):$(id -g)" -e HOME=/tmp -e NPM_CONFIG_UPDATE_NOTIFIER=false \
+            -v "$(dpath "$CONSOLE_TREE"):/src:ro" -w /src "$co_node" \
+            npm sbom --sbom-format cyclonedx --omit dev --package-lock-only > "$co_sbom" 2>> "$ART/sbom.log" \
+            || cannot "npm could not list the console's dependencies at $CONSOLE_REVISION: see sbom.log"
+        co_said="written by npm from $CONSOLE_REVISION's lockfile"
+    fi
+    [ -s "$co_sbom" ] || cannot "no SBOM for the console at $co_sbom"
+    cp "$co_sbom" "$WORK/att/finapp-console.cdx.json" || cannot "could not read the console's SBOM $co_sbom"
+    grep -q '"bomFormat": *"CycloneDX"' "$WORK/att/finapp-console.cdx.json" || cannot "the console's SBOM $co_sbom is not CycloneDX"
+    grep -q '"pkg:npm/' "$WORK/att/finapp-console.cdx.json" || fail "the console's SBOM $co_sbom lists no npm package: it is not the console's"
+    cp "$WORK/att/finapp-console.cdx.json" "$ART/sbom-finapp-console.cdx.json"
+    log "the SBOM of the console: $co_said, $(grep -c '"purl"' "$WORK/att/finapp-console.cdx.json") components"
+}
+if [ -n "$CONSOLE_FROM" ]; then
+    console_sbom
+fi
 
 # ---------------------------------------------------------------------------------------------------
 # The cluster and the registry on its network.
@@ -363,6 +500,19 @@ for ref in "$APP" "$MIGRATOR" "$APP_UNSIGNED" "$MIGRATOR_UNSIGNED" "$APP_OTHER" 
 done
 [ "$APP" != "$APP_UNSIGNED" ] && [ "$APP" != "$APP_OTHER" ] && [ "$APP" != "$APP_UNATTESTED" ] \
     || cannot "a variant has the signed image's digest, so its case would test nothing"
+# The console's three (P17-TSK-104): the image as obtained, and two variants of it, one nobody signs and one signed and given its
+# provenance alone, so that each refusal is of the one thing its image lacks.
+if [ -n "$CONSOLE_FROM" ]; then
+    CONSOLE=$(push "$CONSOLE_LOCAL" finapp-console signed)
+    CONSOLE_UNSIGNED=$(push "$(variant console unsigned "$CONSOLE_LOCAL")" finapp-console unsigned)
+    CONSOLE_UNATTESTED=$(push "$(variant console unattested "$CONSOLE_LOCAL")" finapp-console unattested)
+    printf 'console.signed=%s\nconsole.unsigned=%s\nconsole.unattested=%s\n' "$CONSOLE" "$CONSOLE_UNSIGNED" "$CONSOLE_UNATTESTED" >> "$ART/digests.txt"
+    for ref in "$CONSOLE" "$CONSOLE_UNSIGNED" "$CONSOLE_UNATTESTED"; do
+        log "pushed $ref"
+    done
+    [ "$CONSOLE" != "$CONSOLE_UNSIGNED" ] && [ "$CONSOLE" != "$CONSOLE_UNATTESTED" ] \
+        || cannot "a console variant has the signed console's digest, so its case would test nothing"
+fi
 
 # ---------------------------------------------------------------------------------------------------
 # Keys, signatures, attestations: this run's, in its temporary directory.
@@ -435,6 +585,68 @@ provenance() {
 }
 provenance finapp-app runtime
 provenance finapp-migrator migrator
+
+# The console's provenance (P17-TSK-104), the platform's statement for an image another repository builds: the console checkout's source
+# and the commit it was built at, its Dockerfile's pinned bases and the build argument, when this run built it; and when it was given,
+# that it was given, naming no builder, and the revision the image's own label states (the console CI's job writes it), or none.
+console_provenance() {
+    if [ "$CONSOLE_FROM" = repository ]; then
+        co_supplied=false
+        co_source=$(git -C "$(dpath "$CONSOLE_REPOSITORY")" remote get-url origin 2>/dev/null || true)
+        co_source=$(printf '%s' "$co_source" | sed -e 's#^git@\([^:/]*\):#https://\1/#' -e 's#^ssh://[^@/]*@#https://#' -e 's#\.git$##')
+        printf '%s' "$co_source" | grep -Eq '^https://[A-Za-z0-9.-]+(:[0-9]+)?/[A-Za-z0-9._~/-]+$' || co_source=unknown
+        co_revision=$CONSOLE_REVISION
+        co_bases=$(sed -n 's/^FROM \([^ ]*@sha256:[0-9a-f]\{64\}\).*/\1/p' "$CONSOLE_TREE/Dockerfile")
+        [ -n "$co_bases" ] || cannot "no pinned base in the console's Dockerfile at $CONSOLE_REVISION"
+        co_builder=${GITHUB_SERVER_URL:-}
+        if [ -n "$co_builder" ] && [ -n "${GITHUB_REPOSITORY:-}" ]; then
+            co_builder="$co_builder/$GITHUB_REPOSITORY/.github/workflows/ci.yml@${GITHUB_REF:-unknown}"
+            co_invocation="${GITHUB_RUN_ID:-unknown}-${GITHUB_RUN_ATTEMPT:-1}"
+        else
+            co_builder="urn:finapp:builder:developer-machine"
+            co_invocation="local-$RUN"
+        fi
+    else
+        co_supplied=true
+        co_source=unknown
+        co_revision=$(dock image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$CONSOLE_LOCAL" 2>/dev/null || true)
+        printf '%s' "$co_revision" | grep -Eq '^[0-9a-f]{40}$' || co_revision=unknown
+        co_bases=""
+        co_builder="urn:finapp:builder:none-images-supplied"
+        co_invocation="local-$RUN"
+    fi
+    {
+        printf '{\n  "buildDefinition": {\n'
+        printf '    "buildType": "urn:finapp:build:image:v1",\n'
+        printf '    "externalParameters": {"source": "%s", "revision": "%s", "treeDirty": false, "dockerfile": "Dockerfile", "buildArgs": {"VITE_CONSOLE_ENVIRONMENT": "kind"}, "image": "finapp-console"},\n' \
+            "$co_source" "$co_revision"
+        printf '    "internalParameters": {"imagesSuppliedNotBuilt": %s, "sbomSuppliedNotWritten": %s},\n' \
+            "$co_supplied" "$( [ -n "$CONSOLE_SBOM" ] || [ "$CONSOLE_FROM" = archive ] && echo true || echo false )"
+        printf '    "resolvedDependencies": ['
+        co_separator=""
+        if [ "$co_revision" != unknown ]; then
+            printf '\n      {"uri": "git+%s@%s", "digest": {"gitCommit": "%s"}}' "$co_source" "$co_revision" "$co_revision"
+            co_separator=","
+        fi
+        for base in $co_bases; do
+            reference=${base%@*}
+            name=${reference%:*}
+            case ${name%%/*} in
+                *.*) purl="pkg:docker/${name#*/}@${reference##*:}?repository_url=${name%%/*}" ;;
+                *) purl="pkg:docker/$name@${reference##*:}" ;;
+            esac
+            printf '%s\n      {"uri": "%s", "digest": {"sha256": "%s"}}' "$co_separator" "$purl" "${base##*@sha256:}"
+            co_separator=","
+        done
+        printf '\n    ]\n  },\n  "runDetails": {\n'
+        printf '    "builder": {"id": "%s"},\n' "$co_builder"
+        printf '    "metadata": {"invocationId": "%s", "startedOn": "%s", "finishedOn": "%s"}\n  }\n}\n' "$co_invocation" "$STARTED" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } > "$WORK/att/finapp-console.provenance.json"
+    cp "$WORK/att/finapp-console.provenance.json" "$ART/provenance-finapp-console.json"
+}
+if [ -n "$CONSOLE_FROM" ]; then
+    console_provenance
+fi
 # The outside-commit plant's provenance: its git source names another commit, and the revision is written beside it where no verifier
 # reads it, so a search of the statement's text would find it and a reading of its structure does not.
 OTHER_COMMIT=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
@@ -467,6 +679,16 @@ sign_and_attest other "$MIGRATOR_OTHER" finapp-migrator
 cosign sign --key /keys/ci.key $SIGNING "$APP_UNATTESTED" >> "$ART/cosign.log" 2>&1 || cannot "could not sign $APP_UNATTESTED"
 cp "$WORK/att/finapp-app.cdx.json" "$WORK/att/finapp-app-outside.cdx.json"
 sign_and_attest ci "$APP_OUTSIDE" finapp-app-outside
+# The console (P17-TSK-104), exactly as the platform's images: a signature and both attestations under this run's key. Its unattested
+# variant is signed and given its provenance, and never its SBOM: the attested policy must refuse it for the SBOM alone.
+if [ -n "$CONSOLE_FROM" ]; then
+    sign_and_attest ci "$CONSOLE" finapp-console
+    # shellcheck disable=SC2086
+    cosign sign --key /keys/ci.key $SIGNING "$CONSOLE_UNATTESTED" >> "$ART/cosign.log" 2>&1 || cannot "could not sign $CONSOLE_UNATTESTED"
+    # shellcheck disable=SC2086
+    cosign attest --key /keys/ci.key $SIGNING --type slsaprovenance1 --predicate /att/finapp-console.provenance.json "$CONSOLE_UNATTESTED" \
+        >> "$ART/cosign.log" 2>&1 || cannot "could not attest the provenance of $CONSOLE_UNATTESTED: see cosign.log"
+fi
 # The another-subject plant: signed by the trusted key, and given, under its own attestation tag in the signature repository, the
 # signed application's attestation, whose subject is the signed application's digest.
 # shellcheck disable=SC2086
@@ -517,6 +739,12 @@ refused_by_verify unsigned "no signatures found" cosign verify --key /keys/ci.pu
 refused_by_verify other-key "no matching signatures" cosign verify --key /keys/ci.pub $VERIFYING "$APP_OTHER"
 # shellcheck disable=SC2086
 refused_by_verify unattested "no matching attestations" cosign verify-attestation --key /keys/ci.pub $VERIFYING --type slsaprovenance1 "$APP_UNATTESTED"
+# The console (P17-TSK-104): its signature and both attestations verified before anything deploys it, and its unsigned variant refused.
+if [ -n "$CONSOLE_FROM" ]; then
+    verified "$CONSOLE" "the console image"
+    # shellcheck disable=SC2086
+    refused_by_verify console-unsigned "no signatures found" cosign verify --key /keys/ci.pub $VERIFYING "$CONSOLE_UNSIGNED"
+fi
 
 # ---------------------------------------------------------------------------------------------------
 # The promotion's own check (P15-TSK-017, infra/scripts/promote.sh verify), against this run's registry and signature repository: the
@@ -628,7 +856,8 @@ step "namespaces"
 mkdir -p "$WORK/render/namespaces"
 render namespaces "$WORK/render/namespaces/all.yaml"
 kube apply -f - < "$WORK/render/namespaces/all.yaml" >> "$ART/apply.log" 2>&1 || cannot "could not apply the namespaces"
-for namespace in finapp finapp-edge; do
+# finapp-console since P17-TSK-104: the console's cases run there, so its opt-in is read on the cluster, with or without them.
+for namespace in finapp finapp-edge finapp-console; do
     [ "$(kube get namespace "$namespace" -o jsonpath='{.metadata.labels.policy\.sigstore\.dev/include}')" = true ] \
         || fail "the namespace $namespace is not opted in to admission"
 done
@@ -738,6 +967,22 @@ grep -q '^  namespace: finapp$' "$WORK/render/kind/Deployment.finapp-app.yaml" |
 grep -q 'image: finapp-app@sha256:' "$WORK/render/kind/Deployment.finapp-app.yaml" || cannot "the rendered Deployment does not name finapp-app by digest"
 grep -q 'image: finapp-migrator@sha256:' "$WORK/render/kind/Job.finapp-migrator.yaml" || cannot "the rendered Job does not name finapp-migrator by digest"
 grep -q 'image: docker.io/library/traefik@sha256:' "$WORK/render/edge/Deployment.finapp-edge-public.yaml" || cannot "the rendered edge does not name Traefik by digest"
+# The console's own objects (P17-TSK-104), rendered from deploy/console/overlays/kind as kind-rehearsal.sh applies them: its ServiceAccount
+# in its namespace and the control's, and its Deployment, which each case below copies at its own image.
+if [ -n "$CONSOLE_FROM" ]; then
+    mkdir -p "$WORK/render/console"
+    render console/overlays/kind "$WORK/render/console/all.yaml"
+    split "$WORK/render/console"
+    for file in ServiceAccount.finapp-console Deployment.finapp-console; do
+        [ -s "$WORK/render/console/$file.yaml" ] || cannot "the rendered console overlay holds no $file"
+    done
+    for namespace in finapp-console "$CONTROL"; do
+        sed "s/^  namespace: finapp-console$/  namespace: $namespace/" "$WORK/render/console/ServiceAccount.finapp-console.yaml" | kube apply -f - >> "$ART/apply.log" 2>&1 \
+            || cannot "could not apply the console's ServiceAccount to $namespace"
+    done
+    grep -q '^  namespace: finapp-console$' "$WORK/render/console/Deployment.finapp-console.yaml" || cannot "the rendered console Deployment is not in finapp-console"
+    grep -q 'image: finapp-console@sha256:' "$WORK/render/console/Deployment.finapp-console.yaml" || cannot "the rendered console Deployment does not name finapp-console by digest"
+fi
 
 # deployment <name> <namespace> <image>: the overlay's Deployment, renamed, at <image>.
 deployment() {
@@ -765,6 +1010,11 @@ job() {
 edge() {
     sed -e "s/^  name: finapp-edge-public$/  name: $1/" -e "s/^  namespace: finapp-edge$/  namespace: $2/" \
         -e "s#image: docker.io/library/traefik@sha256:[0-9a-f]*#image: $3#" "$WORK/render/edge/Deployment.finapp-edge-public.yaml"
+}
+# console_deployment <name> <namespace> <image> (P17-TSK-104): the console overlay's Deployment, renamed, at <image>.
+console_deployment() {
+    sed -e "s/^  name: finapp-console$/  name: $1/" -e "s/^  namespace: finapp-console$/  namespace: $2/" \
+        -e "s#image: finapp-console@sha256:[0-9a-f]*#image: $3#" "$WORK/render/console/Deployment.finapp-console.yaml"
 }
 
 # attempt <case> <file>: 0 if the API server took the object, 1 if it refused it; its answer kept for the case.
@@ -867,6 +1117,24 @@ admitted "edge at Traefik's pinned digest" "$C/edge.yaml" finapp-edge app.kubern
 edge case-edge-other finapp-edge "$WHOAMI_REPOSITORY@$WHOAMI_DIGEST" > "$C/edge-other.yaml"
 edge case-edge-other "$CONTROL" "$WHOAMI_REPOSITORY@$WHOAMI_DIGEST" > "$C/edge-other-control.yaml"
 refused "edge running another image" "$C/edge-other.yaml" "no matching policies" "$C/edge-other-control.yaml"
+
+# The Operator Console (P17-TSK-104; THREAT_MODEL.md T54): its own Deployment admitted in its own namespace at the signed digest, and
+# refused there unsigned, and refused signed and given its provenance with no SBOM attestation, each beside its control. With no console
+# image named, said where the cases would have run and again beside the result: never a pass.
+if [ -n "$CONSOLE_FROM" ]; then
+    console_deployment case-console-signed finapp-console "$CONSOLE" > "$C/console-signed.yaml"
+    admitted "console signed" "$C/console-signed.yaml" finapp-console app.kubernetes.io/name=finapp-console "$CONSOLE"
+    console_deployment case-console-unsigned finapp-console "$CONSOLE_UNSIGNED" > "$C/console-unsigned.yaml"
+    console_deployment case-console-unsigned "$CONTROL" "$CONSOLE_UNSIGNED" > "$C/console-unsigned-control.yaml"
+    refused "console unsigned" "$C/console-unsigned.yaml" "$UNSIGNED_REASON" "$C/console-unsigned-control.yaml"
+    console_deployment case-console-unattested finapp-console "$CONSOLE_UNATTESTED" > "$C/console-unattested.yaml"
+    console_deployment case-console-unattested "$CONTROL" "$CONSOLE_UNATTESTED" > "$C/console-unattested-control.yaml"
+    refused "console signed, no SBOM attestation" "$C/console-unattested.yaml" "$UNATTESTED" "$C/console-unattested-control.yaml"
+else
+    log "THE CONSOLE'S CASES SKIPPED: no console image was named (CONSOLE_IMAGE, CONSOLE_ARCHIVE, or CONSOLE_REPOSITORY at CONSOLE_COMMIT)"
+    printf '%s\n' "the console's three cases (P17-TSK-104) - no console image was named: CONSOLE_IMAGE, CONSOLE_ARCHIVE, or CONSOLE_REPOSITORY at CONSOLE_COMMIT" \
+        >> "$ART/skipped.txt"
+fi
 
 step "the controller down"
 kube -n cosign-system scale deployment/policy-controller-webhook --replicas=0 >> "$ART/apply.log" 2>&1 || cannot "could not scale the controller down"

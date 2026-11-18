@@ -4093,6 +4093,8 @@ next run, owed under `POSTPONED_ISSUES.md` PI-025.)*
 
 **What this does not mean.** One node, three replicas, the test-only copies of a managed database and broker: a managed minor upgrade (a provider's own restart and endpoint) never ran, and is `THREAT_MODEL.md` section 6 item 43 (f)'s with the first real environment. A controller lost under traffic is experiment E25's. The numbers are from a loaded development machine.
 
+
+**The Operator Console's step** *(`P17-TSK-104`, 2026-11-18)*. Named an image the same three ways as the admission check (`CONSOLE_IMAGE`, `CONSOLE_ARCHIVE`, or `CONSOLE_REPOSITORY` at `CONSOLE_COMMIT`), the rehearsal builds or loads it at `build-images`, and after `edge` its `console` step loads it into every node, puts its digest into its own rendered copy of `deploy/console/overlays/kind` - never the committed file, whose digest stays sixty-four zeros - applies it, waits for its rollout, and asks through the real edge: the operator host's `/console/` answers `200` under the console's own policy exactly once, an operator API route keeps `default-src 'none'`, and the public host serves no `/console`. Read `console.txt`, `console-pods.txt`, `images.txt`'s `console=` and `console.ref`. It is skipped, and said so in `skipped.txt` and the result, with no image named, in the `delivery` scope (its edge is Argo CD's) and in the `dr` scope (its images come from the vault only). The console's own end-to-end run then goes against a kept cluster (`REHEARSAL_KEEP=1`): `CONSOLE_BASE_URL=https://operator.finapp.test:30444/console/ npm run test:e2e` in finapp-admin-panel. Not run yet: `P17-TST-001`'s.
 ### 11.32 A refused image: signing, admission, and what to do when the cluster says no (`P15-TSK-007`)
 
 *(Written by `P15-TSK-007`, 2026-11-11, from `infra/scripts/admission-check.sh`, `deploy/admission` and
@@ -4109,7 +4111,15 @@ Deployments, Jobs and their pods, init containers included. A debug container ad
   SLSA provenance and the CycloneDX SBOM (`finapp-images-attested`);
 - *(`X-TSK-020`, 2026-11-14)* so must the Operator Console's `finapp-console` (and `finapp-<environment>-console`), under the same two
   policies. Nothing signs it yet: finapp-admin-panel builds it, and neither this repository's image job nor `admission-check.sh` does, so
-  until its release path signs and attests it every console pod is refused here - the safe direction;
+  until its release path signs and attests it every console pod is refused here - the safe direction *(`P17-TSK-104`, 2026-11-18: on
+  `kind`, `admission-check.sh` now signs and attests a console image it is given - `CONSOLE_IMAGE` with `CONSOLE_SBOM`, the console CI's
+  archive as `CONSOLE_ARCHIVE` with its `sbom.cdx.json` beside it, or `CONSOLE_REPOSITORY` at `CONSOLE_COMMIT`, built for `kind` -
+  under the run's key, verifies them before deploying, and holds three cases in `finapp-console`: signed admitted at its digest,
+  unsigned refused, signed without its SBOM attestation refused, each beside its control. Read `sbom-finapp-console.cdx.json`,
+  `provenance-finapp-console.json`, `console-build.log` and `digests.txt`'s `console.*` lines. With no console image named the
+  three cases are skipped and the result line is preceded by `SKIPPED:`, never passed silently. In a real environment the console
+  is still refused until the delivery's identity signs it - the owner's decision, `P17-TSK-105`. No such run has been made yet:
+  it is `P17-TST-001`'s.)*;
 - the edge's Traefik passes by its one pinned digest (`finapp-edge-traefik`), the only exception;
 - anything else is refused (`no-match-policy: deny`), and so is everything while the controller cannot answer
   (`failurePolicy: Fail`).
