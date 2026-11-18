@@ -126,6 +126,22 @@ it, the only way back is `README.md` §5e's out-of-band step (`OPERATIONS_RUNBOO
 role: `Authorization.revoke` existed and nothing reachable called it, so a role could be ended only by suspending the whole
 identity or by a write around the door.)*
 
+**Pairs no one holds together** (`P17-TSK-016`, gap G-14; decided by the owner on 2026-11-18). The partition above stops
+one person doing both halves of one act. This table stops one person being both populations. A grant of a role whose holder
+already holds its partner is refused `409 identity.RoleConflict`, naming the role already held, and the refusal is
+recorded. The check reads the identity's live roles after the grant locks the identity, so two grants racing for a pair's
+two halves serialise and the second is refused. The table is `RoleConflicts`, pinned by `RoleConflictsTest`:
+
+- the propose/approve splits: `ACCOUNTANT` and `FINANCIAL_CONTROLLER`; `REGULATORY_REPORTER` and `FINANCIAL_CONTROLLER`;
+  `LOAN_SERVICING_AGENT` and `LENDING_OFFICER`; `BNPL_SERVICING_AGENT` and `BNPL_OFFICER`;
+- B3.3's examples: `RECONCILIATION_OPERATOR` and `RECONCILIATION_CONTROLLER`; `RISK_ANALYST` and `RISK_OFFICER`;
+- the checker and the checked: `LEDGER_OPERATOR` and `RECONCILIATION_OPERATOR`.
+
+`CREDIT_POLICY_OFFICER` and `UNDERWRITER` are not a pair, because no four-eyes act spans the two today. A holding that
+predates the rule is named, not revoked, by `GET /v1/operator/access-review/sod-conflicts` (`ROLE_ASSIGN`, on a
+`MULTI_FACTOR` session, audited as `identity.SodConflictsRead`). The review resolves each one by revoking one of the two
+roles, with a reason, as it resolves a factorless holding.
+
 ## 5. The review
 
 Who holds which role is read from the authoritative record, never from a spreadsheet: the live rows of

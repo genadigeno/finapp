@@ -250,6 +250,12 @@ public final class Authorization {
                 Optional.empty());
     }
 
+    /** The live holdings that conflict under the owner's segregation-of-duties table (`P17-TSK-016`, {@link RoleConflicts}). */
+    public List<RoleAssignmentStore.ConflictingHolding> conflictingHoldings(Connection unitOfWork, int limit) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        return assignments.conflictingHoldings(unitOfWork, RoleConflicts.PAIRS, limit);
+    }
+
     /** The live holdings of a role that needs a factor whose holder has none (`P15-TSK-039`). */
     public List<RoleAssignmentStore.FactorlessHolding> holdingsWithoutFactor(Connection unitOfWork, int limit) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");

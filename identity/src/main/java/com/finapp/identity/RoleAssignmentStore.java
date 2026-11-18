@@ -90,6 +90,15 @@ public interface RoleAssignmentStore<T> {
     record FactorlessHolding(IdentityId identityId, RoleName role, Instant assignedAt) {}
 
     /**
+     * The live holdings that conflict (`P17-TSK-016`): each identity holding both roles of a pair in {@code pairs}, oldest
+     * conflict first, at most {@code limit} - one read, so both holdings are judged at one moment.
+     */
+    java.util.List<ConflictingHolding> conflictingHoldings(T unitOfWork, java.util.List<RoleConflicts.Pair> pairs, int limit);
+
+    /** One identity holding both roles of a pair, and since when - the later of the two grants. */
+    record ConflictingHolding(IdentityId identityId, RoleName first, RoleName second, Instant since) {}
+
+    /**
      * Grants a role.
      *
      * @param assignedBy the identity that granted it. Recorded on the row, not only in the audit

@@ -139,6 +139,7 @@ visible rather than quietly approximated.
 | `identity.AuthenticationFailed` | 401 | Authentication failed. |
 | `identity.AssuranceRequired` | 403 | This operation requires a stronger authentication. |
 | `identity.FactorRequiredForRole` | 409 | This role cannot be granted until its holder has enrolled a second factor. |
+| `identity.RoleConflict` | 409 | This role cannot be held together with a role the identity already holds. |
 | `identity.LastRoleGranter` | 409 | This would leave no active identity that can grant roles. |
 | `identity.VerifiedChannelAlreadyExists` | 409 | The account already has a verified contact channel of this kind. |
 
@@ -187,6 +188,12 @@ confirmed factor. Nothing is granted; the subject enrols and the administrator
 retries. Only the administrator learns the subject has no factor, and `ROLE_ASSIGN` already answers whether the subject
 exists. A holding that predates the rule is named by `GET /v1/operator/access-review/factorless-holdings`, never revoked by
 it: the review revokes one, with a reason, through the door below.
+
+**`identity.RoleConflict`** (`P17-TSK-016`; `PRIVILEGED_ACCESS_REVIEW.md` §4): `POST /v1/identities/{id}/roles` for a role
+that conflicts with one the subject already holds, under the owner's segregation-of-duties pairs (`RoleConflicts`).
+Nothing is granted, and the refusal is recorded. The detail names the role already held. The check is made under the
+identity's lock, so two concurrent grants of a pair's halves cannot both succeed. A holding that predates the rule is named
+by `GET /v1/operator/access-review/sod-conflicts`, never revoked by it.
 
 **`identity.LastRoleGranter`** (`P15-TSK-032`): `DELETE /v1/identities/{id}/roles/{role}` for a role that can grant roles -
 today `ADMINISTRATOR`, read from what each role grants - from the last `ACTIVE` identity holding one, and `POST

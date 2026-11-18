@@ -6818,6 +6818,41 @@
           }
         }
       },
+      "identity.RoleConflict": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "identity.RoleConflict"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/identity.RoleConflict"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This role cannot be held together with a role the identity already holds.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "identity.VerifiedChannelAlreadyExists": {
         "content": {
           "application/problem+json": {
@@ -31935,6 +31970,38 @@
         ],
         "type": "object"
       },
+      "SodConflictView": {
+        "properties": {
+          "identityId": {
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SodConflictsView": {
+        "properties": {
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/SodConflictView"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "SourceList": {
         "properties": {
           "sources": {
@@ -36888,6 +36955,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FactorlessHoldingsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/access-review/sod-conflicts": {
+      "get": {
+        "operationId": "listSodConflicts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SodConflictsView"
                 }
               }
             },

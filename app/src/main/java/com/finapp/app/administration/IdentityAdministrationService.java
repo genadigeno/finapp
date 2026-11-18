@@ -82,6 +82,16 @@ public class IdentityAdministrationService {
         return inOneTransaction(unitOfWork -> administration.factorlessHoldings(unitOfWork, mostServed));
     }
 
+    /** The holdings that conflict under the segregation-of-duties table, recorded (`P17-TSK-016`). */
+    public IdentityAdministration.SodConflicts sodConflicts(int mostServed) {
+        return inOneTransaction(unitOfWork -> administration.sodConflicts(unitOfWork, mostServed));
+    }
+
+    /** The held role a refused grant conflicted with, for the refusal's words; read after the refusal, without a lock. */
+    public java.util.Optional<com.finapp.identity.RoleName> heldConflict(IdentityId subject, com.finapp.identity.RoleName role) {
+        return inOneTransaction(unitOfWork -> administration.heldConflict(unitOfWork, subject, role));
+    }
+
     private <T> T inOneTransaction(Function<Connection, T> command) {
         return transactions.execute(
                 status -> {

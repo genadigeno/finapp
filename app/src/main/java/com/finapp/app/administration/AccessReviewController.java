@@ -46,6 +46,30 @@ public class AccessReviewController {
                 served.holdings().stream().map(FactorlessHoldingView::of).toList(), served.truncated());
     }
 
+    /**
+     * The live holdings that conflict under the owner's segregation-of-duties table (`P17-TSK-016`): those granted before the rule,
+     * which the grant now refuses, oldest conflict first. It revokes nothing; the review decides each, through the revocation door.
+     * Under {@code ROLE_ASSIGN} on a {@code MULTI_FACTOR} session, recorded, as the factorless review.
+     */
+    @GetMapping("/sod-conflicts")
+    @RequiresPermission(PermissionName.ROLE_ASSIGN)
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+    public SodConflictsView listSodConflicts() {
+        IdentityAdministration.SodConflicts served = administration.sodConflicts(MOST_SERVED);
+        return new SodConflictsView(served.conflicts().stream().map(SodConflictView::of).toList(), served.truncated());
+    }
+
+    /** The conflicts served and whether there were more. */
+    public record SodConflictsView(List<SodConflictView> conflicts, boolean truncated) {}
+
+    /** Who, which two roles, since when - the later of the two grants: nothing else about the person. */
+    public record SodConflictView(String identityId, List<String> roles, Instant since) {
+        static SodConflictView of(RoleAssignmentStore.ConflictingHolding holding) {
+            return new SodConflictView(holding.identityId().value().toString(),
+                    List.of(holding.first().name(), holding.second().name()), holding.since());
+        }
+    }
+
     /** The holdings served and whether there were more. */
     public record FactorlessHoldingsView(List<FactorlessHoldingView> holdings, boolean truncated) {}
 

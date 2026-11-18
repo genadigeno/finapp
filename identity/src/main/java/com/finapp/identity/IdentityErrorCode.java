@@ -66,6 +66,16 @@ public enum IdentityErrorCode implements ErrorCode {
             "This role cannot be granted until its holder has enrolled a second factor."),
 
     /**
+     * The grant would give one person both roles of a conflicting pair (`P17-TSK-016`; the owner's segregation-of-duties table,
+     * {@code RoleConflicts}). Nothing is granted; the detail names the role already held. A holding that predates the rule is
+     * named by {@code GET /v1/operator/access-review/sod-conflicts}, never revoked by it.
+     */
+    ROLE_CONFLICT(
+            "identity.RoleConflict",
+            409,
+            "This role cannot be held together with a role the identity already holds."),
+
+    /**
      * A revocation or an administrator's suspension would leave no {@code ACTIVE} identity holding a role that can grant
      * roles (`P15-TSK-032`).
      *

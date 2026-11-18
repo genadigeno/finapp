@@ -73,6 +73,8 @@ class RoutePermissionRegisterTest {
                     entry("DELETE /v1/identities/{id}/roles/{role}", PermissionName.ROLE_ASSIGN),
                     // P15-TSK-039: the check of the holdings the factor rule found standing: the administrator's.
                     entry("GET /v1/operator/access-review/factorless-holdings", PermissionName.ROLE_ASSIGN),
+                    // P17-TSK-016: the holdings that conflict under the owner's segregation-of-duties pairs, named, never revoked.
+                    entry("GET /v1/operator/access-review/sod-conflicts", PermissionName.ROLE_ASSIGN),
                     // P17-TSK-014: the staff directory, identifier-first, under its own read permission (ADR-C132).
                     entry("GET /v1/operator/identities", PermissionName.IDENTITY_READ),
                     entry("GET /v1/operator/identities/{id}", PermissionName.IDENTITY_READ),
@@ -711,6 +713,8 @@ class RoutePermissionRegisterTest {
             // The list of holders of a role that needs a factor - the money roles, ADMINISTRATOR and the risk approver
             // (P15-TSK-032) - who have none: not on a password alone.
             "GET /v1/operator/access-review/factorless-holdings",
+            // P17-TSK-016: who holds a conflicting pair - the factorless review's twin, on the same footing.
+            "GET /v1/operator/access-review/sod-conflicts",
             // P17-TSK-014: who holds the privileged roles, one of them, and who a login names - the same map, not on a password.
             "GET /v1/operator/identities",
             "GET /v1/operator/identities/{id}",

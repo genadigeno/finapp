@@ -222,6 +222,15 @@ public class IdentityAdministrationController {
                                     + " a risk case's action - was"
                                     + " granted to an identity with no factor",
                             "this role needs its holder to enrol a second factor first.");
+            case CONFLICT ->
+                    // P17-TSK-016: the owner's segregation-of-duties table. The held role is named for the administrator, read
+                    // after the refusal; the refusal itself was decided under the identity's lock.
+                    throw new ApiException(
+                            com.finapp.identity.IdentityErrorCode.ROLE_CONFLICT,
+                            "A role was granted to an identity holding a role it conflicts with",
+                            "the identity holds " + administration.heldConflict(subject(id), body.role())
+                                    .map(Enum::name).orElse("a role this one conflicts with")
+                                    + ", which cannot be held together with " + body.role().name() + ".");
         }
     }
 

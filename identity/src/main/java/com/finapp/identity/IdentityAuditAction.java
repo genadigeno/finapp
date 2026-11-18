@@ -309,6 +309,15 @@ public enum IdentityAuditAction implements AuditableAction {
             "An administrator ended another identity's session, or all of them, without suspending the identity.",
             true),
 
+    /**
+     * An administrator read the live holdings that conflict under the segregation-of-duties table (`P17-TSK-016`): the check of
+     * holdings granted before the rule, which grants nothing and revokes nothing. Written in the read's own transaction.
+     */
+    SOD_CONFLICTS_READ(
+            "identity.SodConflictsRead",
+            "An administrator read the live holdings that conflict under the segregation-of-duties table.",
+            false),
+
     IDENTITY_SUSPENDED(
             "identity.IdentitySuspended",
             "An identity was suspended by an administrator and can no longer authenticate.",
