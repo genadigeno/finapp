@@ -1,10 +1,10 @@
 #!/bin/sh
-# TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108; finapp-admin-panel docs/FINAPP_BACKEND_WORK.md B2.1,
-# B3.5).
+# TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110; finapp-admin-panel
+# docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4).
 #
 #   infra/scripts/e2e-seed.sh <scenario>...
 #
-# Puts in place, on a TEST stack, what the console's M2 and M3 end-to-end tests act on, and prints what it created as KEY=value lines on
+# Puts in place, on a TEST stack, what the console's M2, M3 and M4 end-to-end tests act on, and prints what it created as KEY=value lines on
 # stdout - one line per identifier, nothing else there - for the console's harness to read. Everything else goes to stderr.
 #
 #   abandoned-event   an outbox event its relay gave up on: the console retries it, or two persons discard it
@@ -26,7 +26,21 @@
 #                     FINANCIAL_CONTROLLER - its pair in the owner's segregation-of-duties table, which the door now refuses
 #                     (409 identity.RoleConflict) - so planted, as a holding from before the rule. The SoD review names the pair;
 #                     the console revokes one half -> SOD_CONFLICT_IDENTITY_ID, SOD_CONFLICT_ROLES (the review's order)
+#   open-alert        an OPEN ACCOUNT_TAKEOVER alert on a fresh party: two of the console's analysts suppress it
+#                     -> OPEN_ALERT_ID, OPEN_ALERT_PARTY_ID
+#   investigated-case a case opened by hand on such an alert by the seed's analyst and taken, IN_INVESTIGATION: the console's
+#                     analyst takes it over and proposes a disposition, a second approves -> CASE_ID, CASE_ALERT_ID
+#   overridable-assessment  a sealed REVIEW of a 20,000,000.00 EUR transfer: one of the console's officers proposes its
+#                     override, a second approves -> OVERRIDABLE_ASSESSMENT_ID
+#   proposed-policy   a PROPOSED TRANSFER version - the seed's own content - proposed by the seed's officer: a different
+#                     officer, the console's, activates it -> POLICY_VERSION_ID, POLICY_PROPOSER_ID
 #   all               each of the above once
+#
+# THE RISK SCENARIOS CHANGE THE STACK'S TRANSFER POLICY. Every risk queue starts empty and no policy is active, under which the
+# engine ALLOWs every movement and nothing can be overridden. So the first of them proposes and activates - two of the seed's
+# own officers, through the doors - a TRANSFER version that ALLOWs every movement a test stack makes and REVIEWs only an amount
+# above 10,000,000.00 EUR (Seed.java's testPolicy); the alerts and the assessment are judged under it (the owner's decision of
+# 2026-11-18).
 #
 # Every run creates fresh rows, identities and references, so it reruns without collision and two runs never share a row. The two
 # settlement scenarios wait for the platform's sweeps (fifteen seconds each by default): up to a few minutes on a slow stack. The two
@@ -44,10 +58,12 @@
 #                      and operator hosts (PUBLIC_PORT 30443, OPERATOR_PORT 30444 unless set), trusting the edge's local CA read
 #                      from the cluster. Run by the console's battery on kind (P17-TST-001), which owns that cluster.
 #
-# HOW: a state no door reaches - an abandoned relay, a parked record, a holding from before a rule the grant door now enforces - is
+# HOW: a state no door reaches - an abandoned relay, a parked record, a holding from before a rule the grant door now enforces, an
+# alert, a judged movement's sealed assessment (it needs a funded, KYC-approved customer, which locally only the database makes) - is
 # planted by its owning module's rules, one SQL statement per plant (infra/scripts/e2e-seed/*.sql: the dead letters proven against
 # PostgreSQL and the dead-letter doors by platform's E2eSeedPlantsDatabaseTest, the holding against the reviews and the revocation
-# door by app's E2eSeedReviewsDatabaseTest; a plant's values are the database client's variables, quoted by the client itself,
+# door by app's E2eSeedReviewsDatabaseTest, the alert and the assessment against the suppression, case and override doors by app's
+# E2eSeedRiskDatabaseTest; a plant's values are the database client's variables, quoted by the client itself,
 # after the shell has checked their shape). Every other effect goes through the platform's own doors (infra/scripts/e2e-seed/Seed.java,
 # which has no route to the database): registration, a second factor, step-up, the role grant, the settlement upload and attestation. The
 # two things only the database can answer are asked here, as the console's own harness asks them: a test identity's id (no API
@@ -63,7 +79,7 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 SEED="$ROOT/infra/scripts/e2e-seed"
 TARGET=${E2E_SEED_TARGET:-compose}
-SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict or all"
+SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy or all"
 
 say() { printf '%s\n' "e2e-seed: $*" >&2; }
 refuse() { printf '%s\n' "e2e-seed: refused: $*" >&2; exit 2; }
@@ -80,7 +96,7 @@ HTTP=no
 for scenario in "$@"; do
     case "$scenario" in
         abandoned-event|parked-record) ;;
-        parsed-file|fee-break|factorless-holding|sod-conflict|all) HTTP=yes ;;
+        parsed-file|fee-break|factorless-holding|sod-conflict|open-alert|investigated-case|overridable-assessment|proposed-policy|all) HTTP=yes ;;
         *) refuse "unknown scenario '$scenario': $SCENARIOS" ;;
     esac
 done
@@ -292,6 +308,78 @@ seed_sod_conflict() {
     printf 'SOD_CONFLICT_ROLES=%s\n' ACCOUNTANT,FINANCIAL_CONTROLLER
 }
 
+# ---------------------------------------------------------------------------------------------------
+# The risk desks' rows (P17-TSK-110): under the seed's own ACTIVE TRANSFER version.
+
+# The run's risk desks: an analyst, two officers - the seed's policy proposed by one and activated by the other (four eyes).
+RISK_READY=no
+risk_desks() {
+    [ "$RISK_READY" = no ] || return 0
+    administrator
+    analyst=$(operator analyst)
+    ANALYST_ID=${analyst%% *}
+    officer=$(operator officer)
+    OFFICER_ID=${officer%% *}
+    approver=$(operator approver)
+    APPROVER_ID=${approver%% *}
+    seed_http grant admin RISK_ANALYST "$ANALYST_ID" >/dev/null
+    seed_http grant admin RISK_OFFICER "$OFFICER_ID" "$APPROVER_ID" >/dev/null
+    proposed=$(value VERSION_ID "$(seed_http propose-policy officer seed)")
+    uuid_like "$proposed" || { say "the seed's policy proposal printed '$proposed'"; exit 1; }
+    seed_http activate-policy approver "$proposed" >/dev/null
+    TEST_POLICY_ID=$proposed
+    say "the run's risk desks: analyst $ANALYST_ID, officers $OFFICER_ID and $APPROVER_ID; TRANSFER version $TEST_POLICY_ID ACTIVE, REVIEWing only above 10,000,000.00 EUR"
+    RISK_READY=yes
+}
+
+# risk_alert: plants an OPEN alert under the seed's version (risk-alert.sql). Prints its id and party.
+risk_alert() {
+    uuid_like "$TEST_POLICY_ID" || { say "risk_alert was handed version '$TEST_POLICY_ID'"; exit 1; }
+    row=$(plant risk-alert.sql -v version="$TEST_POLICY_ID" | tr -d '[:space:]')
+    alert=${row%%|*}
+    party=${row#*|}
+    uuid_like "$alert" && uuid_like "$party" || { say "the alert's plant printed '$row'"; exit 1; }
+    printf '%s %s\n' "$alert" "$party"
+}
+
+seed_open_alert() {
+    risk_desks
+    raised=$(risk_alert)
+    say "alert ${raised%% *} OPEN on party ${raised#* }: two analysts suppress it"
+    printf 'OPEN_ALERT_ID=%s\n' "${raised%% *}"
+    printf 'OPEN_ALERT_PARTY_ID=%s\n' "${raised#* }"
+}
+
+seed_investigated_case() {
+    risk_desks
+    raised=$(risk_alert)
+    on=${raised%% *}
+    opened=$(value CASE_ID "$(seed_http open-case analyst "$on")")
+    uuid_like "$opened" || { say "the case opening printed '$opened'"; exit 1; }
+    seed_http take-case analyst "$opened" >/dev/null
+    say "case $opened IN_INVESTIGATION on alert $on, taken by the seed's analyst: take it over, propose a disposition, a second approves"
+    printf 'CASE_ID=%s\n' "$opened"
+    printf 'CASE_ALERT_ID=%s\n' "$on"
+}
+
+seed_overridable_assessment() {
+    risk_desks
+    uuid_like "$TEST_POLICY_ID" || { say "the assessment's plant was handed version '$TEST_POLICY_ID'"; exit 1; }
+    sealed=$(plant sealed-assessment.sql -v version="$TEST_POLICY_ID" | tr -d '[:space:]')
+    uuid_like "$sealed" || { say "the assessment's plant printed '$sealed'"; exit 1; }
+    say "assessment $sealed: a sealed REVIEW of 20,000,000.00 EUR; one officer proposes its override, a second approves"
+    printf 'OVERRIDABLE_ASSESSMENT_ID=%s\n' "$sealed"
+}
+
+seed_proposed_policy() {
+    risk_desks
+    pending=$(value VERSION_ID "$(seed_http propose-policy officer proposal)")
+    uuid_like "$pending" || { say "the policy proposal printed '$pending'"; exit 1; }
+    say "TRANSFER version $pending PROPOSED by officer $OFFICER_ID: an officer other than its proposer activates it"
+    printf 'POLICY_VERSION_ID=%s\n' "$pending"
+    printf 'POLICY_PROPOSER_ID=%s\n' "$OFFICER_ID"
+}
+
 for scenario in "$@"; do
     case "$scenario" in
         abandoned-event) seed_abandoned_event ;;
@@ -300,6 +388,11 @@ for scenario in "$@"; do
         fee-break) seed_fee_break ;;
         factorless-holding) seed_factorless_holding ;;
         sod-conflict) seed_sod_conflict ;;
-        all) seed_abandoned_event; seed_parked_record; seed_parsed_file; seed_fee_break; seed_factorless_holding; seed_sod_conflict ;;
+        open-alert) seed_open_alert ;;
+        investigated-case) seed_investigated_case ;;
+        overridable-assessment) seed_overridable_assessment ;;
+        proposed-policy) seed_proposed_policy ;;
+        all) seed_abandoned_event; seed_parked_record; seed_parsed_file; seed_fee_break; seed_factorless_holding; seed_sod_conflict
+             seed_open_alert; seed_investigated_case; seed_overridable_assessment; seed_proposed_policy ;;
     esac
 done

@@ -23,8 +23,9 @@ import org.junit.jupiter.api.Test;
  * ({@code .dockerignore}, held by {@link ApplicationImageTest}), and the migrator image's is every module's
  * {@code src/main/resources/db/migration} ({@code migrator/build.gradle.kts}). So "ships nowhere" is "named by no {@code src/main}
  * file", which this holds by the seed's own markers. What the plants do is held on a real PostgreSQL - the dead letters by
- * {@code E2eSeedPlantsDatabaseTest}, the held role (`P17-TSK-108`) by {@code E2eSeedReviewsDatabaseTest}; the script's run against a
- * running stack is the console's end-to-end run.
+ * {@code E2eSeedPlantsDatabaseTest}, the held role (`P17-TSK-108`) by {@code E2eSeedReviewsDatabaseTest}, the alert and the sealed
+ * assessment (`P17-TSK-110`) by {@code E2eSeedRiskDatabaseTest}; the script's run against a running stack is the console's
+ * end-to-end run.
  */
 @Tag("architecture")
 @DisplayName("the end-to-end seed is test-only and stays so (P17-TSK-106)")
@@ -73,10 +74,11 @@ class E2eSeedStaysTestOnlyTest {
     void everyPlantIsOneMarkedStatement() {
         List<Path> plants = files(root.resolve(SEED)).filter(file -> file.toString().endsWith(".sql")).toList();
         assertThat(plants).extracting(file -> file.getFileName().toString())
-                .containsExactlyInAnyOrder("abandoned-event.sql", "parked-record.sql", "held-role.sql");
+                .containsExactlyInAnyOrder("abandoned-event.sql", "parked-record.sql", "held-role.sql", "risk-alert.sql",
+                        "sealed-assessment.sql");
         for (Path plant : plants) {
             String text = EvidenceCitations.read(plant);
-            assertThat(text).as("%s says what it is", plant.getFileName()).containsPattern("\\A-- TEST-ONLY \\(P17-TSK-10[68]\\)");
+            assertThat(text).as("%s says what it is", plant.getFileName()).containsPattern("\\A-- TEST-ONLY \\(P17-TSK-1(06|08|10)\\)");
             String statements = text.replaceAll("(?m)--.*$", "").replaceAll("'[^']*'", "''").strip();
             assertThat(statements.chars().filter(c -> c == ';').count()).as("%s is one statement", plant.getFileName()).isEqualTo(1);
             assertThat(statements).as("%s ends in that statement", plant.getFileName()).endsWith(";");
@@ -99,6 +101,18 @@ class E2eSeedStaysTestOnlyTest {
         assertThat(script).as("the roles a plant is handed are the script's own words, not a run's input")
                 .contains("held_role \"$holder\" LEDGER_OPERATOR").contains("held_role \"$holder\" FINANCIAL_CONTROLLER")
                 .doesNotContainPattern("held_role \"\\$holder\" \"\\$");
+
+        // P17-TSK-110: the risk plants take the seed's version the same way, checked first.
+        for (String risk : List.of("risk-alert.sql", "sealed-assessment.sql")) {
+            int versionChecked = script.lastIndexOf("uuid_like \"$TEST_POLICY_ID\"", script.indexOf("plant " + risk));
+            assertThat(versionChecked).as("the version %s is handed is checked first", risk).isPositive();
+            assertThat(script).contains("plant " + risk + " -v version=\"$TEST_POLICY_ID\"");
+        }
+        for (Path plant : files(root.resolve(SEED)).filter(file -> file.toString().endsWith(".sql")).toList()) {
+            String statement = EvidenceCitations.read(plant).replaceAll("(?m)--.*$", "").replaceAll("'[^']*'", "''");
+            assertThat(statement).as("%s takes its values only as quoted variables - no bare :name", plant.getFileName())
+                    .doesNotContainPattern("(?<!:):(?![:'])");
+        }
     }
 
     @Test

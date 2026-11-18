@@ -553,6 +553,9 @@ extra["ownContainerSuites"] =
         "com.finapp.app.reconciliation.SettlementExpectationDatabaseTest",
         "com.finapp.app.reconciliation.SettlementReconciliationStormDatabaseTest",
         "com.finapp.app.reconciliation.UnmatchedConfirmationSuspenseDatabaseTest",
+        // P17-TSK-110: the console's end-to-end seed's risk scenarios - it activates the seed's EUR TRANSFER version, after
+        // which every transfer in the database is judged by it, and plants an assessment of no command.
+        "com.finapp.app.risk.E2eSeedRiskDatabaseTest",
         // P13-TSK-014: it activates EUR CARD_PAYMENT, WALLET_PAYMENT and MONITORING risk versions carrying the abuse
         // rules - a shared container's merchants with refunds would be alerted, its sessions' sixth checkout challenged.
         "com.finapp.app.risk.MerchantAbuseDatabaseTest",

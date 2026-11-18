@@ -176,6 +176,21 @@ the factorless or SoD review naming what was planted, then the revocation door t
 The reviews serve the oldest 200 holdings, so a stack that keeps more than 200 unrevoked seeds
 serves a new one past the page.
 
+*(2026-11-18, `P17-TSK-110`.)* M4's four: `open-alert`, `investigated-case`,
+`overridable-assessment` and `proposed-policy`. No policy is active on a fresh stack, and under
+none the engine ALLOWs every movement and nothing can be overridden. So the first risk scenario has
+two of the seed's officers propose and activate a TRANSFER version through the doors. It ALLOWs
+everything a test stack does and REVIEWs only amounts above 10,000,000.00 EUR (the owner's decision).
+The alerts are a fourth plant, `risk-alert.sql`. The case is opened by hand and taken through the
+doors. The assessment is a fifth plant, `sealed-assessment.sql`: a judged movement needs a funded,
+KYC-approved customer, which locally only the database makes. It is the engine's own verdict for
+that version and amount, and its inputs' digest is recomputed by the table's CHECK.
+`E2eSeedRiskDatabaseTest` (app, `own-container`, since it activates a TRANSFER version) runs
+`Seed.java` and both plants unchanged. It then shows the console's four acts possible: an alert
+suppressed by two analysts, a case taken over and disposed by two, the assessment overridden by
+two officers (its seal holding, its replay IDENTICAL), and a proposed version activated by an
+officer other than its proposer.
+
 ---
 
 ## 5. Shared test support

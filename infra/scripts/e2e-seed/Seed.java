@@ -24,8 +24,9 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
 /**
- * TEST-ONLY. The HTTP half of the Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108): every effect the platform has a
- * door for, through that door - registration, a second factor, a step-up, a role grant. A single source file run by {@code infra/scripts/e2e-seed.sh}
+ * TEST-ONLY. The HTTP half of the Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110): every effect the
+ * platform has a door for, through that door - registration, a second factor, a step-up, a role grant, a risk policy proposed and
+ * activated, a case opened and taken. A single source file run by {@code infra/scripts/e2e-seed.sh}
  * ({@code java --source 21}), never compiled into anything and named by no module's main source set (E2eSeedStaysTestOnlyTest).
  *
  * <p>It has no route to the database and must not have one. What only the database can answer - a test identity's id, which no API
@@ -79,6 +80,10 @@ public final class Seed {
             case "await-file" -> seed.awaitFile(rest[0], rest[1], rest[2]);
             case "attest" -> seed.attest(rest[0], rest[1]);
             case "await-break" -> seed.awaitBreak(rest[0], rest[1]);
+            case "propose-policy" -> seed.proposePolicy(rest[0], rest[1]);
+            case "activate-policy" -> seed.activatePolicy(rest[0], rest[1]);
+            case "open-case" -> seed.openCase(rest[0], rest[1]);
+            case "take-case" -> seed.takeCase(rest[0], rest[1]);
             default -> throw new IllegalArgumentException("unknown command " + args[3]);
         }
     }
@@ -226,6 +231,73 @@ public final class Seed {
             Thread.sleep(3000);
         }
         throw new IllegalStateException("no open FEE_MISMATCH traced to file " + fileId + " after three minutes");
+    }
+
+    // ---------------------------------------------------------------------------------------------- risk, through its doors (P17-TSK-110)
+
+    /**
+     * The seed's TRANSFER policy: one AMOUNT_BAND rule of weight 600 above 10,000,000.00 EUR, the score bands ALLOW to 499 and
+     * REVIEW from 500, the fail-safe ALLOW, an override threshold of 1,000.00 EUR. Every movement a test stack makes is ALLOWed
+     * under it, as under no policy; only an amount above the threshold - the plant's - is a REVIEW, which a second officer must
+     * approve to override. The plant (sealed-assessment.sql) carries this version's verdict for that amount, so the rule, the
+     * bands and the threshold change only with it (app's E2eSeedRiskDatabaseTest holds the two together).
+     */
+    static String testPolicy(String reason) {
+        return "{\"operation\":\"TRANSFER\",\"engine\":\"RISK_ENGINE_V1\",\"currency\":\"EUR\","
+                + "\"rules\":[{\"kind\":\"AMOUNT_BAND\",\"parameters\":{\"threshold_minor\":1000000000},\"weight\":600}],"
+                + "\"scoreBands\":[{\"from\":0,\"to\":499,\"decision\":\"ALLOW\"},{\"from\":500,\"to\":1000,\"decision\":\"REVIEW\"}],"
+                + "\"failSafeBands\":[{\"fromMinor\":0,\"decision\":\"ALLOW\"}],"
+                + "\"challengeAssurance\":\"MULTI_FACTOR\",\"overrideThresholdMinor\":100000,\"reason\":\"" + reason + "\"}";
+    }
+
+    /** The seed's TRANSFER policy proposed by {@code who} (a RISK_OFFICER), {@code PROPOSED}. Prints its VERSION_ID. */
+    private void proposePolicy(String who, String purpose) throws Exception {
+        String reason = switch (purpose) {
+            case "seed" -> "e2e seed: the version the seeded alerts and assessment are judged under";
+            case "proposal" -> "e2e seed: a proposal the console's second officer activates";
+            default -> throw new IllegalArgumentException("propose-policy seed or proposal, not " + purpose);
+        };
+        String session = elevated(who);
+        Answer proposed = expect("policy proposal by " + who, post(operatorBase, "/v1/operator/risk/policies", testPolicy(reason),
+                session, key()), 201);
+        String id = field(proposed.body(), "id");
+        if (id == null || !"PROPOSED".equals(field(proposed.body(), "status"))) {
+            throw new IllegalStateException("the proposal did not answer a PROPOSED version: " + proposed.body());
+        }
+        System.out.println("VERSION_ID=" + id);
+    }
+
+    /** {@code versionId} activated by {@code who} - a second officer, never its proposer (four eyes). */
+    private void activatePolicy(String who, String versionId) throws Exception {
+        String session = elevated(who);
+        Answer activated = expect("policy activation by " + who, post(operatorBase, "/v1/operator/risk/policies/" + versionId
+                + "/activation", "{\"reason\":\"e2e seed: the seeded risk desks' version, reviewed by a second officer\"}", session,
+                key()), 200);
+        if (!"ACTIVE".equals(field(activated.body(), "status"))) {
+            throw new IllegalStateException("the activation did not answer ACTIVE: " + activated.body());
+        }
+    }
+
+    /** A case opened by hand on {@code alertId} by {@code who} (a RISK_ANALYST). Prints its CASE_ID. */
+    private void openCase(String who, String alertId) throws Exception {
+        String session = elevated(who);
+        Answer opened = expect("case opening by " + who, post(operatorBase, "/v1/operator/risk/cases", "{\"alertId\":\"" + alertId
+                + "\",\"reason\":\"e2e seed: a case for the console's four-eyes disposition\"}", session, key()), 200, 201);
+        String caseId = field(opened.body(), "caseId");
+        if (caseId == null) {
+            throw new IllegalStateException("the opening answered no case: " + opened.body());
+        }
+        System.out.println("CASE_ID=" + caseId);
+    }
+
+    /** {@code caseId} taken by {@code who}: {@code IN_INVESTIGATION}, which the console's analyst takes over. */
+    private void takeCase(String who, String caseId) throws Exception {
+        String session = elevated(who);
+        Answer taken = expect("the take of " + caseId + " by " + who, post(operatorBase, "/v1/operator/risk/cases/" + caseId
+                + "/actions", "{\"act\":\"TAKE\",\"revision\":0}", session, key()), 200);
+        if (!"IN_INVESTIGATION".equals(field(taken.body(), "status"))) {
+            throw new IllegalStateException("the take did not answer IN_INVESTIGATION: " + taken.body());
+        }
     }
 
     private static String letters(int count) {
