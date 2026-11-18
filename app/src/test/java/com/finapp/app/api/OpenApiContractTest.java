@@ -1050,6 +1050,9 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/identities/{id}",
                         ApiVersion.CURRENT_PREFIX + "/operator/identities/lookup",
                         ApiVersion.CURRENT_PREFIX + "/operator/roles",
+                        // P17-TSK-015: another identity's sessions (SESSION_ADMINISTER).
+                        ApiVersion.CURRENT_PREFIX + "/operator/identities/{id}/sessions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/identities/{id}/sessions/{session}",
                         // X-TSK-019: an operator's own identity, roles, permissions and session (any live role).
                         ApiVersion.CURRENT_PREFIX + "/operator/me",
                         // P1-TSK-030. Declared by the plan for the whole phase and owned by no

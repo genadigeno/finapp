@@ -76,6 +76,14 @@ public enum PermissionName {
     IDENTITY_READ,
 
     /**
+     * See another identity's live sessions and end one of them, or all, without suspending the person (`P17-TSK-015`;
+     * finapp-admin-panel ADR-C132 decision 2): during an incident - a lost laptop - one session ends and its holder keeps the rest
+     * of their access. Never the administrator's own sessions, which their own doors end; never a token or its hash served.
+     * Held by {@code ADMINISTRATOR}; each act on a {@code MULTI_FACTOR} session, with a reason, recorded.
+     */
+    SESSION_ADMINISTER,
+
+    /**
      * Review KYC/KYB cases: read a case with its evidence, resolve screening hits, record
      * decisions (`P2-TSK-004`).
      *

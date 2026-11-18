@@ -78,6 +78,10 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/identities/{id}", PermissionName.IDENTITY_READ),
                     entry("POST /v1/operator/identities/lookup", PermissionName.IDENTITY_READ),
                     entry("GET /v1/operator/roles", PermissionName.IDENTITY_READ),
+                    // P17-TSK-015: another identity's sessions, listed and ended without suspending the person.
+                    entry("GET /v1/operator/identities/{id}/sessions", PermissionName.SESSION_ADMINISTER),
+                    entry("DELETE /v1/operator/identities/{id}/sessions", PermissionName.SESSION_ADMINISTER),
+                    entry("DELETE /v1/operator/identities/{id}/sessions/{session}", PermissionName.SESSION_ADMINISTER),
                     // KYC review (Phase 2)
                     entry("GET /v1/kyc/cases/{id}", PermissionName.KYC_REVIEW),
                     entry("POST /v1/kyc/cases/{id}/decision", PermissionName.KYC_REVIEW),
@@ -711,6 +715,10 @@ class RoutePermissionRegisterTest {
             "GET /v1/operator/identities",
             "GET /v1/operator/identities/{id}",
             "POST /v1/operator/identities/lookup",
+            // P17-TSK-015: whose sessions are live, and ending them - an incident's acts, not a stolen password's.
+            "GET /v1/operator/identities/{id}/sessions",
+            "DELETE /v1/operator/identities/{id}/sessions",
+            "DELETE /v1/operator/identities/{id}/sessions/{session}",
             // P15-TSK-032, the design's Q1 as decided under the owner's standing word: a role's revocation, which ends a
             // last role's sessions and can take administration from others, is not a stolen password's act.
             "DELETE /v1/identities/{id}/roles/{role}",

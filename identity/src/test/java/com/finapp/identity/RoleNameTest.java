@@ -36,7 +36,7 @@ import org.junit.jupiter.api.Test;
 class RoleNameTest {
 
     @Test
-    @DisplayName("ADMINISTRATOR grants exactly the two Phase 1 privileged permissions and the staff directory's read (P17-TSK-014)")
+    @DisplayName("ADMINISTRATOR grants exactly the two Phase 1 privileged permissions the staff directory's read (P17-TSK-014) and another's sessions (P17-TSK-015)")
     void administratorGrantsExactlyTwo() {
         // containsExactlyInAnyOrder, never contains: a widening is the defect, and `contains` is
         // satisfied by a role that grants everything. Naming both is what makes a third permission
@@ -45,7 +45,8 @@ class RoleNameTest {
         assertThat(RoleName.ADMINISTRATOR.permissions())
                 .as("granting a permission is a reviewed code change, so widening must fail a test")
                 .containsExactlyInAnyOrder(
-                        PermissionName.IDENTITY_SUSPEND, PermissionName.ROLE_ASSIGN, PermissionName.IDENTITY_READ);
+                        PermissionName.IDENTITY_SUSPEND, PermissionName.ROLE_ASSIGN, PermissionName.IDENTITY_READ,
+                        PermissionName.SESSION_ADMINISTER);
     }
 
     @Test

@@ -289,6 +289,26 @@ public enum IdentityAuditAction implements AuditableAction {
             "A holder of IDENTITY_READ looked an identity up by its exact login identifier.",
             false),
 
+    /**
+     * An administrator listed another identity's live sessions (`P17-TSK-015`): the identity the target, the count served the
+     * summary. No token and no hash is served, so none can be recorded.
+     */
+    SESSIONS_READ(
+            "identity.SessionsRead",
+            "A holder of SESSION_ADMINISTER listed another identity's live sessions.",
+            false),
+
+    /**
+     * An administrator ended another identity's session - one, or all of them - without suspending the person (`P17-TSK-015`).
+     * A reason is required: it is an act against somebody else's access, and "why was this person signed out?" is the question an
+     * incident's review asks. Recorded only when a session actually ended, or for "all" with the count however small, so the
+     * trail never holds a guessed session identifier.
+     */
+    SESSION_REVOKED_BY_ADMINISTRATOR(
+            "identity.SessionRevokedByAdministrator",
+            "An administrator ended another identity's session, or all of them, without suspending the identity.",
+            true),
+
     IDENTITY_SUSPENDED(
             "identity.IdentitySuspended",
             "An identity was suspended by an administrator and can no longer authenticate.",

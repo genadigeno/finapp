@@ -42,7 +42,9 @@ public enum RoleName {
                     PermissionName.IDENTITY_SUSPEND,
                     PermissionName.ROLE_ASSIGN,
                     // P17-TSK-014: whom the administrator acts on - the staff directory, read identifier-first.
-                    PermissionName.IDENTITY_READ)),
+                    PermissionName.IDENTITY_READ,
+                    // P17-TSK-015: another identity's sessions, one ended without locking the person out.
+                    PermissionName.SESSION_ADMINISTER)),
 
     /**
      * Reviews KYC/KYB cases and nothing else (`P2-TSK-004`).

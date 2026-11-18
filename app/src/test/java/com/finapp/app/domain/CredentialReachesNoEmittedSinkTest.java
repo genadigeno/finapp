@@ -211,6 +211,8 @@ class CredentialReachesNoEmittedSinkTest {
                         // P17-TSK-014: the staff directory's lookup. A login identifier - a person's handle, never a
                         // credential - in the body so that it is in no URL (ADR-C132 decision 4); nothing else.
                         "IdentityLookupRequest",
+                        // P17-TSK-015: ending another identity's session. A reason, and nothing else.
+                        "SessionRevocationRequest",
                         // P14-TSK-021: the write-off's doors. A reason and the figures an approver names; no credential.
                         "LoanWriteOffProposalRequest",
                         "LoanWriteOffApprovalRequest",
