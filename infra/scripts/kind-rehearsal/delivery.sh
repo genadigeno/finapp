@@ -9,8 +9,9 @@
 #   - the `default` project reaches nothing: an Application placed in it is refused and creates nothing;
 #   - infra/scripts/promote.sh refuses a tag and an unsigned digest by name and writes nothing; it writes the pair, and the merge (a push
 #     to the run's repository) is the deploy;
-#   - the root's four Applications sync in their waves, each created only once the one before had finished its sync, through the
-#     committed Application health; each admission policy is healthy only once the policy controller has observed its generation and
+#   - the root's Applications sync in their waves - the platform's four and, with a console image named, the console's fifth and last
+#     (P17-TSK-105) - each created only once the one before had finished its sync, through the committed Application health, and every
+#     one of them synced and healthy; each admission policy is healthy only once the policy controller has observed its generation and
 #     says Ready (the pinned controller's v1beta1 status, and the installed check run by Argo CD's own code on each live policy and on it
 #     one generation unobserved);
 #   - inside the release, an ExternalSecret whose store lacks one key holds its wave: the sync ends Failed there, no migrator Job and no
@@ -26,6 +27,21 @@
 #   - each commit's time to sync, and the ExternalSecret's freshness after a change of its annotations alone, are recorded;
 #   - the census after every sync: trial balance zero per currency, one effect per key at the platform and at the provider, the outbox
 #     drained, no event lost, GL = ledger.
+#
+# THE CONSOLE (P17-TSK-105). Staging's root holds a fifth Application, finapp-console, its last wave (deploy/console/overlays/staging,
+# finapp-admin-panel's image). WITH A CONSOLE IMAGE NAMED - the harness's variables and up-front refusals (CONSOLE_IMAGE, CONSOLE_ARCHIVE,
+# or CONSOLE_REPOSITORY at CONSOLE_COMMIT), and the image kind-rehearsal.sh obtained at build-images as finapp-console:rehearsal - it is
+# pushed to the run's registry as finapp-staging-console, signed and attested under the run's key as the platform's images are (its SBOM
+# CONSOLE_SBOM, or the console CI's sbom.cdx.json beside its archive, or else the empty document the platform's carry here; its provenance
+# names finapp-admin-panel and the revision the image's own label states, never this tree's commit), pulled by the node by its digest,
+# and its Application patched like the others: the run's repository, and a layer of the run's over the committed overlay naming the
+# run's registry and that digest. The clone's overlay and its record (release.yaml) keep their zeros, equal, as committed: the console's
+# own promotion (promote.sh console) is not this rehearsal's case. A green run then also says the console's Application was created
+# only once the edge's had finished its sync, and is synced and healthy with the rest, its pods at the run's signed digest, admitted.
+# WITH NONE NAMED, the console's Application is removed from the run's rendered root (rehearsal/root in the run's own clone, never a
+# committed file), the waves are the platform's four as before, and the run says so at the step and beside its result (skipped.txt,
+# "SKIPPED: the console's Application, no console image named"): never a pass. CONSOLE_SBOM, which the harness does not read, is
+# refused here when no console image is named or no file is there, before anything of the delivery is made.
 #
 # WHAT EACH ENVIRONMENT ADDS (section 11.36), played here by the rehearsal root, generated into the run's own clone and never committed to
 # the repository: the repository the controller reads (a git daemon on the kind network, from the pinned Argo CD image, which carries
@@ -50,6 +66,17 @@
 # its keys), so REHEARSAL_STEPS selects nothing here and is refused; REHEARSAL_STOP_AFTER ends a run early.
 
 [ -z "${REHEARSAL_STEPS:-}" ] || cannot "REHEARSAL_STEPS selects nothing in the delivery scope: each of its steps builds on the one before; REHEARSAL_STOP_AFTER ends a run early"
+
+# The console's image (P17-TSK-105): CONSOLE_FROM is the harness's, which refused two sources or half of one before anything was built,
+# and obtained the one named as finapp-console:rehearsal at build-images. CONSOLE_SBOM is read here alone, and refused before anything
+# of the delivery is made when it names nothing or goes with no console image, as admission-check.sh refuses it.
+CONSOLE_SBOM=${CONSOLE_SBOM:-}
+if [ -z "$CONSOLE_FROM" ]; then
+    [ -z "$CONSOLE_SBOM" ] || cannot "CONSOLE_SBOM goes with a console image, and none is named (CONSOLE_IMAGE, CONSOLE_ARCHIVE, CONSOLE_REPOSITORY)"
+else
+    [ -z "$CONSOLE_SBOM" ] || [ -s "$CONSOLE_SBOM" ] || cannot "no SBOM at $CONSOLE_SBOM (CONSOLE_SBOM)"
+    dock image inspect finapp-console:rehearsal >/dev/null 2>&1 || cannot "no image finapp-console:rehearsal: the build step did not obtain the console named ($CONSOLE_FROM)"
+fi
 
 DELIVERY_RUN="$$-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
 REG_NAME="finapp-delivery-registry-$DELIVERY_RUN"
@@ -284,6 +311,15 @@ FAILING_DIGEST=$(push_image finapp-migrator:delivery-failing finapp-staging-migr
 for pushed in "$APP_DIGEST" "$MIGRATOR_DIGEST" "$OLDER_DIGEST" "$UNSIGNED_DIGEST" "$FAILING_DIGEST"; do
     printf '%s' "$pushed" | grep -Eq '^sha256:[0-9a-f]{64}$' || cannot "an image was not pushed: see delivery-images.txt and push.log"
 done
+# The console (P17-TSK-105), when one is named: the image the harness obtained at build-images, pushed as staging's console repository.
+CONSOLE_DIGEST=""
+CONSOLE_REFERENCE=""
+if [ -n "$CONSOLE_FROM" ]; then
+    CONSOLE_DIGEST=$(push_image finapp-console:rehearsal finapp-staging-console n)
+    printf 'console.n=%s\n' "$CONSOLE_DIGEST" >> "$ART/delivery-images.txt"
+    printf '%s' "$CONSOLE_DIGEST" | grep -Eq '^sha256:[0-9a-f]{64}$' || cannot "the console's image was not pushed: see delivery-images.txt and push.log"
+    CONSOLE_REFERENCE="finapp-staging-console@$CONSOLE_DIGEST"
+fi
 [ "$APP_DIGEST" != "$OLDER_DIGEST" ] && [ "$APP_DIGEST" != "$UNSIGNED_DIGEST" ] && [ "$MIGRATOR_DIGEST" != "$FAILING_DIGEST" ] \
     || cannot "a stand-in has its original's digest, so its case would test nothing"
 
@@ -305,7 +341,7 @@ provenance() {
 # The SBOM predicate: a CycloneDX document naming nothing. The policies and promote.sh read the attestation's type and subject; what an
 # image holds is the image job's SBOM, not this rehearsal's.
 printf '{"bomFormat": "CycloneDX", "specVersion": "1.5", "version": 1, "components": []}\n' > "$ATT/empty.cdx.json"
-# sign_and_attest <repository>@<digest> <provenance name>
+# sign_and_attest <repository>@<digest> <provenance name> [<SBOM file in $ATT>: the empty document unless named]
 sign_and_attest() {
     # shellcheck disable=SC2086
     cosign sign --key /keys/delivery.key $SIGNING "$1" >> "$ART/cosign.log" 2>&1 || cannot "could not sign $1: see cosign.log"
@@ -313,7 +349,7 @@ sign_and_attest() {
     cosign attest --key /keys/delivery.key $SIGNING --type slsaprovenance1 --predicate "/att/$2.provenance.json" "$1" >> "$ART/cosign.log" 2>&1 \
         || cannot "could not attest the provenance of $1: see cosign.log"
     # shellcheck disable=SC2086
-    cosign attest --key /keys/delivery.key $SIGNING --type cyclonedx --predicate /att/empty.cdx.json "$1" >> "$ART/cosign.log" 2>&1 \
+    cosign attest --key /keys/delivery.key $SIGNING --type cyclonedx --predicate "/att/${3:-empty.cdx.json}" "$1" >> "$ART/cosign.log" 2>&1 \
         || cannot "could not attest the SBOM of $1: see cosign.log"
 }
 provenance n "$REVISION"
@@ -322,15 +358,43 @@ sign_and_attest "$REG/finapp-staging-app@$APP_DIGEST" n
 sign_and_attest "$REG/finapp-staging-migrator@$MIGRATOR_DIGEST" n
 sign_and_attest "$REG/finapp-staging-app@$OLDER_DIGEST" older
 sign_and_attest "$REG/finapp-staging-migrator@$FAILING_DIGEST" n
+CONSOLE_SAID=""
+if [ -n "$CONSOLE_FROM" ]; then
+    # The console's provenance (P17-TSK-105): another repository's build, so never this tree's commit - finapp-admin-panel, at the
+    # revision the image's own label states (kind-rehearsal.sh's build writes it, as the console CI's job does), or unknown.
+    CONSOLE_REVISION=$(dock image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' finapp-console:rehearsal 2>/dev/null || true)
+    printf '%s' "$CONSOLE_REVISION" | grep -Eq '^[0-9a-f]{40}$' || CONSOLE_REVISION=unknown
+    printf '{"buildDefinition": {"buildType": "urn:finapp:build:image:v1", "externalParameters": {"source": "finapp-admin-panel", "revision": "%s", "image": "finapp-console", "obtainedAs": "%s"}, "resolvedDependencies": []}, "runDetails": {"builder": {"id": "urn:finapp:builder:kind-delivery-rehearsal"}, "metadata": {"invocationId": "delivery-%s"}}}\n' \
+        "$CONSOLE_REVISION" "$CONSOLE_FROM" "$DELIVERY_RUN" > "$ATT/console.provenance.json"
+    # Its SBOM: the console's own when the run was given one - CONSOLE_SBOM, or the console CI's sbom.cdx.json beside its archive - and
+    # otherwise the empty document the platform's images carry here (a build's tree is gone by now; the policies read the attestation's
+    # type and subject, and the console's own SBOM attested is admission-check.sh's case). Which one, the record says.
+    if [ -n "$CONSOLE_SBOM" ]; then
+        co_sbom=$CONSOLE_SBOM
+        co_said="its own, given (CONSOLE_SBOM)"
+    elif [ "$CONSOLE_FROM" = archive ] && [ -s "$(dirname "$CONSOLE_ARCHIVE")/sbom.cdx.json" ]; then
+        co_sbom="$(dirname "$CONSOLE_ARCHIVE")/sbom.cdx.json"
+        co_said="its own, the console CI's beside its archive"
+    else
+        co_sbom="$ATT/empty.cdx.json"
+        co_said="the empty document the platform's images carry here, none being given"
+    fi
+    cp "$co_sbom" "$ATT/console.cdx.json" || cannot "could not read the console's SBOM $co_sbom"
+    grep -q '"bomFormat": *"CycloneDX"' "$ATT/console.cdx.json" || cannot "the console's SBOM $co_sbom is not CycloneDX"
+    sign_and_attest "$REG/finapp-staging-console@$CONSOLE_DIGEST" console console.cdx.json
+    record "the console's image ($CONSOLE_FROM): $REG/$CONSOLE_REFERENCE, signed and attested with the run's key; its revision $CONSOLE_REVISION, its SBOM $co_said"
+    CONSOLE_SAID="; the console's image ($CONSOLE_FROM) pushed by digest as finapp-staging-console and signed and attested the same way"
+fi
 # The node takes each by its digest from the run's registry, over plain HTTP (kind's containerd reads no per-host configuration, and a real
 # registry is HTTPS): pulled ahead by containerd's own client under the exact reference the pods name, so the kubelet finds it present.
-# Admission still reads every signature and attestation from the registry itself.
+# Admission still reads every signature and attestation from the registry itself. The console's, unquoted, is nothing when none is named.
+# shellcheck disable=SC2086
 for reference in "finapp-staging-app@$APP_DIGEST" "finapp-staging-app@$OLDER_DIGEST" "finapp-staging-app@$UNSIGNED_DIGEST" \
-    "finapp-staging-migrator@$MIGRATOR_DIGEST" "finapp-staging-migrator@$FAILING_DIGEST"; do
+    "finapp-staging-migrator@$MIGRATOR_DIGEST" "finapp-staging-migrator@$FAILING_DIGEST" $CONSOLE_REFERENCE; do
     dock exec "$NODE" ctr -n k8s.io images pull --plain-http --platform linux/amd64 "$REG/$reference" >> "$ART/images.log" 2>&1 \
         || cannot "the node could not pull $REG/$reference: see images.log"
 done
-pass "the images: N's pair, the older stand-in and the failing migrator pushed by digest, each signed and attested with the run's key; one stand-in left unsigned"
+pass "the images: N's pair, the older stand-in and the failing migrator pushed by digest, each signed and attested with the run's key; one stand-in left unsigned$CONSOLE_SAID"
 
 # ---------------------------------------------------------------------------------------------------
 # The controllers, as the pipeline role installs them.
@@ -646,10 +710,59 @@ PROMETHEUS_ADDRESS="$(kube -n finapp-observability get service delivery-promethe
 # The rehearsal root, in the clone: a layer over each Application's path, and over the delivery itself.
 R="$CLONE/rehearsal"
 mkdir -p "$R/root" "$R/overlays/staging" "$R/edge/staging" "$R/admission"
+
+# The console's Application (P17-TSK-105), staging's fifth and last wave, both ways and never silently. Named: patched like the others -
+# the run's repository, and a layer of the run's over the committed overlay naming the run's registry and the digest the run pushed and
+# signed (the clone's overlay and its release.yaml keep their zeros, equal, as committed). Not named: removed from this run's rendered
+# root alone, the waves the platform's four, and said so at the step and beside the result.
+if [ -n "$CONSOLE_FROM" ]; then
+    CONSOLE_ROOT_PATCH=app-console.yaml
+    CONSOLE_WAVE=finapp-console
+    mkdir -p "$R/console/staging"
+    cat > "$R/root/app-console.yaml" <<YAML
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finapp-console
+  namespace: argocd
+spec:
+  source:
+    repoURL: $REPO_URL
+    path: rehearsal/console/staging
+YAML
+    cat > "$R/console/staging/kustomization.yaml" <<YAML
+# The kind rehearsal's console layer (P17-TSK-105): the run's registry and the digest this run pushed, signed and attested, over staging's
+# committed overlay, which keeps its own digest and record untouched. Generated into the run's own repository, never committed.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../deploy/console/overlays/staging
+images:
+  - name: finapp-console
+    newName: $REG/finapp-staging-console
+    digest: $CONSOLE_DIGEST
+YAML
+else
+    CONSOLE_ROOT_PATCH=console-removed.yaml
+    CONSOLE_WAVE=""
+    cat > "$R/root/console-removed.yaml" <<'YAML'
+# No console image was named (P17-TSK-105): the console's Application is removed from this run's rendered root, and from nothing else.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: finapp-console
+  namespace: argocd
+$patch: delete
+YAML
+    log "CONSOLE APPLICATION SKIPPED: no console image was named, so finapp-console is removed from the run's rendered root and its waves are the platform's four"
+    printf '%s\n' "the console's Application, no console image named (P17-TSK-105; CONSOLE_IMAGE, CONSOLE_ARCHIVE, or CONSOLE_REPOSITORY at CONSOLE_COMMIT): finapp-console removed from the run's rendered root, the waves the platform's four, nothing of deploy/console synced in this run" \
+        >> "$ART/skipped.txt"
+fi
 cat > "$R/root/kustomization.yaml" <<YAML
 # The kind rehearsal's root (P15-TSK-032): what staging's environment adds, generated by infra/scripts/kind-rehearsal/delivery.sh into the
 # run's own repository and never committed to the platform's. Every Application reads the run's repository; three read a layer over their
-# committed path that adds what the environment would.
+# committed path that adds what the environment would, and the console's (P17-TSK-105) a layer naming the run's image, or it is removed
+# here when no console image is named.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
@@ -661,6 +774,7 @@ patches:
   - path: app-namespaces.yaml
   - path: app-finapp.yaml
   - path: app-edge.yaml
+  - path: $CONSOLE_ROOT_PATCH
 YAML
 cat > "$R/root/projects.yaml" <<YAML
 apiVersion: argoproj.io/v1alpha1
@@ -820,12 +934,30 @@ sed -n '/^patches:$/,$p' "$ROOT/deploy/edge/overlays/kind/kustomization.yaml" > 
     cat "$WORK/edge-patches.yaml"
 } > "$R/edge/staging/kustomization.yaml"
 grep -q 'nodePort' "$R/edge/staging/kustomization.yaml" || cannot "the kind edge's Services were not carried into the rehearsal's layer"
-# The rendered layers, read before anything is committed: what Argo CD will render is checked here first.
-for layer in root overlays/staging edge/staging admission; do
-    dock run --rm -v "$(dpath "$CLONE"):/clone:ro" "$KUSTOMIZE_IMAGE" build "/clone/rehearsal/$layer" > "$WORK/layer.yaml" 2> "$ART/layer-$(printf '%s' "$layer" | tr '/' '-').err" \
+# The rendered layers, read before anything is committed: what Argo CD will render is checked here first. The console's, when one is named.
+for layer in root overlays/staging edge/staging admission ${CONSOLE_FROM:+console/staging}; do
+    layer_name=$(printf '%s' "$layer" | tr '/' '-')
+    dock run --rm -v "$(dpath "$CLONE"):/clone:ro" "$KUSTOMIZE_IMAGE" build "/clone/rehearsal/$layer" > "$WORK/layer-$layer_name.yaml" 2> "$ART/layer-$layer_name.err" \
         || cannot "the rehearsal's $layer layer does not render: see layer-*.err"
 done
-pass "the environment: the stores written outside every manifest (the application's lacking $HELD_KEY), the edge's TLS, the smoke's Prometheus, and the rehearsal root rendering"
+# The console's Application as the rendered root carries it (P17-TSK-105): named, the fifth, at the run's layer, which renders the image the
+# run pushed and signed; not named, gone, and the platform's four alone.
+rendered_applications=$(grep -c '^kind: Application$' "$WORK/layer-root.yaml" || true)
+if [ -n "$CONSOLE_FROM" ]; then
+    [ "$rendered_applications" = 5 ] && grep -q 'path: rehearsal/console/staging$' "$WORK/layer-root.yaml" \
+        || cannot "the rendered root does not carry the console's Application at the run's layer ($rendered_applications Applications)"
+    grep -q "image: $REG/finapp-staging-console@$CONSOLE_DIGEST\$" "$WORK/layer-console-staging.yaml" \
+        || cannot "the console's layer does not render the image the run pushed and signed"
+    CONSOLE_ROOT_SAID="the console's Application at the run's layer and image"
+else
+    [ "$rendered_applications" = 4 ] && ! grep -Eq '^ *name: finapp-console$' "$WORK/layer-root.yaml" \
+        || cannot "the console's Application was not removed from the run's rendered root ($rendered_applications Applications)"
+    CONSOLE_ROOT_SAID="the console's Application removed from it, no console image named (SKIPPED)"
+fi
+# The rehearsal root is the run's own, under rehearsal/ of its clone: nothing under deploy/ was written to make it, the console's overlay
+# and its record included, and the repository's own files are only ever read.
+[ -z "$(git_clone status --porcelain -- deploy)" ] || cannot "the rehearsal root wrote under deploy/ of the clone: $(git_clone status --porcelain -- deploy | tr '\n' ' ')"
+pass "the environment: the stores written outside every manifest (the application's lacking $HELD_KEY), the edge's TLS, the smoke's Prometheus, and the rehearsal root rendering, $CONSOLE_ROOT_SAID"
 
 # ---------------------------------------------------------------------------------------------------
 # The promotion: refusals first, then the pair, committed and pushed.
@@ -972,7 +1104,10 @@ done_root=""
 while [ "$(date +%s)" -lt "$deadline" ]; do
     root_state=$(argo application finapp-staging '{.status.sync.status}|{.status.health.status}')
     edge_state=$(argo application finapp-edge '{.status.sync.status}|{.status.health.status}')
-    if [ "$root_state" = "Synced|Healthy" ] && [ "$edge_state" = "Synced|Healthy" ]; then done_root=1; break; fi
+    # The console's, the last wave, when one is named (P17-TSK-105); with none, the run removed its Application and nothing waits on it.
+    console_state="Synced|Healthy"
+    [ -z "$CONSOLE_FROM" ] || console_state=$(argo application finapp-console '{.status.sync.status}|{.status.health.status}')
+    if [ "$root_state" = "Synced|Healthy" ] && [ "$edge_state" = "Synced|Healthy" ] && [ "$console_state" = "Synced|Healthy" ]; then done_root=1; break; fi
     case $(argo application finapp-staging '{.status.operationState.phase}') in
         Failed | Error)
             kube -n argocd get applications -o yaml > "$ART/applications-first-sync.yaml" 2>&1 || true
@@ -984,14 +1119,21 @@ done
 kube -n argocd get applications -o yaml > "$ART/applications-first-sync.yaml" 2>&1 || true
 [ -n "$done_root" ] || fail "the root did not reach every Application synced and healthy: see applications-first-sync.yaml"
 record "the root synced and healthy $(( $(date +%s) - ROOT_APPLIED )) s after it was applied"
+if [ -z "$CONSOLE_FROM" ]; then
+    [ -z "$(argo application finapp-console '{.metadata.name}')" ] || fail "the console's Application exists, although the run removed it from its rendered root"
+    record "the console's Application: SKIPPED, no console image named; not in the run's rendered root, and none exists"
+fi
 
-# The waves: each Application created only once the one before had finished its sync.
+# The waves: each Application created only once the one before had finished its sync. The console's last, after the edge's (P17-TSK-105),
+# when one is named: CONSOLE_WAVE is empty otherwise, and the waves are the platform's four.
 : > "$ART/waves.tsv"
 previous=""
-for app in finapp-admission finapp-namespaces finapp finapp-edge; do
+# shellcheck disable=SC2086
+for app in finapp-admission finapp-namespaces finapp finapp-edge $CONSOLE_WAVE; do
     line=$(argo application "$app" '{.metadata.creationTimestamp}|{.status.operationState.startedAt}|{.status.operationState.finishedAt}')
     printf '%s\t%s\n' "$app" "$line" >> "$ART/waves.tsv"
     created=${line%%|*}
+    [ -n "$created" ] || fail "waves: the Application $app does not exist"
     if [ -n "$previous" ]; then
         previous_finished=${previous##*|}
         [ -n "$previous_finished" ] || fail "waves: the Application before $app has no finished sync"
@@ -1001,7 +1143,17 @@ for app in finapp-admission finapp-namespaces finapp finapp-edge; do
     fi
     previous=$line
 done
-pass "waves: admission, namespaces, the release and the edge, each Application created only after the one before finished its sync ($(tr '\t\n' ' ;' < "$ART/waves.tsv" | cut -c1-500))"
+if [ -n "$CONSOLE_FROM" ]; then
+    pass "waves: admission, namespaces, the release, the edge and the console, each Application created only after the one before finished its sync ($(tr '\t\n' ' ;' < "$ART/waves.tsv" | cut -c1-600))"
+    # The console's release (P17-TSK-105): its pods at the digest the run pushed, signed and attested, admitted in finapp-console.
+    console_images=$(kube -n finapp-console get pods -l app.kubernetes.io/name=finapp-console -o jsonpath='{range .items[*]}{.spec.containers[0].image}{"\n"}{end}' | sort -u)
+    console_ready=$(kube -n finapp-console get deployment finapp-console -o jsonpath='{.spec.replicas}|{.status.readyReplicas}' 2>/dev/null || true)
+    [ "$console_images" = "$REG/finapp-staging-console@$CONSOLE_DIGEST" ] && [ -n "${console_ready%%|*}" ] && [ "${console_ready%%|*}" = "${console_ready#*|}" ] \
+        || fail "the console's Application is healthy, and its pods run '$(printf '%s' "$console_images" | tr '\n' ' ')' (replicas|ready '$console_ready'), not $REG/finapp-staging-console@$CONSOLE_DIGEST alone, every one ready"
+    pass "the console's Application: synced and healthy in the root's last wave, ${console_ready#*|} replicas ready at the digest the run pushed, signed and attested, admitted in finapp-console"
+else
+    pass "waves: admission, namespaces, the release and the edge, each Application created only after the one before finished its sync ($(tr '\t\n' ' ;' < "$ART/waves.tsv" | cut -c1-500)); the console's Application SKIPPED, no console image named"
+fi
 
 # The admission policies: healthy in Argo CD only because the controller observed their generation and says Ready.
 kube get clusterimagepolicy -o jsonpath='{range .items[*]}{.metadata.name}|{.metadata.generation}|{.status.observedGeneration}|{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' > "$ART/policies-status.txt"

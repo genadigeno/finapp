@@ -146,11 +146,21 @@ module "security" {
   bootstrap_role_enabled = var.bootstrap_role_enabled
 }
 
+# The Operator Console's overlay (P17-TSK-105): an image this environment runs beside the platform's two, released on its own
+# (deploy/delivery/production's finapp-console Application, infra/scripts/promote.sh console), so its repository is read from its
+# own overlay as the platform's are read from theirs, and never named here a second time.
+locals {
+  console_overlay = yamldecode(file("${path.module}/../../../../deploy/console/overlays/production/kustomization.yaml"))
+}
+
 module "registry" {
   source = "../../modules/registry"
 
   name_prefix = module.conventions.name_prefix
-  images      = toset([for image in local.overlay.images : image.name])
+  images = toset(concat(
+    [for image in local.overlay.images : image.name],
+    [for image in local.console_overlay.images : image.name],
+  ))
 }
 
 module "observability" {

@@ -293,12 +293,22 @@ run "staging_keeps_every_log_group_and_telemetry_bucket_under_its_logs_key" {
   }
 }
 
-run "staging_has_a_repository_per_image_its_overlay_runs" {
+# The platform's overlay and (P17-TSK-105) the Operator Console's: one repository per image either names, and the console's by the
+# name the admission policies' finapp-*-console glob and infra/scripts/promote.sh console read.
+run "staging_has_a_repository_per_image_its_overlays_run" {
   command = plan
 
   assert {
-    condition     = toset(keys(module.registry.repository_names)) == toset([for image in yamldecode(file("../../../../deploy/overlays/staging/kustomization.yaml")).images : image.name])
-    error_message = "Staging's repositories are not the images its overlay names."
+    condition = toset(keys(module.registry.repository_names)) == toset(concat(
+      [for image in yamldecode(file("../../../../deploy/overlays/staging/kustomization.yaml")).images : image.name],
+      [for image in yamldecode(file("../../../../deploy/console/overlays/staging/kustomization.yaml")).images : image.name],
+    ))
+    error_message = "Staging's repositories are not the images its overlays name, the platform's and the console's."
+  }
+
+  assert {
+    condition     = lookup(module.registry.repository_names, "finapp-console", "absent") == "finapp-staging-console"
+    error_message = "Staging has no repository for the Operator Console named finapp-staging-console."
   }
 }
 

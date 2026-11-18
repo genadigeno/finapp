@@ -219,3 +219,7 @@ pipeline-role step), and the delivery seen on a controller (`P15-TSK-032`). *(Co
 registry module, and the delivery was seen on a controller by `P15-TSK-032`'s rehearsal, its remaining steps postponed
 by the owner (`POSTPONED_ISSUES.md` PI-024). What remains is the production identity (§6 item 35) and the expiry step after a
 promotion.)*
+
+## Dated note: the Operator Console, a fifth Application (`P17-TSK-105`, 2026-11-18)
+
+The decision is unchanged. The console (`deploy/console`, finapp-admin-panel ADR-C130) is delivered as the platform is: a fifth Application, `finapp-console`, in project `finapp` beside the edge, last (wave 4), so the platform it calls is healthy before it; promoted by digest through `promote.sh console`, production after staging's merged record; its repository `finapp-<environment>-console` in the registry module. The identity that signs it in a real environment is the owner's open decision (`THREAT_MODEL.md` §6 item 35's dated note).

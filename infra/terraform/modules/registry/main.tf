@@ -9,6 +9,14 @@
 #
 # Who may push is not here. Nothing has a push credential until the delivery path exists (no CI credential reaches
 # production), and the nodes pull through their own role.
+#
+# THE OPERATOR CONSOLE'S REPOSITORY (P17-TSK-105): finapp-<environment>-console, beside the platform's app and migrator, made
+# by this same resource and so held to everything it holds - immutable tags, scanned on every push, never force-deleted, the
+# service's own key, no lifecycle rule and no repository policy. Not a resource of its own: the console is an image the
+# environment runs, and each root passes the images its overlays name, the console's overlay (deploy/console/overlays/<env>)
+# beside the platform's, so a second repository spelled by hand can never drift from the first. Its image is finapp-admin-panel's
+# build, not this repository's; it is signed and attested under the environment's authority like every image here (the
+# admission policies name finapp-*-console), and promoted into this repository by infra/scripts/promote.sh console.
 
 # NOTHING EXPIRES HERE YET. An untagged image is not safely a stray: a promotion that copies a digest with no tag would
 # leave a running image, and the rollback target it becomes, untagged, and an expiry rule would remove it. An expiry

@@ -1728,6 +1728,8 @@ options. **Item 67 was added on 2026-11-13 by the capacity calibration and await
     (d) (i), the signing role alone writes the signature repository, and a revocation is an authority change; (e) (i), a trust root of
     our own when keyless is applied; (f) (i), a read-only workload identity for the controller.
 
+    *(Dated note, 2026-11-18, P17-TSK-105: the Operator Console's image joins this item. Its repository (`finapp-<environment>-console`), its Application and its promotion by digest are built; which identity signs it in a real environment is open - the proposal is keyless from CI's identity, as (a) for the platform, the platform's pipeline signing the console's build and never finapp-admin-panel's own identity. Another identity means a second authority in both admission policies and in `promote.sh`, changed together. Until decided, admission refuses the console in a real environment.)*
+
 36. **T6's, T7's, T9's, T22's, T34's, T36's and T44's residuals: what the rotation rehearsal leaves** *(added 2026-11-11 by the rotation rehearsal; (e) to (g) by its review's fix round)*. Seven things.
 
     *(a) ADR-0032's rotation policy for a customer's credential, and its "older than X" report.* ADR-0032 gave Phase 15 both, and no

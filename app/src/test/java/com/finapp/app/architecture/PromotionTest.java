@@ -35,6 +35,11 @@ class PromotionTest {
     private static final String M1 = "sha256:" + "b1".repeat(32);
     private static final String A2 = "sha256:" + "a2".repeat(32);
     private static final String M2 = "sha256:" + "b2".repeat(32);
+    /** The Operator Console's digests and finapp-admin-panel's commits (P17-TSK-105): another repository's, so no commit of the fixture's. */
+    private static final String C1 = "sha256:" + "c1".repeat(32);
+    private static final String C2 = "sha256:" + "c2".repeat(32);
+    private static final String PANEL1 = "d1".repeat(20);
+    private static final String PANEL2 = "d2".repeat(20);
 
     private static Path root;
     private static Path classes;
@@ -251,6 +256,150 @@ class PromotionTest {
         Run reverted = tool("recheck", "HEAD");
         assertThat(reverted.status()).as(reverted.out()).isEqualTo(1);
         assertThat(reverted.out()).containsAnyOf("crosses ledger/src/main/resources/db/migration/ledger/V002__contract.sql", "the migrator stays");
+    }
+
+    // ------------------------------------------------------------------------------------------- the console (P17-TSK-105)
+
+    @Test
+    @DisplayName("the console is promoted by digest as the platform's images are: a tag, a name beside a digest, a short digest, the placeholder, a short revision and another environment are refused by name; a digest is accepted")
+    void theConsoleIsPromotedByDigest() throws Exception {
+        start("1.2.0");
+        for (String named : List.of("finapp-console:1.0.0", "latest", "finapp-console@" + C1, "sha256:" + "c1".repeat(31), "sha256:" + "0".repeat(64))) {
+            Run run = tool("console-check", "staging", named, PANEL1);
+            assertThat(run.status()).as("%s: %s", named, run.out()).isEqualTo(1);
+            assertThat(run.out()).as(named).containsAnyOf("is not a digest", "is the placeholder digest");
+        }
+        assertThat(tool("console-check", "staging", C1, PANEL1.substring(0, 12)).out()).contains("full forty-character finapp-admin-panel commit");
+        assertThat(tool("console-check", "kind", C1, PANEL1).out()).contains("is not an environment a promotion writes");
+        Run accepted = tool("console-check", "staging", C1, PANEL1);
+        assertThat(accepted.status()).as(accepted.out()).isZero();
+        assertThat(accepted.out()).contains("ACCEPTED: staging may serve the console " + C1);
+    }
+
+    @Test
+    @DisplayName("the console's write changes its overlay's one digest and its record in one step, says what its rollout replaces and what it serves, and leaves the platform's pair alone")
+    void theConsoleWriteIsItsDigestAndItsRecord() throws Exception {
+        start("1.2.0");
+        String overlay = read("deploy/console/overlays/staging/kustomization.yaml");
+        String platform = read("deploy/overlays/staging/kustomization.yaml") + read("deploy/overlays/staging/release.yaml");
+        Run first = tool("console-write", "staging", C1, PANEL1);
+        assertThat(first.status()).as(first.out()).isZero();
+        assertThat(first.out()).contains("replacing none").contains("the first console here").contains("SERVING: staging " + C1);
+        String written = read("deploy/console/overlays/staging/kustomization.yaml");
+        assertThat(written).contains("  - name: finapp-console\n    digest: " + C1);
+        assertThat(written.replace(C1, "sha256:" + "0".repeat(64))).as("nothing else of the overlay").isEqualTo(overlay);
+        assertThat(read("deploy/console/overlays/staging/release.yaml")).startsWith("# The console this environment serves")
+                .contains("revision: \"" + PANEL1 + "\"").contains("console: \"" + C1 + "\"");
+        assertThat(read("deploy/overlays/staging/kustomization.yaml") + read("deploy/overlays/staging/release.yaml"))
+                .as("the platform's pair is not the console's to write").isEqualTo(platform);
+        commitAll("staging serves the console");
+
+        Run second = tool("console-write", "staging", C2, PANEL2);
+        assertThat(second.status()).as(second.out()).isZero();
+        assertThat(second.out()).as("the rollout replaces the pods serving the digest before, whose assets the new image must carry")
+                .contains("replacing " + C1).contains("the pods it replaces serve " + C1).contains("SERVING: staging " + C2);
+    }
+
+    @Test
+    @DisplayName("production refuses a console staging was never given, or given under another revision, and accepts it once staging's record is committed; CI reads staging's records as merged before the change")
+    void productionNeedsTheConsoleInStagingFirst() throws Exception {
+        start("1.2.0");
+        String before = git("rev-parse", "HEAD").strip();
+        Run never = tool("console-check", "production", C1, PANEL1);
+        assertThat(never.status()).as(never.out()).isEqualTo(1);
+        assertThat(never.out()).contains("staging was never given this console");
+
+        assertThat(tool("console-write", "staging", C1, PANEL1).status()).isZero();
+        assertThat(tool("console-check", "production", C1, PANEL1).status()).as("promote.sh reads what is committed").isEqualTo(1);
+        commitAll("staging serves the console");
+        assertThat(tool("console-check", "production", C1, PANEL2).out()).as("the same digest under another revision")
+                .contains("staging was never given this console");
+        Run accepted = tool("console-check", "production", C1, PANEL1);
+        assertThat(accepted.status()).as(accepted.out()).isZero();
+        assertThat(accepted.out()).contains("staging was given this console and revision");
+
+        // Staging's console and production's in one change, judged by CI against what was merged before it: refused; after: accepted.
+        assertThat(tool("console-write", "production", C1, PANEL1).status()).isZero();
+        commitAll("production serves the console");
+        Run together = tool("recheck", before);
+        assertThat(together.status()).as(together.out()).isEqualTo(1);
+        assertThat(together.out()).contains("staging was never given this console").contains("merged before this change");
+        Run after = tool("recheck", git("rev-parse", "HEAD~1").strip());
+        assertThat(after.status()).as(after.out()).isZero();
+        assertThat(after.out()).contains("production's console: staging was given this console and revision");
+    }
+
+    @Test
+    @DisplayName("CI judges the console's overlays again: a hand-edited digest, a tag, a second image and a malformed record are refused; the placeholder and a promoted console pass")
+    void ciJudgesTheConsolesOverlays() throws Exception {
+        start("1.2.0");
+        Run placeholders = tool("recheck", "HEAD");
+        assertThat(placeholders.status()).as(placeholders.out()).isZero();
+        assertThat(placeholders.out()).contains("staging's console has nothing promoted").contains("production's console has nothing promoted");
+
+        assertThat(tool("console-write", "staging", C1, PANEL1).status()).isZero();
+        commitAll("staging serves the console");
+        Run promoted = tool("recheck", "HEAD");
+        assertThat(promoted.status()).as(promoted.out()).isZero();
+        assertThat(promoted.out()).contains("staging's console: the console is named by a digest");
+
+        String overlay = read("deploy/console/overlays/staging/kustomization.yaml");
+        write("deploy/console/overlays/staging/kustomization.yaml", overlay.replace(C1, C2));
+        assertThat(tool("recheck", "HEAD").out()).as("a digest edited by hand").contains("REFUSED").contains("its release record");
+        write("deploy/console/overlays/staging/kustomization.yaml", overlay.replace("    digest: " + C1, "    newTag: \"1.0.0\""));
+        assertThat(tool("recheck", "HEAD").out()).as("a tag").contains("REFUSED").contains("never written by a promotion");
+        write("deploy/console/overlays/staging/kustomization.yaml", overlay + "  - name: finapp-other\n    digest: " + C2 + "\n");
+        assertThat(tool("recheck", "HEAD").out()).as("a second image").contains("REFUSED").contains("never written by a promotion");
+        write("deploy/console/overlays/staging/kustomization.yaml", overlay);
+
+        String record = read("deploy/console/overlays/staging/release.yaml");
+        write("deploy/console/overlays/staging/release.yaml", record.replace(PANEL1, PANEL1.substring(0, 12)));
+        assertThat(tool("recheck", "HEAD").out()).as("a revision that is not a full commit").contains("REFUSED").contains("full forty-character");
+    }
+
+    @Test
+    @DisplayName("the serving digest is handed to the next console build: none before the first, each environment's own after, both when staging is ahead, and none at all when an overlay disagrees with its record")
+    void theServingDigestIsHandedToTheNextBuild() throws Exception {
+        start("1.2.0");
+        Run first = tool("console-serving");
+        assertThat(first.status()).as(first.out()).isZero();
+        assertThat(first.out()).as("the first release: collect-previous-assets.sh is given nothing").isEqualToNormalizingNewlines("staging none\nproduction none\n");
+
+        promoteConsoleAndCommit("staging", C1, PANEL1);
+        assertThat(tool("console-serving").out()).isEqualToNormalizingNewlines("staging " + C1 + "\nproduction none\n");
+        promoteConsoleAndCommit("production", C1, PANEL1);
+        promoteConsoleAndCommit("staging", C2, PANEL2);
+        assertThat(tool("console-serving").out()).as("staging ahead of production: the next build must carry both")
+                .isEqualToNormalizingNewlines("staging " + C2 + "\nproduction " + C1 + "\n");
+
+        write("deploy/console/overlays/staging/release.yaml", read("deploy/console/overlays/staging/release.yaml").replace(C2, C1));
+        Run disagreeing = tool("console-serving");
+        assertThat(disagreeing.status()).as(disagreeing.out()).isEqualTo(1);
+        assertThat(disagreeing.out()).contains("which console serves cannot be said");
+    }
+
+    @Test
+    @DisplayName("promote.sh verifies the console as the platform's images are, in the environment's finapp-<environment>-console, which the registry module makes; it names no signing identity, the owner's decision")
+    void theConsoleIsVerifiedInTheRepositoryTheRegistryMakes() {
+        String promote = EvidenceCitations.read(root.resolve("infra/scripts/promote.sh"));
+        int checked = promote.indexOf("console-check \"$(dpath \"$ROOT\")\" \"$ENVIRONMENT\" \"$CONSOLE\" \"$CONSOLE_REVISION\"");
+        int verified = promote.indexOf("verify \"$REGISTRY/finapp-$ENVIRONMENT-console@$CONSOLE\" \"$CONSOLE_REVISION\"");
+        int written = promote.indexOf("console-write \"$(dpath \"$ROOT\")\" \"$ENVIRONMENT\" \"$CONSOLE\" \"$CONSOLE_REVISION\"");
+        assertThat(checked).as("the repository's refusals first: a tag never reaches cosign").isPositive();
+        assertThat(verified).as("then its signature and both attestations, its provenance naming its revision").isGreaterThan(checked);
+        assertThat(written).as("and only then the write").isGreaterThan(verified);
+        assertThat(promote).contains("exec java --source 21 \"$(dpath \"$TOOL\")\" console-serving \"$(dpath \"$ROOT\")\"")
+                .contains("OWNER'S DECISION, OPEN (P17-TSK-105)")
+                .doesNotContainPattern("--certificate-identity [^\"$]").doesNotContainPattern("PROMOTE_(CONSOLE_)?IDENTITY=");
+
+        // The repository verified is one the registry module makes: each root reads the console's overlay, and the module's own test
+        // names the console's repository as the script spells it.
+        for (String environment : List.of("staging", "production")) {
+            assertThat(EvidenceCitations.read(root.resolve("infra/terraform/environments/" + environment + "/main.tf")))
+                    .contains("deploy/console/overlays/" + environment + "/kustomization.yaml").contains("local.console_overlay.images");
+        }
+        assertThat(EvidenceCitations.read(root.resolve("infra/terraform/modules/registry/tests/registry.tftest.hcl")))
+                .contains("\"finapp-console\" = \"finapp-staging-console\"");
     }
 
     // ------------------------------------------------------------------------------------------- the smoke
@@ -484,12 +633,14 @@ class PromotionTest {
 
     // ------------------------------------------------------------------------------------------- the fixture
 
-    /** A repository holding the real overlays and release records, a Gradle version and one ledger migration; its first commit. */
+    /** A repository holding the real overlays and release records, the console's too, a Gradle version and one ledger migration; its first commit. */
     private String start(String version) throws Exception {
         git("init", "-q", "-b", "master");
         for (String environment : List.of("staging", "production")) {
             for (String file : List.of("kustomization.yaml", "release.yaml")) {
                 write("deploy/overlays/" + environment + "/" + file, EvidenceCitations.read(root.resolve("deploy/overlays/" + environment + "/" + file)));
+                write("deploy/console/overlays/" + environment + "/" + file,
+                        EvidenceCitations.read(root.resolve("deploy/console/overlays/" + environment + "/" + file)));
             }
         }
         write("ledger/src/main/resources/db/migration/ledger/V001__initialise.sql", "CREATE TABLE ledger.entry (id bigint);\n");
@@ -511,6 +662,12 @@ class PromotionTest {
         Run written = tool("write", environment, app, migrator, revision);
         assertThat(written.status()).as(written.out()).isZero();
         commitAll(environment + " runs " + revision);
+    }
+
+    private void promoteConsoleAndCommit(String environment, String console, String revision) throws Exception {
+        Run written = tool("console-write", environment, console, revision);
+        assertThat(written.status()).as(written.out()).isZero();
+        commitAll(environment + " serves the console " + console);
     }
 
     private void promotedStaging() throws Exception {

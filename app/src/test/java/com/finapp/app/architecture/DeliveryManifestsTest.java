@@ -54,13 +54,16 @@ class DeliveryManifestsTest {
     // ------------------------------------------------------------------------------------------- the Applications
 
     @Test
-    @DisplayName("each environment has four Applications from this repository's master, each syncing by itself and healing drift, none retried, none with a finalizer")
+    @DisplayName("each environment has five Applications from this repository's master, the console's among them, each syncing by itself and healing drift, none retried, none with a finalizer")
     void everyApplicationSyncsByItselfAndHealsDrift() {
         for (String environment : ENVIRONMENTS) {
             Map<String, Map<String, Object>> applications = applications("deploy/delivery/" + environment + "/applications.yaml");
-            assertThat(applications.keySet()).containsExactly("finapp-admission", "finapp-namespaces", "finapp", "finapp-edge");
+            // The Operator Console's since P17-TSK-105: its own overlay, its own namespace, the platform's project and policy.
+            assertThat(applications.keySet()).containsExactly("finapp-admission", "finapp-namespaces", "finapp", "finapp-edge", "finapp-console");
             Map<String, String> paths = Map.of("finapp-admission", "deploy/admission", "finapp-namespaces", "deploy/namespaces",
-                    "finapp", "deploy/overlays/" + environment, "finapp-edge", "deploy/edge/overlays/" + environment);
+                    "finapp", "deploy/overlays/" + environment, "finapp-edge", "deploy/edge/overlays/" + environment,
+                    "finapp-console", "deploy/console/overlays/" + environment);
+            Map<String, String> namespaces = Map.of("finapp-edge", "finapp-edge", "finapp-console", "finapp-console");
             for (Map.Entry<String, Map<String, Object>> entry : applications.entrySet()) {
                 String name = environment + "/" + entry.getKey();
                 Map<String, Object> application = entry.getValue();
@@ -72,7 +75,7 @@ class DeliveryManifestsTest {
                         .containsEntry("path", paths.get(entry.getKey())).containsOnlyKeys("repoURL", "targetRevision", "path");
                 assertThat(root.resolve(paths.get(entry.getKey())).resolve("kustomization.yaml")).as(name).exists();
                 assertThat(map(spec, "destination")).as(name).containsEntry("server", IN_CLUSTER)
-                        .containsEntry("namespace", entry.getKey().equals("finapp-edge") ? "finapp-edge" : "finapp");
+                        .containsEntry("namespace", namespaces.getOrDefault(entry.getKey(), "finapp"));
                 Map<String, Object> policy = map(spec, "syncPolicy");
                 assertThat(policy).as("%s: no retry - a failed migration is fixed forward, never run again by the controller", name)
                         .containsOnlyKeys("automated", "syncOptions", "retry");
@@ -110,7 +113,7 @@ class DeliveryManifestsTest {
     }
 
     @Test
-    @DisplayName("the root syncs the four in the install order: the admission policies, then the namespaces, then the release, then the edge")
+    @DisplayName("the root syncs the five in the install order: the admission policies, the namespaces, the release, the edge, and the console last, alone in its wave")
     void theApplicationsAreInTheInstallOrder() {
         for (String environment : ENVIRONMENTS) {
             Map<String, Integer> waves = new LinkedHashMap<>();
@@ -120,6 +123,11 @@ class DeliveryManifestsTest {
             assertThat(waves.get("finapp-admission")).isLessThan(waves.get("finapp-namespaces"));
             assertThat(waves.get("finapp-namespaces")).isLessThan(waves.get("finapp"));
             assertThat(waves.get("finapp")).isLessThan(waves.get("finapp-edge"));
+            // P17-TSK-105: another repository's build, whose image may be refused or not yet promoted. Last and alone, so a console that
+            // never turns healthy holds no wave of the platform's.
+            assertThat(waves.get("finapp-console")).as("%s: the console after every Application of the platform's", environment)
+                    .isGreaterThan(waves.entrySet().stream().filter(wave -> !wave.getKey().equals("finapp-console"))
+                            .mapToInt(Map.Entry::getValue).max().orElseThrow());
             // The projects before every Application: in one wave the root created an Application before its project, whose first sync
             // then failed for want of it and, with no retry, stayed failed (P15-TSK-032's kind run).
             for (String project : List.of("deploy/delivery/base/project.yaml", "deploy/delivery/base/project-cluster.yaml")) {
@@ -228,14 +236,15 @@ class DeliveryManifestsTest {
     // ------------------------------------------------------------------------------------------- what bounds them
 
     @Test
-    @DisplayName("two projects bound the Applications: the release and the edge to their kinds in two namespaces and nothing outside one, the cluster's objects to Namespaces and admission policies alone, never a Secret")
+    @DisplayName("two projects bound the Applications: the release, the edge and the console to their kinds in three namespaces and nothing outside one, the cluster's objects to Namespaces and admission policies alone, never a Secret")
     void theProjectBoundsWhatTheApplicationsMayApply() {
         Map<String, Object> project = documents("deploy/delivery/base/project.yaml").get(0);
         assertThat(map(project, "metadata")).containsEntry("name", "finapp").containsEntry("namespace", "argocd");
         Map<String, Object> spec = map(project, "spec");
         assertThat(spec.get("sourceRepos")).isEqualTo(List.of(REPOSITORY));
+        // The console's namespace since P17-TSK-105, and no other: the project reaches the three namespaces its Applications deliver to.
         assertThat(spec.get("destinations")).isEqualTo(List.of(Map.of("server", IN_CLUSTER, "namespace", "finapp"),
-                Map.of("server", IN_CLUSTER, "namespace", "finapp-edge")));
+                Map.of("server", IN_CLUSTER, "namespace", "finapp-edge"), Map.of("server", IN_CLUSTER, "namespace", "finapp-console")));
         assertThat(spec.get("clusterResourceWhitelist")).as("the release and the edge create nothing outside a namespace").isEqualTo(List.of());
         assertThat(spec).doesNotContainKeys("namespaceResourceBlacklist", "sourceNamespaces", "roles", "signatureKeys");
 
@@ -256,11 +265,11 @@ class DeliveryManifestsTest {
             assertThat(String.valueOf(kind.get("kind"))).doesNotContain("*").isNotEqualTo("Secret");
             allowed.add(String.valueOf(kind.get("kind")));
         }
-        // Exactly what the release and the edge render, read from their files: a kind the project lists and nothing renders is a door
-        // left open, and a kind rendered and not listed would be refused at the first sync.
+        // Exactly what the release, the edge and the console render, read from their files: a kind the project lists and nothing renders
+        // is a door left open, and a kind rendered and not listed would be refused at the first sync.
         Set<String> rendered = new TreeSet<>(List.of("ConfigMap"));
         for (String directory : List.of("deploy/base", "deploy/components/secret-delivery", "deploy/overlays/staging", "deploy/overlays/production",
-                "deploy/edge/base")) {
+                "deploy/edge/base", "deploy/console/base")) {
             try (Stream<Path> files = Files.list(root.resolve(directory))) {
                 for (Path file : files.filter(path -> path.toString().endsWith(".yaml")).toList()) {
                     String name = file.getFileName().toString();
@@ -275,7 +284,7 @@ class DeliveryManifestsTest {
                 throw new UncheckedIOException(e);
             }
         }
-        assertThat(allowed).as("the project admits exactly the kinds the release and the edge render, a Secret never among them").isEqualTo(rendered);
+        assertThat(allowed).as("the project admits exactly the kinds the release, the edge and the console render, a Secret never among them").isEqualTo(rendered);
 
         for (String environment : ENVIRONMENTS) {
             Map<String, Object> delivery = documents("deploy/delivery/roots/" + environment + ".yaml").stream()
@@ -307,7 +316,7 @@ class DeliveryManifestsTest {
     }
 
     @Test
-    @DisplayName("each root renders exactly the two projects and its environment's four Applications, each in its project, through no transformer; a planted extra is refused")
+    @DisplayName("each root renders exactly the two projects and its environment's five Applications, each in its project, through no transformer; a planted extra is refused")
     void theRootRendersExactlyTheProjectsAndTheApplications() throws IOException {
         for (String environment : ENVIRONMENTS) {
             assertThat(judgeRoot(root.resolve("deploy/delivery"), environment)).as(environment).isEmpty();
@@ -325,7 +334,7 @@ class DeliveryManifestsTest {
         assertThat(judgeRoot(copy, "production")).anySatisfy(offence -> assertThat(offence).contains("patches"));
     }
 
-    /** What an environment's root renders, judged: exactly the two projects and the four Applications, and no kustomization but resources. */
+    /** What an environment's root renders, judged: exactly the two projects and the five Applications, and no kustomization but resources. */
     private static List<String> judgeRoot(Path delivery, String environment) throws IOException {
         List<String> offences = new ArrayList<>();
         Set<String> rendered = new TreeSet<>();
@@ -356,10 +365,11 @@ class DeliveryManifestsTest {
             }
         }
         Set<String> expected = new TreeSet<>(List.of("AppProject/finapp", "AppProject/finapp-cluster", "Application/finapp-admission@finapp-cluster",
-                "Application/finapp-namespaces@finapp-cluster", "Application/finapp@finapp", "Application/finapp-edge@finapp"));
+                "Application/finapp-namespaces@finapp-cluster", "Application/finapp@finapp", "Application/finapp-edge@finapp",
+                "Application/finapp-console@finapp"));
         for (String named : rendered) {
             if (!expected.contains(named)) {
-                offences.add(environment + "'s root renders " + named + ", which is not one of the two projects or the four Applications");
+                offences.add(environment + "'s root renders " + named + ", which is not one of the two projects or the five Applications");
             }
         }
         for (String named : expected) {
@@ -421,6 +431,28 @@ class DeliveryManifestsTest {
                 assertThat(String.valueOf(record.get("release"))).matches("[0-9]+\\.[0-9]+\\.[0-9]+(-SNAPSHOT)?");
                 assertThat(String.valueOf(record.get("revision"))).matches("[0-9a-f]{40}");
                 assertThat(String.valueOf(record.get("migrator-revision"))).matches("[0-9a-f]{40}");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("each console record names its overlay's one digest: the placeholder before the first promotion, and after it the record promote.sh console writes (P17-TSK-105)")
+    void theConsolesRecordIsItsOverlays() {
+        for (String environment : ENVIRONMENTS) {
+            String directory = "deploy/console/overlays/" + environment;
+            Map<String, Object> record = documents(directory + "/release.yaml").get(0);
+            List<?> images = (List<?>) documents(directory + "/kustomization.yaml").get(0).get("images");
+            assertThat(images).as("%s: the console's one image", environment).hasSize(1);
+            Map<?, ?> image = (Map<?, ?>) images.get(0);
+            assertThat(image.get("name")).isEqualTo("finapp-console");
+            // The serving digest the next console build reads (promote.sh console-serving): the overlay's, never a second value.
+            assertThat(record).as("%s: written by promote.sh console alone, two fields", environment).containsOnlyKeys("revision", "console");
+            assertThat(record.get("console")).as("%s: the record names what the overlay renders", environment).isEqualTo(image.get("digest"));
+            if ("none".equals(record.get("revision"))) {
+                assertThat(record.get("console")).as("%s before its first console", environment).isEqualTo("sha256:" + "0".repeat(64));
+            } else {
+                assertThat(String.valueOf(record.get("revision"))).as("%s: finapp-admin-panel's full commit", environment).matches("[0-9a-f]{40}");
+                assertThat(String.valueOf(record.get("console"))).matches("sha256:[0-9a-f]{64}");
             }
         }
     }

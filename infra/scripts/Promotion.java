@@ -34,12 +34,24 @@ import java.util.stream.Stream;
  * <pre>
  *   check     ROOT ENVIRONMENT APP MIGRATOR REVISION  refuse, or say the pair may be written (staging's evidence read as committed)
  *   write     ROOT ENVIRONMENT APP MIGRATOR REVISION  check, then write the overlay's two digests and its release record
- *   recheck   ROOT BASE-REF                           CI: each overlay against its record, staging's evidence read at the merge base
+ *   recheck   ROOT BASE-REF                           CI: each overlay against its record, staging's evidence read at the merge base;
+ *                                                     the console's overlays too
  *   smoke     ROOT ENVIRONMENT SNAPSHOT PROMETHEUS RECORD-DIRECTORY|-
  *                                                     judge what the cluster runs against what the overlay names
  *   held      TREE ENVIRONMENT STEM VERSION           the environment's newest record in TREE shows every replica holding VERSION
  *   statement TYPE DIGEST REVISION|-                  one verified in-toto statement, on standard input, read as its structure
+ *   console-check   ROOT ENVIRONMENT DIGEST REVISION  the Operator Console's own promotion (P17-TSK-105): refuse, or say it may be written
+ *   console-write   ROOT ENVIRONMENT DIGEST REVISION  check, then write the console overlay's digest and its record, naming the serving digest
+ *   console-serving ROOT                              each environment's serving console digest, as committed: the next console build's input
  * </pre>
+ *
+ * <p>THE CONSOLE (P17-TSK-105). The Operator Console's static server ({@code deploy/console}) is finapp-admin-panel's build, released on
+ * its own: one digest, never part of the platform's pair, written to {@code deploy/console/overlays/<environment>} and its record. It is
+ * judged as the platform's images are where the same judgement applies - a digest alone, never the placeholder or a tag; production only
+ * what staging was given first, read as merged before the change; CI judging the overlay against its record again - and differs where
+ * it is another repository's build: its revision is finapp-admin-panel's commit, so its form is checked here and its history never is
+ * (promote.sh reads it from the provenance); it holds no schema, so no contract marker bounds a rollback; and no console smoke exists, so
+ * production asks for staging's record of the digest, not a smoke record of it.
  *
  * <p>Exit status: 0 accepted; 1 refused, the reason printed; 2 the judgement could not be made (an unreadable history, a
  * snapshot in another shape), which is never a pass.
@@ -71,6 +83,10 @@ public final class Promotion {
     static final Pattern RELEASE = Pattern.compile("([0-9]+)\\.([0-9]+)\\.([0-9]+)(-SNAPSHOT)?");
     static final Pattern MIGRATION = Pattern.compile("([a-z][a-z0-9]*)/src/main/resources/db/migration/[a-z0-9_]+/V([0-9]+(?:[._][0-9]+)*)__[^/]+\\.sql");
 
+    /** Where the Operator Console's overlays and release records live (P17-TSK-105): one per environment, beside nothing of the platform's. */
+    static final String CONSOLE_OVERLAYS = "deploy/console/overlays/";
+    static final String CONSOLE_IMAGE = "finapp-console";
+
     static final String TRIAL_BALANCE_QUERY = "max by (currency) (finapp_ledger_trial_balance)";
     static final String[] VERDICTS = {"health", "build-identity", "trial-balance"};
 
@@ -93,7 +109,7 @@ public final class Promotion {
     public static void main(String[] args) {
         try {
             if (args.length == 0) {
-                throw new CannotJudge("usage: check|write|recheck|smoke|held|statement ...");
+                throw new CannotJudge("usage: check|write|recheck|smoke|held|statement|console-check|console-write|console-serving ...");
             }
             switch (args[0]) {
                 case "check" -> {
@@ -127,6 +143,27 @@ public final class Promotion {
                 case "statement" -> {
                     arity(args, 4);
                     System.out.println("ok   " + statement(args[1], args[2], args[3], new String(System.in.readAllBytes(), StandardCharsets.UTF_8)));
+                }
+                case "console-check" -> {
+                    arity(args, 5);
+                    consoleCheck(Path.of(args[1]), args[2], args[3], args[4], "HEAD").forEach(line -> System.out.println("ok   " + line));
+                    System.out.println("ACCEPTED: " + args[2] + " may serve the console " + args[3]);
+                }
+                case "console-write" -> {
+                    arity(args, 5);
+                    consoleCheck(Path.of(args[1]), args[2], args[3], args[4], "HEAD").forEach(line -> System.out.println("ok   " + line));
+                    String replaced = consoleWrite(Path.of(args[1]), args[2], args[3], args[4]);
+                    System.out.println("WRITTEN: " + CONSOLE_OVERLAYS + args[2] + " now names " + args[3] + ", replacing " + replaced);
+                    System.out.println("ROLLOUT: " + (replaced.equals("none")
+                            ? "the first console here: nothing is replaced, so the image need carry no assets but its own"
+                            : "the pods it replaces serve " + replaced + ": the promoted image keeps their pages' hashed assets only if its build"
+                                    + " collected that digest's (finapp-admin-panel scripts/collect-previous-assets.sh), which nothing here can read"));
+                    System.out.println("SERVING: " + args[2] + " " + args[3] + " once the merge is synced: the next console build collects its"
+                            + " hashed assets (infra/scripts/promote.sh console-serving names it)");
+                }
+                case "console-serving" -> {
+                    arity(args, 2);
+                    serving(Path.of(args[1])).forEach(System.out::println);
                 }
                 default -> throw new CannotJudge("unknown command " + args[0]);
             }
@@ -413,7 +450,11 @@ public final class Promotion {
      */
     static List<Map<String, String>> releaseHistory(Path root, String environment, String ref, boolean workingTree)
             throws CannotJudge, IOException {
-        String file = "deploy/overlays/" + environment + "/release.yaml";
+        return history(root, "deploy/overlays/" + environment + "/release.yaml", ref, workingTree);
+    }
+
+    /** Every version of one flat record on the line up to {@code ref}, and with {@code workingTree} the file as it stands. */
+    static List<Map<String, String>> history(Path root, String file, String ref, boolean workingTree) throws CannotJudge, IOException {
         List<Map<String, String>> history = new ArrayList<>();
         Path current = root.resolve(file);
         if (workingTree && Files.exists(current)) {
@@ -487,17 +528,7 @@ public final class Promotion {
             String overlay = Files.readString(root.resolve("deploy/overlays/" + environment + "/kustomization.yaml"), StandardCharsets.UTF_8);
             Map<String, String> record = fields(Files.readString(root.resolve("deploy/overlays/" + environment + "/release.yaml"), StandardCharsets.UTF_8));
             // The images: section, its lines other than blanks and comments: exactly two names, each with a digest and nothing else.
-            List<String> lines = new ArrayList<>();
-            boolean inside = false;
-            for (String line : overlay.split("\r?\n")) {
-                if (line.equals("images:")) {
-                    inside = true;
-                } else if (inside && !line.isEmpty() && !Character.isWhitespace(line.charAt(0)) && !line.startsWith("#")) {
-                    inside = false;
-                } else if (inside && !line.isBlank() && !line.strip().startsWith("#")) {
-                    lines.add(line);
-                }
-            }
+            List<String> lines = imageLines(overlay);
             Map<String, String> digests = new HashMap<>();
             for (int i = 0; i + 1 < lines.size(); i += 2) {
                 Matcher name = Pattern.compile("  - name: (finapp-app|finapp-migrator)").matcher(lines.get(i));
@@ -524,6 +555,142 @@ public final class Promotion {
                         + record.get("migrator-revision") + ", where the promotion's rule wants " + judged.migratorRevision());
             }
             judged.said().forEach(line -> said.add(environment + ": " + line));
+        }
+        // The console's overlays (P17-TSK-105), judged the same way and on their own: its one name and digest equal to its record, and
+        // the record passing the console's check, production's against staging's records as merged at the base.
+        for (String environment : List.of("staging", "production")) {
+            String named = consoleDigest(root, environment);
+            Map<String, String> record = consoleRecord(root, environment);
+            if (!named.equals(record.get("console"))) {
+                throw new Refused(CONSOLE_OVERLAYS + environment + " names " + named + " and its release record " + record.get("console")
+                        + ": the two are written together, by infra/scripts/promote.sh console");
+            }
+            if ("none".equals(record.get("revision")) && named.equals(ZERO_DIGEST)) {
+                said.add(environment + "'s console has nothing promoted: the placeholder");
+                continue;
+            }
+            consoleCheck(root, environment, named, record.getOrDefault("revision", ""), base).forEach(line -> said.add(environment + "'s console: " + line));
+        }
+        return said;
+    }
+
+    /** An overlay's {@code images:} section: its lines other than blanks and comments, until the next key. */
+    static List<String> imageLines(String overlay) {
+        List<String> lines = new ArrayList<>();
+        boolean inside = false;
+        for (String line : overlay.split("\r?\n")) {
+            if (line.equals("images:")) {
+                inside = true;
+            } else if (inside && !line.isEmpty() && !Character.isWhitespace(line.charAt(0)) && !line.startsWith("#")) {
+                inside = false;
+            } else if (inside && !line.isBlank() && !line.strip().startsWith("#")) {
+                lines.add(line);
+            }
+        }
+        return lines;
+    }
+
+    // -------------------------------------------------------------------------------------- the console (P17-TSK-105)
+
+    /**
+     * Every refusal the repository can make of a console promotion. The digest as the platform's: a digest alone, never the placeholder.
+     * The revision: finapp-admin-panel's commit, the one its provenance must name as its git source - promote.sh verifies that, and this
+     * repository cannot read that one's history, so its form alone is checked here. Production: staging was given exactly this digest
+     * and revision, merged before the change ({@code evidenceRef}, as for the platform's pair), so one change cannot bring its own. No
+     * console smoke exists, so no smoke record is asked; and the console holds no schema, so no contract marker bounds a rollback, which
+     * is the promotion of an older digest like any other.
+     */
+    static List<String> consoleCheck(Path root, String environment, String console, String revision, String evidenceRef)
+            throws Refused, CannotJudge, IOException {
+        List<String> said = new ArrayList<>();
+        if (!ENVIRONMENTS.contains(environment)) {
+            throw new Refused("'" + environment + "' is not an environment a promotion writes: staging or production");
+        }
+        digest("the console", console);
+        said.add("the console is named by a digest, and not the placeholder");
+        if (!REVISION.matcher(revision).matches()) {
+            throw new Refused("the console's revision must be the full forty-character finapp-admin-panel commit its image was built from,"
+                    + " not '" + revision + "'");
+        }
+        said.add("the console's revision is a full commit, finapp-admin-panel's: its provenance must name it, which promote.sh verifies");
+        if (environment.equals("production")) {
+            boolean given = false;
+            for (Map<String, String> record : history(root, CONSOLE_OVERLAYS + "staging/release.yaml", evidenceRef, false)) {
+                if (console.equals(record.get("console")) && revision.equals(record.get("revision"))) {
+                    given = true;
+                }
+            }
+            if (!given) {
+                throw new Refused("staging was never given this console: no release record of " + CONSOLE_OVERLAYS + "staging merged before"
+                        + " this change (" + evidenceRef + ") names " + console + " and " + revision + ". Promote it to staging first, in a"
+                        + " change of its own");
+            }
+            said.add("staging was given this console and revision, recorded before this change (" + evidenceRef + ")");
+        }
+        return said;
+    }
+
+    /** The one digest a console overlay names, refused unless its images are exactly the console's name and a digest. */
+    static String consoleDigest(Path root, String environment) throws Refused, IOException {
+        String where = CONSOLE_OVERLAYS + environment;
+        List<String> lines = imageLines(Files.readString(root.resolve(where + "/kustomization.yaml"), StandardCharsets.UTF_8));
+        Matcher digest = lines.size() == 2 ? Pattern.compile("    digest: (\\S+)").matcher(lines.get(1)) : null;
+        if (digest == null || !lines.get(0).equals("  - name: " + CONSOLE_IMAGE) || !digest.matches()) {
+            throw new Refused(where + "'s images are not the console's one name with a digest and nothing else: a tag, a new name or a"
+                    + " second image is never written by a promotion: " + lines);
+        }
+        return digest.group(1);
+    }
+
+    static Map<String, String> consoleRecord(Path root, String environment) throws IOException {
+        return fields(Files.readString(root.resolve(CONSOLE_OVERLAYS + environment + "/release.yaml"), StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Write the console overlay's digest and its record, and say which digest the rollout replaces: the overlay's before this write,
+     * {@code none} when that was the placeholder. The record's {@code console} is the serving digest once the commit is synced.
+     */
+    static String consoleWrite(Path root, String environment, String console, String revision) throws CannotJudge, IOException {
+        Path overlay = root.resolve(CONSOLE_OVERLAYS + environment + "/kustomization.yaml");
+        String text = Files.readString(overlay, StandardCharsets.UTF_8);
+        Pattern entry = Pattern.compile("(?m)^(  - name: " + CONSOLE_IMAGE + "\\R    digest: )(sha256:[0-9a-f]{64})$");
+        Matcher found = entry.matcher(text);
+        if (!found.find()) {
+            throw new CannotJudge(overlay + " does not name " + CONSOLE_IMAGE + " in the form this script writes");
+        }
+        String replaced = found.group(2);
+        if (found.find()) {
+            throw new CannotJudge(overlay + " names " + CONSOLE_IMAGE + " more than once");
+        }
+        text = entry.matcher(text).replaceFirst("$1" + console);
+        Path record = root.resolve(CONSOLE_OVERLAYS + environment + "/release.yaml");
+        StringBuilder header = new StringBuilder();
+        for (String line : Files.readString(record, StandardCharsets.UTF_8).split("\r?\n")) {
+            if (line.startsWith("#")) {
+                header.append(line).append('\n');
+            }
+        }
+        Files.writeString(overlay, text, StandardCharsets.UTF_8);
+        Files.writeString(record, header + "revision: \"" + revision + "\"\nconsole: \"" + console + "\"\n", StandardCharsets.UTF_8);
+        return replaced.equals(ZERO_DIGEST) ? "none" : replaced;
+    }
+
+    /**
+     * The hand-off to the next console build (P17-TSK-104's rollout fix): one line per environment, {@code <environment> <digest>} or
+     * {@code <environment> none} before its first console. The build collects the hashed assets of every digest named, so its rollout in
+     * either environment keeps the replaced pods' pages working; when staging is ahead of production the two differ, and both are named.
+     * An overlay that disagrees with its record is refused: which one serves could not be said.
+     */
+    static List<String> serving(Path root) throws Refused, IOException {
+        List<String> said = new ArrayList<>();
+        for (String environment : List.of("staging", "production")) {
+            String named = consoleDigest(root, environment);
+            String recorded = consoleRecord(root, environment).get("console");
+            if (!named.equals(recorded)) {
+                throw new Refused(CONSOLE_OVERLAYS + environment + " names " + named + " and its release record " + recorded
+                        + ": which console serves cannot be said");
+            }
+            said.add(environment + " " + (named.equals(ZERO_DIGEST) ? "none" : named));
         }
         return said;
     }

@@ -94,9 +94,10 @@
 # admission-check.sh reads, one of three: CONSOLE_IMAGE, an image in this Docker; CONSOLE_ARCHIVE, the console CI's finapp-console.oci.tar,
 # loaded; or CONSOLE_REPOSITORY, a checkout of finapp-admin-panel, its CONSOLE_COMMIT exported and built for kind. Obtained at build-images,
 # before the cluster, and refused there when two are named or half of one is; a later run can name the one a run left, finapp-console:rehearsal.
-# This run signs nothing - the cluster has no policy controller - so CONSOLE_SBOM is admission-check.sh's alone. With none named the step
+# This step signs nothing - the cluster has no policy controller - so CONSOLE_SBOM is admission-check.sh's and, in the delivery scope,
+# delivery.sh's (P17-TSK-105). With none named the step
 # is SKIPPED, and said to be, at the step and again beside the result (skipped.txt): never a pass. It is skipped too in the delivery scope,
-# whose edge is Argo CD's, and in the disaster-recovery exercise, whose images are its vault's alone. THE CLUSTER RUN IS OWED (the owner's
+# whose edge is Argo CD's and whose named console delivery.sh delivers through its own Application (P17-TSK-105), and in the disaster-recovery exercise, whose images are its vault's alone. THE CLUSTER RUN IS OWED (the owner's
 # postponement): KindRehearsalContractTest holds the step; what the step shows is claimed only once a run with a console image has ended green.
 #
 # Usage:   infra/scripts/kind-rehearsal.sh
@@ -1327,7 +1328,7 @@ step console
 if [ -z "$CONSOLE_FROM" ]; then
     console_skipped "no console image was named (CONSOLE_IMAGE, CONSOLE_ARCHIVE, or CONSOLE_REPOSITORY at CONSOLE_COMMIT), so /console on the operator host answers the proxy's 502 in this run"
 elif [ "$SCOPE" = delivery ]; then
-    console_skipped "the delivery scope's edge and release are Argo CD's, and no Application of it syncs deploy/console"
+    console_skipped "the delivery scope's edge and release are Argo CD's: its console, when one is named, is delivered by its own Application (delivery.sh, P17-TSK-105), not by this step"
 elif [ "$SCOPE" = dr ]; then
     console_skipped "the disaster-recovery exercise's images are its vault's alone, and the vault holds no console"
 else
