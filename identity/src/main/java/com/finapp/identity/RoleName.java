@@ -395,7 +395,17 @@ public enum RoleName {
      * A discard's four eyes are two holders of this one role, the second person a {@code CHECK} on {@code platform.dead_letter_discard}
      * ({@code INV-AUD-04}), the {@code LEDGER_ADJUST} shape.
      */
-    EVENT_OPERATOR(EnumSet.of(PermissionName.EVENT_OPERATE));
+    EVENT_OPERATOR(EnumSet.of(PermissionName.EVENT_OPERATE)),
+
+    /**
+     * Reads the audit trail and nothing else (`P17-TSK-017`; finapp-admin-panel ADR-C134 decision 2): a read-only role - no act,
+     * no {@code *_PROPOSE}, no {@code *_APPROVE} - whose every read is behind a second factor, so it needs an enrolled factor at
+     * grant ({@link #requiresEnrolledFactor}). {@code AUDIT_READ} is its alone: {@code ADMINISTRATOR} does not hold it (the owner,
+     * 2026-11-18). <strong>Not {@code IDENTITY_READ}</strong>, though ADR-C132 proposed it for the auditor: every pair of roles grants
+     * disjoint permissions ({@code RoleNameTest#theGrantsArePairwiseDisjoint}), and {@code ADMINISTRATOR} holds it. An auditor
+     * names an identity by the identifiers the records carry.
+     */
+    AUDITOR(EnumSet.of(PermissionName.AUDIT_READ));
 
     private final Set<PermissionName> permissions;
 
@@ -427,7 +437,8 @@ public enum RoleName {
      * <em>(Read "the six permissions named above" as the whole rule until then.)</em>
      */
     public boolean requiresEnrolledFactor() {
-        return permissions.stream().anyMatch(PermissionName::guardsAnAct);
+        // P17-TSK-017: or reads only behind a second factor - the same hollowness without a factor at grant.
+        return permissions.stream().anyMatch(permission -> permission.guardsAnAct() || permission.readsBehindAFactor());
     }
 
     public static String sqlValueList() {

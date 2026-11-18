@@ -80,6 +80,9 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/identities/{id}", PermissionName.IDENTITY_READ),
                     entry("POST /v1/operator/identities/lookup", PermissionName.IDENTITY_READ),
                     entry("GET /v1/operator/roles", PermissionName.IDENTITY_READ),
+                    // P17-TSK-017: the audit trail, read - the AUDITOR's alone (ADR-C134; the owner, 2026-11-18).
+                    entry("GET /v1/operator/audit-records", PermissionName.AUDIT_READ),
+                    entry("GET /v1/operator/audit-records/{id}", PermissionName.AUDIT_READ),
                     // P17-TSK-015: another identity's sessions, listed and ended without suspending the person.
                     entry("GET /v1/operator/identities/{id}/sessions", PermissionName.SESSION_ADMINISTER),
                     entry("DELETE /v1/operator/identities/{id}/sessions", PermissionName.SESSION_ADMINISTER),
@@ -715,6 +718,9 @@ class RoutePermissionRegisterTest {
             "GET /v1/operator/access-review/factorless-holdings",
             // P17-TSK-016: who holds a conflicting pair - the factorless review's twin, on the same footing.
             "GET /v1/operator/access-review/sod-conflicts",
+            // P17-TSK-017: the audit trail - who did what to whom - is not a password's to read.
+            "GET /v1/operator/audit-records",
+            "GET /v1/operator/audit-records/{id}",
             // P17-TSK-014: who holds the privileged roles, one of them, and who a login names - the same map, not on a password.
             "GET /v1/operator/identities",
             "GET /v1/operator/identities/{id}",

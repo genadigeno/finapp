@@ -113,6 +113,11 @@ class EveryOperatorActRequiresAFactorTest {
             return unsafe() && permission() != null;
         }
 
+        boolean multiFactor() {
+            RequiresAssurance declared = annotation(method, RequiresAssurance.class);
+            return declared != null && declared.value().atLeast(AssuranceLevel.MULTI_FACTOR);
+        }
+
         @Override
         public String toString() {
             return name() + " " + verbs + " " + pattern;
@@ -204,11 +209,33 @@ class EveryOperatorActRequiresAFactorTest {
     }
 
     @Test
-    @DisplayName("every role holding a permission that guards an act is refused to an identity with no factor")
+    @DisplayName("a permission reads behind a factor in the domain exactly when every route it guards is a read declaring"
+            + " MULTI_FACTOR (P17-TSK-017)")
+    void everyPermissionSaysWhetherItReadsBehindAFactor() {
+        Map<PermissionName, Boolean> onlyFactorReads = new EnumMap<>(PermissionName.class);
+        for (Handler handler : handlers()) {
+            PermissionName permission = handler.permission();
+            if (permission != null) {
+                onlyFactorReads.merge(permission, !handler.unsafe() && handler.multiFactor(), Boolean::logicalAnd);
+            }
+        }
+        for (PermissionName permission : PermissionName.values()) {
+            boolean onTheRoutes = onlyFactorReads.getOrDefault(permission, false);
+            assertThat(permission.readsBehindAFactor())
+                    .as("%s: PermissionName.readsBehindAFactor says %s, and its routes say %s", permission,
+                            permission.readsBehindAFactor(), onTheRoutes ? "only reads, every one behind a factor" : "otherwise")
+                    .isEqualTo(onTheRoutes);
+        }
+    }
+
+    @Test
+    @DisplayName("every role holding a permission that guards an act, or reads only behind a factor, is refused to an identity"
+            + " with no factor")
     void everyRoleThatCanActNeedsAFactor() {
         for (RoleName role : RoleName.values()) {
             boolean canAct = role.permissions().stream().anyMatch(PermissionName::guardsAnAct);
-            assertThat(role.requiresEnrolledFactor()).as(role.name()).isEqualTo(canAct);
+            boolean readsBehindAFactor = role.permissions().stream().anyMatch(PermissionName::readsBehindAFactor);
+            assertThat(role.requiresEnrolledFactor()).as(role.name()).isEqualTo(canAct || readsBehindAFactor);
         }
     }
 

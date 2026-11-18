@@ -13586,6 +13586,92 @@
         ],
         "type": "object"
       },
+      "AuditRecordPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditRecordSummary"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AuditRecordSummary": {
+        "properties": {
+          "actorId": {
+            "type": "string"
+          },
+          "auditId": {
+            "type": "string"
+          },
+          "changeSummary": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "targetType": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AuditRecordView": {
+        "properties": {
+          "actorId": {
+            "type": "string"
+          },
+          "actorType": {
+            "type": "string"
+          },
+          "auditId": {
+            "type": "string"
+          },
+          "changeSummary": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "targetType": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AuthenticatedSession": {
         "properties": {
           "assurance": {
@@ -30921,7 +31007,8 @@
               "ACCOUNTANT",
               "FINANCIAL_CONTROLLER",
               "REGULATORY_REPORTER",
-              "EVENT_OPERATOR"
+              "EVENT_OPERATOR",
+              "AUDITOR"
             ],
             "type": "string"
           }
@@ -33558,7 +33645,8 @@
                 "ACCOUNTANT",
                 "FINANCIAL_CONTROLLER",
                 "REGULATORY_REPORTER",
-                "EVENT_OPERATOR"
+                "EVENT_OPERATOR",
+                "AUDITOR"
               ],
               "type": "string"
             }
@@ -38884,6 +38972,132 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ValuationRateSetReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/audit-records": {
+      "get": {
+        "operationId": "listAuditRecords",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "operation",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "targetType",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "targetId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "correlationId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "outcome",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditRecordPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/audit-records/{id}": {
+      "get": {
+        "operationId": "readAuditRecord",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditRecordView"
                 }
               }
             },

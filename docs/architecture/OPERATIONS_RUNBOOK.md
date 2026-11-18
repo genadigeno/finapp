@@ -5907,6 +5907,25 @@ past 1,000 settled lines stores a new one in a savepoint that never fails it. Th
   `CREATE INDEX CONCURRENTLY journal_line_by_account_and_transaction ON ledger.journal_line (ledger_account_id, txid);` - the
   migration's `IF NOT EXISTS` then keeps it. A failed concurrent build leaves an `INVALID` index under that name: drop it and build
   again before the migration runs.
+- **Before platform `V017` runs on a large audit trail** (`P17-TSK-017`). Its two indexes serve the audit trail's operator read. Each
+  holds `SHARE` on `platform.audit_record` while it reads the table, and every audited act inserts there, so build them first, by
+  hand, outside a transaction, by these names. The migration's `IF NOT EXISTS` then keeps them:
+  `CREATE INDEX CONCURRENTLY audit_record_by_time ON platform.audit_record (occurred_at, audit_id);` and
+  `CREATE INDEX CONCURRENTLY audit_record_by_target_time ON platform.audit_record (target_type, target_id, occurred_at, audit_id);`.
+  A failed build leaves an `INVALID` index: drop it and build again. **The plans they give**, recorded by `AuditTrailDatabaseTest` on
+  sixty thousand records over a month (2026-11-18):
+  - **A ten-day window, newest first:** `Limit -> Index Only Scan Backward using audit_record_by_time`, the window the index
+    condition.
+  - **A target's history, the console's History tab:** `Index Only Scan Backward using audit_record_by_target_time`, the target and
+    the window the index condition.
+  - **A continued page:** the same scan, the keyset row comparison `ROW(occurred_at, audit_id) < ROW(...)` inside the index
+    condition.
+
+  No `Sort` and no `Seq Scan` in any of them, so a page costs its own rows. An actor filter rides `V009`'s `(actor_id, audit_id)`,
+  and the other filters narrow the window's range. The read stays on the application's pool, never a replica (ADR-0129): these plans
+  show no contention to move it for. **What a page promises**: each page is exact for what was committed when it was read. A record
+  committed later, stamped inside a range a walk already served, is in no later page of that walk, and a fresh walk shows it. No
+  instant after which a window is final is claimed. The archive's queue (`V015`) is the reader that never misses such a row.
 
 ### 11.49 The connection budget at ten replicas, the autoscaler's metric on `kind`, and a pooler refused (`P16-TSK-009`, ADR-0134)
 

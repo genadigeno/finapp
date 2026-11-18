@@ -77,18 +77,34 @@ class RoleAssignmentMigrationTest {
     }
 
     @Test
-    @DisplayName("identity V026 admits exactly EVENT_OPERATOR beyond V025's twenty, and is the latest role constraint (P15-TSK-028)")
+    @DisplayName("identity V026 admits exactly EVENT_OPERATOR beyond V025's twenty (P15-TSK-028; the latest until P17-TSK-017's V029)")
     void v026AdmitsTheEventOperatorAndNothingElse() {
         java.util.Map<String, String> migrations = allMigrations();
         String v026 = migrations.get("V026__admit_the_event_operator_role.sql");
         assertThat(v026).as("V026 is on the classpath").isNotNull();
-        assertThat(latestConstraintDefinition()).as("V026 is the latest role constraint").isEqualTo(v026);
         java.util.Set<String> before = roleNames(migrations.get("V025__admit_the_accounting_roles.sql"));
         java.util.Set<String> after = roleNames(v026);
         assertThat(after).as("nothing removed").containsAll(before);
         java.util.Set<String> added = new java.util.TreeSet<>(after);
         added.removeAll(before);
         assertThat(added).containsExactly("EVENT_OPERATOR");
+    }
+
+    @Test
+    @DisplayName("identity V029 admits exactly AUDITOR beyond V026's twenty-one, NOT VALID, and is the latest role constraint"
+            + " (P17-TSK-017)")
+    void v029AdmitsTheAuditorAndNothingElse() {
+        java.util.Map<String, String> migrations = allMigrations();
+        String v029 = migrations.get("V029__admit_the_auditor_role.sql");
+        assertThat(v029).as("V029 is on the classpath").isNotNull();
+        assertThat(latestConstraintDefinition()).as("V029 is the latest role constraint").isEqualTo(v029);
+        java.util.Set<String> before = roleNames(migrations.get("V026__admit_the_event_operator_role.sql"));
+        java.util.Set<String> after = roleNames(v029);
+        assertThat(after).as("nothing removed").containsAll(before);
+        java.util.Set<String> added = new java.util.TreeSet<>(after);
+        added.removeAll(before);
+        assertThat(added).containsExactly("AUDITOR");
+        assertThat(v029).as("judged on new writes, never over old rows").contains("NOT VALID;");
     }
 
     /** The quoted names inside a migration's {@code role_name IN (...)} list. */

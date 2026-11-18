@@ -87,6 +87,8 @@ http:
         || (Method(`POST`) && PathRegexp(`^/v1/operator/accounting/valuation-rate-sets/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/approval$`))
         || (Method(`POST`) && PathRegexp(`^/v1/operator/accounting/valuation-rate-sets/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/reference-gap-approval$`))
         || (Method(`POST`) && PathRegexp(`^/v1/operator/accounting/valuation-rate-sets/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/rejection$`))
+        || (Method(`GET`) && Path(`/v1/operator/audit-records`))
+        || (Method(`GET`) && PathRegexp(`^/v1/operator/audit-records/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
         || (Method(`GET`) && Path(`/v1/operator/bnpl-agreements/write-offs`))
         || (Method(`GET`) && PathRegexp(`^/v1/operator/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
         || (Method(`GET`) && PathRegexp(`^/v1/operator/bnpl-agreements/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/explanation$`))

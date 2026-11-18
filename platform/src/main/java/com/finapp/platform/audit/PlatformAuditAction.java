@@ -98,6 +98,16 @@ public enum PlatformAuditAction implements AuditableAction {
             true),
 
     /**
+     * The audit trail was read (`P17-TSK-017`; finapp-admin-panel ADR-C134 decision 3): a page of a window - the filter and how
+     * many it served the summary, one record per page - or one record by its id, that record the target. Reading the trail is
+     * itself on the trail, so who looked at what, and when, is never a question the trail cannot answer.
+     */
+    AUDIT_RECORDS_READ(
+            "audit.RecordsRead",
+            "A holder of AUDIT_READ read the audit trail: a page of a window with its filter, or one record.",
+            false),
+
+    /**
      * A request at a door declaring {@code RecordsRefusals} was refused or failed (`P15-TSK-039`; {@code INV-AUD-03}).
      *
      * <p>Its outcome is what the door answered: {@code DENIED} for a control's refusal, {@code FAILED} for a failure or a

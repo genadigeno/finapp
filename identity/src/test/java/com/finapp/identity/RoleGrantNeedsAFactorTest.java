@@ -51,12 +51,14 @@ class RoleGrantNeedsAFactorTest {
 
     @Test
     @DisplayName("every role that can act needs one (P17-TSK-102: every act asks for a second factor, so a factorless holder's"
-            + " password would enrol a thief's) - today all of them, since every role holds a permission that guards an act")
+            + " password would enrol a thief's), and every role that reads only behind a factor (P17-TSK-017) - today all of them")
     void whichRolesNeedAFactor() {
         assertThat(Arrays.stream(RoleName.values()).filter(RoleName::requiresEnrolledFactor).collect(Collectors.toSet()))
-                .as("the rule is the permissions' own: a role needs a factor exactly when one of them guards an act")
+                .as("the rule is the permissions' own: a role needs a factor exactly when one of them guards an act or reads only"
+                        + " behind a factor")
                 .isEqualTo(Arrays.stream(RoleName.values())
-                        .filter(role -> role.permissions().stream().anyMatch(PermissionName::guardsAnAct))
+                        .filter(role -> role.permissions().stream()
+                                .anyMatch(permission -> permission.guardsAnAct() || permission.readsBehindAFactor()))
                         .collect(Collectors.toSet()))
                 .as("and today that is every role")
                 .isEqualTo(Set.of(RoleName.values()));
@@ -69,7 +71,7 @@ class RoleGrantNeedsAFactorTest {
     @DisplayName("a permission that only reads needs no factor, and one added later guards an act until somebody says otherwise")
     void onlyTheReadsNeedNone() {
         assertThat(Arrays.stream(PermissionName.values()).filter(permission -> !permission.guardsAnAct()))
-                .containsExactlyInAnyOrder(PermissionName.ACCOUNTING_READ, PermissionName.FX_INVESTIGATE);
+                .containsExactlyInAnyOrder(PermissionName.ACCOUNTING_READ, PermissionName.FX_INVESTIGATE, PermissionName.AUDIT_READ);
     }
 
     @Test
