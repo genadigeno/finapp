@@ -147,6 +147,25 @@ them:
 - the battery's run there, the seven mandatory scenarios from a fresh run (`P17-TST-001`), which
   is a cluster run like Phase 16's and is run or owed at the owner's word.
 
+*(2026-11-18, `P17-TSK-106`.)* **The seed** is `infra/scripts/e2e-seed.sh <scenario>`, M2's four:
+`abandoned-event`, `parked-record`, `parsed-file`, `fee-break`. It prints only `KEY=value` lines
+on stdout, and every run makes fresh rows, identities and references. Its targets are this
+checkout's compose stack and a kind rehearsal's cluster; it refuses anything else before it
+touches anything. A state no door reaches (an abandoned relay, a parked record) is one SQL
+statement per plant, written by the outbox's and inbox's own rules. Everything else goes
+through the platform's doors from `infra/scripts/e2e-seed/Seed.java`, a single source file with
+no route to the database. Locally no card provider is configured, so no door can create an
+expectation that an `AMOUNT_MISMATCH` needs. The break is therefore a `FEE_MISMATCH`, which the
+platform raises itself from an attested PSP report; ACKNOWLEDGE admits it, four-eyes. Three
+tiers hold it:
+- `E2eSeedPlantsDatabaseTest` (platform, `database`) runs the plants unchanged, as the migrator,
+  through the dead-letter operations, a relay poll and the retention sweep.
+- `E2eSeedDoorsDatabaseTest` (app, `own-container`) runs `Seed.java` itself against the
+  application, with the intake's and the matcher's real schedules on, and then `-011`'s
+  resolution flow on the break it found.
+- `E2eSeedStaysTestOnlyTest` (app, `architecture`) holds that the seed ships nowhere and
+  refuses any stack but a test one.
+
 ---
 
 ## 5. Shared test support

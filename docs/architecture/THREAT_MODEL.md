@@ -305,11 +305,11 @@ database's administrative access, the backups and the telemetry back ends.
 | Category | Threats | Note |
 |---|---|---|
 | Spoofing | T29 | |
-| Tampering | T11, T39 | |
+| Tampering | T11, T39, T56 | |
 | Repudiation | T10, T39 | |
 | Information disclosure | T6, T32, T34, T46 | |
 | Denial of service | T32, T34 | |
-| Elevation of privilege | T29 | |
+| Elevation of privilege | T29, T56 | |
 
 ### B11 — Browser → operator edge
 
@@ -397,11 +397,12 @@ numbers `PHASE_15_PLAN.md` §9.2 gave them.
 | T53 | A compromised operator workstation acting through a live, stepped-up session | B11:S | MEDIUM | SEVERE | CRITICAL | CONTROL |
 | T54 | A malicious or vulnerable dependency in the console's build reaching the operator's browser | B11:T, B11:E | MEDIUM | SEVERE | CRITICAL | CONTROL |
 | T55 | Operator data kept after the session that read it has ended: an operator answer's identifiers, amounts, statuses and restricted fields stored by the browser, a shared workstation's disk cache or an intermediary, because nothing forbade it | B11:I | MEDIUM | HIGH | HIGH | CONTROL |
+| T56 | A test-only seed run against a deployed environment's database: an administrator nobody chose granted by its break-glass step, rows planted in the outbox and the inbox that no relay or consumer wrote, and simulated settlement evidence uploaded and attested under the seed's own operators, because nothing told a test stack from a real one | B10:T, B10:E | MEDIUM | HIGH | HIGH | CONTROL |
 
-**Summary.** 55 threats: 30 CRITICAL, 15 HIGH, 9 MEDIUM, 1 LOW. 53 are `CONTROL`. Two, T42 and T47 (both MEDIUM),
+**Summary.** 56 threats: 30 CRITICAL, 16 HIGH, 9 MEDIUM, 1 LOW. 54 are `CONTROL`. Two, T42 and T47 (both MEDIUM),
 are accepted by the owner (2026-11-08; T42 until 2027-06-30; §6 items 1 and 6). None is `PROPOSED ACCEPTANCE`.
 *(Read "are `PROPOSED ACCEPTANCE` awaiting the owner (§6). No threat is `ACCEPTED`." until the owner's decisions of
-2026-11-08.)* *(Read "47 threats: 25 CRITICAL, 13 HIGH, 8 MEDIUM, 1 LOW. 45 are `CONTROL`." until P17-INIT, 2026-11-17, which added T48-T54 at B11. A browser-cache threat, rated HIGH, waits for its control: §6 item 73 (b).)* *(Read "54 threats: 30 CRITICAL, 14 HIGH, 9 MEDIUM, 1 LOW. 52 are `CONTROL`." until P17-TSK-101's gate, 2026-11-17, which registered T55 with its evidence.)*
+2026-11-08.)* *(Read "55 threats: 30 CRITICAL, 15 HIGH, 9 MEDIUM, 1 LOW. 53 are `CONTROL`." until P17-TSK-106's gate, 2026-11-18, which added T56 at B10: the console's end-to-end seed.)* *(Read "47 threats: 25 CRITICAL, 13 HIGH, 8 MEDIUM, 1 LOW. 45 are `CONTROL`." until P17-INIT, 2026-11-17, which added T48-T54 at B11. A browser-cache threat, rated HIGH, waits for its control: §6 item 73 (b).)* *(Read "54 threats: 30 CRITICAL, 14 HIGH, 9 MEDIUM, 1 LOW. 52 are `CONTROL`." until P17-TSK-101's gate, 2026-11-17, which registered T55 with its evidence.)*
 
 *(The fix round of 2026-11-08 re-read every rating against §1.3's words. T10, T19, T22, T32, T33, T34 and T36 rose to
 CRITICAL; T35, T38, T43 and T44 to HIGH. Each had understated a likelihood the definitions call one foothold, or an
@@ -987,6 +988,8 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T54 | The kind rehearsal loads the console into every node, puts its digest into its own rendered copy of the kind overlay (never the committed file), applies it after the edge and asks through the real edge: `/console/` 200 under the console's policy exactly once, an API route keeping `default-src 'none'`, nothing on the public host; `kubeconform -strict` reads every console overlay | EXISTS | `app/src/test/java/com/finapp/app/architecture/KindRehearsalContractTest.java#theConsoleIsLoadedAppliedAndAskedAfterTheEdge`; `app/src/test/java/com/finapp/app/architecture/ConsoleHostingManifestsTest.java#kubeconformReadsEveryConsoleOverlay` |
 | T54 | The above shown on a cluster: the admission check and the rehearsal green with a console image named, and the console's `kind` end-to-end run | PLANNED | `P17-TST-001` |
 | T55 | Every answer of the operator surface carries `Cache-Control: no-store` - a handler's, the session interceptor's refusals, and each answer nobody wrote a handler for (an unknown route, an unsupported method, a body that never parsed, a media type nobody reads, an unexpected failure, a body over the size bound) - set before the chain runs and again on the container's error dispatch; the public surface is left as it was; nothing else in the application sets the header or resets a response, so nothing undoes it. The console's own files are served by its own server, which sets their caching per path | EXISTS | `app/src/test/java/com/finapp/app/surface/OperatorResponsesAreNotStoredTest.java#everyOperatorAnswerIsNoStore`; `app/src/test/java/com/finapp/app/surface/OperatorResponsesAreNotStoredTest.java#nothingElseSetsItOrResetsAResponse` |
+| T56 | The seed refuses any stack but a test one before it touches anything: its compose target reaches only this checkout's own compose service and an application on this machine's loopback (an anchored check, so no look-alike host passes), its kind target only a node container carrying the label kind gives its nodes, and an unknown target is refused rather than defaulted; what the shell puts into SQL is a login whose shape it checked first; the HTTP half has no route to the database and keeps the test identities' secrets in the run's own directory, removed with the run | EXISTS | `app/src/test/java/com/finapp/app/architecture/E2eSeedStaysTestOnlyTest.java#theScriptRefusesAnythingButATestStack`; `app/src/test/java/com/finapp/app/architecture/E2eSeedStaysTestOnlyTest.java#theHttpHalfHasNoDatabaseRoute` |
+| T56 | No image and nothing deployed carries the seed: named by no module's main source set - the application image's only input is the boot jar, the migrator's only the modules' migrations - nor by any manifest, delivery root or Terraform; every plant is one statement that inserts and nothing else | EXISTS | `app/src/test/java/com/finapp/app/architecture/E2eSeedStaysTestOnlyTest.java#noImageCarriesTheSeed`; `app/src/test/java/com/finapp/app/architecture/E2eSeedStaysTestOnlyTest.java#nothingDeployedRunsTheSeed`; `app/src/test/java/com/finapp/app/architecture/E2eSeedStaysTestOnlyTest.java#everyPlantIsOneMarkedStatement` |
 
 **Where the evidence is a database test.** Many `EXISTS` rows cite tests in the `database` tier. Phase 15's standing
 deviation (C14) deferred those tiers to one pass at the phase exit, which the owner postponed past the project's phases on

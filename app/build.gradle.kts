@@ -574,6 +574,9 @@ extra["ownContainerSuites"] =
         // whole database (every assessment against its command, every window against its evidence) at every rest.
         "com.finapp.app.risk.RiskStormTest",
         "com.finapp.app.settlement.BankStatementCashDatabaseTest",
+        // P17-TSK-106: the console's end-to-end seed, run against the application with the intake's and the matcher's real
+        // schedules on - a context whose sweepers would otherwise tick under every later suite of the shared JVM.
+        "com.finapp.app.settlement.E2eSeedDoorsDatabaseTest",
         "com.finapp.app.settlement.PayoutSettlementCashDatabaseTest",
         "com.finapp.app.settlement.SchemeCycleCashDatabaseTest",
         // P14-DOC-001's database pass: its rebuild deletes every unheld expectation in the database as the root, commits,
