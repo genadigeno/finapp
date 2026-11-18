@@ -357,8 +357,10 @@ class RiskOverrideDeskTest {
             assertThat(view.effect()).isEqualTo("RESUBMISSION");
             assertThat(view.decisionReason()).isEqualTo("withdrawn");
         });
+        // P17-TSK-109: of the persons, the proposer alone - who decided stays withheld.
         assertThat(RiskOverrideDesk.RiskOverrideView.class.getRecordComponents())
-                .noneMatch(component -> component.getName().contains("By"));
+                .filteredOn(component -> component.getName().contains("By"))
+                .extracting(java.lang.reflect.RecordComponent::getName).containsExactly("proposedBy");
         assertThat(as(officer(), () -> desk.readOne(id(review), overrideId)).overrides()).hasSize(1);
         assertThat(audited("risk.AssessmentRead")).hasSize(2).allSatisfy(record -> assertThat(
                 record.changeSummary().orElseThrow()).contains("door=override"));

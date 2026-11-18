@@ -237,6 +237,19 @@ public final class CaseWorklist {
      * before it answers. Its target the case; the summary the kind, the status and the counts - never a note or a subject.
      */
     public void record(Connection unitOfWork, CaseFile file, Actor actor, CorrelationId correlation) {
+        recorded(unitOfWork, file, Optional.empty(), actor, correlation);
+    }
+
+    /**
+     * Records {@code file} read by {@code actor} with the heads of its regulatory reports served beside it (`P17-TSK-109`:
+     * to a holder of {@code AML_REPORT_APPROVE} alone, the owner's decision of 2026-11-18) - the summary counts them too.
+     */
+    public void record(Connection unitOfWork, CaseFile file, int reportsServed, Actor actor, CorrelationId correlation) {
+        recorded(unitOfWork, file, Optional.of(reportsServed), actor, correlation);
+    }
+
+    private void recorded(Connection unitOfWork, CaseFile file, Optional<Integer> reportsServed, Actor actor,
+            CorrelationId correlation) {
         Objects.requireNonNull(file, "file");
         Objects.requireNonNull(correlation, "correlation");
         RiskCase riskCase = file.riskCase();
@@ -245,7 +258,8 @@ public final class CaseWorklist {
                 correlation, Optional.of("kind=" + riskCase.kind().name() + ", status=" + riskCase.status().name()
                         + ", revision=" + riskCase.revision() + ", alerts=" + file.alerts().size() + ", actions="
                         + file.actions().size() + ", history=" + file.history().size() + ", riskActions="
-                        + file.riskActions().size() + ", evidence=" + file.evidence().size())));
+                        + file.riskActions().size() + ", evidence=" + file.evidence().size()
+                        + reportsServed.map(count -> ", reports=" + count).orElse(""))));
     }
 
     /** Records a refused file read {@code FAILED} ({@code risk.SelfDealingRefused}) - a transaction of the caller's own. */

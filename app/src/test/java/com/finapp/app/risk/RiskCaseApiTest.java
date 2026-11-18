@@ -84,7 +84,8 @@ class RiskCaseApiTest {
         HttpResponse<String> proposed = post(door(caseId) + "/dispositions", "{\"revision\":1,\"disposition\":"
                 + "\"CONFIRMED_FRAUD\",\"prohibit\":true,\"reason\":\"a mule account\"}", alice.token());
         assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
-        assertThat(proposed.body()).contains("\"status\":\"PROPOSED\"").contains("\"requiresSecondPerson\":true");
+        assertThat(proposed.body()).contains("\"status\":\"PROPOSED\"").contains("\"requiresSecondPerson\":true")
+                .contains("\"proposedBy\":\"" + alice.identity() + "\"");
         String dispositionId = field(proposed.body(), "dispositionId");
         String approval = door(caseId) + "/dispositions/" + dispositionId + "/approval";
 

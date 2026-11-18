@@ -67,11 +67,13 @@ public final class RiskActionDesk {
     /**
      * A risk action as an act answers it: its id (what the approval and rejection name - and its key's), its case, the
      * kind, what it acts on, the state and the owner's outcome, the attempts T-act made, the case's revision (what the
-     * next act on the case must carry) and the database's stamps. Instants ISO-8601 UTC; no person.
+     * next act on the case must carry), the database's stamps, and who proposed it (`P17-TSK-109`: the proposer's actor id,
+     * so the console disables their own approval; {@code risk.SelfApprovalRefused} stays the control). Instants ISO-8601
+     * UTC; no other person.
      */
     public record RiskActionView(String actionId, String caseId, String kind, String targetKind, String targetRef,
             String status, String outcome, int attempts, int caseRevision, String proposedAt, String decidedAt,
-            String dispatchedAt, String concludedAt) {}
+            String dispatchedAt, String concludedAt, String proposedBy) {}
 
     // ------------------------------------------------------------------ acts
 
@@ -218,7 +220,8 @@ public final class RiskActionDesk {
                 action.proposedAt().map(Instant::toString).orElse(null),
                 action.decidedAt().map(Instant::toString).orElse(null),
                 action.dispatchedAt().map(Instant::toString).orElse(null),
-                action.concludedAt().map(Instant::toString).orElse(null));
+                action.concludedAt().map(Instant::toString).orElse(null),
+                action.proposedBy().id());
     }
 
     private static UUID uuid(String raw, String what) {

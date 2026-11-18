@@ -1,5 +1,6 @@
 package com.finapp.app.risk;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
@@ -11,6 +12,8 @@ import com.finapp.risk.CaseEvent;
 import com.finapp.risk.CaseWorklist;
 import com.finapp.risk.Cases;
 import com.finapp.risk.Queues;
+import com.finapp.risk.RegulatoryReport;
+import com.finapp.risk.RegulatoryReportStore;
 import com.finapp.risk.RiskAlert;
 import com.finapp.risk.RiskAlertId;
 import com.finapp.risk.RiskAssessments;
@@ -41,19 +44,25 @@ import java.util.UUID;
  * <p><strong>What is served.</strong> Ids, codes, statuses, the database's stamps, the subject by reference, evidence
  * <em>by reference</em> (an assessment is read through {@code GET /v1/operator/risk/assessments/{id}}, audited
  * {@code risk.AssessmentRead}), the person-written texts the analyst's desk alone may see (a note, a suppression's
- * reasons - {@code DATA_CLASSIFICATION.md}) - and never a person: who proposed, approved or took is withheld. Nothing
- * here is logged.
+ * reasons - {@code DATA_CLASSIFICATION.md}) - and of the persons only a proposal's proposer (`P17-TSK-109`, B4.5: so the
+ * console disables the proposer's own approval in advance; {@code risk.SelfApprovalRefused} stays the control): who
+ * approved, decided or took stays withheld. A case's regulatory reports are listed in its file only to a reader who also
+ * holds {@code AML_REPORT_APPROVE} (`P17-TSK-109`, the owner's tipping-off decision of 2026-11-18): an analyst's file never
+ * says one exists. Nothing here is logged.
  */
 public final class RiskQueueDesk {
 
     private final AlertQueue alerts;
     private final CaseWorklist cases;
+    private final RegulatoryReportStore reports;
     private final RiskTransactions transactions;
     private final RiskFlowScope flow;
 
-    public RiskQueueDesk(AlertQueue alerts, CaseWorklist cases, RiskTransactions transactions, RiskFlowScope flow) {
+    public RiskQueueDesk(AlertQueue alerts, CaseWorklist cases, RegulatoryReportStore reports, RiskTransactions transactions,
+            RiskFlowScope flow) {
         this.alerts = Objects.requireNonNull(alerts, "alerts");
         this.cases = Objects.requireNonNull(cases, "cases");
+        this.reports = Objects.requireNonNull(reports, "reports");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.flow = Objects.requireNonNull(flow, "flow");
     }
@@ -72,10 +81,11 @@ public final class RiskQueueDesk {
 
     /**
      * An alert's suppression: {@code PROPOSED} (awaiting a second person) or {@code DECIDED} (the alert suppressed), the
-     * reason code, the proposer's text and the decider's, and the database's stamps - never who.
+     * reason code, the proposer's text and the decider's, the database's stamps, and who proposed it (`P17-TSK-109`: the
+     * proposer's actor id, so the console disables their own approval) - never who decided.
      */
     public record RiskSuppressionView(String status, String reasonCode, String reason, String proposedAt,
-            String decisionReason, String decidedAt) {}
+            String decisionReason, String decidedAt, String proposedBy) {}
 
     /** A page of the alert queue: the alerts, oldest first, and the cursor to the next page ({@code null} at the end). */
     public record RiskAlertPageView(List<RiskAlertView> alerts, String next) {}
@@ -85,11 +95,20 @@ public final class RiskQueueDesk {
 
     /**
      * One case's file: its head, the alerts attached to it, its investigator actions, its history, its downstream
-     * actions and every evidence reference it holds - each a kind and an id, resolved by its own audited read.
+     * actions and every evidence reference it holds - each a kind and an id, resolved by its own audited read - and, to a
+     * reader who also holds {@code AML_REPORT_APPROVE} alone (`P17-TSK-109`), its regulatory reports' heads: absent for
+     * everyone else, so an analyst's file is what it always was.
      */
     public record RiskCaseFileView(RiskCaseDesk.RiskCaseView riskCase, List<RiskAlertView> alerts,
             List<RiskCaseActionView> actions, List<RiskCaseEventView> history,
-            List<RiskActionDesk.RiskActionView> riskActions, List<RiskEvidenceView> evidence) {}
+            List<RiskActionDesk.RiskActionView> riskActions, List<RiskEvidenceView> evidence,
+            @JsonInclude(JsonInclude.Include.NON_NULL) List<RiskCaseReportView> reports) {}
+
+    /**
+     * One regulatory report of a case, by reference (`P17-TSK-109`): its id, status, jurisdiction and drafting stamp - never
+     * its narrative, which the report's own audited read serves ({@code GET .../cases/{caseId}/reports/{reportId}}).
+     */
+    public record RiskCaseReportView(String reportId, String status, String jurisdiction, String draftedAt) {}
 
     /**
      * One investigator action: its ordinal (the revision it produced), its kind, its text (a note, the evidence's or an
@@ -197,15 +216,25 @@ public final class RiskQueueDesk {
                 page.next().map(id -> id.value().toString()).orElse(null));
     }
 
-    /** {@code rawCaseId}'s file, read and recorded. */
+    /** {@code rawCaseId}'s file, read and recorded - without its reports. */
     public RiskCaseFileView file(String rawCaseId) {
+        return file(rawCaseId, false);
+    }
+
+    /**
+     * {@code rawCaseId}'s file, read and recorded; with its regulatory reports' heads when {@code withReports} - the door's
+     * judgement that the reader also holds {@code AML_REPORT_APPROVE} (`P17-TSK-109`), read on the file's own snapshot.
+     */
+    public RiskCaseFileView file(String rawCaseId, boolean withReports) {
         RiskCaseId caseId = caseId(rawCaseId);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        CaseWorklist.CaseFile file;
+        Filed filed;
         try {
-            file = flow.door(RiskSpans.CASE_READ, () -> transactions.inSnapshot(
-                    snapshot -> cases.read(snapshot, caseId, actor)));
+            filed = flow.door(RiskSpans.CASE_READ, () -> transactions.inSnapshot(snapshot -> {
+                CaseWorklist.CaseFile read = cases.read(snapshot, caseId, actor);
+                return new Filed(read, withReports ? Optional.of(reports.ofCase(snapshot, caseId)) : Optional.empty());
+            }));
         } catch (RiskAssessments.SelfDealingRefused refused) {
             transactions.inTransaction(uow -> {
                 cases.recordRefusal(uow, caseId, refused, actor, correlation);
@@ -216,11 +245,18 @@ public final class RiskQueueDesk {
             throw notFound();
         }
         transactions.inTransaction(uow -> {
-            cases.record(uow, file, actor, correlation);
+            if (filed.reports().isPresent()) {
+                cases.record(uow, filed.file(), filed.reports().get().size(), actor, correlation);
+            } else {
+                cases.record(uow, filed.file(), actor, correlation);
+            }
             return null;
         });
-        return view(file);
+        return view(filed.file(), filed.reports());
     }
+
+    /** A file as read, and its reports when they were asked for. */
+    private record Filed(CaseWorklist.CaseFile file, Optional<List<RegulatoryReport>> reports) {}
 
     // ------------------------------------------------------------------ the views
 
@@ -231,7 +267,8 @@ public final class RiskQueueDesk {
                 proposal.reason(),
                 proposal.proposedAt().toString(),
                 alert.decision().map(RiskAlert.Decision::reason).orElse(null),
-                alert.decision().map(decision -> decision.decidedAt().toString()).orElse(null))).orElse(null);
+                alert.decision().map(decision -> decision.decidedAt().toString()).orElse(null),
+                proposal.proposedBy())).orElse(null);
         return new RiskAlertView(
                 alert.id().value().toString(),
                 alert.kind().name(),
@@ -253,6 +290,10 @@ public final class RiskQueueDesk {
     }
 
     static RiskCaseFileView view(CaseWorklist.CaseFile file) {
+        return view(file, Optional.empty());
+    }
+
+    static RiskCaseFileView view(CaseWorklist.CaseFile file, Optional<List<RegulatoryReport>> reports) {
         int revision = file.riskCase().revision();
         return new RiskCaseFileView(
                 RiskCaseDesk.view(file.riskCase(), false),
@@ -261,7 +302,12 @@ public final class RiskQueueDesk {
                 file.history().stream().map(RiskQueueDesk::event).toList(),
                 file.riskActions().stream().map(action -> RiskActionDesk.view(action, revision)).toList(),
                 file.evidence().stream().map(ref -> new RiskEvidenceView(ref.kind().name(), ref.id().toString()))
-                        .toList());
+                        .toList(),
+                reports.map(served -> served.stream().map(report -> new RiskCaseReportView(
+                        report.id().value().toString(),
+                        report.status().name(),
+                        report.content().jurisdiction(),
+                        report.draftedAt().map(Instant::toString).orElse(null))).toList()).orElse(null));
     }
 
     private static RiskCaseActionView action(CaseAction action) {

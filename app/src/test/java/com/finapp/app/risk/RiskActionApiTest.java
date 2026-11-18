@@ -79,7 +79,7 @@ class RiskActionApiTest {
         assertThat(revoke.statusCode()).as(revoke.body()).isEqualTo(201);
         assertThat(revoke.body()).contains("\"status\":\"PROPOSED\"").contains("\"targetKind\":\"PARTY\"")
                 .contains("\"targetRef\":\"" + customer.party() + "\"").contains("\"caseRevision\":2")
-                .doesNotContain("proposedBy");
+                .contains("\"proposedBy\":\"" + alice.identity() + "\"");
         String revokeId = field(revoke.body(), "actionId");
         HttpResponse<String> suspend = post(door(caseId) + "/risk-actions", "{\"revision\":2,\"kind\":"
                 + "\"SUSPEND_IDENTITY\",\"reason\":\"stop the logins\"}", alice.token());

@@ -80,10 +80,11 @@ public final class RiskCaseDesk {
     /**
      * The case's disposition slot: its id (what the approval and rejection name), the disposition, whether it sets
      * {@code PROHIBITED}, {@code PROPOSED} (awaiting a second person) or {@code DECIDED}, whether a second person is
-     * required, and the database's stamps.
+     * required, the database's stamps, and who proposed it (`P17-TSK-109`: the proposer's actor id, so the console disables
+     * their own approval; {@code risk.SelfApprovalRefused} stays the control) - never who approved.
      */
     public record RiskDispositionView(String dispositionId, String disposition, boolean prohibits, String status,
-            boolean requiresSecondPerson, String proposedAt, String disposedAt) {}
+            boolean requiresSecondPerson, String proposedAt, String disposedAt, String proposedBy) {}
 
     // ------------------------------------------------------------------ acts
 
@@ -264,7 +265,8 @@ public final class RiskCaseDesk {
                 slot.standing() ? "PROPOSED" : "DECIDED",
                 slot.needsSecondPerson(),
                 slot.proposedAt().map(Instant::toString).orElse(null),
-                slot.disposedAt().map(Instant::toString).orElse(null))).orElse(null);
+                slot.disposedAt().map(Instant::toString).orElse(null),
+                slot.proposedBy().id())).orElse(null);
         return new RiskCaseView(
                 riskCase.id().value().toString(),
                 riskCase.kind().name(),

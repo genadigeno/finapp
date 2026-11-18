@@ -10,6 +10,7 @@ import com.finapp.risk.CaseWorklist;
 import com.finapp.risk.Cases;
 import com.finapp.risk.JdbcRiskCaseStore;
 import com.finapp.risk.ProfileRecompute;
+import com.finapp.risk.RegulatoryReportStore;
 import com.finapp.risk.RiskActions;
 import com.finapp.risk.RiskAlertStore;
 import com.finapp.risk.RiskCaseStore;
@@ -104,9 +105,10 @@ public class RiskCaseBeans {
     RiskQueueDesk riskQueueDesk(
             AlertQueue alertQueue,
             CaseWorklist caseWorklist,
+            RegulatoryReportStore regulatoryReportStore,
             RiskTransactions riskTransactions,
             RiskFlowScope riskFlowScope) {
-        return new RiskQueueDesk(alertQueue, caseWorklist, riskTransactions, riskFlowScope);
+        return new RiskQueueDesk(alertQueue, caseWorklist, regulatoryReportStore, riskTransactions, riskFlowScope);
     }
 
     /** {@code finapp.risk.case.backlog{kind}}, {@code .case.age{kind}} - eager, read behind a 15 s floor. */

@@ -359,7 +359,8 @@ public enum RiskAuditAction implements AuditableAction {
                     + " by the evidence door (GET .../cases/{caseId}/evidence/{signals|journal-entries}/{id},"
                     + " P13-TSK-023): one reference the file holds resolved - a signal's codes or a monitored"
                     + " transaction's amount - after the file's own judgement; the summary act=evidence, the kind and the"
-                    + " reference.",
+                    + " reference. A file served with its regulatory reports' heads (P17-TSK-109: to a reader who also holds"
+                    + " AML_REPORT_APPROVE alone, the owner's tipping-off decision) counts them too, reports=n.",
             false),
 
     /** An AML officer drafted a regulatory report from a confirmed-suspicious AML case (`P13-TSK-021`). */

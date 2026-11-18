@@ -105,7 +105,18 @@ class ReportApiTest {
         HttpResponse<String> file = get("/v1/operator/risk/cases/" + caseId, analyst.token());
         assertThat(file.statusCode()).as(file.body()).isEqualTo(200);
         assertThat(file.body()).as("the case file carries no report").doesNotContain(reportId)
-                .doesNotContain(NARRATIVE).doesNotContain("REPORT_DRAFTED");
+                .doesNotContain(NARRATIVE).doesNotContain("REPORT_DRAFTED").doesNotContain("\"reports\"");
+
+        // P17-TSK-109: an investigator who also holds AML_REPORT_APPROVE - the owner's tipping-off decision - sees the case's
+        // reports by reference in its file; never the narrative. The read is recorded with the count.
+        alsoHolds(analyst, RoleName.AML_OFFICER);
+        HttpResponse<String> approvers = get("/v1/operator/risk/cases/" + caseId, analyst.token());
+        assertThat(approvers.statusCode()).as(approvers.body()).isEqualTo(200);
+        assertThat(approvers.body()).contains("\"reports\":[{\"reportId\":\"" + reportId + "\",\"status\":\"APPROVED\","
+                + "\"jurisdiction\":").contains("\"draftedAt\":\"").doesNotContain(NARRATIVE).doesNotContain("REPORT_DRAFTED");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'risk.CaseRead' AND target_id = '"
+                + caseId + "' AND actor_id = '" + analyst.identity() + "' AND change_summary LIKE '%, reports=1'"))
+                .isEqualTo(1);
 
         Session filer = sessionWith(RoleName.AML_OFFICER, true);
         HttpResponse<String> filed = post(reports(caseId) + "/" + reportId + "/filing", "{\"reason\":\"file it\"}",
@@ -118,8 +129,10 @@ class ReportApiTest {
                 .contains("EU-REF").doesNotContain(customer.party().toString()).doesNotContain("threshold");
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'risk.ReportAcknowledged'"
                 + " AND target_id = '" + reportId + "' AND actor_type = 'SYSTEM'")).isEqualTo(1);
+        // An operator is typed by the standing that admitted the act (P15-TSK-021): EMPLOYEE. Read "CUSTOMER" until
+        // P17-TSK-109, which ran this class and found the assertion stale since that task.
         assertThat(scalar("SELECT drafted_by_type || ',' || approved_by_type || ',' || filed_by_type FROM"
-                + " risk.regulatory_report WHERE id = '" + reportId + "'")).isEqualTo("CUSTOMER,CUSTOMER,CUSTOMER");
+                + " risk.regulatory_report WHERE id = '" + reportId + "'")).isEqualTo("EMPLOYEE,EMPLOYEE,EMPLOYEE");
     }
 
     @Test
@@ -175,6 +188,17 @@ class ReportApiTest {
                 + "\"password\":\"" + PASSWORD + "\"}", null).statusCode()).isEqualTo(201);
         UUID[] ids = identityOf(login);
         return sessionOf(new Session(null, ids[1], ids[0], login), false);
+    }
+
+    /** {@code who} granted {@code role} beside the one they hold - read on their next request, never at sign-in. */
+    private void alsoHolds(Session who, RoleName role) throws Exception {
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)));
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            authorization.assign(app, IdentityId.of(who.identity()), role, IdentityId.of(who.identity()), "test fixture");
+            app.commit();
+        }
     }
 
     private Session sessionWith(RoleName role, boolean multiFactor) throws Exception {

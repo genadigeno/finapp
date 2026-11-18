@@ -64,8 +64,10 @@ class RiskActionDeskTest {
         assertThat(propose.getAnnotation(ResponseStatus.class).value()).isEqualTo(HttpStatus.CREATED);
         assertThat(approve.getAnnotation(ResponseStatus.class).value()).isEqualTo(HttpStatus.ACCEPTED);
         assertThat(reject.getAnnotation(ResponseStatus.class)).as("200").isNull();
+        // P17-TSK-109: of the persons, the proposer alone - who decided stays withheld.
         assertThat(RiskActionDesk.RiskActionView.class.getRecordComponents())
-                .noneMatch(component -> component.getName().contains("By"));
+                .filteredOn(component -> component.getName().contains("By"))
+                .extracting(java.lang.reflect.RecordComponent::getName).containsExactly("proposedBy");
     }
 
     @Test

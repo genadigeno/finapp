@@ -48,7 +48,7 @@ import org.springframework.web.bind.annotation.GetMapping;
  * proof</strong>: two {@code CUSTOMER}-typed analysts - as the session establishes every identity - suppress through the
  * door; the proposer's approval {@code 403 risk.SelfApprovalRefused} and the analyst's own party {@code 403
  * risk.SelfDealingRefused}, each recorded {@code FAILED}; an attached alert {@code 409 risk.AlertNotOpen}; a card-shaped
- * reason {@code 422 risk.ReasonRequired}; an unknown or malformed id the uniform {@code 404}; the answer names no person.
+ * reason {@code 422 risk.ReasonRequired}; an unknown or malformed id the uniform {@code 404}; the answer names the proposer alone (`P17-TSK-109`).
  * Over HTTP the door is {@code AlertSuppressionApiTest}'s (written, owed - C5).
  */
 @DisplayName("the suppression door: two persons through RISK_INVESTIGATE / RISK_CASE_APPROVE, keyed, never the system"
@@ -97,7 +97,8 @@ class AlertSuppressionDeskTest {
 
     @Test
     @DisplayName("the routed defect's proof: a CUSTOMER-typed analyst proposes (PROPOSED), a second CUSTOMER-typed"
-            + " analyst approves (SUPPRESSED); the key replayed answers the alert as it stands; no person in the answer;"
+            + " analyst approves (SUPPRESSED); the key replayed answers the alert as it stands; of the persons only the"
+            + " proposer in the answer (P17-TSK-109);"
             + " audited risk.AlertSuppressionProposed and risk.AlertSuppressed")
     void twoPersonsSuppressThroughTheDoor() {
         RiskAlert alert = openAlert();
@@ -114,7 +115,10 @@ class AlertSuppressionDeskTest {
         assertThat(approved.status()).isEqualTo("SUPPRESSED");
         assertThat(approved.suppression().status()).isEqualTo("DECIDED");
         assertThat(approved.suppression().decisionReason()).isEqualTo("agreed: payroll");
-        assertThat(approved.toString()).doesNotContain(alice.id()).doesNotContain(bob.id());
+        // P17-TSK-109: the proposer named - the console disables their own approval - and no other person.
+        assertThat(approved.suppression().proposedBy()).isEqualTo(alice.id());
+        assertThat(approved.toString().replace("proposedBy=" + alice.id(), "")).doesNotContain(alice.id())
+                .doesNotContain(bob.id());
 
         RiskQueueDesk.RiskAlertView replayed = RiskActionWorld.as(alice, () -> desk.propose("k-propose", id(alert),
                 proposal("FALSE_POSITIVE", "the pattern is the customer's payroll")));

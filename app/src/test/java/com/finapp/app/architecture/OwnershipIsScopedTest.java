@@ -4821,6 +4821,15 @@ class OwnershipIsScopedTest {
                                         + " one-live unique is the arbiter beneath it. A report is risk's record about a"
                                         + " party, owned by no party; nothing is served.")),
                     Map.entry(
+                            "com.finapp.risk.JdbcRegulatoryReportStore.ofCase",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-109. A case's reports by the case's id, read on the file's own snapshot"
+                                        + " after CaseWorklist.read judged the reader not of the subject's party (fail"
+                                        + " closed, risk.SelfDealingRefused), behind @RequiresPermission(RISK_INVESTIGATE)"
+                                        + " and served only when the request's standing also permits AML_REPORT_APPROVE"
+                                        + " (the owner's tipping-off decision); heads by reference, never the narrative.")),
+                    Map.entry(
                             "com.finapp.risk.JdbcRegulatoryReportStore.lock",
                             new Entry(
                                     Scope.ADMINISTERED,

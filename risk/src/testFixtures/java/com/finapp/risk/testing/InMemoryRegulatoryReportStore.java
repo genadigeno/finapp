@@ -91,6 +91,13 @@ public final class InMemoryRegulatoryReportStore implements RegulatoryReportStor
     }
 
     @Override
+    public List<RegulatoryReport> ofCase(Connection unitOfWork, RiskCaseId caseId) {
+        log.add("ofCase");
+        return rows.values().stream().filter(row -> row.caseId().equals(caseId))
+                .sorted(Comparator.comparing((RegulatoryReport row) -> row.id().value().toString())).toList();
+    }
+
+    @Override
     public Optional<RegulatoryReport> insert(Connection unitOfWork, NewReport report) {
         log.add("insert");
         if (rows.containsKey(report.id())) {

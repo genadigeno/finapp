@@ -29,6 +29,7 @@ import com.finapp.risk.RuleKind;
 import com.finapp.risk.SignalSubject;
 import com.finapp.risk.SubjectKind;
 import com.finapp.risk.WindowKind;
+import com.finapp.risk.testing.InMemoryRegulatoryReportStore;
 import com.finapp.sharedkernel.correlation.CausationId;
 import java.lang.reflect.Method;
 import java.sql.Connection;
@@ -81,7 +82,8 @@ class RiskQueueDeskTest {
             (unitOfWork, actor) -> Optional.ofNullable(world.partyOf.get(actor.id())),
             (unitOfWork, subject) -> Optional.ofNullable(world.partyOfSubject.get(subject)),
             (unitOfWork, record) -> world.audit.add(record), RiskEvaluationWorld.IDS, RiskEvaluationWorld.CLOCK);
-    private final RiskQueueDesk desk = new RiskQueueDesk(alertQueue, worklist, observed, RiskFlowScope.NONE);
+    private final InMemoryRegulatoryReportStore reports = new InMemoryRegulatoryReportStore();
+    private final RiskQueueDesk desk = new RiskQueueDesk(alertQueue, worklist, reports, observed, RiskFlowScope.NONE);
 
     @Test
     @DisplayName("the three reads carry RISK_INVESTIGATE and no idempotency key")
@@ -91,7 +93,8 @@ class RiskQueueDeskTest {
                         Integer.class),
                 RiskCaseController.class.getMethod("readRiskCaseQueue", String.class, String.class, String.class,
                         Integer.class),
-                RiskCaseController.class.getMethod("readRiskCase", String.class))) {
+                RiskCaseController.class.getMethod("readRiskCase", String.class,
+                        jakarta.servlet.http.HttpServletRequest.class))) {
             assertThat(read.getAnnotation(GetMapping.class)).as(read.getName()).isNotNull();
             assertThat(read.getAnnotation(RequiresPermission.class).value()).as(read.getName())
                     .isEqualTo(PermissionName.RISK_INVESTIGATE);
@@ -233,9 +236,22 @@ class RiskQueueDeskTest {
         assertThat(file.evidence()).containsExactly(
                 new RiskQueueDesk.RiskEvidenceView("ASSESSMENT", assessment.value().toString()),
                 new RiskQueueDesk.RiskEvidenceView("SIGNAL", signal.value().toString()));
-        assertThat(file.toString()).doesNotContain(taken.investigator().id());
+        // P17-TSK-109: a proposal names its proposer - the console disables their own approval - and nothing else names a
+        // person: the taker, the attacher and any approver stay withheld.
+        assertThat(file.riskActions()).extracting(RiskActionDesk.RiskActionView::proposedBy)
+                .containsExactly(taken.investigator().id());
+        assertThat(file.toString().replace("proposedBy=" + taken.investigator().id(), ""))
+                .doesNotContain(taken.investigator().id());
+        assertThat(file.reports()).as("an analyst's file says nothing of reports").isNull();
         assertThat(world.audited("risk.CaseRead")).singleElement().satisfies(record ->
                 assertThat(record.targetId()).isEqualTo(taken.id()));
+        assertThat(world.audited("risk.CaseRead").getFirst().changeSummary()).hasValueSatisfying(summary ->
+                assertThat(summary).doesNotContain("reports="));
+
+        RiskQueueDesk.RiskCaseFileView approvers = RiskActionWorld.as(reader, () -> desk.file(taken.id(), true));
+        assertThat(approvers.reports()).as("an approver's file lists the case's reports - none drafted here").isEmpty();
+        assertThat(world.audited("risk.CaseRead")).hasSize(2).last().satisfies(record ->
+                assertThat(record.changeSummary()).hasValueSatisfying(summary -> assertThat(summary).endsWith(", reports=0")));
 
         assertThat(refusal(reader, () -> desk.file(RiskEvaluationWorld.IDS.next().toString())).errorCode())
                 .isEqualTo(RiskErrorCode.NOT_FOUND);
