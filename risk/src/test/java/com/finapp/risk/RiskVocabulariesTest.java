@@ -257,7 +257,8 @@ class RiskVocabulariesTest {
             + " doors' four and four (-002), the reprocessing door's one and one (-019), the profile read's act (-007), the"
             + " override doors' two and four (-012), the alert machine's two and three (-015), the case's five and eight"
             + " (-016), the action machine's none and four (-017), the queues' one and two (-018), the regulatory report's"
-            + " two and six (-021), the list version's none and two (-022) - namespaced risk., the"
+            + " two and six (-021), the list version's none and two (-022), the assessment search's none and one (P17-TSK-020) -"
+            + " namespaced risk., the"
             + " refusals 403, the policy codes"
             + " the register's statuses")
     void theCodesAndActions() {
@@ -322,7 +323,9 @@ class RiskVocabulariesTest {
                         // P13-TSK-022: the list version's two acts.
                         "risk.ListVersionRecorded", "risk.ListVersionActivated",
                         // P13-TSK-023: the operations reports' audited read.
-                        "risk.ReportRead");
+                        "risk.ReportRead",
+                        // P17-TSK-020: the assessment search's page, recorded.
+                        "risk.AssessmentsSearched");
         assertThat(RiskAuditAction.LIST_VERSION_RECORDED.requiresReason()).isTrue();
         assertThat(RiskAuditAction.LIST_VERSION_ACTIVATED.requiresReason()).isTrue();
         assertThat(RiskAuditAction.ACTION_PROPOSED.requiresReason()).isTrue();

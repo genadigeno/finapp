@@ -1050,6 +1050,13 @@ class OpenApiContractTest {
                         // P17-TSK-017: the audit trail's read (AUDIT_READ).
                         ApiVersion.CURRENT_PREFIX + "/operator/audit-records",
                         ApiVersion.CURRENT_PREFIX + "/operator/audit-records/{id}",
+                        // P17-TSK-020: one alert (RISK_INVESTIGATE), the assessment search (RISK_INVESTIGATE), the policy
+                        // versions and one screening list version (RISK_POLICY_ADMINISTER); the list versions are a GET on the
+                        // recording door's path.
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/alerts/{alertId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/assessments",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/policies/versions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/screening-lists/{listVersionId}",
                         // P17-TSK-014: the staff directory, its detail, the lookup and the role catalogue (IDENTITY_READ).
                         ApiVersion.CURRENT_PREFIX + "/operator/identities",
                         ApiVersion.CURRENT_PREFIX + "/operator/identities/{id}",

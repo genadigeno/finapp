@@ -68,11 +68,14 @@ public final class RiskSpans {
     public static final String REPORT = "risk.report";
     /** T-rep's drive - a FILED report submitted or inquired through the filing port, on no connection (`P13-TSK-021`). */
     public static final String REPORT_INQUIRE = "risk.report.inquire";
-    /** T-list - a screening list version recorded or activated. */
+    /** T-list - a screening list version recorded or activated; the versions listed, or one read (`P17-TSK-020`). */
     public static final String LIST = "risk.list";
     /** The explanation door - an assessment read or replayed. */
     public static final String EXPLAIN = "risk.explain";
-    /** The investigator's queues - a page of alerts or of cases (`P13-TSK-018`). */
+    /**
+     * The investigator's queues - a page of alerts or of cases (`P13-TSK-018`); one alert, and a page of the assessment search
+     * (`P17-TSK-020`).
+     */
     public static final String QUEUE = "risk.queue";
     /** The case read - one case's file (`P13-TSK-018`); and one piece of its evidence resolved (`P13-TSK-023`). */
     public static final String CASE_READ = "risk.case.read";

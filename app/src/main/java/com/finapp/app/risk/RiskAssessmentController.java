@@ -32,6 +32,27 @@ import org.springframework.web.bind.annotation.RestController;
 public class RiskAssessmentController {
 
     @NonNull private final RiskAssessmentDesk desk;
+    @NonNull private final RiskCollectionDesk collections;
+
+    /**
+     * The sealed assessments of a window, newest first (`P17-TSK-020`, gap G-91): a §7 collection of heads over the required
+     * {@code from} and {@code to} (instants, {@code [from, to)}, 31 days at most), filtered by {@code partyId},
+     * {@code operation} and {@code decision} when named; {@code limit} 50 unless named, 200 at most; the opaque {@code cursor}
+     * of the page before. The reader's own party's assessments withheld; a search naming that party {@code 403
+     * risk.SelfDealingRefused}, recorded {@code FAILED}; every page recorded {@code risk.AssessmentsSearched}.
+     */
+    @GetMapping
+    @RequiresPermission(PermissionName.RISK_INVESTIGATE)
+    public RiskCollectionDesk.RiskAssessmentPage searchRiskAssessments(
+            @RequestParam(name = "from", required = false) String from,
+            @RequestParam(name = "to", required = false) String to,
+            @RequestParam(name = "partyId", required = false) String partyId,
+            @RequestParam(name = "operation", required = false) String operation,
+            @RequestParam(name = "decision", required = false) String decision,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return collections.assessments(from, to, partyId, operation, decision, cursor, limit);
+    }
 
     /** The sealed assessment, whole. */
     @GetMapping(path = "/{assessmentId}")

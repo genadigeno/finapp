@@ -35,6 +35,7 @@ public final class AlertQueue {
     public static final String TARGET_TYPE = "risk_alert_queue";
 
     private static final String ACT = "alert-queue-read";
+    private static final String ONE_ACT = "alert-read";
 
     private final RiskAlertStore store;
     private final RiskActingParty actingParties;
@@ -104,6 +105,61 @@ public final class AlertQueue {
                 RiskAlert::id,
                 alert -> Queues.visibleTo(snapshot, subjectParties, alert.subject(), own));
         return new Page(filter, after, scanned.served(), scanned.next(), scanned.withheld(), scanned.bounded());
+    }
+
+    /**
+     * One alert for {@code actor}, on the caller's read-only snapshot - nothing recorded here (`P17-TSK-020`, gap G-90): the
+     * queue's own judgement of one row, so a link to an alert opens only what the queue would have served. An alert of the
+     * reader's own party, or one whose party cannot be placed, is refused as the case file refuses one - a page withholds
+     * such a row; a read of one names it, so the refusal is said and recorded.
+     *
+     * @throws RiskAssessments.SelfDealingRefused the alert's subject is the reader's own party's or cannot be placed, or
+     *     the reader is placed in no party (fail closed)
+     * @throws Alerts.AlertNotFound no such alert
+     * @throws IllegalArgumentException the reader is not a person
+     */
+    public RiskAlert read(Connection snapshot, RiskAlertId alertId, Actor actor) {
+        Objects.requireNonNull(alertId, "alertId");
+        UUID own = Queues.reader(snapshot, actingParties, actor, ONE_ACT);
+        RiskAlert alert = store.find(snapshot, alertId).orElseThrow(Alerts.AlertNotFound::new);
+        Optional<UUID> party = Queues.accountableParty(snapshot, subjectParties, alert.subject());
+        if (party.isEmpty()) {
+            throw new RiskAssessments.SelfDealingRefused(RiskAssessments.SelfDealingRefused.Cause.SUBJECT_UNPLACEABLE,
+                    ONE_ACT);
+        }
+        if (party.get().equals(own)) {
+            throw new RiskAssessments.SelfDealingRefused(RiskAssessments.SelfDealingRefused.Cause.OWN_PARTY, ONE_ACT);
+        }
+        return alert;
+    }
+
+    /**
+     * Records {@code alert} read by {@code actor} - {@code risk.AlertRead} on {@code unitOfWork}, which the caller commits
+     * before it answers. Its target the alert ({@link Alerts#TARGET_TYPE}); the summary the kind, the severity and the
+     * status - never a subject, an evidence reference or a reason.
+     */
+    public void record(Connection unitOfWork, RiskAlert alert, Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(alert, "alert");
+        Objects.requireNonNull(correlation, "correlation");
+        audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(), RiskAuditAction.ALERT_READ,
+                Alerts.TARGET_TYPE, alert.id().value().toString(), Optional.empty(), AuditOutcome.SUCCEEDED, correlation,
+                Optional.of("act=" + ONE_ACT + ", kind=" + alert.kind().name() + ", severity=" + alert.severity().name()
+                        + ", status=" + alert.status().name())));
+    }
+
+    /**
+     * Records a refused read of one alert {@code FAILED} ({@code risk.SelfDealingRefused}) on {@code unitOfWork} - a
+     * transaction of its own; its target the alert, the summary the act and the cause - never the party.
+     */
+    public void recordRefusal(Connection unitOfWork, RiskAlertId alertId, RiskAssessments.SelfDealingRefused refused,
+            Actor actor, CorrelationId correlation) {
+        Objects.requireNonNull(alertId, "alertId");
+        Objects.requireNonNull(refused, "refused");
+        Objects.requireNonNull(correlation, "correlation");
+        audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(),
+                RiskAuditAction.SELF_DEALING_REFUSED, Alerts.TARGET_TYPE, alertId.value().toString(), Optional.empty(),
+                AuditOutcome.FAILED, correlation,
+                Optional.of("act=" + refused.act() + ", cause=" + refused.refusal().name() + " refused")));
     }
 
     /**

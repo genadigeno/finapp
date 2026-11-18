@@ -5926,6 +5926,22 @@ past 1,000 settled lines stores a new one in a savepoint that never fails it. Th
   show no contention to move it for. **What a page promises**: each page is exact for what was committed when it was read. A record
   committed later, stamped inside a range a walk already served, is in no later page of that walk, and a fresh walk shows it. No
   instant after which a window is final is claimed. The archive's queue (`V015`) is the reader that never misses such a row.
+- **Before risk `V022` runs on a large assessment table** (`P17-TSK-020`). Its index serves the analyst's assessment search. It
+  holds `SHARE` on `risk.risk_assessment` while it reads the table, and every judged transfer, withdrawal and payment seals an
+  assessment there, so build it first, by hand, outside a transaction, by this name. The migration's `IF NOT EXISTS` then keeps it:
+  `CREATE INDEX CONCURRENTLY risk_assessment_by_time ON risk.risk_assessment (assessed_at, id);`. A failed build leaves an
+  `INVALID` index: drop it and build again. **The plans**, recorded by risk's `AssessmentSearchDatabaseTest` on sixty thousand
+  assessments over five hundred parties (2026-11-18), in a transaction it rolls back:
+  - **A window, newest first:** `Limit -> Index Scan Backward using risk_assessment_by_time`, the window the index condition and
+    the reader's own party a filter on the rows read.
+  - **A party's assessments:** `Limit -> Incremental Sort (Presorted Key: assessed_at) -> Index Scan Backward using
+    risk_assessment_by_party`, the party and the window the index condition: the stamp's order comes from `V007`'s index, and the
+    incremental sort orders only the rows that share an instant by id.
+  - **A continued page:** the window's scan, the keyset row comparison `ROW(assessed_at, id) < ROW(...)` inside the index
+    condition.
+
+  No full `Sort` and no `Seq Scan` in any of them, so a page costs its own rows. The operation and decision filters narrow the
+  window's range. The read stays on the application's pool, never a replica (ADR-0129).
 
 ### 11.49 The connection budget at ten replicas, the autoscaler's metric on `kind`, and a pooler refused (`P16-TSK-009`, ADR-0134)
 

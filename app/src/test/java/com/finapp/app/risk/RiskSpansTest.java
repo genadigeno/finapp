@@ -134,6 +134,8 @@ class RiskSpansTest {
             Map.entry("RiskOverrideDesk.java#refusalsRecorded", "a refusal's FAILED record"),
             Map.entry("RiskProfileDesk.java#read", "the spanned read's audit record or refusal"),
             Map.entry("RiskQueueDesk.java#alerts", "the spanned page's audit record or refusal"),
+            Map.entry("RiskQueueDesk.java#alert", "the spanned alert's audit record or refusal (P17-TSK-020)"),
+            Map.entry("RiskCollectionDesk.java#assessments", "the spanned search's refusal, recorded FAILED (P17-TSK-020)"),
             Map.entry("RiskQueueDesk.java#cases", "the spanned page's audit record or refusal"),
             Map.entry("RiskQueueDesk.java#file", "the spanned file's audit record or refusal"),
             Map.entry("RiskReportDesk.java#read", "the spanned read's audit record or refusal"),

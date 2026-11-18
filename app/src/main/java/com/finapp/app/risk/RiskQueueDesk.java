@@ -5,6 +5,7 @@ import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.risk.AlertQueue;
+import com.finapp.risk.Alerts;
 import com.finapp.risk.CaseAction;
 import com.finapp.risk.CaseEvent;
 import com.finapp.risk.CaseWorklist;
@@ -134,6 +135,37 @@ public final class RiskQueueDesk {
         });
         return new RiskAlertPageView(page.alerts().stream().map(RiskQueueDesk::view).toList(),
                 page.next().map(id -> id.value().toString()).orElse(null));
+    }
+
+    /**
+     * {@code rawAlertId} read and recorded (`P17-TSK-020`, gap G-90): the queue's own judgement of one row, so a link opens only
+     * what a page would serve. An alert of the reader's own party, or one that cannot be placed, is {@code 403
+     * risk.SelfDealingRefused} recorded {@code FAILED}, as the case file answers one; an unknown or malformed id the uniform
+     * {@code 404 risk.NotFound}.
+     */
+    public RiskAlertView alert(String rawAlertId) {
+        RiskAlertId alertId = alertId(rawAlertId);
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        RiskAlert alert;
+        try {
+            alert = flow.door(RiskSpans.QUEUE, () -> transactions.inSnapshot(
+                    snapshot -> alerts.read(snapshot, alertId, actor)));
+        } catch (RiskAssessments.SelfDealingRefused refused) {
+            transactions.inTransaction(uow -> {
+                alerts.recordRefusal(uow, alertId, refused, actor, correlation);
+                return null;
+            });
+            throw selfDealing();
+        } catch (Alerts.AlertNotFound none) {
+            throw notFound();
+        }
+        // Recorded before it is answered, in a transaction of its own: an alert nobody recorded was never served.
+        transactions.inTransaction(uow -> {
+            alerts.record(uow, alert, actor, correlation);
+            return null;
+        });
+        return view(alert);
     }
 
     // ------------------------------------------------------------------ the case queue and the file
@@ -295,6 +327,14 @@ public final class RiskQueueDesk {
 
     private static ApiException notFound() {
         return new ApiException(RiskErrorCode.NOT_FOUND, "No risk record answers the request", "no such record.");
+    }
+
+    private static RiskAlertId alertId(String raw) {
+        try {
+            return RiskAlertId.of(UUID.fromString(Objects.requireNonNull(raw, "raw")));
+        } catch (IllegalArgumentException malformed) {
+            throw notFound();
+        }
     }
 
     private static RiskCaseId caseId(String raw) {

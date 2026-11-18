@@ -83,6 +83,13 @@ class RoutePermissionRegisterTest {
                     // P17-TSK-017: the audit trail, read - the AUDITOR's alone (ADR-C134; the owner, 2026-11-18).
                     entry("GET /v1/operator/audit-records", PermissionName.AUDIT_READ),
                     entry("GET /v1/operator/audit-records/{id}", PermissionName.AUDIT_READ),
+                    // P17-TSK-020: the risk desks' read gaps - one alert and the assessment search, the analyst's; the policy
+                    // versions and the screening list versions, the risk officer's.
+                    entry("GET /v1/operator/risk/alerts/{alertId}", PermissionName.RISK_INVESTIGATE),
+                    entry("GET /v1/operator/risk/assessments", PermissionName.RISK_INVESTIGATE),
+                    entry("GET /v1/operator/risk/policies/versions", PermissionName.RISK_POLICY_ADMINISTER),
+                    entry("GET /v1/operator/risk/screening-lists", PermissionName.RISK_POLICY_ADMINISTER),
+                    entry("GET /v1/operator/risk/screening-lists/{listVersionId}", PermissionName.RISK_POLICY_ADMINISTER),
                     // P17-TSK-015: another identity's sessions, listed and ended without suspending the person.
                     entry("GET /v1/operator/identities/{id}/sessions", PermissionName.SESSION_ADMINISTER),
                     entry("DELETE /v1/operator/identities/{id}/sessions", PermissionName.SESSION_ADMINISTER),

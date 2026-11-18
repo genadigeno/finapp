@@ -337,7 +337,11 @@ public enum RiskAuditAction implements AuditableAction {
                     + " closed), committed in a transaction of its own before the page is answered so nothing is served"
                     + " unrecorded. Its target the queue (risk_alert_queue, the status read); the summary the count, the"
                     + " filter, the cursor, the ids served, how many were withheld and whether more remain - never a"
-                    + " subject, an evidence reference or a reason.",
+                    + " subject, an evidence reference or a reason. Raised too by the read of one alert (GET"
+                    + " /v1/operator/risk/alerts/{alertId}, P17-TSK-020, gap G-90): the queue's judgement of that row,"
+                    + " its target the alert (risk_alert), the summary act=alert-read, its kind, severity and status; an"
+                    + " alert of the reader's own party or one that cannot be placed is refused and recorded"
+                    + " risk.SelfDealingRefused instead.",
             false),
 
     /** An analyst read a case's file, or was served a page of the case queue (`P13-TSK-018`). */
@@ -466,6 +470,19 @@ public enum RiskAuditAction implements AuditableAction {
                     + " shape), so no report is served unrecorded. Its target the report (risk_report, the report's"
                     + " name); the summary the report, the date, whether the platform had it, the rows and the verdict -"
                     + " counts and codes, never an amount, a party or a subject (INV-RSK-08).",
+            false),
+
+    /** An analyst was served a page of the assessment search (`P17-TSK-020`). */
+    ASSESSMENTS_SEARCHED(
+            "risk.AssessmentsSearched",
+            "A holder of RISK_INVESTIGATE was served a page of the sealed assessments of a window (GET"
+                    + " /v1/operator/risk/assessments?from=&to=&partyId=&operation=&decision=&cursor=&limit=, P17-TSK-020,"
+                    + " gap G-91; INV-RSK-08): newest first, the window required and at most 31 days, every assessment of"
+                    + " the reader's own party withheld by the read itself, recorded on the read's own transaction so"
+                    + " nothing is served unrecorded. Its target the search (risk_assessment_search, the party named or"
+                    + " all); the summary the window, the filters, whether the page continued a walk and how many heads"
+                    + " were served - never a score, an amount or a reason. A search naming the reader's own party, or by"
+                    + " a reader the platform cannot place, is refused and recorded risk.SelfDealingRefused instead.",
             false);
 
     private final String code;

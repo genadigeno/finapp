@@ -28936,6 +28936,51 @@
         },
         "type": "object"
       },
+      "RiskAssessmentHeadView": {
+        "properties": {
+          "assessedAt": {
+            "type": "string"
+          },
+          "assessmentId": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "policyVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "policyVersionId": {
+            "type": "string"
+          },
+          "score": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskAssessmentPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RiskAssessmentHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskAssessmentView": {
         "properties": {
           "amount": {
@@ -30165,6 +30210,53 @@
         },
         "type": "object"
       },
+      "RiskPolicyVersionHeadView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskPolicyVersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RiskPolicyVersionHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskPolicyView": {
         "properties": {
           "challengeAssurance": {
@@ -30644,6 +30736,20 @@
         },
         "type": "object"
       },
+      "RiskScreeningListPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RiskScreeningListVersionView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskScreeningListReceipt": {
         "properties": {
           "id": {
@@ -30691,6 +30797,36 @@
           "list",
           "version"
         ],
+        "type": "object"
+      },
+      "RiskScreeningListVersionView": {
+        "properties": {
+          "activatedAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "list": {
+            "type": "string"
+          },
+          "ordinal": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "recordedAt": {
+            "type": "string"
+          },
+          "retiredAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "RiskSignalEvidenceView": {
@@ -46621,6 +46757,33 @@
         }
       }
     },
+    "/v1/operator/risk/alerts/{alertId}": {
+      "get": {
+        "operationId": "readRiskAlert",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskAlertView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/risk/alerts/{alertId}/suppression": {
       "post": {
         "operationId": "proposeRiskAlertSuppression",
@@ -46748,6 +46911,81 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RiskAlertView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/assessments": {
+      "get": {
+        "operationId": "searchRiskAssessments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "partyId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "operation",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "decision",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskAssessmentPage"
                 }
               }
             },
@@ -47900,6 +48138,57 @@
         }
       }
     },
+    "/v1/operator/risk/policies/versions": {
+      "get": {
+        "operationId": "listRiskPolicyVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "operation",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskPolicyVersionPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/risk/policies/{versionId}": {
       "get": {
         "operationId": "readRiskPolicyVersion",
@@ -48018,6 +48307,47 @@
       }
     },
     "/v1/operator/risk/screening-lists": {
+      "get": {
+        "operationId": "listScreeningListVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "list",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskScreeningListPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "recordScreeningListVersion",
         "parameters": [
@@ -48050,6 +48380,33 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/screening-lists/{listVersionId}": {
+      "get": {
+        "operationId": "readScreeningListVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "listVersionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskScreeningListVersionView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

@@ -274,8 +274,12 @@ needed for it (the distinction `P0-TSK-032` drew for the actor, in the opposite 
 | `GET /v1/operator/settlement/batches` | `RECONCILIATION_INVESTIGATE` | business date descending, batch id descending | 50 / 200 | `source` (a declared code); `from`, `to` (business dates, inclusive; `to` today UTC and `from` 30 days before unless named; 92 days at most) |
 | `GET /v1/operator/reconciliation/resolutions` | `RECONCILIATION_RESOLVE` | proposed at ascending, resolution id ascending | 50 / 200 | `status` (`PROPOSED` only: the queue) |
 | `GET /v1/operator/identities` (`P17-TSK-014`) | `IDENTITY_READ`, on a `MULTI_FACTOR` session | created at descending, identity id descending | 50 / 200 | `role` (a live holding of a `RoleName`), `status` (`ACTIVE`, `SUSPENDED`, `CLOSED`) |
+| `GET /v1/operator/audit-records` (`P17-TSK-017`) | `AUDIT_READ`, on a `MULTI_FACTOR` session | occurred at descending, audit id descending | 50 / 200 | `from`, `to` (instants, `[from, to)`, required, 31 days at most); `actor`, `operation`, `targetType`, `targetId`, `correlationId`, `outcome` (exact) |
+| `GET /v1/operator/risk/assessments` (`P17-TSK-020`) | `RISK_INVESTIGATE` | assessed at descending, assessment id descending | 50 / 200 | `from`, `to` (instants, `[from, to)`, required, 31 days at most); `partyId`, `operation`, `decision` (exact). The reader's own party's assessments withheld; naming that party `403 risk.SelfDealingRefused` |
+| `GET /v1/operator/risk/policies/versions` (`P17-TSK-020`) | `RISK_POLICY_ADMINISTER` | proposed at descending, version id descending | 50 / 200 | `operation`, `status` (`PROPOSED` is the approver's queue) |
+| `GET /v1/operator/risk/screening-lists` (`P17-TSK-020`) | `RISK_POLICY_ADMINISTER` | recorded at descending, version id descending | 50 / 200 | `list` (`SANCTIONS`, `PEP`); metadata only, never an entry |
 
-Both are keyset reads. `app`'s `OperatorCollection` is the one implementation of the request rules: the limit is refused above
+All are keyset reads. `app`'s `OperatorCollection` is the one implementation of the request rules: the limit is refused above
 its maximum rather than reduced, and the cursor names its collection, so one collection's cursor is refused by another. Every
 refusal is `422 api.ValidationFailed`. A page record carries `nextCursor` only when there is a next page. Older operator lists
 were built before this section was implemented: some take `after`/`limit`, and some are capped with `truncated`. They are
