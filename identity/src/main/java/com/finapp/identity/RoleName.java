@@ -37,7 +37,12 @@ import java.util.stream.Collectors;
 public enum RoleName {
 
     /** Everything Phase 1 calls privileged. Held by nobody until somebody assigns it. */
-    ADMINISTRATOR(EnumSet.of(PermissionName.IDENTITY_SUSPEND, PermissionName.ROLE_ASSIGN)),
+    ADMINISTRATOR(
+            EnumSet.of(
+                    PermissionName.IDENTITY_SUSPEND,
+                    PermissionName.ROLE_ASSIGN,
+                    // P17-TSK-014: whom the administrator acts on - the staff directory, read identifier-first.
+                    PermissionName.IDENTITY_READ)),
 
     /**
      * Reviews KYC/KYB cases and nothing else (`P2-TSK-004`).

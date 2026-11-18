@@ -80,6 +80,23 @@ class AdministrationBeans {
         return template;
     }
 
+    /** The staff directory (`P17-TSK-014`): its reads, each recorded in the read's own unit of work. */
+    @Bean
+    com.finapp.identity.IdentityDirectory identityDirectory(
+            AuditWriter<Connection> auditWriter, IdGenerator idGenerator, Clock clock) {
+        return new com.finapp.identity.IdentityDirectory(
+                new com.finapp.identity.JdbcIdentityDirectoryStore(), auditWriter, idGenerator, clock);
+    }
+
+    /** The directory's boundary, on the administrative template: each read and its audit record commit together. */
+    @Bean
+    StaffDirectoryService staffDirectoryService(
+            com.finapp.identity.IdentityDirectory identityDirectory,
+            TransactionTemplate administrationTransactions,
+            DataSource dataSource) {
+        return new StaffDirectoryService(identityDirectory, administrationTransactions, dataSource);
+    }
+
     @Bean
     IdentityAdministrationService identityAdministrationService(
             IdentityAdministration identityAdministration,

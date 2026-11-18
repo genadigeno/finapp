@@ -63,6 +63,19 @@ public enum PermissionName {
     ROLE_ASSIGN,
 
     /**
+     * Read the staff directory: which identities hold or held an operator role, one identity's status, factor state and live
+     * roles, an identity found by its exact login identifier, and the role catalogue (`P17-TSK-014`; finapp-admin-panel
+     * ADR-C132 decisions 2 to 4).
+     *
+     * <p><strong>Identifier-first</strong>: what it serves names nobody - no display name, no login identifier, no contact
+     * detail. The lookup takes a login identifier in a request body and answers only the identity's id. Held by
+     * {@code ADMINISTRATOR}, who acts on the answer, and by the auditor when one exists. It guards an act in the step-up rule's
+     * sense: the lookup is a {@code POST}, and every route under it asks for a second factor, because a list of who holds
+     * the privileged roles is the map a stolen password should not buy.
+     */
+    IDENTITY_READ,
+
+    /**
      * Review KYC/KYB cases: read a case with its evidence, resolve screening hits, record
      * decisions (`P2-TSK-004`).
      *

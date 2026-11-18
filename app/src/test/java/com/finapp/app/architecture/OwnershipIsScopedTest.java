@@ -6499,6 +6499,18 @@ class OwnershipIsScopedTest {
                                         + " safer path would describe the caller that needs no"
                                         + " protection.")),
                     Map.entry(
+                            "com.finapp.identity.JdbcIdentityDirectoryStore.detail",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-014. The staff directory's detail: the identifier comes from the URL of"
+                                        + " GET /v1/operator/identities/{id} and names SOMEBODY ELSE by design - whom an"
+                                        + " administrator acts on. What stands in for the missing ownership predicate:"
+                                        + " @RequiresPermission(IDENTITY_READ) on a MULTI_FACTOR session at the boundary"
+                                        + " (RoutePermissionRegisterTest, StaffDirectoryApiDatabaseTest), the answer"
+                                        + " identifier-first - no name, login identifier or contact - and an audit record"
+                                        + " naming the identity read (IdentityDirectoryDatabaseTest). No not-self rule: a"
+                                        + " read changes nothing about its subject.")),
+                    Map.entry(
                             "com.finapp.identity.JdbcRoleAssignmentStore.lockForRoleChange",
                             new Entry(
                                     Scope.ADMINISTERED,

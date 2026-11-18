@@ -264,6 +264,31 @@ public enum IdentityAuditAction implements AuditableAction {
             "An administrator read the live holdings of a money-redirecting role with no enrolled factor.",
             false),
 
+    /**
+     * A page of the staff directory was read (`P17-TSK-014`): once per request, its filter and how many it served as the summary,
+     * never the rows. No reason: a read harms nobody, and who read the list of privileged holders, when, is the record.
+     */
+    IDENTITY_DIRECTORY_READ(
+            "identity.IdentityDirectoryRead",
+            "A holder of IDENTITY_READ read a page of the staff directory.",
+            false),
+
+    /** One identity's detail was read (`P17-TSK-014`): its status, factor state and live roles; the identity is the target. */
+    IDENTITY_READ(
+            "identity.IdentityRead",
+            "A holder of IDENTITY_READ read one identity's status, factor state and roles.",
+            false),
+
+    /**
+     * An identity was looked up by its exact login identifier (`P17-TSK-014`; ADR-C132 decision 4): recorded whether it matched
+     * or not, the matched identity the target. <strong>Never the login identifier</strong>: it may be a person's own handle,
+     * which is why it travels in a body and why the trail names only what it resolved to.
+     */
+    IDENTITY_LOOKED_UP(
+            "identity.IdentityLookedUp",
+            "A holder of IDENTITY_READ looked an identity up by its exact login identifier.",
+            false),
+
     IDENTITY_SUSPENDED(
             "identity.IdentitySuspended",
             "An identity was suspended by an administrator and can no longer authenticate.",

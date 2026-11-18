@@ -21850,6 +21850,106 @@
         },
         "type": "object"
       },
+      "IdentityDetailView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "factorEnrolled": {
+            "type": "boolean"
+          },
+          "identityId": {
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/IdentityRoleView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "suspendedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "suspensionCause": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "IdentityDirectoryEntry": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "identityId": {
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "IdentityDirectoryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IdentityDirectoryEntry"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "IdentityLookupAnswer": {
+        "properties": {
+          "identityId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "IdentityLookupRequest": {
+        "properties": {
+          "loginIdentifier": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "loginIdentifier"
+        ],
+        "type": "object"
+      },
+      "IdentityRoleView": {
+        "properties": {
+          "assignedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "assignedBy": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "IllustrationView": {
         "properties": {
           "basis": {
@@ -30761,6 +30861,23 @@
           "reason",
           "role"
         ],
+        "type": "object"
+      },
+      "RoleCatalogueEntry": {
+        "properties": {
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "requiresEnrolledFactor": {
+            "type": "boolean"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "RoleRevocationRequest": {
@@ -41541,6 +41658,111 @@
         }
       }
     },
+    "/v1/operator/identities": {
+      "get": {
+        "operationId": "listStaffIdentities",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityDirectoryPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/identities/lookup": {
+      "post": {
+        "operationId": "lookUpStaffIdentity",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityLookupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityLookupAnswer"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/identities/{id}": {
+      "get": {
+        "operationId": "readStaffIdentity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityDetailView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/kyc/counterparty-screenings/{id}/decision": {
       "post": {
         "operationId": "decideCounterpartyScreening",
@@ -47418,6 +47640,26 @@
               }
             },
             "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/v1/operator/roles": {
+      "get": {
+        "operationId": "listOperatorRoles",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RoleCatalogueEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

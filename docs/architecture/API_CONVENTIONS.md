@@ -267,12 +267,13 @@ needed for it (the distinction `P0-TSK-032` drew for the actor, in the opposite 
 ## 7. Pagination — **Implemented** for the operator collections that follow it (`P17-TSK-107`, finapp-admin-panel ADR-C133)
 
 *(Read "Decided, not yet implemented (first collection endpoint, Phase 3+)" and "No endpoint returns a collection today" until
-`P17-TSK-107`, 2026-11-18.)* The first two collections that implement this section exactly:
+`P17-TSK-107`, 2026-11-18.)* The operator collections that implement this section exactly, the first two from `P17-TSK-107`:
 
 | Endpoint | Permission | Declared total order | `limit` default / maximum | Filters |
 |---|---|---|---|---|
 | `GET /v1/operator/settlement/batches` | `RECONCILIATION_INVESTIGATE` | business date descending, batch id descending | 50 / 200 | `source` (a declared code); `from`, `to` (business dates, inclusive; `to` today UTC and `from` 30 days before unless named; 92 days at most) |
 | `GET /v1/operator/reconciliation/resolutions` | `RECONCILIATION_RESOLVE` | proposed at ascending, resolution id ascending | 50 / 200 | `status` (`PROPOSED` only: the queue) |
+| `GET /v1/operator/identities` (`P17-TSK-014`) | `IDENTITY_READ`, on a `MULTI_FACTOR` session | created at descending, identity id descending | 50 / 200 | `role` (a live holding of a `RoleName`), `status` (`ACTIVE`, `SUSPENDED`, `CLOSED`) |
 
 Both are keyset reads. `app`'s `OperatorCollection` is the one implementation of the request rules: the limit is refused above
 its maximum rather than reduced, and the cursor names its collection, so one collection's cursor is refused by another. Every
