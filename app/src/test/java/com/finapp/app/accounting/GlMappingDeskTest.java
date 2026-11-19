@@ -184,7 +184,7 @@ class GlMappingDeskTest {
     }
 
     @Test
-    @DisplayName("the reads: a version whole (no person, no reason), and against the version in force with its"
+    @DisplayName("the reads: a version whole (its proposer by identifier since P17-TSK-111, no reason), and against the version in force with its"
             + " judgement and the counterparties as the dimension")
     void theReads() {
         GlMappingDesk.GlMappingReceipt first = as(ACCOUNTANT, () -> desk.propose("p-1", request("2026-11")));
@@ -194,6 +194,8 @@ class GlMappingDeskTest {
 
         GlMappingDesk.GlMappingVersionView view = as(ACCOUNTANT, () -> desk.version(first.id()));
         assertThat(view.status()).isEqualTo("ACTIVE");
+        assertThat(view.proposedBy()).as("P17-TSK-111: the proposer named, by identifier").isEqualTo(ACCOUNTANT.id());
+        assertThat(view.toString()).as("never the approver").doesNotContain(CONTROLLER.id());
         assertThat(view.accounts()).hasSize(35);
         assertThat(view.rules()).hasSize(40);
         assertThat(view.accounts().get(0).normalBalance()).isEqualTo("DEBIT");

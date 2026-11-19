@@ -182,6 +182,19 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
     }
 
     @Override
+    public boolean rejectAcknowledgement(Connection unitOfWork, AccountingBreakId id) {
+        BreakRow row = rows.get(id);
+        if (row == null || row.status() != BreakStatus.OPEN || row.ackProposedBy().isEmpty()
+                || row.ackApprovedBy().isPresent()) {
+            return false;
+        }
+        rows.put(id, new BreakRow(row.id(), row.period(), row.check(), row.type(), row.subject(), row.generation(), row.evidence(),
+                row.judgedBy(), BreakStatus.OPEN, row.raisedAt(), Optional.empty(), Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()));
+        return true;
+    }
+
+    @Override
     public boolean resolve(Connection unitOfWork, AccountingBreakId id, BreakStatus from, Actor actor,
             UUID correctingEntry, String reason) {
         BreakRow row = rows.get(id);
@@ -200,7 +213,14 @@ public final class InMemoryAccountingBreakStore implements AccountingBreakStore 
         if (!rows.containsKey(row.breakId())) {
             throw new IllegalStateException("break_event_break_fk: the case file names a break");
         }
-        if (row.proposedBy().isPresent() && row.proposedBy().get().equals(row.actor().id())) {
+        // accounting V018's break_event_four_eyes: the acknowledgement and its rejection name the proposer; only the
+        // acknowledgement is another person's.
+        boolean namesItsProposer = row.act() == Act.ACKNOWLEDGED || row.act() == Act.ACKNOWLEDGEMENT_REJECTED;
+        if (namesItsProposer != row.proposedBy().isPresent()) {
+            throw new IllegalStateException("break_event_four_eyes: the acknowledgement and its rejection name the proposer,"
+                    + " no other act does");
+        }
+        if (row.act() == Act.ACKNOWLEDGED && row.proposedBy().get().equals(row.actor().id())) {
             throw new IllegalStateException("break_event_four_eyes: the acknowledgement names its proposer, never the"
                     + " approver");
         }

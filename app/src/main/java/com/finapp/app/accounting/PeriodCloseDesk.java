@@ -7,6 +7,7 @@ import com.finapp.accounting.AccountingReasons;
 import com.finapp.accounting.CloseCheckCode;
 import com.finapp.accounting.CloseRunId;
 import com.finapp.accounting.PeriodCloseId;
+import com.finapp.accounting.PeriodCloseStore;
 import com.finapp.accounting.PeriodCloses;
 import com.finapp.accounting.PeriodReopenId;
 import com.finapp.accounting.PostingCutoff;
@@ -48,7 +49,7 @@ import lombok.RequiredArgsConstructor;
  * <p><strong>A key's replay is the first answer</strong>: the same key with the same body returns the stored receipt, a timeout then a retry included; the same key with another body is the executor's conflict, its
  * fingerprint covering every reason. Beneath the key, the domain converges the same person's repeat.
  *
- * <p>What leaves the read: the proposal, each frozen attempt with its evidence, and the proposer's reason <em>per {@code DISCLOSED} attempt</em>, which exists to be disclosed to the approver. Never a person; never the
+ * <p>What leaves the read: the proposal, each frozen attempt with its evidence, and the proposer's reason <em>per {@code DISCLOSED} attempt</em>, which exists to be disclosed to the approver; and the proposer and a pending reopen's proposer by identifier, never a name (`P17-TSK-111`), so the approver sees whose act it decides - {@code accounting.SelfApprovalRefused} stays the control. Never the
  * proposal's or a decision's own reason.
  *
  * <p><strong>A reopen's two receipts list the returns it overtakes</strong> (`P14-TSK-023`, the owner's ruling on `P14-TSK-018`'s item (a)): {@link ReturnsAReopenOvertakes}, a plain read on the act's own transaction, holding the period's row. A list and no more: unlike the adjustments' it is named back by nobody and compared with nothing, so it decides nothing and refuses nothing. It is stored with the receipt and a replay returns what was stored; the words it is served with, {@link #OVERTAKEN_RETURNS_NOTE}, are not stored. The fingerprint does not move: a receipt is no part of a request. What a form's code and a return's status are, who reads them here and why that stands: {@code DATA_CLASSIFICATION.md}, the return's section.
@@ -175,14 +176,16 @@ public final class PeriodCloseDesk {
             List<OvertakenReturn> overtakenReturns,
             Long overtakenReturnsTotal,
             String overtakenReturnsNote,
-            int valuationRateSetReferenceGaps) {}
+            int valuationRateSetReferenceGaps,
+            String proposedBy,
+            String reopenProposedBy) {}
 
     /**
      * A period's pending requests as the controller reads them before deciding one (`P14-TSK-024`'s fix round): what each act names - an unlock by when it was proposed, a reopen by its id - and
-     * when the reopen was proposed. No person, no reason, no figure. Null where none is pending.
+     * when the reopen was proposed, each request's proposer by identifier, and the period's latest close proposal - its id and status, null when it never had one, so "no close proposal" is an answer here (`P17-TSK-111`). No reason, no figure. Null where none is pending.
      */
     public record PeriodRequestsView(String id, String period, String status, int revision, boolean unlockPending, String unlockProposedAt, boolean reopenPending, String reopenId,
-            String reopenProposedAt) {}
+            String reopenProposedAt, String unlockProposedBy, String reopenProposedBy, String closeProposalId, String closeProposalStatus) {}
 
     public PeriodCloseReceipt propose(String idempotencyKey, String rawId, String rawRun, String reason, List<StatedDisclosure> disclosures) {
         AccountingPeriodId id = periodId(rawId);
@@ -264,14 +267,16 @@ public final class PeriodCloseDesk {
         return named.isEmpty() ? act + "|" + period + "|" + reason : act + "-named|" + period + "|" + new TreeSet<>(named) + "|" + reason;
     }
 
-    /** A period's pending requests, as the controller reads them before deciding one - a plain read, unrecorded as the period list is, for it serves no person, reason or figure. */
+    /** A period's pending requests, as the controller reads them before deciding one - a plain read, unrecorded as the period list is: it serves no reason or figure, and a person only by identifier (`P17-TSK-111`). */
     public PeriodRequestsView requests(String rawId) {
         AccountingPeriodId id = periodId(rawId);
         return flow.door(REQUESTS_READ_SPAN, () -> guarded(() -> transactions.inTransaction(uow -> {
             PeriodCloses.PendingRequests pending = closes.pendingOf(uow, id);
             return new PeriodRequestsView(pending.period().id().value().toString(), pending.period().month().toString(), pending.period().status().name(), pending.period().revision(),
                     pending.unlockProposedAt().isPresent(), pending.unlockProposedAt().map(Instant::toString).orElse(null), pending.reopen().isPresent(),
-                    pending.reopen().map(reopen -> reopen.id().value().toString()).orElse(null), pending.reopen().map(reopen -> reopen.proposedAt().toString()).orElse(null));
+                    pending.reopen().map(reopen -> reopen.id().value().toString()).orElse(null), pending.reopen().map(reopen -> reopen.proposedAt().toString()).orElse(null),
+                    pending.unlockProposedBy().orElse(null), pending.reopen().map(PeriodCloseStore.ReopenRow::proposedBy).orElse(null),
+                    pending.latestClose().map(close -> close.id().value().toString()).orElse(null), pending.latestClose().map(close -> close.status().name()).orElse(null));
         })));
     }
 
@@ -327,7 +332,9 @@ public final class PeriodCloseDesk {
                 overtaken.map(PeriodCloseDesk::listed).orElse(null),
                 overtaken.map(ReturnsAReopenOvertakes.Overtaken::total).orElse(null),
                 overtaken.isPresent() ? PENDING_REOPEN_NOTE : null,
-                view.referenceGaps());
+                view.referenceGaps(),
+                view.proposal().proposedBy(),
+                view.pendingReopen().map(PeriodCloseStore.ReopenRow::proposedBy).orElse(null));
     }
 
     /** A list as the statement read it: an id, a form and a status per return, never more. */

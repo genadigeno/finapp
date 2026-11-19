@@ -13072,6 +13072,9 @@
           "acknowledgementProposedAt": {
             "type": "string"
           },
+          "acknowledgementProposedBy": {
+            "type": "string"
+          },
           "check": {
             "type": "string"
           },
@@ -13183,6 +13186,9 @@
           "reopenProposedAt": {
             "type": "string"
           },
+          "reopenProposedBy": {
+            "type": "string"
+          },
           "revision": {
             "format": "int32",
             "type": "integer"
@@ -13198,6 +13204,9 @@
           },
           "unlockProposedAt": {
             "type": "string"
+          },
+          "unlockProposedBy": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -13211,6 +13220,19 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "AdjustmentRejectionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
         "type": "object"
       },
       "AdjustmentRequest": {
@@ -17878,6 +17900,9 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "reopenId": {
             "type": "string"
           },
@@ -17885,6 +17910,9 @@
             "type": "boolean"
           },
           "reopenProposedAt": {
+            "type": "string"
+          },
+          "reopenProposedBy": {
             "type": "string"
           },
           "revision": {
@@ -21958,6 +21986,9 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "retiredAt": {
             "type": "string"
           },
@@ -25627,6 +25658,9 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "targetPeriod": {
             "type": "string"
           }
@@ -25787,6 +25821,12 @@
       },
       "PeriodRequestsView": {
         "properties": {
+          "closeProposalId": {
+            "type": "string"
+          },
+          "closeProposalStatus": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -25802,6 +25842,9 @@
           "reopenProposedAt": {
             "type": "string"
           },
+          "reopenProposedBy": {
+            "type": "string"
+          },
           "revision": {
             "format": "int32",
             "type": "integer"
@@ -25813,6 +25856,9 @@
             "type": "boolean"
           },
           "unlockProposedAt": {
+            "type": "string"
+          },
+          "unlockProposedBy": {
             "type": "string"
           }
         },
@@ -26291,6 +26337,9 @@
             "type": "string"
           },
           "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
             "type": "string"
           },
           "reason": {
@@ -27549,6 +27598,9 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "standing": {
             "type": "string"
           },
@@ -27601,6 +27653,9 @@
             "type": "string"
           },
           "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
             "type": "string"
           },
           "retiredAt": {
@@ -27834,6 +27889,9 @@
           "period": {
             "type": "string"
           },
+          "periodId": {
+            "type": "string"
+          },
           "periodRevision": {
             "format": "int32",
             "type": "integer"
@@ -27843,6 +27901,9 @@
             "type": "integer"
           },
           "preparedAt": {
+            "type": "string"
+          },
+          "preparedBy": {
             "type": "string"
           },
           "resendsExhausted": {
@@ -27956,6 +28017,9 @@
           "period": {
             "type": "string"
           },
+          "periodId": {
+            "type": "string"
+          },
           "periodRevision": {
             "format": "int32",
             "type": "integer"
@@ -27971,6 +28035,9 @@
             "type": "string"
           },
           "preparedAt": {
+            "type": "string"
+          },
+          "preparedBy": {
             "type": "string"
           },
           "providerReference": {
@@ -33560,6 +33627,9 @@
           "capturedAt": {
             "type": "string"
           },
+          "capturedBy": {
+            "type": "string"
+          },
           "decidedAt": {
             "type": "string"
           },
@@ -34503,6 +34573,36 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/ledger/adjustments/{id}/rejection": {
+      "post": {
+        "operationId": "rejectWithReason",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustmentRejectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
           }
         }
       }
@@ -37854,6 +37954,51 @@
         }
       }
     },
+    "/v1/operator/accounting/breaks/{breakId}/acknowledgement-rejection": {
+      "post": {
+        "operationId": "rejectAccountingBreakAcknowledgement",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "breakId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BreakActRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountingBreakReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/accounting/breaks/{breakId}/resolution": {
       "post": {
         "operationId": "resolveAccountingBreak",
@@ -38274,6 +38419,33 @@
                     "$ref": "#/components/schemas/AccountingPeriodView"
                   },
                   "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/periods/{periodId}": {
+      "get": {
+        "operationId": "readAccountingPeriod",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountingPeriodView"
                 }
               }
             },

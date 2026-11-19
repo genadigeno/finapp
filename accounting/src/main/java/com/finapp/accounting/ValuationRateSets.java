@@ -88,7 +88,7 @@ public final class ValuationRateSets {
     }
 
     /** A set as the reviewer reads it: the set and its two instants - no person, no reason. */
-    public record Read(Valued set, Instant capturedAt, Optional<Instant> decidedAt) {}
+    public record Read(Valued set, Instant capturedAt, Optional<Instant> decidedAt, String capturedBy) {}
 
     // ------------------------------------------------------------------ refusals
 
@@ -387,7 +387,7 @@ public final class ValuationRateSets {
      */
     public Read read(Connection unitOfWork, ValuationRateSetId id) {
         ValuationRateSetStore.SetRow row = store.find(unitOfWork, id).orElseThrow(ValuationSetNotFound::new);
-        return new Read(valued(unitOfWork, row, false), row.capturedAt(), row.decidedAt());
+        return new Read(valued(unitOfWork, row, false), row.capturedAt(), row.decidedAt(), row.capturedBy());
     }
 
     /**

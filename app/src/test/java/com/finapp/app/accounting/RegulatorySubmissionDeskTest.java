@@ -472,6 +472,8 @@ class RegulatorySubmissionDeskTest {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt drafted = draft("d-1");
         world.audit.clear();
         RegulatorySubmissionDesk.RegulatorySubmissionView view = as(PREPARER, () -> desk.read(drafted.submissionId()));
+        assertThat(view.preparedBy()).as("P17-TSK-111: the preparer named, by identifier").isEqualTo(PREPARER.id());
+        assertThat(view.periodId()).as("P17-TSK-111: the return's period by its id, which a correction's draft names").isEqualTo(january);
 
         assertThat(view.standing()).isEqualTo("REFERENCE");
         assertThat(view.notice()).contains("reference").doesNotContainIgnoringCase("complian");

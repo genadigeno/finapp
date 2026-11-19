@@ -90,6 +90,21 @@ public class AccountingBreakController {
     }
 
     /**
+     * Rejects a pending acknowledgement (`P17-TSK-111`): the proposal cleared, the break stays OPEN for a new one, the case file
+     * keeping both; a reason is required. It races the approval: one wins, the other is 409 accounting.BreakStale.
+     */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+    @PostMapping(path = "/{breakId}/acknowledgement-rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.ACCOUNTING_ADJUST_APPROVE)
+    @RequiresIdempotencyKey
+    public AccountingBreakDesk.AccountingBreakReceipt rejectAccountingBreakAcknowledgement(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("breakId") String breakId,
+            @Valid @RequestBody BreakActRequest body) {
+        return desk.rejectAcknowledgement(idempotencyKey, breakId, body.reason());
+    }
+
+    /**
      * Resolves an OPEN or ACKNOWLEDGED break by reference to the journal entry that corrected it - an existing entry
      * other than the one the break is about; nothing is posted. A reason is required.
      */

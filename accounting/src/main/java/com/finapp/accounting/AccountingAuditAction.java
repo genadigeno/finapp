@@ -257,6 +257,15 @@ public enum AccountingAuditAction implements AuditableAction {
             true),
 
     /** A second person approved a break's acknowledgement (`P14-TSK-010`, ACCOUNTING_ADJUST_APPROVE). */
+    /** A pending acknowledgement rejected (`P17-TSK-111`), the break staying OPEN - reasoned. */
+    BREAK_ACKNOWLEDGEMENT_REJECTED(
+            "accounting.BreakAcknowledgementRejected",
+            "A holder of ACCOUNTING_ADJUST_APPROVE rejected an accounting break's pending acknowledgement: the proposal cleared from"
+                    + " the break, which stays OPEN for a new one, the case file keeping what was proposed and why it was rejected"
+                    + " (P17-TSK-111, accounting V018; POST .../breaks/{breakId}/acknowledgement-rejection). Reasoned; may be the"
+                    + " proposer's own, as every rejection here may. Its target the break; the summary its period, check and type and"
+                    + " whether the rejecter proposed it.",
+            true),
     BREAK_ACKNOWLEDGED(
             "accounting.BreakAcknowledged",
             "A person other than its proposer approved an accounting break's acknowledgement: OPEN -> ACKNOWLEDGED, its"

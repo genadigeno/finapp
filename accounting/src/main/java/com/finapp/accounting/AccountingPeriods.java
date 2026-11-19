@@ -569,6 +569,12 @@ public final class AccountingPeriods {
         return store.recent(unitOfWork, limit);
     }
 
+    /** One period by its id (`P17-TSK-111`), however old - a plain read, unlocked, as {@link #recent} is; empty when no period has it. */
+    public Optional<AccountingPeriodStore.PeriodRow> find(Connection unitOfWork, AccountingPeriodId id) {
+        java.util.Objects.requireNonNull(id, "id");
+        return store.find(unitOfWork, id);
+    }
+
     /** The first day {@code month} may lock - the configured grace after its end. */
     public LocalDate lockableFrom(YearMonth month) {
         return grace.lockableFrom(month);

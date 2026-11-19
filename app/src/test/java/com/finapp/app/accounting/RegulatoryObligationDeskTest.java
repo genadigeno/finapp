@@ -212,6 +212,7 @@ class RegulatoryObligationDeskTest {
 
         RegulatoryObligationDesk.RegulatoryObligationView preparer = as(PREPARER, () -> desk.read(proposed.obligationId()));
         assertThat(preparer.proposalReason()).isNull();
+        assertThat(preparer.proposedBy()).as("P17-TSK-111: the proposer named, by identifier").isEqualTo(PREPARER.id());
         assertThat(preparer.standing()).isEqualTo("REFERENCE");
         assertThat(preparer.notice()).contains("reference");
         assertThat(preparer.adapterHeld()).isTrue();

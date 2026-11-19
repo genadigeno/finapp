@@ -201,6 +201,19 @@ public final class JdbcAccountingBreakStore implements AccountingBreakStore {
     }
 
     @Override
+    public boolean rejectAcknowledgement(Connection unitOfWork, AccountingBreakId id) {
+        // The one edge accounting V018 adds: the pending proposal cleared whole, on an OPEN break no one approved.
+        try (PreparedStatement update = unitOfWork.prepareStatement("UPDATE accounting.accounting_break"
+                + " SET ack_proposed_by = NULL, ack_proposed_by_type = NULL, ack_proposed_at = NULL, disclosure = NULL"
+                + " WHERE id = ? AND status = 'OPEN' AND ack_proposed_by IS NOT NULL AND ack_approved_by IS NULL")) {
+            update.setObject(1, id.value());
+            return update.executeUpdate() == 1;
+        } catch (SQLException failure) {
+            throw failed("rejecting an accounting break's acknowledgement", failure);
+        }
+    }
+
+    @Override
     public boolean resolve(Connection unitOfWork, AccountingBreakId id, BreakStatus from, Actor actor,
             UUID correctingEntry, String reason) {
         try (PreparedStatement update = unitOfWork.prepareStatement("UPDATE accounting.accounting_break"

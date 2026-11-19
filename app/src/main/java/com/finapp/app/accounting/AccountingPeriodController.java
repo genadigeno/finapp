@@ -53,6 +53,13 @@ public class AccountingPeriodController {
         return desk.list(limit);
     }
 
+    /** One period by its id, however old (`P17-TSK-111`): the list's view; an unknown or malformed id is 404 accounting.NotFound. */
+    @GetMapping("/{periodId}")
+    @RequiresPermission(PermissionName.ACCOUNTING_READ)
+    public AccountingPeriodDesk.AccountingPeriodView readAccountingPeriod(@PathVariable("periodId") String periodId) {
+        return desk.one(periodId);
+    }
+
     /**
      * Locks an OPEN period after its grace, the previous period closed: from the commit no entry dated in it commits.
      * A second lock answers LOCKED.

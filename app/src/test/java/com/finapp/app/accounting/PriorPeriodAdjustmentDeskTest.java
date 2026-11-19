@@ -324,7 +324,7 @@ class PriorPeriodAdjustmentDeskTest {
     }
 
     @Test
-    @DisplayName("the approver's read: audited before it is served; the date, revision, lines as exact decimals, the reason, the month's other corrections, and whether it still stands - no person; the pending and the month's list audited too")
+    @DisplayName("the approver's read: audited before it is served; the date, revision, lines as exact decimals, the reason, the month's other corrections, and whether it still stands - the proposer by identifier since P17-TSK-111, never the decider; the pending and the month's list audited too")
     void theReads() {
         PriorPeriodAdjustmentDesk.PriorPeriodAdjustmentReceipt first = propose("k-1");
         approve("a-1", first.id());
@@ -332,6 +332,7 @@ class PriorPeriodAdjustmentDeskTest {
         int records = audited.size();
 
         PriorPeriodAdjustmentDesk.PriorPeriodAdjustmentView view = as(CONTROLLER, () -> desk.read(second));
+        assertThat(view.proposedBy()).as("P17-TSK-111: the proposer named, by identifier").isEqualTo(ACCOUNTANT.id());
 
         assertThat(view.postingDate()).isEqualTo(TODAY);
         assertThat(view.correctedRevision()).isEqualTo(1);
@@ -348,9 +349,12 @@ class PriorPeriodAdjustmentDeskTest {
             assertThat(record.operation().code()).isEqualTo("accounting.PriorPeriodAdjustmentRead");
             assertThat(record.changeSummary().orElseThrow()).doesNotContain("secret").doesNotContain("15.00");
         });
-        assertThat(Arrays.stream(PriorPeriodAdjustmentDesk.PriorPeriodAdjustmentView.class.getRecordComponents()).map(RecordComponent::getName)).as("no person leaves").doesNotContain("proposedBy", "decidedBy");
+        assertThat(Arrays.stream(PriorPeriodAdjustmentDesk.PriorPeriodAdjustmentView.class.getRecordComponents()).map(RecordComponent::getName)).as("no decider leaves; the proposer does, by identifier, since P17-TSK-111").doesNotContain("decidedBy");
 
-        assertThat(as(CONTROLLER, desk::pending)).singleElement().satisfies(pending -> assertThat(pending.id()).isEqualTo(second));
+        assertThat(as(CONTROLLER, desk::pending)).singleElement().satisfies(pending -> {
+            assertThat(pending.id()).isEqualTo(second);
+            assertThat(pending.proposedBy()).as("P17-TSK-111: the proposer named, by identifier").isEqualTo(ACCOUNTANT.id());
+        });
         assertThat(as(ACCOUNTANT, () -> desk.ofPeriod(january.value().toString()))).hasSize(2);
         assertThat(audited).hasSize(records + 3);
         refused(() -> as(CONTROLLER, () -> desk.read("not-an-id")), AccountingErrorCode.NOT_FOUND, 404);
@@ -376,7 +380,7 @@ class PriorPeriodAdjustmentDeskTest {
         for (Object record : List.of(new PriorPeriodAdjustmentController.PriorPeriodAdjustmentRequest("period", 1, secret, List.of(new PriorPeriodAdjustmentController.PriorPeriodLineItem("a", "DEBIT", amount, "EUR"))),
                 new PriorPeriodAdjustmentController.PriorPeriodLineItem("a", "DEBIT", amount, "EUR"), new PriorPeriodAdjustmentController.PriorPeriodApprovalRequest(TODAY, 1, List.of(), secret),
                 new PriorPeriodAdjustmentController.PriorPeriodRejectionRequest(secret), new PriorPeriodAdjustmentDesk.StatedLine("a", "DEBIT", amount, "EUR"), new PriorPeriodAdjustmentDesk.PriorPeriodLineView("a", "FEE_REVENUE", "OPERATIONAL", "DEBIT", amount, "EUR"),
-                new PriorPeriodAdjustmentDesk.PriorPeriodAdjustmentView("id", "2026-01", 1, "2026-03", TODAY, "PROPOSED", "p", null, "t", null, secret, true, null, List.of(new PriorPeriodAdjustmentDesk.PriorPeriodLineView("a", "FEE_REVENUE", "OPERATIONAL", "DEBIT", amount, "EUR")), List.of()))) {
+                new PriorPeriodAdjustmentDesk.PriorPeriodAdjustmentView("id", "2026-01", 1, "2026-03", TODAY, "PROPOSED", "p", null, "t", null, secret, true, null, List.of(new PriorPeriodAdjustmentDesk.PriorPeriodLineView("a", "FEE_REVENUE", "OPERATIONAL", "DEBIT", amount, "EUR")), List.of(), "proposer-1"))) {
             assertThat(record.toString()).as(record.getClass().getSimpleName()).doesNotContain(secret).doesNotContain(amount);
         }
     }

@@ -298,6 +298,44 @@ public final class AccountingBreaks {
     }
 
     /**
+     * Rejects a pending acknowledgement (`P17-TSK-111`, accounting {@code V018}): the proposal cleared from the break, which stays
+     * {@code OPEN} for a new one; the case file keeps the proposal and the rejection, naming the proposer. May be the proposer's
+     * own, as every rejection here may - four eyes guards the approval, which this is not. It races the approval on the row's
+     * lock: whichever commits first wins, and the other finds nothing pending and is {@link BreakStale}. A retry is the keyed
+     * door's replay; a repeat under a new key finds nothing pending.
+     *
+     * @throws BreakNotFound when no break has this id
+     * @throws BreakStale when the break is not {@code OPEN}, or no acknowledgement is pending
+     * @throws AccountingReasons.ReasonRequired for a missing, unbounded or instrument-bearing reason
+     */
+    public Acted rejectAcknowledgement(Connection unitOfWork, AccountingBreakId id, Actor actor, String reason,
+            CorrelationId correlation) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(correlation, "correlation");
+        person(actor);
+        String reasoned = AccountingReasons.reasoned(reason);
+        AccountingBreakStore.BreakRow row = store.lock(unitOfWork, id).orElseThrow(BreakNotFound::new);
+        if (row.status() != BreakStatus.OPEN) {
+            throw new BreakStale("the break is " + row.status().name() + "; only an OPEN break's acknowledgement is rejected");
+        }
+        if (!row.acknowledgementPending()) {
+            throw new BreakStale("no acknowledgement of the break is proposed");
+        }
+        String proposer = row.ackProposedBy().orElseThrow();
+        if (!store.rejectAcknowledgement(unitOfWork, id)) {
+            throw new IllegalStateException("the pending acknowledgement moved under its own row lock: the FOR UPDATE"
+                    + " protocol was bypassed");
+        }
+        store.appendEvent(unitOfWork, new AccountingBreakStore.EventRow(ids.next(), id,
+                AccountingBreakStore.Act.ACKNOWLEDGEMENT_REJECTED, Optional.of(BreakStatus.OPEN), BreakStatus.OPEN, actor,
+                Optional.of(proposer), Optional.empty(), Optional.of(reasoned), correlation));
+        record(unitOfWork, actor, AccountingAuditAction.BREAK_ACKNOWLEDGEMENT_REJECTED, id, Optional.of(reasoned),
+                summary(row.period(), row.check(), row.type()) + ", byProposer=" + proposer.equals(actor.id()), correlation);
+        return new Acted(id, row.period(), BreakStatus.OPEN, false, false);
+    }
+
+    /**
      * Records a refused self-approval {@code FAILED} ({@link AccountingAuditAction#SELF_APPROVAL_REFUSED}) on
      * {@code unitOfWork} - the caller's own transaction, after the act rolled back, so the attempt is kept.
      */

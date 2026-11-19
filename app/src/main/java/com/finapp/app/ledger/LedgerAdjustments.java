@@ -161,6 +161,23 @@ public final class LedgerAdjustments {
         inOneTransaction(unitOfWork -> adjustments.reject(unitOfWork, id));
     }
 
+    /**
+     * Rejects or withdraws with a reason (`P17-TSK-111`), recorded on the rejection's audit record; converges on a proposal already
+     * rejected, its first record standing. A blank, over-long or instrument-bearing reason is the caller's {@code 422}, nothing read.
+     */
+    public void reject(String rawId, String reason) {
+        AdjustmentProposalId id = parsedOrAbsent(rawId);
+        try {
+            AdjustmentService.rejectionReasonChecked(reason);
+        } catch (AdjustmentReasonRefusedException refused) {
+            throw new ApiException(
+                    PlatformErrorCode.VALIDATION_FAILED,
+                    "A rejection's reason was refused at the boundary: " + refused.getMessage(),
+                    refused.getMessage() + ".");
+        }
+        inOneTransaction(unitOfWork -> adjustments.reject(unitOfWork, id, reason));
+    }
+
     private static ProposalDetailView render(AdjustmentProposal proposal) {
         return new ProposalDetailView(
                 proposal.id().value().toString(),

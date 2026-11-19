@@ -732,7 +732,7 @@ public final class PeriodCloses {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(id, "id");
         AccountingPeriodStore.PeriodRow row = periods.find(unitOfWork, id).orElseThrow(AccountingPeriods.PeriodNotFound::new);
-        return new PendingRequests(row, pendingReopenOf(unitOfWork, row));
+        return new PendingRequests(row, pendingReopenOf(unitOfWork, row), closes.latest(unitOfWork, id));
     }
 
     /** The reopen pending on {@code row}: one stands only beside its {@code CLOSED} period at its revision. A plain read. */
@@ -741,17 +741,27 @@ public final class PeriodCloses {
         return row.status() == PeriodStatus.CLOSED ? closes.pendingReopen(unitOfWork, row.id()).filter(pending -> pending.revision() == row.revision()) : Optional.empty();
     }
 
-    /** A period's pending requests: its row, whose pending unlock is {@link AccountingPeriodStore.PeriodRow#unlockPending()}, and the reopen pending, if one is. */
-    public record PendingRequests(AccountingPeriodStore.PeriodRow period, Optional<PeriodCloseStore.ReopenRow> reopen) {
+    /**
+     * A period's pending requests: its row, whose pending unlock is {@link AccountingPeriodStore.PeriodRow#unlockPending()}, the reopen pending, if one is, and its
+     * latest close proposal in any status, if it ever had one (`P17-TSK-111`: so "no close proposal" is an answer here, and {@code .../close-proposal}'s 404 is never
+     * how a reader learns it).
+     */
+    public record PendingRequests(AccountingPeriodStore.PeriodRow period, Optional<PeriodCloseStore.ReopenRow> reopen, Optional<PeriodCloseStore.CloseRow> latestClose) {
 
         public PendingRequests {
             Objects.requireNonNull(period, "period");
             Objects.requireNonNull(reopen, "reopen");
+            Objects.requireNonNull(latestClose, "latestClose");
         }
 
         /** When the pending unlock was proposed - its identity; empty when none is pending. */
         public Optional<Instant> unlockProposedAt() {
             return period.unlockPending() ? period.unlockProposedAt() : Optional.empty();
+        }
+
+        /** Who proposed the pending unlock (`P17-TSK-111`); empty when none is pending. */
+        public Optional<String> unlockProposedBy() {
+            return period.unlockPending() ? period.unlockProposedBy() : Optional.empty();
         }
     }
 

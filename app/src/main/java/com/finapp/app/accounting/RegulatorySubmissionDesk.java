@@ -55,7 +55,7 @@ import lombok.RequiredArgsConstructor;
  * own permission here. <strong>Neither holds {@code ACCOUNTING_READ}</strong> and none is granted: the journal lines behind a figure are the accountant's, and the view names that route, the permission it asks and the roles that hold it - computed from {@link RoleName}, so a note cannot go
  * stale - with the run's id as the hand-off. An accountant reads the run and its lines and cannot read this.
  *
- * <p>What leaves: codes, amounts as minor units in strings with their currency and scale, the database's stamps, the provider's bytes as base64 and only as data, and to the approver alone the preparer's reason. Never a person. Every view's {@code toString} is overridden: a generated one
+ * <p>What leaves: codes, amounts as minor units in strings with their currency and scale, the database's stamps, the provider's bytes as base64 and only as data, and to the approver alone the preparer's reason. The preparer by identifier, never a name, and the return's period by its id beside its label (`P17-TSK-111`). Never another person. Every view's {@code toString} is overridden: a generated one
  * would carry a figure, a reason or a provider's text into a log line.
  */
 @RequiredArgsConstructor
@@ -95,9 +95,10 @@ public final class RegulatorySubmissionDesk {
     /** An act's receipt: the return as it stands now. No figure. */
     public record RegulatorySubmissionReceipt(String submissionId, String status, String statusMeaning, String standing, String contentSha256, int periodRevision, boolean monthMoved, Boolean validationPassed) {}
 
-    /** One return in a list - read one to act on it. No figure, no person. */
+    /** One return in a list - read one to act on it. No figure; its preparer by identifier and its period by id (`P17-TSK-111`). */
     public record RegulatorySubmissionSummaryView(String submissionId, String standing, String status, String statusMeaning, String jurisdictionCode, String formCode, int formVersion, String period, int periodRevision, int periodRevisionNow,
-            boolean monthMoved, boolean overtaken, boolean overdue, boolean resendsExhausted, boolean nonDeliveryOpen, long contraryAnswers, String correctsSubmissionId, String correctedBySubmissionId, String preparedAt) {}
+            boolean monthMoved, boolean overtaken, boolean overdue, boolean resendsExhausted, boolean nonDeliveryOpen, long contraryAnswers, String correctsSubmissionId, String correctedBySubmissionId, String preparedAt,
+            String preparedBy, String periodId) {}
 
     /** One page of what stands. {@code nextAfter} is the cursor of the next, and null only when no more exist. */
     public record RegulatorySubmissionStandingView(List<RegulatorySubmissionSummaryView> submissions, String nextAfter) {}
@@ -168,7 +169,8 @@ public final class RegulatorySubmissionDesk {
     public record RegulatorySubmissionView(String submissionId, String standing, String notice, String status, String statusMeaning, String obligationId, String obligationStatus, String configurationSha256, String adapterName, String jurisdictionCode,
             String formCode, int formVersion, String period, int periodRevision, int periodRevisionNow, String periodStatusNow, boolean monthMoved, boolean overtaken, boolean stillStands, String blockedBy, String contentSha256, RegulatoryValidationView validation,
             List<RegulatoryFormLineView> lines, List<RegulatoryProviderAnswerView> answers, long answersKept, String correctsSubmissionId, String correctedBySubmissionId, String providerReference, String rejectionCode, int attempts, int resends, String lastAnswer,
-            boolean overdue, boolean resendsExhausted, boolean nonDeliveryOpen, long contraryAnswers, String preparedAt, String validatedAt, String approvedAt, String submittedAt, String closedAt, String concludedAt, String answerHorizonAt, String preparationReason) {
+            boolean overdue, boolean resendsExhausted, boolean nonDeliveryOpen, long contraryAnswers, String preparedAt, String validatedAt, String approvedAt, String submittedAt, String closedAt, String concludedAt, String answerHorizonAt, String preparationReason,
+            String preparedBy, String periodId) {
 
         /** Figures, a reason and a provider's text stay out of a log line. */
         @Override
@@ -338,7 +340,8 @@ public final class RegulatorySubmissionDesk {
                 view.stillStands(), view.blockedBy().map(Enum::name).orElse(null), row.contentSha256(), view.validation().map(RegulatorySubmissionDesk::validation).orElse(null),
                 view.lines().stream().map(line -> line(line, row)).toList(), view.answers().stream().map(RegulatorySubmissionDesk::answer).toList(), view.answersKept(), id(row.corrects()), id(row.correctedBy()), row.providerReference().orElse(null),
                 row.rejectionCode().orElse(null), row.attempts(), row.resends(), row.lastAnswer().orElse(null), overdue(row), view.resendsExhausted(), view.nonDeliveryOpen(), row.contraryAnswers(), row.preparedAt().toString(), instant(row.validatedAt()),
-                instant(row.approvedAt()), instant(row.submittedAt()), instant(row.closedAt()), instant(row.concludedAt()), instant(row.answerHorizonAt()), withReason ? row.preparationReason() : null);
+                instant(row.approvedAt()), instant(row.submittedAt()), instant(row.closedAt()), instant(row.concludedAt()), instant(row.answerHorizonAt()), withReason ? row.preparationReason() : null,
+                row.preparedBy(), row.period().value().toString());
     }
 
     private static boolean overdue(RegulatorySubmissionStore.Row row) {
@@ -376,7 +379,8 @@ public final class RegulatorySubmissionDesk {
     private static RegulatorySubmissionSummaryView summary(RegulatorySubmissionStore.Row row) {
         boolean exhausted = row.status() == SubmissionStatus.SUBMITTED && row.lastAnswer().filter("NOT_RECEIVED"::equals).isPresent() && row.resends() >= RegulatorySubmissions.MAX_RESENDS;
         return new RegulatorySubmissionSummaryView(row.id().value().toString(), RegulatoryForm.REFERENCE, row.status().name(), row.status().meaning(), row.jurisdiction(), row.form(), row.formVersion(), row.month().toString(), row.periodRevision(), row.periodRevisionNow(),
-                row.monthMoved(), row.overtaken(), overdue(row), exhausted, RegulatorySubmissions.nonDeliveryOpen(row), row.contraryAnswers(), id(row.corrects()), id(row.correctedBy()), row.preparedAt().toString());
+                row.monthMoved(), row.overtaken(), overdue(row), exhausted, RegulatorySubmissions.nonDeliveryOpen(row), row.contraryAnswers(), id(row.corrects()), id(row.correctedBy()), row.preparedAt().toString(),
+                row.preparedBy(), row.period().value().toString());
     }
 
     private static String id(Optional<RegulatorySubmissionId> id) {

@@ -4173,6 +4173,13 @@ class OwnershipIsScopedTest {
                                         + " UPDATE, the edge conditional on OPEN and a pending proposal; four eyes by"
                                         + " CHECK; behind @RequiresPermission(ACCOUNTING_ADJUST_APPROVE).")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcAccountingBreakStore.rejectAcknowledgement",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-111. The id comes only from the break row this transaction locked FOR"
+                                        + " UPDATE, the clear conditional on OPEN, a pending proposal and no approval (V018's"
+                                        + " edge); behind @RequiresPermission(ACCOUNTING_ADJUST_APPROVE).")),
+                    Map.entry(
                             "com.finapp.accounting.JdbcAccountingBreakStore.resolve",
                             new Entry(
                                     Scope.ADMINISTERED,

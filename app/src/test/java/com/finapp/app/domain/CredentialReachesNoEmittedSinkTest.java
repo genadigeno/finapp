@@ -213,6 +213,8 @@ class CredentialReachesNoEmittedSinkTest {
                         "IdentityLookupRequest",
                         // P17-TSK-015: ending another identity's session. A reason, and nothing else.
                         "SessionRevocationRequest",
+                        // P17-TSK-111: a ledger adjustment's rejection with a reason. A reason, and nothing else.
+                        "AdjustmentRejectionRequest",
                         // P14-TSK-021: the write-off's doors. A reason and the figures an approver names; no credential.
                         "LoanWriteOffProposalRequest",
                         "LoanWriteOffApprovalRequest",

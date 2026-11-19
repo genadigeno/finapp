@@ -250,6 +250,114 @@ class AccountingBreakDatabaseTest {
     }
 
     @Test
+    @DisplayName("P17-TSK-111, accounting V018: a pending acknowledgement's rejection clears the proposal whole, the break OPEN,"
+            + " the case file keeping the proposal and the rejection naming its proposer, and a new proposal follows; a partial"
+            + " clear, a clear of an approved proposal and a rejection naming no proposer are refused by the database")
+    void aRejectionClearsTheProposalWhole() throws Exception {
+        AccountingBreakId id = raisedBreak();
+        Actor accountant = person();
+        Actor controller = person();
+        inScope(accountant, uow -> breaks().proposeAcknowledgement(uow, id, accountant, "the poster's fee line", correlation()));
+        try (Connection app = DatabaseRoles.application(); Statement statement = app.createStatement()) {
+            assertThatThrownBy(() -> statement.executeUpdate("UPDATE accounting.accounting_break SET disclosure = NULL,"
+                    + " ack_proposed_by = NULL WHERE id = '" + id.value() + "'"))
+                    .as("a proposal is cleared whole or not at all").isInstanceOf(SQLException.class);
+            assertThatThrownBy(() -> statement.executeUpdate("INSERT INTO accounting.break_event (id, break_id, act, from_status,"
+                    + " to_status, actor, actor_type, reason, occurred_at, correlation_id) VALUES ('" + IDS.next() + "', '" + id.value()
+                    + "', 'ACKNOWLEDGEMENT_REJECTED', 'OPEN', 'OPEN', 'x', 'CUSTOMER', 'no proposer named', now(), 'c')"))
+                    .isInstanceOfSatisfying(SQLException.class, refused -> {
+                        assertThat(refused.getSQLState()).isEqualTo("23514");
+                        assertThat(refused.getMessage()).contains("break_event_four_eyes");
+                    });
+        }
+
+        AccountingBreaks.Acted rejected = inScope(controller, uow -> breaks().rejectAcknowledgement(uow, id, controller,
+                "the disclosure names the wrong poster", correlation()));
+
+        assertThat(rejected.status().name()).isEqualTo("OPEN");
+        assertThat(count("SELECT count(*) FROM accounting.accounting_break WHERE id = '" + id.value() + "' AND status = 'OPEN'"
+                + " AND ack_proposed_by IS NULL AND ack_proposed_by_type IS NULL AND ack_proposed_at IS NULL AND disclosure IS NULL"))
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM accounting.break_event WHERE break_id = '" + id.value() + "' AND act ="
+                + " 'ACKNOWLEDGEMENT_REJECTED' AND proposed_by = '" + accountant.id() + "' AND actor = '" + controller.id()
+                + "' AND reason = 'the disclosure names the wrong poster'")).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM accounting.break_event WHERE break_id = '" + id.value() + "' AND act ="
+                + " 'ACKNOWLEDGEMENT_PROPOSED' AND reason = 'the poster''s fee line'")).as("the proposal stays in the case file")
+                .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'accounting.BreakAcknowledgementRejected'"
+                + " AND target_id = '" + id.value() + "' AND reason = 'the disclosure names the wrong poster'")).isEqualTo(1);
+
+        inScope(accountant, uow -> breaks().proposeAcknowledgement(uow, id, accountant, "the fee poster's line", correlation()));
+        inScope(controller, uow -> breaks().approveAcknowledgement(uow, id, controller, "disclosed at close", correlation()));
+        try (Connection app = DatabaseRoles.application(); Statement statement = app.createStatement()) {
+            assertThatThrownBy(() -> statement.executeUpdate("UPDATE accounting.accounting_break SET ack_proposed_by = NULL,"
+                    + " ack_proposed_by_type = NULL, ack_proposed_at = NULL, disclosure = NULL WHERE id = '" + id.value() + "'"))
+                    .as("an approved proposal is never cleared").isInstanceOf(SQLException.class);
+        }
+        assertThat(count("SELECT count(*) FROM accounting.accounting_break WHERE id = '" + id.value()
+                + "' AND status = 'ACKNOWLEDGED' AND disclosure = 'the fee poster''s line'")).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("P17-TSK-111: the rejection races the approval - five breaks, on each an approval and a rejection started"
+            + " together on their own connections: exactly one wins on each, the other refused stale, and the row and the case"
+            + " file agree with the winner")
+    void theRejectionRacesTheApproval() throws Exception {
+        int breaksRaced = 5;
+        ExecutorService pool = Executors.newFixedThreadPool(breaksRaced * 2);
+        try {
+            for (int round = 0; round < breaksRaced; round++) {
+                AccountingBreakId id = raisedBreak();
+                Actor accountant = person();
+                inScope(accountant, uow -> breaks().proposeAcknowledgement(uow, id, accountant, "the poster's fee line",
+                        correlation()));
+                Actor approver = person();
+                Actor rejecter = person();
+                CountDownLatch start = new CountDownLatch(1);
+                Future<String> approval = pool.submit(() -> {
+                    start.await();
+                    try {
+                        inScope(approver, uow -> breaks().approveAcknowledgement(uow, id, approver, "approved", correlation()));
+                        return "APPROVED";
+                    } catch (AccountingBreaks.BreakStale stale) {
+                        return "STALE";
+                    }
+                });
+                Future<String> rejection = pool.submit(() -> {
+                    start.await();
+                    try {
+                        inScope(rejecter, uow -> breaks().rejectAcknowledgement(uow, id, rejecter, "rejected", correlation()));
+                        return "REJECTED";
+                    } catch (AccountingBreaks.BreakStale stale) {
+                        return "STALE";
+                    }
+                });
+                start.countDown();
+                List<String> outcomes = List.of(approval.get(2, TimeUnit.MINUTES), rejection.get(2, TimeUnit.MINUTES));
+                assertThat(outcomes).as("exactly one wins, the other is stale").containsOnlyOnce("STALE")
+                        .containsAnyOf("APPROVED", "REJECTED");
+                long acknowledged = count("SELECT count(*) FROM accounting.break_event WHERE break_id = '" + id.value()
+                        + "' AND act = 'ACKNOWLEDGED'");
+                long rejectedEvents = count("SELECT count(*) FROM accounting.break_event WHERE break_id = '" + id.value()
+                        + "' AND act = 'ACKNOWLEDGEMENT_REJECTED'");
+                if (outcomes.contains("APPROVED")) {
+                    assertThat(acknowledged).isEqualTo(1);
+                    assertThat(rejectedEvents).isZero();
+                    assertThat(column("SELECT status FROM accounting.accounting_break WHERE id = '" + id.value() + "'"))
+                            .isEqualTo("ACKNOWLEDGED");
+                } else {
+                    assertThat(rejectedEvents).isEqualTo(1);
+                    assertThat(acknowledged).isZero();
+                    assertThat(count("SELECT count(*) FROM accounting.accounting_break WHERE id = '" + id.value()
+                            + "' AND status = 'OPEN' AND ack_proposed_by IS NULL")).isEqualTo(1);
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
     @DisplayName("a check run and a resolution post nothing: the journal's count is unchanged by both; the resolution"
             + " names the correcting entry")
     void aResolutionPostsNothing() throws Exception {

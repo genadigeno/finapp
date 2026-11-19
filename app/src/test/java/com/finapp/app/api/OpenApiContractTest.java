@@ -559,6 +559,8 @@ class OpenApiContractTest {
                         // P14-TSK-005: the periods - listed (ACCOUNTING_READ), locked and an unlock proposed
                         // (ACCOUNTING_CLOSE_PROPOSE), the unlock approved (ACCOUNTING_CLOSE_APPROVE), each keyed.
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods",
+                        // P17-TSK-111: one period by its id (ACCOUNTING_READ).
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/lock",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-proposal",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-approval",
@@ -612,6 +614,8 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks/{breakId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks/{breakId}/acknowledgement-proposal",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks/{breakId}/acknowledgement-approval",
+                        // P17-TSK-111: a pending acknowledgement's rejection (ACCOUNTING_ADJUST_APPROVE, keyed, reasoned).
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks/{breakId}/acknowledgement-rejection",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks/{breakId}/resolution",
                         // P14-TSK-007: the GL read model - balances, an account's activity (keyset paged) and an
                         // entry's GL view; ACCOUNTING_READ, read-only snapshots, audited accounting.GlRead.
@@ -706,6 +710,8 @@ class OpenApiContractTest {
                         // second person's approval, and the rejection/withdrawal.
                         ApiVersion.CURRENT_PREFIX + "/ledger/adjustments/{id}",
                         ApiVersion.CURRENT_PREFIX + "/ledger/adjustments/{id}/approval",
+                        // P17-TSK-111: the rejection with a reason (LEDGER_ADJUST, MULTI_FACTOR, unkeyed as the DELETE is).
+                        ApiVersion.CURRENT_PREFIX + "/ledger/adjustments/{id}/rejection",
                         // P14-TSK-026: the ledger's second surface - the four-eyes projection rebuild, behind
                         // LEDGER_ADJUST, every door keyed, the approval MULTI_FACTOR.
                         ApiVersion.CURRENT_PREFIX + "/ledger/projection-rebuilds",

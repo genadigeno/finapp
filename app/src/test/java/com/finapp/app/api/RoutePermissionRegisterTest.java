@@ -104,6 +104,8 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/ledger/adjustments", PermissionName.LEDGER_ADJUST),
                     entry("GET /v1/ledger/adjustments/{id}", PermissionName.LEDGER_ADJUST),
                     entry("DELETE /v1/ledger/adjustments/{id}", PermissionName.LEDGER_ADJUST),
+                    // P17-TSK-111: the rejection with a reason, the DELETE's act and permission.
+                    entry("POST /v1/ledger/adjustments/{id}/rejection", PermissionName.LEDGER_ADJUST),
                     // MULTI_FACTOR on this one, its three neighbours not (P14-TSK-022); this register holds permissions, ApprovalAssuranceTest the assurance.
                     entry("POST /v1/ledger/adjustments/{id}/approval", PermissionName.LEDGER_ADJUST),
                     // Transfer reversal (Phase 4), refund (Phase 5), void (P7-TSK-004)
@@ -528,6 +530,8 @@ class RoutePermissionRegisterTest {
                     // approval the controller's (four eyes), the list the accountant's (identity V025's partition);
                     // the negatives are AccountingPeriodDeskTest's route declarations.
                     entry("GET /v1/operator/accounting/periods", PermissionName.ACCOUNTING_READ),
+                    // P17-TSK-111: one period by its id, however old - the list's permission.
+                    entry("GET /v1/operator/accounting/periods/{periodId}", PermissionName.ACCOUNTING_READ),
                     entry("POST /v1/operator/accounting/periods/{periodId}/lock",
                             PermissionName.ACCOUNTING_CLOSE_PROPOSE),
                     entry("POST /v1/operator/accounting/periods/{periodId}/unlock-proposal",
@@ -561,6 +565,9 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/accounting/breaks/{breakId}/acknowledgement-proposal",
                             PermissionName.ACCOUNTING_ADJUST_PROPOSE),
                     entry("POST /v1/operator/accounting/breaks/{breakId}/acknowledgement-approval",
+                            PermissionName.ACCOUNTING_ADJUST_APPROVE),
+                    // P17-TSK-111: the rejection of a pending acknowledgement, the approval's permission - the act it races.
+                    entry("POST /v1/operator/accounting/breaks/{breakId}/acknowledgement-rejection",
                             PermissionName.ACCOUNTING_ADJUST_APPROVE),
                     entry("POST /v1/operator/accounting/breaks/{breakId}/resolution",
                             PermissionName.ACCOUNTING_ADJUST_APPROVE),

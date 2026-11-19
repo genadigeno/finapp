@@ -239,6 +239,7 @@ class ValuationRateSetDeskTest {
         assertThat(read.rates()).isEqualTo(approved.rates());
         assertThat(read.capturedAt()).isNotNull();
         assertThat(read.decidedAt()).isNotNull();
+        assertThat(read.capturedBy()).as("P17-TSK-111: the capturer named, by identifier").isEqualTo(ACCOUNTANT.id());
         assertThatThrownBy(() -> desk.read("not-a-uuid")).isInstanceOf(ApiException.class);
     }
 

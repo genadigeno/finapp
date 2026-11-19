@@ -80,7 +80,7 @@ public final class GlMappingDesk {
         }
     }
 
-    /** A version: its machine row and its whole content. No person, no reason. */
+    /** A version: its machine row, its whole content and its proposer by identifier, never a name (`P17-TSK-111`). No reason. */
     public record GlMappingVersionView(
             String id,
             int version,
@@ -91,7 +91,8 @@ public final class GlMappingDesk {
             String decidedAt,
             String retiredAt,
             List<GlMappingAccountView> accounts,
-            List<GlMappingRuleView> rules) {}
+            List<GlMappingRuleView> rules,
+            String proposedBy) {}
 
     /** A GL account changed between the base and the version. */
     public record GlMappingAccountChangeView(String code, GlMappingAccountView before, GlMappingAccountView after) {}
@@ -213,7 +214,8 @@ public final class GlMappingDesk {
                 row.decidedAt().map(Instant::toString).orElse(null),
                 row.retiredAt().map(Instant::toString).orElse(null),
                 version.content().accounts().stream().map(GlMappingAccountView::of).toList(),
-                version.content().rules().stream().map(GlMappingRuleView::of).toList());
+                version.content().rules().stream().map(GlMappingRuleView::of).toList(),
+                row.proposedBy());
     }
 
     static GlMappingDiffView diffView(GlMappings.Diff diff) {

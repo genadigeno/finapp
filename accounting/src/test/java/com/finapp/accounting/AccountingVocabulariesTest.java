@@ -274,7 +274,7 @@ class AccountingVocabulariesTest {
                         // P14-TSK-010: the raise (the run's) unreasoned; the acknowledgement's two acts and the
                         // resolution reasoned.
                         "accounting.BreakRaised=false", "accounting.BreakAcknowledgementProposed=true",
-                        "accounting.BreakAcknowledged=true", "accounting.BreakResolved=true",
+                        "accounting.BreakAcknowledgementRejected=true", "accounting.BreakAcknowledged=true", "accounting.BreakResolved=true",
                         // The independent review's M-5: the break reads, audited like the GL's and the reports'.
                         "accounting.BreakRead=false",
                         // P14-TSK-011: the re-run, reasoned; the read of a close run, audited like the others.

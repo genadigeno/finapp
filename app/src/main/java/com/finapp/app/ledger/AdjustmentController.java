@@ -7,6 +7,8 @@ import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -129,4 +131,21 @@ public class AdjustmentController {
     public void reject(@PathVariable("id") String id) {
         adjustments.reject(id);
     }
+
+    /**
+     * Rejects the proposal with a reason (`P17-TSK-111`), which the rejection's audit record keeps - the {@code DELETE} above,
+     * unchanged for its clients, records none. Otherwise the same act: the initiator's withdrawal included, a repeat converging
+     * on this {@code 204} with the first reason standing, an {@code APPROVED} proposal a {@code 409}. Unkeyed as the approval
+     * and the {@code DELETE} are: the proposal's one-way machine is the idempotency.
+     */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+    @PostMapping(path = "/{id}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.LEDGER_ADJUST)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void rejectWithReason(@PathVariable("id") String id, @Valid @RequestBody AdjustmentRejectionRequest body) {
+        adjustments.reject(id, body.reason());
+    }
+
+    /** Why the proposal is rejected - the rejecter's prose, at most 1000 characters, screened before it is recorded. */
+    public record AdjustmentRejectionRequest(@NotBlank @Size(max = 1000) String reason) {}
 }
