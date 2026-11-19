@@ -45,12 +45,17 @@ public class AccountingPeriodController {
 
     @NonNull private final AccountingPeriodDesk desk;
 
-    /** The latest periods, newest first ({@code limit} 1 to 120, default 24): status, grace, pin, a pending unlock and a pending reopen, each with what its acts name. */
+    /**
+     * The periods, newest first, as a section 7 collection (`P17-TSK-042`; read "the latest periods, a bare array, a larger
+     * {@code limit} reduced to 120" until then): {@code limit} 24 unless named, 120 at most; the opaque {@code cursor} of the
+     * page before. Each with its status, grace, pin, a pending unlock and a pending reopen, and what its acts name.
+     */
     @GetMapping
     @RequiresPermission(PermissionName.ACCOUNTING_READ)
-    public List<AccountingPeriodDesk.AccountingPeriodView> listAccountingPeriods(
-            @RequestParam(name = "limit", required = false) Integer limit) {
-        return desk.list(limit);
+    public AccountingPeriodDesk.AccountingPeriodPage listAccountingPeriods(
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.list(cursor, limit);
     }
 
     /** One period by its id, however old (`P17-TSK-111`): the list's view; an unknown or malformed id is 404 accounting.NotFound. */

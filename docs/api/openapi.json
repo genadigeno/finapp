@@ -12958,6 +12958,20 @@
         ],
         "type": "object"
       },
+      "AbandonedPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AbandonedView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AbandonedView": {
         "properties": {
           "abandonedAt": {
@@ -13123,6 +13137,20 @@
           "reason": {
             "maxLength": 1000,
             "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AccountingPeriodPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AccountingPeriodView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -17366,20 +17394,6 @@
         ],
         "type": "object"
       },
-      "BreakList": {
-        "properties": {
-          "breaks": {
-            "items": {
-              "$ref": "#/components/schemas/BreakView"
-            },
-            "type": "array"
-          },
-          "truncated": {
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
       "BreakNoteRequest": {
         "properties": {
           "body": {
@@ -17389,6 +17403,20 @@
         "required": [
           "body"
         ],
+        "type": "object"
+      },
+      "BreakPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BreakView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "BreakResolution": {
@@ -19647,29 +19675,6 @@
         },
         "type": "object"
       },
-      "DeadLettersView": {
-        "properties": {
-          "abandoned": {
-            "items": {
-              "$ref": "#/components/schemas/AbandonedView"
-            },
-            "type": "array"
-          },
-          "parked": {
-            "items": {
-              "$ref": "#/components/schemas/ParkedView"
-            },
-            "type": "array"
-          },
-          "standingDiscards": {
-            "items": {
-              "$ref": "#/components/schemas/DiscardView"
-            },
-            "type": "array"
-          }
-        },
-        "type": "object"
-      },
       "DecisionRequest": {
         "properties": {
           "outcome": {
@@ -19777,6 +19782,20 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DiscardPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DiscardView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -20889,6 +20908,20 @@
         },
         "type": "object"
       },
+      "FactorlessHoldingPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FactorlessHoldingView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "FactorlessHoldingView": {
         "properties": {
           "assignedAt": {
@@ -20900,20 +20933,6 @@
           },
           "role": {
             "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "FactorlessHoldingsView": {
-        "properties": {
-          "holdings": {
-            "items": {
-              "$ref": "#/components/schemas/FactorlessHoldingView"
-            },
-            "type": "array"
-          },
-          "truncated": {
-            "type": "boolean"
           }
         },
         "type": "object"
@@ -21087,16 +21106,16 @@
         },
         "type": "object"
       },
-      "FileList": {
+      "FilePage": {
         "properties": {
-          "files": {
+          "items": {
             "items": {
               "$ref": "#/components/schemas/FileView"
             },
             "type": "array"
           },
-          "truncated": {
-            "type": "boolean"
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -25151,6 +25170,20 @@
         },
         "type": "object"
       },
+      "ParkedPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ParkedView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ParkedView": {
         "properties": {
           "attempts": {
@@ -27173,16 +27206,16 @@
         },
         "type": "object"
       },
-      "RefusalList": {
+      "RefusalPage": {
         "properties": {
-          "refusedDeliveries": {
+          "items": {
             "items": {
               "$ref": "#/components/schemas/RefusalView"
             },
             "type": "array"
           },
-          "truncated": {
-            "type": "boolean"
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -28924,6 +28957,20 @@
         },
         "type": "object"
       },
+      "ReviewCasePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewCaseView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ReviewCaseReceipt": {
         "properties": {
           "caseId": {
@@ -29184,13 +29231,13 @@
       },
       "RiskAlertPageView": {
         "properties": {
-          "alerts": {
+          "items": {
             "items": {
               "$ref": "#/components/schemas/RiskAlertView"
             },
             "type": "array"
           },
-          "next": {
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -29866,13 +29913,13 @@
       },
       "RiskCasePageView": {
         "properties": {
-          "cases": {
+          "items": {
             "items": {
               "$ref": "#/components/schemas/RiskCaseView"
             },
             "type": "array"
           },
-          "next": {
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -37754,12 +37801,30 @@
     "/v1/operator/access-review/factorless-holdings": {
       "get": {
         "operationId": "listFactorlessHoldings",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FactorlessHoldingsView"
+                  "$ref": "#/components/schemas/FactorlessHoldingPage"
                 }
               }
             },
@@ -38402,11 +38467,18 @@
         "parameters": [
           {
             "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "format": "int32",
-              "type": "integer"
+              "type": "string"
             }
           }
         ],
@@ -38415,10 +38487,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AccountingPeriodView"
-                  },
-                  "type": "array"
+                  "$ref": "#/components/schemas/AccountingPeriodPage"
                 }
               }
             },
@@ -41428,6 +41497,22 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -41435,10 +41520,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ReviewCaseView"
-                  },
-                  "type": "array"
+                  "$ref": "#/components/schemas/ReviewCasePage"
                 }
               }
             },
@@ -42195,6 +42277,41 @@
         }
       }
     },
+    "/v1/operator/events/abandoned": {
+      "get": {
+        "operationId": "readAbandonedEvents",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AbandonedPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/events/abandoned/{eventId}/retry": {
       "post": {
         "operationId": "retryAbandonedEvent",
@@ -42240,24 +42357,48 @@
         }
       }
     },
-    "/v1/operator/events/dead-letters": {
+    "/v1/operator/events/discards": {
       "get": {
-        "operationId": "readDeadLetters",
+        "operationId": "readStandingDiscards",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DeadLettersView"
+                  "$ref": "#/components/schemas/DiscardPage"
                 }
               }
             },
             "description": "OK"
           }
         }
-      }
-    },
-    "/v1/operator/events/discards": {
+      },
       "post": {
         "operationId": "proposeDeadLetterDiscard",
         "parameters": [
@@ -42376,6 +42517,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ActReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/events/parked": {
+      "get": {
+        "operationId": "readParkedRecords",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParkedPage"
                 }
               }
             },
@@ -45537,6 +45713,22 @@
               "format": "int32",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -45544,7 +45736,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BreakList"
+                  "$ref": "#/components/schemas/BreakPage"
                 }
               }
             },
@@ -47723,7 +47915,7 @@
           },
           {
             "in": "query",
-            "name": "after",
+            "name": "cursor",
             "required": false,
             "schema": {
               "type": "string"
@@ -47734,8 +47926,7 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "format": "int32",
-              "type": "integer"
+              "type": "string"
             }
           }
         ],
@@ -48340,7 +48531,7 @@
           },
           {
             "in": "query",
-            "name": "after",
+            "name": "cursor",
             "required": false,
             "schema": {
               "type": "string"
@@ -48351,8 +48542,7 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "format": "int32",
-              "type": "integer"
+              "type": "string"
             }
           }
         ],
@@ -49598,12 +49788,30 @@
     "/v1/operator/settlement/files": {
       "get": {
         "operationId": "listSettlementFiles",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FileList"
+                  "$ref": "#/components/schemas/FilePage"
                 }
               }
             },
@@ -49860,12 +50068,30 @@
     "/v1/operator/settlement/refused-deliveries": {
       "get": {
         "operationId": "listRefusedSettlementDeliveries",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RefusalList"
+                  "$ref": "#/components/schemas/RefusalPage"
                 }
               }
             },

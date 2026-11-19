@@ -3,6 +3,7 @@ package com.finapp.app.risk;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.ApiException;
@@ -90,9 +91,9 @@ class RiskQueueDeskTest {
     void theReadsCarryRiskInvestigate() throws NoSuchMethodException {
         for (Method read : List.of(
                 RiskAlertController.class.getMethod("readRiskAlertQueue", String.class, String.class, String.class,
-                        Integer.class),
+                        String.class),
                 RiskCaseController.class.getMethod("readRiskCaseQueue", String.class, String.class, String.class,
-                        Integer.class),
+                        String.class),
                 RiskCaseController.class.getMethod("readRiskCase", String.class,
                         jakarta.servlet.http.HttpServletRequest.class))) {
             assertThat(read.getAnnotation(GetMapping.class)).as(read.getName()).isNotNull();
@@ -112,17 +113,19 @@ class RiskQueueDeskTest {
             born.add(born(SignalSubject.of(SubjectKind.PARTY, RiskEvaluationWorld.IDS.next())));
         }
         Actor reader = world.analyst();
-        RiskQueueDesk.RiskAlertPageView first = RiskActionWorld.as(reader, () -> desk.alerts(null, null, null, 2));
-        assertThat(first.alerts()).extracting(RiskQueueDesk.RiskAlertView::alertId)
+        RiskQueueDesk.RiskAlertPageView first = RiskActionWorld.as(reader, () -> desk.alerts(null, null, null, "2"));
+        assertThat(first.items()).extracting(RiskQueueDesk.RiskAlertView::alertId)
                 .containsExactly(id(born.get(0)), id(born.get(1)));
-        assertThat(first.next()).isEqualTo(id(born.get(1)));
+        assertThat(RiskQueueDesk.cursor(RiskQueueDesk.ALERT_QUEUE, first.nextCursor(), RiskAlertId::of))
+                .as("the opaque cursor resumes after the last alert served (P17-TSK-042)")
+                .hasValueSatisfying(after -> assertThat(after.value().toString()).isEqualTo(id(born.get(1))));
         assertThat(units).containsExactly("snapshot", "transaction");
         assertThat(world.audited("risk.AlertRead")).singleElement().satisfies(record -> {
             assertThat(record.actor()).isEqualTo(reader);
             assertThat(record.changeSummary().orElseThrow()).contains(id(born.get(0))).contains(id(born.get(1)))
                     .doesNotContain(born.get(0).subject().ref());
         });
-        RiskQueueDesk.RiskAlertView view = first.alerts().get(0);
+        RiskQueueDesk.RiskAlertView view = first.items().get(0);
         assertThat(view.kind()).isEqualTo("ACCOUNT_TAKEOVER");
         assertThat(view.status()).isEqualTo("OPEN");
         assertThat(view.ruleCode()).isEqualTo("RECENT_CREDENTIAL_CHANGE");
@@ -130,27 +133,39 @@ class RiskQueueDeskTest {
         assertThat(view.suppression()).isNull();
 
         RiskQueueDesk.RiskAlertPageView rest = RiskActionWorld.as(reader, () -> desk.alerts("OPEN", null,
-                first.next(), null));
-        assertThat(rest.alerts()).extracting(RiskQueueDesk.RiskAlertView::alertId).containsExactly(id(born.get(2)));
-        assertThat(rest.next()).isNull();
+                first.nextCursor(), null));
+        assertThat(rest.items()).extracting(RiskQueueDesk.RiskAlertView::alertId).containsExactly(id(born.get(2)));
+        assertThat(rest.nextCursor()).isNull();
     }
 
     @Test
-    @DisplayName("the queue's refusals: a status or kind outside the vocabulary, a page below one, a cursor that is no"
-            + " identifier, a v4 cursor and one naming no alert are 422 risk.QueueRequestInvalid - nothing recorded;"
-            + " a page above the bound is the bound")
+    @DisplayName("the queue's refusals: a status or kind outside the vocabulary, and a cursor naming no alert, are 422"
+            + " risk.QueueRequestInvalid; since P17-TSK-042 a page outside 1..50, a raw identifier, a v4 inside a cursor and"
+            + " another queue's cursor are section 7's 422 api.ValidationFailed - nothing recorded; a page above the bound is"
+            + " refused, never reduced")
     void theQueuesRefusals() {
         Actor reader = world.analyst();
         for (Supplier<?> refused : List.<Supplier<?>>of(
                 () -> desk.alerts("open", null, null, null),
                 () -> desk.alerts(null, "COLLECTIONS", null, null),
-                () -> desk.alerts(null, null, null, 0),
-                () -> desk.alerts(null, null, "not-an-id", null),
-                () -> desk.alerts(null, null, UUID.randomUUID().toString(), null),
-                () -> desk.alerts(null, null, RiskEvaluationWorld.IDS.next().toString(), null),
+                () -> desk.alerts(null, null, OperatorCollection.cursor(RiskQueueDesk.ALERT_QUEUE,
+                        RiskEvaluationWorld.IDS.next().toString()), null),
                 () -> desk.cases("CLOSED", null, null, null),
-                () -> desk.cases(null, null, RiskEvaluationWorld.IDS.next().toString(), null))) {
+                () -> desk.cases(null, null, OperatorCollection.cursor(RiskQueueDesk.CASE_QUEUE,
+                        RiskEvaluationWorld.IDS.next().toString()), null))) {
             assertThat(refusal(reader, refused).errorCode()).isEqualTo(RiskErrorCode.QUEUE_REQUEST_INVALID);
+        }
+        for (Supplier<?> refused : List.<Supplier<?>>of(
+                () -> desk.alerts(null, null, null, "0"),
+                () -> desk.alerts(null, null, null, "51"),
+                () -> desk.alerts(null, null, null, "500"),
+                () -> desk.alerts(null, null, "not-an-id", null),
+                () -> desk.alerts(null, null, RiskEvaluationWorld.IDS.next().toString(), null),
+                () -> desk.alerts(null, null, OperatorCollection.cursor(RiskQueueDesk.ALERT_QUEUE,
+                        UUID.randomUUID().toString()), null),
+                () -> desk.alerts(null, null, OperatorCollection.cursor(RiskQueueDesk.CASE_QUEUE,
+                        RiskEvaluationWorld.IDS.next().toString()), null))) {
+            assertThat(refusal(reader, refused).errorCode().code()).isEqualTo("api.ValidationFailed");
         }
         assertThat(world.audited("risk.AlertRead")).isEmpty();
         assertThat(world.audited("risk.CaseRead")).isEmpty();
@@ -158,7 +173,10 @@ class RiskQueueDeskTest {
             world.alertStore.now = world.alertStore.now.plusMillis(1);
             born(SignalSubject.of(SubjectKind.PARTY, RiskEvaluationWorld.IDS.next()));
         }
-        assertThat(RiskActionWorld.as(reader, () -> desk.alerts(null, null, null, 500)).alerts()).hasSize(50);
+        RiskQueueDesk.RiskAlertPageView full = RiskActionWorld.as(reader, () -> desk.alerts(null, null, null, "50"));
+        assertThat(full.items()).hasSize(50);
+        assertThat(RiskActionWorld.as(reader, () -> desk.alerts(null, null, full.nextCursor(), "50")).items())
+                .as("the rest is reached by the cursor, not by a larger page").hasSize(5);
     }
 
     @Test
@@ -174,9 +192,9 @@ class RiskQueueDeskTest {
         RiskCase ownCase = RiskActionWorld.as(opener, () -> world.transactions.inTransaction(uow ->
                 world.cases.open(uow, Cases.OpenRequest.of(CaseKind.FRAUD, SignalSubject.of(SubjectKind.PARTY,
                         party)), "a pattern", opener, RiskActionWorld.correlation()).riskCase()));
-        assertThat(RiskActionWorld.as(reader, () -> desk.alerts(null, null, null, null)).alerts())
+        assertThat(RiskActionWorld.as(reader, () -> desk.alerts(null, null, null, null)).items())
                 .extracting(RiskQueueDesk.RiskAlertView::alertId).doesNotContain(id(own));
-        assertThat(RiskActionWorld.as(reader, () -> desk.cases(null, null, null, null)).cases())
+        assertThat(RiskActionWorld.as(reader, () -> desk.cases(null, null, null, null)).items())
                 .extracting(RiskCaseDesk.RiskCaseView::caseId).doesNotContain(ownCase.id().value().toString());
 
         units.clear();
@@ -266,9 +284,9 @@ class RiskQueueDeskTest {
         RiskActionWorld.Taken second = world.partyCase(CaseKind.ATO);
         Actor reader = world.analyst();
         RiskQueueDesk.RiskCasePageView page = RiskActionWorld.as(reader, () -> desk.cases(null, null, null, null));
-        assertThat(page.cases()).extracting(RiskCaseDesk.RiskCaseView::caseId).containsExactly(first.id(), second.id());
-        assertThat(page.next()).isNull();
-        assertThat(RiskActionWorld.as(reader, () -> desk.cases("IN_INVESTIGATION", "ATO", null, 1)).cases())
+        assertThat(page.items()).extracting(RiskCaseDesk.RiskCaseView::caseId).containsExactly(first.id(), second.id());
+        assertThat(page.nextCursor()).isNull();
+        assertThat(RiskActionWorld.as(reader, () -> desk.cases("IN_INVESTIGATION", "ATO", null, "1")).items())
                 .extracting(RiskCaseDesk.RiskCaseView::caseId).containsExactly(second.id());
         assertThat(world.audited("risk.CaseRead")).hasSize(2).allSatisfy(record ->
                 assertThat(record.targetType()).isEqualTo(CaseWorklist.QUEUE_TARGET_TYPE));

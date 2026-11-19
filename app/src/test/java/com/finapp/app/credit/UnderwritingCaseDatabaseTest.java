@@ -1183,9 +1183,16 @@ class UnderwritingCaseDatabaseTest {
         UnderwritingCaseId id = caseOf(request);
         String underwriter = sessionWith(RoleName.UNDERWRITER);
         String base = "/v1/operator/credit/review-cases/" + id.value();
-        HttpResponse<String> queue = client.get("/v1/operator/credit/review-cases?status=OPEN", underwriter);
+        // P17-TSK-042: the queue is a section 7 collection, oldest first - the newest case is reached by following nextCursor.
+        HttpResponse<String> queue = client.get("/v1/operator/credit/review-cases?status=OPEN&limit=50", underwriter);
+        java.util.regex.Pattern nextCursor = java.util.regex.Pattern.compile("\"nextCursor\":\"([A-Za-z0-9_-]+)\"");
+        java.util.regex.Matcher next = nextCursor.matcher(queue.body());
+        while (queue.statusCode() == 200 && !queue.body().contains(id.value().toString()) && next.find()) {
+            queue = client.get("/v1/operator/credit/review-cases?status=OPEN&limit=50&cursor=" + next.group(1), underwriter);
+            next = nextCursor.matcher(queue.body());
+        }
         assertThat(queue.statusCode()).as(queue.body()).isEqualTo(200);
-        assertThat(queue.body()).contains(id.value().toString()).contains("\"basisAttributes\"")
+        assertThat(queue.body()).startsWith("{\"items\":[").contains(id.value().toString()).contains("\"basisAttributes\"")
                 .contains("REVIEW_REFERRAL").contains("CRD-RISK-REFERRAL");
         assertThat(queue.body()).as("never the raw evidence").doesNotContain("answer").doesNotContain("ciphertext");
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'credit.ReviewCasesRead'"

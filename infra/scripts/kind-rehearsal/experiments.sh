@@ -5199,10 +5199,10 @@ security_look() {
             u="http://$ip:8080/v1"
             curl -s -o /dev/null --max-time 8 -w "$ip customer-none %{http_code}\n" "$u/me" &
             curl -s -o /dev/null --max-time 8 -w "$ip customer-forged %{http_code}\n" -H "Authorization: Bearer $stranger" "$u/me" &
-            curl -s -o /dev/null --max-time 8 -w "$ip operator-forged %{http_code}\n" -H "Authorization: Bearer $stranger" "$u/operator/events/dead-letters" &
+            curl -s -o /dev/null --max-time 8 -w "$ip operator-forged %{http_code}\n" -H "Authorization: Bearer $stranger" "$u/operator/events/abandoned" &
             curl -s -o /dev/null --max-time 8 -w "$ip merchant-forged %{http_code}\n" -H "Authorization: Bearer $forged" "$u/merchant/me" &
             curl -s -o /dev/null --max-time 8 -w "$ip customer-held %{http_code}\n" -H "Authorization: Bearer $customer" "$u/me" &
-            curl -s -o /dev/null --max-time 8 -w "$ip operator-held %{http_code}\n" -H "Authorization: Bearer $operator" "$u/operator/events/dead-letters" &
+            curl -s -o /dev/null --max-time 8 -w "$ip operator-held %{http_code}\n" -H "Authorization: Bearer $operator" "$u/operator/events/abandoned" &
             curl -s -o /dev/null --max-time 8 -w "$ip merchant-held %{http_code}\n" -H "Authorization: Bearer $merchant" "$u/merchant/me" &
         done
         wait' probe "$(experiments_rand)" "$(security_uuid).$(experiments_rand)" $sl_ips > "$1/security-look.txt" 2>/dev/null; then

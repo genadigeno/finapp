@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -33,11 +34,41 @@ public class DeadLetterController {
 
     @NonNull private final DeadLetterDesk desk;
 
-    /** The abandoned events, the parked records and the discards waiting for a second person, oldest first. Audited. Never a payload. */
-    @GetMapping("/dead-letters")
+    /**
+     * The abandoned events, as a section 7 collection (`P17-TSK-042`; read "{@code GET /dead-letters}: the abandoned events, the
+     * parked records and the discards waiting for a second person, at most 100 of each with nothing saying so" until then):
+     * oldest abandonment first, the event's id breaking the tie; {@code limit} 50 unless named, 200 at most; the opaque
+     * {@code cursor} of the page before. Every page audited. Never a payload.
+     */
+    @GetMapping("/abandoned")
     @RequiresPermission(PermissionName.EVENT_OPERATE)
-    public DeadLetterDesk.DeadLettersView readDeadLetters() {
-        return desk.read();
+    public DeadLetterDesk.AbandonedPage readAbandonedEvents(
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.abandoned(cursor, limit);
+    }
+
+    /** The parked records, as a section 7 collection (`P17-TSK-042`): oldest first, the park's id breaking the tie. Audited. */
+    @GetMapping("/parked")
+    @RequiresPermission(PermissionName.EVENT_OPERATE)
+    public DeadLetterDesk.ParkedPage readParkedRecords(
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.parked(cursor, limit);
+    }
+
+    /**
+     * The discards waiting for a second person, as a section 7 collection (`P17-TSK-042`): {@code status} {@code PROPOSED} or
+     * unnamed, oldest proposal first, the discard's id breaking the tie - each with its reason, which the second person reads.
+     * Audited.
+     */
+    @GetMapping("/discards")
+    @RequiresPermission(PermissionName.EVENT_OPERATE)
+    public DeadLetterDesk.DiscardPage readStandingDiscards(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.discards(status, cursor, limit);
     }
 
     /** Clears an event's abandonment, so the relay takes it again. Refused while a discard stands. */

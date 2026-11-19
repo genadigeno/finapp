@@ -48,6 +48,12 @@ public interface AccountingPeriodStore {
     /** The latest {@code limit} periods, newest first. Unlocked. */
     List<PeriodRow> recent(Connection unitOfWork, int limit);
 
+    /**
+     * The latest {@code limit} periods before {@code month}, newest first - a page of the period list resuming after the month
+     * the page before ended on (`P17-TSK-042`), a keyset read: a month is one period's alone, and fixed. Unlocked.
+     */
+    List<PeriodRow> recentBefore(Connection unitOfWork, YearMonth month, int limit);
+
     /** {@code OPEN -> LOCKED} at {@code revision}, the pin recorded; {@code false} when the row was not there. */
     boolean markLocked(Connection unitOfWork, AccountingPeriodId id, int revision, Actor actor, Optional<Pin> pin);
 

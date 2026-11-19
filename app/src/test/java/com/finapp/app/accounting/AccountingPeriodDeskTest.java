@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.accounting.AccountingErrorCode;
+import com.finapp.accounting.AccountingPeriodId;
+import com.finapp.accounting.AccountingPeriodStore;
 import com.finapp.accounting.AccountingPeriods;
 import com.finapp.accounting.LockGrace;
 import com.finapp.accounting.PeriodCloseStore;
@@ -130,6 +132,39 @@ class AccountingPeriodDeskTest {
             AccountingFlowScope.NONE, (uow, row) -> reopenPending.filter(reopen -> reopen.period().equals(row.id())));
 
     @Test
+    @DisplayName("the list is a section 7 collection (P17-TSK-042): newest month first, a page at a time to the end, each month"
+            + " once; 24 unless named, 120 at most and refused above - never reduced; another list's cursor refused")
+    void theListPagesNewestFirst() {
+        for (int month = 1; month <= 5; month++) {
+            store.insertIfAbsent(UOW, new AccountingPeriodStore.NewPeriod(AccountingPeriodId.next(IDS), YearMonth.of(2025, month),
+                    CorrelationId.generate(IDS)));
+        }
+        List<String> walked = new ArrayList<>();
+        String cursor = null;
+        int pages = 0;
+        do {
+            AccountingPeriodDesk.AccountingPeriodPage page = desk.list(cursor, "2");
+            page.items().forEach(view -> walked.add(view.period()));
+            cursor = page.nextCursor();
+            pages++;
+        } while (cursor != null);
+        assertThat(walked).containsExactly("2025-05", "2025-04", "2025-03", "2025-02", "2025-01");
+        assertThat(pages).isEqualTo(3);
+        assertThat(desk.list(null, null).items()).as("five months, one page of 24").hasSize(5);
+        assertThat(desk.list(null, null).nextCursor()).isNull();
+
+        for (String limit : List.of("121", "0", "a-year")) {
+            assertThatThrownBy(() -> desk.list(null, limit)).as(limit).isInstanceOfSatisfying(ApiException.class,
+                    refused -> assertThat(refused.errorCode().code()).isEqualTo("api.ValidationFailed"));
+        }
+        String foreign = com.finapp.app.api.OperatorCollection.cursor("accounting.report-runs", "2026-11-01T00:00:00Z",
+                IDS.next().toString());
+        assertThatThrownBy(() -> desk.list(foreign, null)).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> desk.list(com.finapp.app.api.OperatorCollection.cursor("accounting.periods", "not-a-month"),
+                null)).isInstanceOf(ApiException.class);
+    }
+
+    @Test
     @DisplayName("a lock is keyed per principal: a replayed key answers the stored receipt and writes nothing; another"
             + " key on the LOCKED period answers LOCKED from the edge")
     void aLockIsKeyedAndConverges() {
@@ -142,7 +177,7 @@ class AccountingPeriodDeskTest {
         assertThat(events).containsExactly(AccountingPeriods.OPENED_EVENT, AccountingPeriods.LOCKED_EVENT);
         assertThat(closedThrough).contains(LocalDate.of(2026, 9, 30));
 
-        List<AccountingPeriodDesk.AccountingPeriodView> listed = desk.list(null);
+        List<AccountingPeriodDesk.AccountingPeriodView> listed = desk.list(null, null).items();
         assertThat(listed).singleElement().satisfies(view -> {
             assertThat(view.status()).isEqualTo("LOCKED");
             assertThat(view.lockableFrom()).isEqualTo("2026-10-02");
@@ -333,7 +368,7 @@ class AccountingPeriodDeskTest {
     @DisplayName("P14-TSK-024's fix round (M-1): the list names a pending reopen - its id, which its withdrawal names, and when it was proposed - and a pending unlock by when it was proposed; null where none is pending")
     void theListNamesWhatIsPending() {
         String id = lockedWithAnUnlockPending();
-        assertThat(desk.list(null)).singleElement().satisfies(view -> {
+        assertThat(desk.list(null, null).items()).singleElement().satisfies(view -> {
             assertThat(view.unlockPending()).isTrue();
             assertThat(view.unlockProposedAt()).isEqualTo(store.month(SEPTEMBER).orElseThrow().unlockProposedAt().orElseThrow().toString());
             assertThat(view.unlockProposedBy()).as("P17-TSK-111: the unlock's proposer named")
@@ -343,7 +378,7 @@ class AccountingPeriodDeskTest {
         Instant proposedAt = Instant.parse("2026-10-30T08:00:00.123456Z");
         reopenPending = Optional.of(new PeriodCloseStore.ReopenRow(reopen, com.finapp.accounting.AccountingPeriodId.of(UUID.fromString(id)), 1, com.finapp.accounting.PeriodReopenStatus.PROPOSED,
                 ACCOUNTANT.id(), proposedAt, "a correction", Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty()));
-        assertThat(desk.list(null)).singleElement().satisfies(view -> {
+        assertThat(desk.list(null, null).items()).singleElement().satisfies(view -> {
             assertThat(view.reopenPending()).isTrue();
             assertThat(view.reopenId()).isEqualTo(reopen.value().toString());
             assertThat(view.reopenProposedAt()).isEqualTo("2026-10-30T08:00:00.123456Z");
@@ -355,7 +390,7 @@ class AccountingPeriodDeskTest {
     @DisplayName("P17-TSK-111: one period by its id, however old, is the list's view of it; an unknown or malformed id is the one 404")
     void onePeriodByItsId() {
         String id = lockedWithAnUnlockPending();
-        assertThat(desk.one(id)).isEqualTo(desk.list(null).get(0));
+        assertThat(desk.one(id)).isEqualTo(desk.list(null, null).items().get(0));
         refused(() -> desk.one(com.finapp.accounting.AccountingPeriodId.next(IDS).value().toString()), AccountingErrorCode.NOT_FOUND, 404);
         refused(() -> desk.one(UUID.randomUUID().toString()), AccountingErrorCode.NOT_FOUND, 404);
         refused(() -> desk.one("not-an-id"), AccountingErrorCode.NOT_FOUND, 404);
@@ -373,7 +408,7 @@ class AccountingPeriodDeskTest {
 
     /** When the pending unlock of {@code id} was proposed, as the list serves it - what its acts name. */
     private String pending(String id) {
-        return desk.list(null).stream().filter(view -> view.id().equals(id)).findFirst().orElseThrow().unlockProposedAt();
+        return desk.list(null, null).items().stream().filter(view -> view.id().equals(id)).findFirst().orElseThrow().unlockProposedAt();
     }
 
     /** September 2026, opened as the first period. */

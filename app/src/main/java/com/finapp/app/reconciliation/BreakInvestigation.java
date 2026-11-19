@@ -1,5 +1,7 @@
 package com.finapp.app.reconciliation;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.correlation.CorrelationContext;
@@ -28,6 +30,7 @@ import com.finapp.sharedkernel.correlation.Correlation;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -60,6 +63,12 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class BreakInvestigation {
 
     static final int BOUND = 100;
+
+    /** The break list's collection name, inside its cursors. */
+    static final String BREAKS = "reconciliation.breaks";
+
+    static final int BREAK_PAGE_DEFAULT = 50;
+    static final int BREAK_PAGE_MAXIMUM = 200;
 
     static final String NOTE_SCOPE = "reconciliation.break-note:";
     static final String LINK_SCOPE = "reconciliation.break-evidence-link:";
@@ -94,7 +103,12 @@ public class BreakInvestigation {
             String statusChangedAt,
             String resolvedAt) {}
 
-    public record BreakList(List<BreakView> breaks, boolean truncated) {}
+    /**
+     * A page of the break list (`P17-TSK-042`, gap G-121; `API_CONVENTIONS.md` section 7): {@code nextCursor} absent, not null,
+     * on the last one.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record BreakPage(List<BreakView> items, String nextCursor) {}
 
     public record HistoryView(
             long seq,
@@ -217,13 +231,22 @@ public class BreakInvestigation {
 
     // ================================================================== break reads
 
-    public BreakList listBreaks(
+    /**
+     * A page of the breaks matching the filters (`P17-TSK-042`): raised newest first, the id breaking the tie; {@code limit}
+     * {@value #BREAK_PAGE_DEFAULT} unless named, {@value #BREAK_PAGE_MAXIMUM} at most and refused above, never reduced; the
+     * opaque {@code cursor} of the page before. Unrecorded, as every read of this desk is.
+     */
+    public BreakPage listBreaks(
             String type,
             String status,
             String severity,
             String source,
             String assignee,
-            Integer agedOver) {
+            Integer agedOver,
+            String cursor,
+            String limit) {
+        int size = OperatorCollection.limit(limit, BREAK_PAGE_DEFAULT, BREAK_PAGE_MAXIMUM);
+        Optional<BreakInquiries.BreakCursor> after = breakCursor(cursor);
         BreakInquiries.BreakFilter filter =
                 new BreakInquiries.BreakFilter(
                         enumParam("type", type, BreakType.values()),
@@ -235,10 +258,29 @@ public class BreakInvestigation {
         return snapshot(
                 unitOfWork -> {
                     List<BreakCaseStore.BreakRow> rows =
-                            breaks.breaks(unitOfWork, filter, BOUND + 1);
-                    return new BreakList(
-                            rows.stream().limit(BOUND).map(BreakInvestigation::breakView).toList(),
-                            rows.size() > BOUND);
+                            breaks.breaks(unitOfWork, filter, after, size + 1);
+                    List<BreakCaseStore.BreakRow> served = rows.subList(0, Math.min(size, rows.size()));
+                    String next = null;
+                    if (rows.size() > size) {
+                        BreakCaseStore.BreakRow tail = served.get(served.size() - 1);
+                        next = OperatorCollection.cursor(
+                                BREAKS, tail.raisedAt().toString(), tail.id().toString());
+                    }
+                    return new BreakPage(
+                            served.stream().map(BreakInvestigation::breakView).toList(), next);
+                });
+    }
+
+    /** The position {@code cursor} names in the break list, or none for the first page; anything else refused. */
+    static Optional<BreakInquiries.BreakCursor> breakCursor(String cursor) {
+        return OperatorCollection.key(BREAKS, cursor, 2)
+                .map(key -> {
+                    try {
+                        return new BreakInquiries.BreakCursor(
+                                Instant.parse(key.get(0)), UUID.fromString(key.get(1)));
+                    } catch (RuntimeException unreadable) {
+                        throw OperatorCollection.invalidCursor();
+                    }
                 });
     }
 

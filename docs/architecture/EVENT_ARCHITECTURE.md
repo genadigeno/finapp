@@ -164,8 +164,12 @@ and a `WARN` on every subsequent cycle saying the aggregate is blocked behind it
 them carries the originating flow's correlation identifier, so the event can be traced back to
 the transfer or payment that produced it.
 
-`GET /v1/operator/events/dead-letters` lists what is abandoned, oldest first, with the failure's
-class and never its message or the payload.
+`GET /v1/operator/events/abandoned` lists what is abandoned, oldest first, with the failure's
+class and never its message or the payload; `GET /v1/operator/events/parked` the parked records and
+`GET /v1/operator/events/discards` the discards awaiting a second person. Each is an
+`API_CONVENTIONS.md` section 7 collection, every page audited (`P17-TSK-042`; read "`GET
+/v1/operator/events/dead-letters` lists what is abandoned" - the three queues in one answer, at most
+100 of each with nothing saying so - until then).
 
 Two resolutions, and the choice is a judgement about the event, never a default:
 

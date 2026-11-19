@@ -657,7 +657,7 @@ public final class Rehearsal {
         int i = 0;
         while (!stop.get()) {
             counted("operator-edge", "read-" + i, note, failed, ok, byFlow,
-                    () -> expect("operator edge", get(operatorBase, "/v1/operator/events/dead-letters", null), 401));
+                    () -> expect("operator edge", get(operatorBase, "/v1/operator/events/abandoned", null), 401));
             i++;
             pause(1000);
         }
@@ -729,9 +729,9 @@ public final class Rehearsal {
         Answer customer = get(publicBase, "/v1/me", null);
         System.out.println("edge public-route status=" + customer.status()
                 + " hsts=" + customer.raw().headers().firstValue("strict-transport-security").orElse("absent"));
-        Answer publicOperator = get(publicBase, "/v1/operator/events/dead-letters", null);
+        Answer publicOperator = get(publicBase, "/v1/operator/events/abandoned", null);
         System.out.println("edge operator-route-on-public status=" + publicOperator.status() + " body=" + publicOperator.body().replaceAll("\\s+", " "));
-        Answer operator = get(operatorBase, "/v1/operator/events/dead-letters", null);
+        Answer operator = get(operatorBase, "/v1/operator/events/abandoned", null);
         System.out.println("edge operator-route-on-operator status=" + operator.status() + " body=" + operator.body().replaceAll("\\s+", " "));
         Answer actuator = get(publicBase, "/actuator/health", null);
         System.out.println("edge actuator-on-public status=" + actuator.status());
@@ -749,7 +749,7 @@ public final class Rehearsal {
         List<String> pagePolicies = page.raw().headers().allValues("content-security-policy");
         System.out.println("console page-on-operator status=" + page.status() + " csp-count=" + pagePolicies.size()
                 + " csp=" + String.join(" | ", pagePolicies));
-        Answer api = get(operatorBase, "/v1/operator/events/dead-letters", null);
+        Answer api = get(operatorBase, "/v1/operator/events/abandoned", null);
         List<String> apiPolicies = api.raw().headers().allValues("content-security-policy");
         System.out.println("console api-on-operator status=" + api.status() + " csp-count=" + apiPolicies.size()
                 + " csp=" + String.join(" | ", apiPolicies));
@@ -1761,8 +1761,15 @@ public final class Rehearsal {
     /** The administrator's read of the money-role holdings with no factor: how many, and whether "stranger" is among them. */
     private void accessReview(String label) throws Exception {
         String stranger = identity("stranger");
-        Answer read = get(operatorBase, "/v1/operator/access-review/factorless-holdings", fresh("admin"));
-        List<Object> holdings = arr(obj(tryJson(read.body())).get("holdings"));
+        // P17-TSK-042: the review is a section 7 collection - its items, every page (read "holdings", at most 200, until then).
+        String admin = fresh("admin");
+        Answer read = get(operatorBase, "/v1/operator/access-review/factorless-holdings?limit=200", admin);
+        List<Object> holdings = new ArrayList<>(arr(obj(tryJson(read.body())).get("items")));
+        for (String cursor = text(obj(tryJson(read.body())).get("nextCursor")); cursor != null && read.status() == 200; ) {
+            Answer page = get(operatorBase, "/v1/operator/access-review/factorless-holdings?limit=200&cursor=" + cursor, admin);
+            holdings.addAll(arr(obj(tryJson(page.body())).get("items")));
+            cursor = page.status() == 200 ? text(obj(tryJson(page.body())).get("nextCursor")) : null;
+        }
         boolean named = false;
         for (Object holding : holdings) {
             named |= stranger != null && stranger.equals(text(obj(holding).get("identityId")));
@@ -1883,7 +1890,7 @@ public final class Rehearsal {
         String why = "incident " + incident + ": " + who + "'s password proven where staff are refused" + WHY;
         Answer suspended = post(operatorBase, "/v1/identities/" + segment(id) + "/suspension", reasonBody(why), admin, null);
         say("compromise suspend status=" + suspended.status() + (ok(suspended) ? "" : " code=" + codeOf(suspended)));
-        say("compromise old-session status=" + get(operatorBase, "/v1/operator/events/dead-letters", previous).status());
+        say("compromise old-session status=" + get(operatorBase, "/v1/operator/events/abandoned", previous).status());
         say("compromise sign-in status=" + signIn(operatorBase, login).status());
         for (String role : roles) {
             Answer revoked = call("DELETE", operatorBase + "/v1/identities/" + segment(id) + "/roles/" + segment(role), reasonBody(why),
@@ -1997,13 +2004,31 @@ public final class Rehearsal {
      * event, whose subject is its id; INBOX_RECORD for a parked record, whose subject is its park id), then the standing discards.
      */
     private void deadLetters(String label) throws Exception {
-        Answer read = get(operatorBase, "/v1/operator/events/dead-letters", fresh("operator"));
-        Map<String, Object> queues = obj(tryJson(read.body()));
-        List<Object> abandoned = arr(queues.get("abandoned"));
-        List<Object> parked = arr(queues.get("parked"));
-        List<Object> standing = arr(queues.get("standingDiscards"));
-        say("dead-letters " + label + " status=" + read.status() + " abandoned=" + abandoned.size() + " parked=" + parked.size() + " standing="
-                + standing.size() + (read.status() == 200 ? "" : " code=" + codeOf(read)));
+        // P17-TSK-042: three section 7 collections, one per queue, each walked to its last page (read "one GET /dead-letters, at most
+        // 100 of each queue" until then); the lines printed are the same.
+        String operator = fresh("operator");
+        List<Object> abandoned = new ArrayList<>();
+        List<Object> parked = new ArrayList<>();
+        List<Object> standing = new ArrayList<>();
+        int status = 200;
+        String code = null;
+        for (Map.Entry<String, List<Object>> queue : List.of(Map.entry("/v1/operator/events/abandoned", abandoned),
+                Map.entry("/v1/operator/events/parked", parked), Map.entry("/v1/operator/events/discards", standing))) {
+            String cursor = null;
+            do {
+                Answer read = get(operatorBase, queue.getKey() + "?limit=200" + (cursor == null ? "" : "&cursor=" + cursor), operator);
+                if (read.status() != 200) {
+                    status = read.status();
+                    code = codeOf(read);
+                    break;
+                }
+                Map<String, Object> page = obj(tryJson(read.body()));
+                queue.getValue().addAll(arr(page.get("items")));
+                cursor = text(page.get("nextCursor"));
+            } while (cursor != null);
+        }
+        say("dead-letters " + label + " status=" + status + " abandoned=" + abandoned.size() + " parked=" + parked.size() + " standing="
+                + standing.size() + (status == 200 ? "" : " code=" + code));
         for (Object entry : abandoned) {
             Map<String, Object> event = obj(entry);
             say("dead-letters " + label + " kind=OUTBOX_EVENT id=" + orDash(text(event.get("eventId"))) + " class="
@@ -2051,8 +2076,9 @@ public final class Rehearsal {
 
     /** The accounting period of this month, from the periods the door lists; null when none. */
     private String currentPeriod(String token, String command) throws IOException, InterruptedException {
+        // P17-TSK-042: a section 7 collection, newest first - this month is on the first page (read "a bare array" until then).
         Answer periods = get(operatorBase, "/v1/operator/accounting/periods", token);
-        for (Object period : arr(tryJson(periods.body()))) {
+        for (Object period : arr(obj(tryJson(periods.body())).get("items"))) {
             if (period().equals(text(obj(period).get("period")))) {
                 return text(obj(period).get("id"));
             }

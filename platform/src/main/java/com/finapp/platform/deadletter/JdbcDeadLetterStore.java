@@ -36,18 +36,32 @@ public final class JdbcDeadLetterStore implements DeadLetterStore {
     private static final String WITHIN_WINDOW =
             "COALESCE(replay_ordered_at, occurred_at) > now() - (? * INTERVAL '1 millisecond') AS within_window";
 
-    static final String ABANDONED_SQL =
+    // The three queues as section 7 pages (P17-TSK-042): each in a total order - its instant, then the row's own identifier -
+    // and each resumed by the order's own key, so a row arriving or leaving between pages moves no other. Read "ORDER BY
+    // <instant> LIMIT ?", with no tie broken, until then.
+    private static final String ABANDONED_ROWS =
             "SELECT event_id, aggregate_id, event_type, attempts, dead_lettered_at, last_error FROM " + EVENTS
-                    + " WHERE dead_lettered_at IS NOT NULL AND discarded_at IS NULL AND published_at IS NULL"
-                    + " ORDER BY dead_lettered_at LIMIT ?";
+                    + " WHERE dead_lettered_at IS NOT NULL AND discarded_at IS NULL AND published_at IS NULL";
+    private static final String ABANDONED_ORDER = " ORDER BY dead_lettered_at, event_id LIMIT ?";
 
-    static final String PARKED_SQL =
+    static final String ABANDONED_SQL = ABANDONED_ROWS + ABANDONED_ORDER;
+    static final String ABANDONED_AFTER_SQL = ABANDONED_ROWS + " AND (dead_lettered_at, event_id) > (?, ?)" + ABANDONED_ORDER;
+
+    private static final String PARKED_ROWS =
             "SELECT park_id, consumer, dedupe_key, consumer_group, message_type, attempts, parked_at, last_failure FROM " + PARKED
-                    + " WHERE state = 'PARKED' ORDER BY parked_at LIMIT ?";
+                    + " WHERE state = 'PARKED'";
+    private static final String PARKED_ORDER = " ORDER BY parked_at, park_id LIMIT ?";
 
-    static final String STANDING_SQL =
+    static final String PARKED_SQL = PARKED_ROWS + PARKED_ORDER;
+    static final String PARKED_AFTER_SQL = PARKED_ROWS + " AND (parked_at, park_id) > (?, ?)" + PARKED_ORDER;
+
+    private static final String STANDING_ROWS =
             "SELECT discard_id, subject_kind, subject_id, status, proposed_by, proposed_at, proposal_reason FROM " + DISCARDS
-                    + " WHERE status = 'PROPOSED' ORDER BY proposed_at LIMIT ?";
+                    + " WHERE status = 'PROPOSED'";
+    private static final String STANDING_ORDER = " ORDER BY proposed_at, discard_id LIMIT ?";
+
+    static final String STANDING_SQL = STANDING_ROWS + STANDING_ORDER;
+    static final String STANDING_AFTER_SQL = STANDING_ROWS + " AND (proposed_at, discard_id) > (?, ?)" + STANDING_ORDER;
 
     /** Served by the partial index on parked rows, so its cost is the number of parked records, not the table. */
     static final String PARKED_BY_GROUP_SQL =
@@ -139,11 +153,21 @@ public final class JdbcDeadLetterStore implements DeadLetterStore {
         });
     }
 
+    /** Binds a page's resume point, when there is one; the index of the parameter after it. */
+    private static int resumeAfter(PreparedStatement select, Optional<Position> after) throws SQLException {
+        if (after.isEmpty()) {
+            return 1;
+        }
+        select.setObject(1, java.time.OffsetDateTime.ofInstant(after.get().at(), java.time.ZoneOffset.UTC));
+        select.setObject(2, after.get().id());
+        return 3;
+    }
+
     @Override
-    public List<AbandonedEvent> abandoned(Connection unitOfWork, int limit) {
+    public List<AbandonedEvent> abandoned(Connection unitOfWork, Optional<Position> after, int limit) {
         return read(() -> {
-            try (PreparedStatement select = unitOfWork.prepareStatement(ABANDONED_SQL)) {
-                select.setInt(1, limit);
+            try (PreparedStatement select = unitOfWork.prepareStatement(after.isPresent() ? ABANDONED_AFTER_SQL : ABANDONED_SQL)) {
+                select.setInt(resumeAfter(select, after), limit);
                 try (ResultSet rows = select.executeQuery()) {
                     List<AbandonedEvent> out = new ArrayList<>();
                     while (rows.next()) {
@@ -158,10 +182,10 @@ public final class JdbcDeadLetterStore implements DeadLetterStore {
     }
 
     @Override
-    public List<ParkedRecord> parked(Connection unitOfWork, int limit) {
+    public List<ParkedRecord> parked(Connection unitOfWork, Optional<Position> after, int limit) {
         return read(() -> {
-            try (PreparedStatement select = unitOfWork.prepareStatement(PARKED_SQL)) {
-                select.setInt(1, limit);
+            try (PreparedStatement select = unitOfWork.prepareStatement(after.isPresent() ? PARKED_AFTER_SQL : PARKED_SQL)) {
+                select.setInt(resumeAfter(select, after), limit);
                 try (ResultSet rows = select.executeQuery()) {
                     List<ParkedRecord> out = new ArrayList<>();
                     while (rows.next()) {
@@ -176,10 +200,10 @@ public final class JdbcDeadLetterStore implements DeadLetterStore {
     }
 
     @Override
-    public List<Proposal> standingProposals(Connection unitOfWork, int limit) {
+    public List<Proposal> standingProposals(Connection unitOfWork, Optional<Position> after, int limit) {
         return read(() -> {
-            try (PreparedStatement select = unitOfWork.prepareStatement(STANDING_SQL)) {
-                select.setInt(1, limit);
+            try (PreparedStatement select = unitOfWork.prepareStatement(after.isPresent() ? STANDING_AFTER_SQL : STANDING_SQL)) {
+                select.setInt(resumeAfter(select, after), limit);
                 try (ResultSet rows = select.executeQuery()) {
                     List<Proposal> out = new ArrayList<>();
                     while (rows.next()) {

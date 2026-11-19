@@ -53,11 +53,31 @@ public interface DeadLetterStore {
     /** A replayed row still waiting to be published. */
     record PendingReplay(UUID eventId, String eventType, boolean withinDedupeWindow) {}
 
-    List<AbandonedEvent> abandoned(Connection unitOfWork, int limit);
+    /**
+     * Where a page of one of the queues resumes (`P17-TSK-042`, `API_CONVENTIONS.md` section 7): after the row whose instant and
+     * identifier these are - an event's {@code dead_lettered_at} and {@code event_id}, a record's {@code parked_at} and
+     * {@code park_id}, a proposal's {@code proposed_at} and {@code discard_id}.
+     */
+    record Position(Instant at, UUID id) {
 
-    List<ParkedRecord> parked(Connection unitOfWork, int limit);
+        public Position {
+            java.util.Objects.requireNonNull(at, "at must not be null");
+            java.util.Objects.requireNonNull(id, "id must not be null");
+        }
+    }
 
-    List<Proposal> standingProposals(Connection unitOfWork, int limit);
+    /**
+     * At most {@code limit} abandoned events, oldest abandonment first, the event's id breaking the tie, strictly after
+     * {@code after} when one is named - a keyset page (`P17-TSK-042`; read "the oldest {@code limit}, unordered among equal
+     * instants" until then).
+     */
+    List<AbandonedEvent> abandoned(Connection unitOfWork, Optional<Position> after, int limit);
+
+    /** At most {@code limit} parked records, oldest first, the park's id breaking the tie, strictly after {@code after}. */
+    List<ParkedRecord> parked(Connection unitOfWork, Optional<Position> after, int limit);
+
+    /** At most {@code limit} discards awaiting a second person, oldest proposal first, the discard's id breaking the tie. */
+    List<Proposal> standingProposals(Connection unitOfWork, Optional<Position> after, int limit);
 
     /** Locks the row. {@code withinDedupeWindow} is judged by the server against {@code retention}. */
     Optional<EventRow> lockEvent(Connection unitOfWork, UUID eventId, Duration retention);

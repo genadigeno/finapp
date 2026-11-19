@@ -1,6 +1,8 @@
 package com.finapp.app.credit;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.DecimalText;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.credit.CreditErrorCode;
 import com.finapp.credit.DecisionOutcome;
 import com.finapp.credit.ReasonCode;
@@ -8,6 +10,7 @@ import com.finapp.credit.TransactionRunner;
 import com.finapp.credit.UnderwritingCase;
 import com.finapp.credit.UnderwritingCaseId;
 import com.finapp.credit.UnderwritingCaseStatus;
+import com.finapp.credit.UnderwritingCaseStore;
 import com.finapp.credit.UnderwritingCases;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
@@ -84,15 +87,50 @@ public final class UnderwritingCaseDesk {
 
     // ------------------------------------------------------------------ the queue
 
-    public List<ReviewCaseView> queue(String rawStatus) {
+    /** The queue's collection name, inside its cursors (`P17-TSK-042`). */
+    static final String QUEUE = "credit.review-cases";
+
+    /** A page's cases unless named: each brings its basis, so a page is a work queue's, not a register's. */
+    static final int QUEUE_DEFAULT_LIMIT = 20;
+
+    /**
+     * A page of the queue (`P17-TSK-042`; read "the oldest 50, every status or only {@code status}" until then): opened oldest
+     * first, the case's id breaking the tie; {@code limit} {@value #QUEUE_DEFAULT_LIMIT} unless named,
+     * {@value com.finapp.credit.UnderwritingCases#QUEUE_LIMIT} at most and refused above; the opaque {@code cursor} of the page
+     * before. Every page recorded.
+     */
+    public ReviewCasePage queue(String rawStatus, String cursor, String limit) {
+        int size = OperatorCollection.limit(limit, QUEUE_DEFAULT_LIMIT, UnderwritingCases.QUEUE_LIMIT);
+        Optional<UnderwritingCaseStore.QueuePosition> after = queueCursor(cursor);
         Optional<UnderwritingCaseStatus> status = Optional.ofNullable(rawStatus).filter(text -> !text.isBlank())
                 .map(UnderwritingCaseDesk::status);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        return transactions.inTransaction(uow -> cases.queue(uow, status, actor, correlation)).stream()
-                .map(UnderwritingCaseDesk::view)
-                .toList();
+        UnderwritingCases.QueuePage page =
+                transactions.inTransaction(uow -> cases.queue(uow, status, after, size, actor, correlation));
+        String next = null;
+        if (page.more() && !page.queued().isEmpty()) {
+            UnderwritingCase tail = page.queued().get(page.queued().size() - 1).reviewCase();
+            next = OperatorCollection.cursor(QUEUE, tail.openedAt().toString(), tail.id().value().toString());
+        }
+        return new ReviewCasePage(page.queued().stream().map(UnderwritingCaseDesk::view).toList(), next);
     }
+
+    /** The case {@code cursor} names as the last one served, or none for the first page; anything else refused. */
+    static Optional<UnderwritingCaseStore.QueuePosition> queueCursor(String cursor) {
+        return OperatorCollection.key(QUEUE, cursor, 2).map(key -> {
+            try {
+                return new UnderwritingCaseStore.QueuePosition(
+                        java.time.Instant.parse(key.get(0)), UnderwritingCaseId.of(java.util.UUID.fromString(key.get(1))));
+            } catch (RuntimeException unreadable) {
+                throw OperatorCollection.invalidCursor();
+            }
+        });
+    }
+
+    /** A page of the queue (`P17-TSK-042`): {@code nextCursor} absent, not null, on the last one. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ReviewCasePage(List<ReviewCaseView> items, String nextCursor) {}
 
     // ------------------------------------------------------------------ the acts
 

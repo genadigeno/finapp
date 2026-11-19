@@ -110,26 +110,39 @@ public final class InMemoryDeadLetterStore implements DeadLetterStore {
     }
 
     @Override
-    public List<AbandonedEvent> abandoned(Connection unitOfWork, int limit) {
+    public List<AbandonedEvent> abandoned(Connection unitOfWork, Optional<Position> after, int limit) {
+        // Every fake row is abandoned at the epoch, so the id alone orders them - in the fake's own UUID order.
         return events.values().stream()
                 .filter(event -> event.abandoned && !event.discarded && !event.published)
+                .filter(event -> after.isEmpty() || event.id.compareTo(after.get().id()) > 0)
+                .sorted(java.util.Comparator.comparing((Event event) -> event.id))
                 .limit(limit)
                 .map(event -> new AbandonedEvent(event.id, UUID.randomUUID(), event.type, 8, Instant.EPOCH, "kafka.TimeoutException"))
                 .toList();
     }
 
     @Override
-    public List<ParkedRecord> parked(Connection unitOfWork, int limit) {
+    public List<ParkedRecord> parked(Connection unitOfWork, Optional<Position> after, int limit) {
         return parked.values().stream()
                 .filter(row -> "PARKED".equals(row.state))
+                .filter(row -> after.isEmpty() || row.id.compareTo(after.get().id()) > 0)
+                .sorted(java.util.Comparator.comparing((Parked row) -> row.id))
                 .limit(limit)
                 .map(row -> new ParkedRecord(row.id, row.consumer, row.dedupeKey, "finapp.probe", "probe.Type", 5, Instant.EPOCH, "IllegalArgumentException"))
                 .toList();
     }
 
     @Override
-    public List<Proposal> standingProposals(Connection unitOfWork, int limit) {
-        return proposals.values().stream().filter(proposal -> "PROPOSED".equals(proposal.status())).limit(limit).toList();
+    public List<Proposal> standingProposals(Connection unitOfWork, Optional<Position> after, int limit) {
+        return proposals.values().stream()
+                .filter(proposal -> "PROPOSED".equals(proposal.status()))
+                .filter(proposal -> after.isEmpty() || java.util.Comparator.comparing(Proposal::proposedAt)
+                        .thenComparing(Proposal::discardId)
+                        .compare(proposal, new Proposal(after.get().id(), proposal.kind(), proposal.subjectId(), "PROPOSED", "",
+                                after.get().at(), "")) > 0)
+                .sorted(java.util.Comparator.comparing(Proposal::proposedAt).thenComparing(Proposal::discardId))
+                .limit(limit)
+                .toList();
     }
 
     @Override

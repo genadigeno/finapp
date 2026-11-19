@@ -81,10 +81,13 @@ public interface RoleAssignmentStore<T> {
     java.util.Optional<IdentityId> liveHolderOfRecovery(T unitOfWork, RecoveryRequestId request);
 
     /**
-     * The live holdings of {@code roles} whose identity has no active factor, oldest first, at most {@code limit}
-     * (`P15-TSK-039`): one read of both tables, so no holding is judged against a factor read at another moment.
+     * The live holdings of {@code roles} whose identity has no active factor, at most {@code limit} (`P15-TSK-039`): one read
+     * of both tables, so no holding is judged against a factor read at another moment. Oldest first, the identity and then the
+     * role breaking the tie - a total order, one live holding per identity and role - and since `P17-TSK-042` strictly after
+     * {@code after} when one is named: a keyset page of the review, never an offset.
      */
-    java.util.List<FactorlessHolding> holdingsWithoutFactor(T unitOfWork, Set<RoleName> roles, int limit);
+    java.util.List<FactorlessHolding> holdingsWithoutFactor(
+            T unitOfWork, Set<RoleName> roles, java.util.Optional<FactorlessHolding> after, int limit);
 
     /** One such holding: who, which role, since when. */
     record FactorlessHolding(IdentityId identityId, RoleName role, Instant assignedAt) {}

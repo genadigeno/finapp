@@ -256,13 +256,17 @@ public final class Authorization {
         return assignments.conflictingHoldings(unitOfWork, RoleConflicts.PAIRS, limit);
     }
 
-    /** The live holdings of a role that needs a factor whose holder has none (`P15-TSK-039`). */
-    public List<RoleAssignmentStore.FactorlessHolding> holdingsWithoutFactor(Connection unitOfWork, int limit) {
+    /**
+     * The live holdings of a role that needs a factor whose holder has none (`P15-TSK-039`), strictly after {@code after} in
+     * the review's order when one is named (`P17-TSK-042`).
+     */
+    public List<RoleAssignmentStore.FactorlessHolding> holdingsWithoutFactor(
+            Connection unitOfWork, Optional<RoleAssignmentStore.FactorlessHolding> after, int limit) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Set<RoleName> needingAFactor = java.util.Arrays.stream(RoleName.values())
                 .filter(RoleName::requiresEnrolledFactor)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
-        return assignments.holdingsWithoutFactor(unitOfWork, needingAFactor, limit);
+        return assignments.holdingsWithoutFactor(unitOfWork, needingAFactor, after, limit);
     }
 
     /**

@@ -58,17 +58,23 @@ public class ReconciliationInvestigationController {
 
     // ------------------------------------------------------------------ break reads
 
-    /** The newest breaks matching the filters, bounded at 100 with {@code truncated}. */
+    /**
+     * The breaks matching the filters, as a section 7 collection (`P17-TSK-042`, gap G-121; read "the newest 100 with
+     * {@code truncated}" until then): raised newest first, the id breaking the tie; {@code limit} 50 unless named, 200 at
+     * most; the opaque {@code cursor} of the page before.
+     */
     @GetMapping("/breaks")
     @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
-    public BreakInvestigation.BreakList listReconciliationBreaks(
+    public BreakInvestigation.BreakPage listReconciliationBreaks(
             @RequestParam(name = "type", required = false) String type,
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "severity", required = false) String severity,
             @RequestParam(name = "source", required = false) String source,
             @RequestParam(name = "assignee", required = false) String assignee,
-            @RequestParam(name = "agedOver", required = false) Integer agedOver) {
-        return investigation.listBreaks(type, status, severity, source, assignee, agedOver);
+            @RequestParam(name = "agedOver", required = false) Integer agedOver,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return investigation.listBreaks(type, status, severity, source, assignee, agedOver, cursor, limit);
     }
 
     /** One break's case file: history, notes, evidence links, resolutions, predecessors. */

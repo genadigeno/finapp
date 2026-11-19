@@ -2,6 +2,7 @@ package com.finapp.app.risk;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.RoleName;
 import java.net.http.HttpResponse;
@@ -48,13 +49,14 @@ class QueueApiTest {
         String second = open(opener, RiskOperatorSessions.IDS.next());
         RiskOperatorSessions.Session reader = http.sessionWith(RoleName.RISK_ANALYST, false);
 
-        HttpResponse<String> page = http.get("/v1/operator/risk/cases?kind=FRAUD&limit=1&after=" + marker,
-                reader.token());
+        // The marker's cursor as the queue writes one (P17-TSK-042: opaque to a client, built here only to start after it).
+        HttpResponse<String> page = http.get("/v1/operator/risk/cases?kind=FRAUD&limit=1&cursor="
+                + OperatorCollection.cursor("risk.cases", marker), reader.token());
         assertThat(page.statusCode()).as(page.body()).isEqualTo(200);
-        assertThat(page.body()).contains("\"caseId\":\"" + first + "\"").doesNotContain("takenBy");
-        String next = RiskOperatorSessions.field(page.body(), "next");
-        assertThat(next).isEqualTo(first);
-        HttpResponse<String> following = http.get("/v1/operator/risk/cases?kind=FRAUD&limit=1&after=" + next,
+        assertThat(page.body()).startsWith("{\"items\":[").contains("\"caseId\":\"" + first + "\"").doesNotContain("takenBy");
+        String next = RiskOperatorSessions.field(page.body(), "nextCursor");
+        assertThat(next).isEqualTo(OperatorCollection.cursor("risk.cases", first));
+        HttpResponse<String> following = http.get("/v1/operator/risk/cases?kind=FRAUD&limit=1&cursor=" + next,
                 reader.token());
         assertThat(following.body()).contains("\"caseId\":\"" + second + "\"");
         assertThat(RiskOperatorSessions.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
@@ -80,7 +82,8 @@ class QueueApiTest {
         String marker = open(opener, RiskOperatorSessions.IDS.next());
         String own = open(opener, reader.party());
 
-        HttpResponse<String> page = http.get("/v1/operator/risk/cases?kind=FRAUD&after=" + marker, reader.token());
+        HttpResponse<String> page = http.get("/v1/operator/risk/cases?kind=FRAUD&cursor="
+                + OperatorCollection.cursor("risk.cases", marker), reader.token());
         assertThat(page.statusCode()).as(page.body()).isEqualTo(200);
         assertThat(page.body()).doesNotContain(own);
         HttpResponse<String> file = http.get("/v1/operator/risk/cases/" + own, reader.token());
@@ -95,17 +98,22 @@ class QueueApiTest {
         HttpResponse<String> badStatus = http.get("/v1/operator/risk/cases?status=CLOSED", reader.token());
         assertThat(badStatus.statusCode()).as(badStatus.body()).isEqualTo(422);
         assertThat(badStatus.body()).contains("risk.QueueRequestInvalid");
-        assertThat(http.get("/v1/operator/risk/alerts?after=" + RiskOperatorSessions.IDS.next(), reader.token())
-                .statusCode()).isEqualTo(422);
-        assertThat(http.get("/v1/operator/risk/alerts?limit=0", reader.token()).statusCode()).isEqualTo(422);
+        assertThat(http.get("/v1/operator/risk/alerts?cursor=" + OperatorCollection.cursor("risk.alerts",
+                RiskOperatorSessions.IDS.next().toString()), reader.token()).statusCode()).isEqualTo(422);
+        for (String refused : new String[] {"?limit=0", "?limit=51", "?limit=500", "?cursor=" + RiskOperatorSessions.IDS.next(),
+                "?cursor=" + OperatorCollection.cursor("risk.cases", marker)}) {
+            HttpResponse<String> answer = http.get("/v1/operator/risk/alerts" + refused, reader.token());
+            assertThat(answer.statusCode()).as(refused).isEqualTo(422);
+            assertThat(answer.body()).as(refused).contains("api.ValidationFailed");
+        }
 
         RiskOperatorSessions.Session officer = http.sessionWith(RoleName.RISK_OFFICER, false);
         assertThat(http.get("/v1/operator/risk/cases", officer.token()).statusCode()).isEqualTo(403);
         assertThat(http.get("/v1/operator/risk/alerts", null).statusCode()).isEqualTo(401);
 
-        HttpResponse<String> alerts = http.get("/v1/operator/risk/alerts?limit=500", reader.token());
+        HttpResponse<String> alerts = http.get("/v1/operator/risk/alerts?limit=50", reader.token());
         assertThat(alerts.statusCode()).as(alerts.body()).isEqualTo(200);
-        assertThat(alerts.body()).contains("\"alerts\":[");
+        assertThat(alerts.body()).startsWith("{\"items\":[");
         assertThat(RiskOperatorSessions.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
                 + " 'risk.AlertRead' AND actor_id = '" + reader.identity() + "'")).isEqualTo(1);
     }

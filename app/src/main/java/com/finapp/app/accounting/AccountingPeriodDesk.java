@@ -7,6 +7,7 @@ import com.finapp.accounting.AccountingPeriods;
 import com.finapp.accounting.AccountingReasons;
 import com.finapp.accounting.PeriodCloseStore;
 import com.finapp.accounting.PostingCutoff;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.CommandResult;
@@ -20,6 +21,7 @@ import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.time.Instant;
+import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
@@ -59,9 +61,12 @@ public final class AccountingPeriodDesk {
     static final String UNLOCK_WITHDRAW_SPAN = "accounting.period.unlock.withdraw";
     static final String READ_SPAN = "accounting.period.read";
 
-    /** The list's default and largest page - two years, and ten. */
+    /** The list's default and largest page - two years, and ten; above the largest refused, never reduced (`P17-TSK-042`). */
     static final int DEFAULT_LIMIT = 24;
     static final int MAX_LIMIT = 120;
+
+    /** The period list's collection name, inside its cursors (`P17-TSK-042`). */
+    static final String PERIODS = "accounting.periods";
 
     @NonNull private final AccountingPeriods periods;
     @NonNull private final IdempotentExecutor executor;
@@ -157,11 +162,38 @@ public final class AccountingPeriodDesk {
     }
 
     /** The latest periods, newest first - a read, unkeyed, in one transaction; {@code limit} held to 1..120. */
-    public List<AccountingPeriodView> list(Integer limit) {
-        int page = limit == null ? DEFAULT_LIMIT : Math.max(1, Math.min(MAX_LIMIT, limit));
-        return flow.door(READ_SPAN, () -> transactions.inTransaction(
-                uow -> periods.recent(uow, page).stream().map(row -> view(row, pendingReopens.of(uow, row))).toList()));
+    /**
+     * A page of the periods, newest first (`P17-TSK-042`; read "the latest {@code limit}, a bare array, a larger limit reduced
+     * to 120" until then): {@code limit} {@value #DEFAULT_LIMIT} unless named, {@value #MAX_LIMIT} at most and refused above;
+     * the opaque {@code cursor} of the page before. Unrecorded, as before.
+     */
+    public AccountingPeriodPage list(String cursor, String limit) {
+        int size = OperatorCollection.limit(limit, DEFAULT_LIMIT, MAX_LIMIT);
+        Optional<YearMonth> before = periodCursor(cursor);
+        return flow.door(READ_SPAN, () -> transactions.inTransaction(uow -> {
+            List<AccountingPeriodStore.PeriodRow> rows = periods.recent(uow, before, size + 1);
+            List<AccountingPeriodStore.PeriodRow> served = rows.subList(0, Math.min(size, rows.size()));
+            String next = rows.size() > size
+                    ? OperatorCollection.cursor(PERIODS, served.get(served.size() - 1).month().toString())
+                    : null;
+            return new AccountingPeriodPage(served.stream().map(row -> view(row, pendingReopens.of(uow, row))).toList(), next);
+        }));
     }
+
+    /** The month {@code cursor} names as the last one served, or none for the first page; anything else refused. */
+    static Optional<YearMonth> periodCursor(String cursor) {
+        return OperatorCollection.key(PERIODS, cursor, 1).map(key -> {
+            try {
+                return YearMonth.parse(key.get(0));
+            } catch (RuntimeException unreadable) {
+                throw OperatorCollection.invalidCursor();
+            }
+        });
+    }
+
+    /** A page of the period list (`P17-TSK-042`): {@code nextCursor} absent, not null, on the last one. */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    public record AccountingPeriodPage(List<AccountingPeriodView> items, String nextCursor) {}
 
     /**
      * One period by its id, however old (`P17-TSK-111`): the list serves the latest 120 at most, so an older month was reached only by

@@ -138,6 +138,25 @@ public final class JdbcAccountingPeriodStore implements AccountingPeriodStore {
     }
 
     @Override
+    public List<PeriodRow> recentBefore(Connection unitOfWork, YearMonth month, int limit) {
+        // The one-per-month unique index on period_start, read backwards from the month the page before ended on.
+        try (PreparedStatement read = unitOfWork.prepareStatement(
+                ROW + " WHERE p.period_start < ? ORDER BY p.period_start DESC LIMIT ?")) {
+            read.setObject(1, month.atDay(1));
+            read.setInt(2, limit);
+            List<PeriodRow> rows = new ArrayList<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    rows.add(row(row));
+                }
+            }
+            return rows;
+        } catch (SQLException failure) {
+            throw failed("reading the accounting periods", failure);
+        }
+    }
+
+    @Override
     public List<PeriodRow> recent(Connection unitOfWork, int limit) {
         try (PreparedStatement read = unitOfWork.prepareStatement(ROW + " ORDER BY p.period_start DESC LIMIT ?")) {
             read.setInt(1, limit);

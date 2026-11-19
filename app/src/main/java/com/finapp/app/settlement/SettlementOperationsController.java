@@ -144,11 +144,17 @@ public class SettlementOperationsController {
         return settlement.listSources();
     }
 
-    /** The newest files, bounded at 100 with {@code truncated} — metadata, never content. */
+    /**
+     * The files, as a section 7 collection (`P17-TSK-042`; read "the newest files, bounded at 100 with {@code truncated}" until
+     * then): received newest first, the file's id breaking the tie; {@code limit} 50 unless named, 200 at most; the opaque
+     * {@code cursor} of the page before - metadata, never content.
+     */
     @GetMapping("/files")
     @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
-    public SettlementOperations.FileList listSettlementFiles() {
-        return settlement.listFiles();
+    public SettlementOperations.FilePage listSettlementFiles(
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return settlement.listFiles(cursor, limit);
     }
 
     /** One file's metadata; unknown and malformed ids are one {@code 404}. */
@@ -158,11 +164,17 @@ public class SettlementOperationsController {
         return settlement.viewFile(fileId);
     }
 
-    /** The newest refused deliveries — the reason and position, never the value. */
+    /**
+     * The refused deliveries, as a section 7 collection (`P17-TSK-042`; read "the newest refused deliveries" until then):
+     * refused newest first, the refusal's id breaking the tie; {@code limit} 50 unless named, 200 at most; the opaque
+     * {@code cursor} of the page before - the reason and position, never the value.
+     */
     @GetMapping("/refused-deliveries")
     @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
-    public SettlementOperations.RefusalList listRefusedSettlementDeliveries() {
-        return settlement.listRefusedDeliveries();
+    public SettlementOperations.RefusalPage listRefusedSettlementDeliveries(
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return settlement.listRefusedDeliveries(cursor, limit);
     }
 
     /**

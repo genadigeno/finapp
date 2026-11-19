@@ -125,11 +125,29 @@ public interface SettlementFileStore<T> {
      */
     boolean recordAttestation(T unitOfWork, UUID fileId, String attestedBy, Instant attestedAt);
 
-    /** The newest {@code limit} files across every source — the investigator's list. */
-    List<FileRow> newestFiles(T unitOfWork, int limit);
+    /**
+     * Where a newest-first page resumes (`P17-TSK-042`, `API_CONVENTIONS.md` section 7): after the row whose instant and id
+     * these are - a file's {@code received_at}, a refusal's {@code refused_at}, each fixed when the row is written.
+     */
+    record NewestFirst(Instant at, UUID id) {
 
-    /** The newest {@code limit} refused deliveries — metadata rows, never a value. */
-    List<RefusalRow> newestRefusals(T unitOfWork, int limit);
+        public NewestFirst {
+            Objects.requireNonNull(at, "at must not be null");
+            Objects.requireNonNull(id, "id must not be null");
+        }
+    }
+
+    /**
+     * At most {@code limit} files across every source, received newest first, the id breaking the tie (descending too), strictly
+     * after {@code after} when one is named — the investigator's list, a keyset read.
+     */
+    List<FileRow> newestFiles(T unitOfWork, Optional<NewestFirst> after, int limit);
+
+    /**
+     * At most {@code limit} refused deliveries, refused newest first, the id breaking the tie, strictly after {@code after} when
+     * one is named — metadata rows, never a value.
+     */
+    List<RefusalRow> newestRefusals(T unitOfWork, Optional<NewestFirst> after, int limit);
 
     /**
      * Every source's non-terminal backlog in one read — the file gauges' query

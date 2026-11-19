@@ -131,12 +131,21 @@ public final class JdbcUnderwritingCaseStore implements UnderwritingCaseStore {
     }
 
     @Override
-    public List<UnderwritingCase> queue(Connection unitOfWork, Optional<UnderwritingCaseStatus> status, int limit) {
-        String sql = SELECT + (status.isPresent() ? " WHERE c.status = ?" : "") + " ORDER BY c.opened_at, c.id LIMIT ?";
+    public List<UnderwritingCase> queue(
+            Connection unitOfWork, Optional<UnderwritingCaseStatus> status, Optional<QueuePosition> after, int limit) {
+        // P17-TSK-042: a page resumes after the last case the page before served, by the order's own key - V025's index
+        // for every status, V013's within one.
+        String sql = SELECT + " WHERE TRUE" + (status.isPresent() ? " AND c.status = ?" : "")
+                + (after.isPresent() ? " AND (c.opened_at, c.id) > (?, ?)" : "")
+                + " ORDER BY c.opened_at, c.id LIMIT ?";
         try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
             int index = 1;
             if (status.isPresent()) {
                 select.setString(index++, status.get().name());
+            }
+            if (after.isPresent()) {
+                select.setObject(index++, java.time.OffsetDateTime.ofInstant(after.get().openedAt(), java.time.ZoneOffset.UTC));
+                select.setObject(index++, after.get().id().value());
             }
             select.setInt(index, limit);
             List<UnderwritingCase> cases = new ArrayList<>();

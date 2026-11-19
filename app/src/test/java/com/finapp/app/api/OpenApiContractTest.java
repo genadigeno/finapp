@@ -338,7 +338,10 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/authentications",
                         ApiVersion.CURRENT_PREFIX + "/sessions",
                         // P15-TSK-028: the dead-letter doors (EVENT_OPERATE): the read, a retry, a release, a four-eyes discard, a replay.
-                        ApiVersion.CURRENT_PREFIX + "/operator/events/dead-letters",
+                        // P17-TSK-042: the read is three section 7 collections - the abandoned events, the parked records and
+                        // (GET beside the proposal's POST) the discards awaiting a second person; /dead-letters is gone.
+                        ApiVersion.CURRENT_PREFIX + "/operator/events/abandoned",
+                        ApiVersion.CURRENT_PREFIX + "/operator/events/parked",
                         ApiVersion.CURRENT_PREFIX + "/operator/events/abandoned/{eventId}/retry",
                         ApiVersion.CURRENT_PREFIX + "/operator/events/parked/{parkId}/release",
                         ApiVersion.CURRENT_PREFIX + "/operator/events/discards",

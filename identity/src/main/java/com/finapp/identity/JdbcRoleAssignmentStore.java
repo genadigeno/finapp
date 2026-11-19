@@ -195,18 +195,31 @@ public final class JdbcRoleAssignmentStore implements RoleAssignmentStore<Connec
     }
 
     @Override
-    public java.util.List<FactorlessHolding> holdingsWithoutFactor(Connection unitOfWork, Set<RoleName> roles, int limit) {
+    public java.util.List<FactorlessHolding> holdingsWithoutFactor(
+            Connection unitOfWork, Set<RoleName> roles, java.util.Optional<FactorlessHolding> after, int limit) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(roles, "roles must not be null");
+        Objects.requireNonNull(after, "after must not be null");
         String sql =
                 "SELECT holding.identity_id, holding.role_name, holding.assigned_at FROM " + TABLE + " holding"
                         + " WHERE holding.revoked_at IS NULL AND holding.role_name = ANY (?)"
                         + " AND NOT EXISTS (SELECT 1 FROM identity.mfa_enrolment factor"
                         + " WHERE factor.identity_id = holding.identity_id AND factor.status = 'ACTIVE')"
+                        // P17-TSK-042: a page resumes after the last holding the page before served, by the order's own
+                        // key, so a holding granted or revoked between pages moves no other.
+                        + (after.isPresent()
+                                ? " AND (holding.assigned_at, holding.identity_id, holding.role_name) > (?, ?, ?)"
+                                : "")
                         + " ORDER BY holding.assigned_at, holding.identity_id, holding.role_name LIMIT ?";
         try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
-            select.setArray(1, unitOfWork.createArrayOf("text", roles.stream().map(RoleName::name).toArray()));
-            select.setInt(2, limit);
+            int index = 1;
+            select.setArray(index++, unitOfWork.createArrayOf("text", roles.stream().map(RoleName::name).toArray()));
+            if (after.isPresent()) {
+                select.setObject(index++, java.time.OffsetDateTime.ofInstant(after.get().assignedAt(), java.time.ZoneOffset.UTC));
+                select.setObject(index++, after.get().identityId().value());
+                select.setString(index++, after.get().role().name());
+            }
+            select.setInt(index, limit);
             try (ResultSet rows = select.executeQuery()) {
                 java.util.List<FactorlessHolding> found = new java.util.ArrayList<>();
                 while (rows.next()) {

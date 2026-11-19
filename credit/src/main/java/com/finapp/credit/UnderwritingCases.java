@@ -62,7 +62,10 @@ public final class UnderwritingCases {
      * session's actor carries (a session's actor is typed by the platform, not by the role that admits it).
      */
     static final String PERSON = com.finapp.platform.security.ActorType.EMPLOYEE.name();
-    /** The most cases one queue read serves. */
+    /**
+     * The most cases one page of the queue serves: each brings its basis - its snapshot, its evaluation and its policy - so the
+     * page stays as small as the read before paging (`P17-TSK-042`).
+     */
     public static final int QUEUE_LIMIT = 50;
 
     @NonNull private final UnderwritingCaseStore cases;
@@ -227,11 +230,28 @@ public final class UnderwritingCases {
 
     // ------------------------------------------------------------------ the queue
 
-    /** At most {@link #QUEUE_LIMIT} cases, oldest first, each with its basis - the serving recorded in {@code unitOfWork}. */
-    public List<Queued> queue(
-            Connection unitOfWork, Optional<UnderwritingCaseStatus> status, Actor actor, CorrelationId correlation) {
+    /** A page of the queue: the cases served, each with its basis, and whether more follow the last of them. */
+    public record QueuePage(List<Queued> queued, boolean more) {
+
+        public QueuePage {
+            queued = List.copyOf(queued);
+        }
+    }
+
+    /**
+     * A page of at most {@code limit} cases ({@link #QUEUE_LIMIT} at most), oldest first, strictly after {@code after} when one
+     * is named (`P17-TSK-042`), each with its basis - the serving recorded in {@code unitOfWork}, every page.
+     */
+    public QueuePage queue(Connection unitOfWork, Optional<UnderwritingCaseStatus> status,
+            Optional<UnderwritingCaseStore.QueuePosition> after, int limit, Actor actor, CorrelationId correlation) {
+        if (limit < 1 || limit > QUEUE_LIMIT) {
+            throw new IllegalArgumentException("a page of the queue is 1 to " + QUEUE_LIMIT + " cases: " + limit);
+        }
+        List<UnderwritingCase> read = cases.queue(unitOfWork, status, after, limit + 1);
+        boolean more = read.size() > limit;
         List<Queued> queued = new ArrayList<>();
-        for (UnderwritingCase reviewCase : cases.queue(unitOfWork, status, QUEUE_LIMIT)) {
+        // The row read past the page only says that more follow: its basis is not loaded, nor is it served or recorded.
+        for (UnderwritingCase reviewCase : read.subList(0, Math.min(limit, read.size()))) {
             SnapshotContent basis = CanonicalSnapshot.parse(snapshots.snapshotById(unitOfWork, reviewCase.basisSnapshot())
                     .orElseThrow(() -> new IllegalStateException("a case's basis names a snapshot that exists"))
                     .canonical());
@@ -250,17 +270,17 @@ public final class UnderwritingCases {
         }
         record(unitOfWork, actor, CreditAuditAction.REVIEW_CASES_READ, QUEUE_TARGET,
                 status.map(Enum::name).orElse("ALL"), Optional.empty(), AuditOutcome.SUCCEEDED, correlation,
-                queueSummary(queued.stream().map(served -> served.reviewCase().id()).toList(), status));
-        return queued;
+                queueSummary(queued.stream().map(served -> served.reviewCase().id()).toList(), status, after.isPresent()));
+        return new QueuePage(queued, more);
     }
 
     /**
      * What a queue read's record says (`P15-TSK-039`): how many, of which status, and which ones - each case's id, at most
      * {@link #QUEUE_LIMIT} of them, so an investigator can say who read which case and when. No applicant, no figure.
      */
-    static String queueSummary(List<UnderwritingCaseId> served, Optional<UnderwritingCaseStatus> status) {
+    static String queueSummary(List<UnderwritingCaseId> served, Optional<UnderwritingCaseStatus> status, boolean continued) {
         return "review queue read: " + served.size() + " case(s), status " + status.map(Enum::name).orElse("any")
-                + ", served " + served.stream().map(id -> id.value().toString()).toList();
+                + ", continued " + continued + ", served " + served.stream().map(id -> id.value().toString()).toList();
     }
 
     // ------------------------------------------------------------------ assign and release

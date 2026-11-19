@@ -65,10 +65,12 @@ class OperatorReadRecordsTest {
         UnderwritingCaseId first = UnderwritingCaseId.next(IDS);
         UnderwritingCaseId second = UnderwritingCaseId.next(IDS);
 
-        assertThat(UnderwritingCases.queueSummary(List.of(first, second), Optional.of(UnderwritingCaseStatus.OPEN)))
-                .isEqualTo("review queue read: 2 case(s), status OPEN, served [" + first.value() + ", " + second.value() + "]");
-        assertThat(UnderwritingCases.queueSummary(List.of(), Optional.empty()))
-                .isEqualTo("review queue read: 0 case(s), status any, served []");
+        assertThat(UnderwritingCases.queueSummary(List.of(first, second), Optional.of(UnderwritingCaseStatus.OPEN), false))
+                .isEqualTo("review queue read: 2 case(s), status OPEN, continued false, served [" + first.value() + ", "
+                        + second.value() + "]");
+        assertThat(UnderwritingCases.queueSummary(List.of(), Optional.empty(), true))
+                .as("a later page says it continued a walk (P17-TSK-042)")
+                .isEqualTo("review queue read: 0 case(s), status any, continued true, served []");
     }
 
     private static CreditPolicyStore answering(CreditPolicyVersionId id) {

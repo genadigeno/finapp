@@ -1,6 +1,7 @@
 package com.finapp.app.risk;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.security.Actor;
@@ -87,11 +88,21 @@ public final class RiskQueueDesk {
     public record RiskSuppressionView(String status, String reasonCode, String reason, String proposedAt,
             String decisionReason, String decidedAt, String proposedBy) {}
 
-    /** A page of the alert queue: the alerts, oldest first, and the cursor to the next page ({@code null} at the end). */
-    public record RiskAlertPageView(List<RiskAlertView> alerts, String next) {}
+    /**
+     * A page of the alert queue, a section 7 collection (`P17-TSK-042`; read "{@code alerts} and {@code next}, the raw id of
+     * the last alert, {@code null} at the end" until then): the alerts, oldest first, and the opaque cursor to the next page -
+     * absent, not null, at the end.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record RiskAlertPageView(List<RiskAlertView> items, String nextCursor) {}
 
-    /** A page of the case queue: the cases' heads, oldest first, and the cursor to the next page. */
-    public record RiskCasePageView(List<RiskCaseDesk.RiskCaseView> cases, String next) {}
+    /** A page of the case queue, a section 7 collection (`P17-TSK-042`): the cases' heads, oldest first, and the next cursor. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record RiskCasePageView(List<RiskCaseDesk.RiskCaseView> items, String nextCursor) {}
+
+    /** The queues' collection names, inside their cursors (`P17-TSK-042`). */
+    static final String ALERT_QUEUE = "risk.alerts";
+    static final String CASE_QUEUE = "risk.cases";
 
     /**
      * One case's file: its head, the alerts attached to it, its investigator actions, its history, its downstream
@@ -128,14 +139,18 @@ public final class RiskQueueDesk {
 
     // ------------------------------------------------------------------ the alert queue
 
-    /** A page of the alert queue, read and recorded. */
-    public RiskAlertPageView alerts(String status, String kind, String after, Integer limit) {
+    /**
+     * A page of the alert queue, read and recorded: {@code limit} {@value com.finapp.risk.Queues#DEFAULT_PAGE} unless named,
+     * {@value com.finapp.risk.Queues#PAGE_BOUND} at most and refused above, never reduced (`P17-TSK-042`); the opaque
+     * {@code cursor} of the page before.
+     */
+    public RiskAlertPageView alerts(String status, String kind, String rawCursor, String limit) {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         AlertQueue.Filter filter = asked(() -> AlertQueue.Filter.named(Optional.ofNullable(status),
                 Optional.ofNullable(kind)));
-        int size = asked(() -> Queues.size(Optional.ofNullable(limit)));
-        Optional<RiskAlertId> cursor = cursor(after, RiskAlertId::of);
+        int size = OperatorCollection.limit(limit, Queues.DEFAULT_PAGE, Queues.PAGE_BOUND);
+        Optional<RiskAlertId> cursor = cursor(ALERT_QUEUE, rawCursor, RiskAlertId::of);
         AlertQueue.Page page;
         try {
             page = flow.door(RiskSpans.QUEUE, () -> asked(() -> transactions.inSnapshot(
@@ -153,7 +168,7 @@ public final class RiskQueueDesk {
             return null;
         });
         return new RiskAlertPageView(page.alerts().stream().map(RiskQueueDesk::view).toList(),
-                page.next().map(id -> id.value().toString()).orElse(null));
+                page.next().map(id -> OperatorCollection.cursor(ALERT_QUEUE, id.value().toString())).orElse(null));
     }
 
     /**
@@ -189,14 +204,14 @@ public final class RiskQueueDesk {
 
     // ------------------------------------------------------------------ the case queue and the file
 
-    /** A page of the case queue, read and recorded. */
-    public RiskCasePageView cases(String status, String kind, String after, Integer limit) {
+    /** A page of the case queue, read and recorded: the alert queue's limit and cursor rules (`P17-TSK-042`). */
+    public RiskCasePageView cases(String status, String kind, String rawCursor, String limit) {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         CaseWorklist.Filter filter = asked(() -> CaseWorklist.Filter.named(Optional.ofNullable(status),
                 Optional.ofNullable(kind)));
-        int size = asked(() -> Queues.size(Optional.ofNullable(limit)));
-        Optional<RiskCaseId> cursor = cursor(after, RiskCaseId::of);
+        int size = OperatorCollection.limit(limit, Queues.DEFAULT_PAGE, Queues.PAGE_BOUND);
+        Optional<RiskCaseId> cursor = cursor(CASE_QUEUE, rawCursor, RiskCaseId::of);
         CaseWorklist.Page page;
         try {
             page = flow.door(RiskSpans.QUEUE, () -> asked(() -> transactions.inSnapshot(
@@ -213,7 +228,7 @@ public final class RiskQueueDesk {
             return null;
         });
         return new RiskCasePageView(page.cases().stream().map(riskCase -> RiskCaseDesk.view(riskCase, false)).toList(),
-                page.next().map(id -> id.value().toString()).orElse(null));
+                page.next().map(id -> OperatorCollection.cursor(CASE_QUEUE, id.value().toString())).orElse(null));
     }
 
     /** {@code rawCaseId}'s file, read and recorded - without its reports. */
@@ -350,19 +365,19 @@ public final class RiskQueueDesk {
     }
 
     /**
-     * The cursor as {@code typed}'s identifier - one that is not an identifier of the kind (not a UUID, or not the
-     * UUIDv7 every risk row is born with) names no row.
+     * The row an opaque {@code cursor} of {@code collection} names (`P17-TSK-042`): the last row the page before served, as
+     * {@code typed}'s identifier - the module resumes from that row's own key. A cursor this collection did not write, or one
+     * whose identifier is not of the kind (not a UUID, or not the UUIDv7 every risk row is born with), is refused
+     * {@code 422 api.ValidationFailed}; a well-formed one naming no row stays the module's {@code risk.QueueRequestInvalid}.
      */
-    private static <I> Optional<I> cursor(String after, java.util.function.Function<UUID, I> typed) {
-        if (after == null) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(typed.apply(UUID.fromString(after)));
-        } catch (IllegalArgumentException malformed) {
-            throw new ApiException(RiskErrorCode.QUEUE_REQUEST_INVALID, "A risk queue read was refused",
-                    "the cursor names no row of the queue; page again from the start");
-        }
+    static <I> Optional<I> cursor(String collection, String cursor, java.util.function.Function<UUID, I> typed) {
+        return OperatorCollection.key(collection, cursor, 1).map(key -> {
+            try {
+                return typed.apply(UUID.fromString(key.get(0)));
+            } catch (IllegalArgumentException malformed) {
+                throw OperatorCollection.invalidCursor();
+            }
+        });
     }
 
     private static ApiException selfDealing() {

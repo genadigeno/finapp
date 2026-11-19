@@ -86,11 +86,11 @@ class E2eSeedReviewsDatabaseTest {
         backDate(holder, 1);
 
         String session = elevated("admin");
-        String review = get(session, "/v1/operator/access-review/factorless-holdings");
+        String review = get(session, "/v1/operator/access-review/factorless-holdings?limit=200");
         assertThat(review).contains("{\"identityId\":\"" + holder + "\",\"role\":\"LEDGER_OPERATOR\",");
 
         assertThat(revoke(session, holder, "LEDGER_OPERATOR")).as("the console's decision, through the door").isEqualTo(204);
-        assertThat(get(session, "/v1/operator/access-review/factorless-holdings")).doesNotContain(holder);
+        assertThat(get(session, "/v1/operator/access-review/factorless-holdings?limit=200")).doesNotContain(holder);
         assertThat(single("SELECT count(*) FROM identity.role_assignment WHERE identity_id = '" + holder + "' AND revoked_at IS NULL"))
                 .isEqualTo("0");
     }
@@ -112,7 +112,7 @@ class E2eSeedReviewsDatabaseTest {
         String session = elevated("admin");
         assertThat(get(session, "/v1/operator/access-review/sod-conflicts"))
                 .contains("{\"identityId\":\"" + holder + "\",\"roles\":[\"ACCOUNTANT\",\"FINANCIAL_CONTROLLER\"],");
-        assertThat(get(session, "/v1/operator/access-review/factorless-holdings"))
+        assertThat(get(session, "/v1/operator/access-review/factorless-holdings?limit=200"))
                 .as("the holder has a factor: the scenarios are apart").doesNotContain(holder);
 
         assertThat(revoke(session, holder, "FINANCIAL_CONTROLLER")).as("the console's decision, through the door").isEqualTo(204);

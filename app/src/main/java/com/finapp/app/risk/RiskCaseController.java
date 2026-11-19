@@ -65,19 +65,20 @@ public class RiskCaseController {
     }
 
     /**
-     * A page of the case queue (`P13-TSK-018`): {@code status} one {@code CaseStatus} (every open one unless named),
-     * {@code kind} one {@code CaseKind}, {@code after} the last case of the previous page, {@code limit} the page's size
-     * (20 unless named, at most 50) - oldest first by opening; the analyst's own party's cases withheld; audited
-     * {@code risk.CaseRead}.
+     * A page of the case queue (`P13-TSK-018`), a section 7 collection since `P17-TSK-042` (read "{@code after} the last case
+     * of the previous page" and a larger {@code limit} reduced to 50 until then): {@code status} one {@code CaseStatus}
+     * (every open one unless named), {@code kind} one {@code CaseKind}, {@code cursor} the opaque cursor of the page before,
+     * {@code limit} the page's size (20 unless named, at most 50, refused above) - oldest first by opening, the id breaking
+     * the tie; the analyst's own party's cases withheld; audited {@code risk.CaseRead}.
      */
     @GetMapping
     @RequiresPermission(PermissionName.RISK_INVESTIGATE)
     public RiskQueueDesk.RiskCasePageView readRiskCaseQueue(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "kind", required = false) String kind,
-            @RequestParam(name = "after", required = false) String after,
-            @RequestParam(name = "limit", required = false) Integer limit) {
-        return queue.cases(status, kind, after, limit);
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return queue.cases(status, kind, cursor, limit);
     }
 
     /**

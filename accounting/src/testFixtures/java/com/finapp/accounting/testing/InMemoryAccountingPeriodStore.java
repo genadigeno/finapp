@@ -168,6 +168,11 @@ public final class InMemoryAccountingPeriodStore implements AccountingPeriodStor
     }
 
     @Override
+    public List<PeriodRow> recentBefore(Connection unitOfWork, YearMonth month, int limit) {
+        return rows.headMap(month, false).descendingMap().values().stream().limit(limit).toList();
+    }
+
+    @Override
     public boolean markLocked(Connection unitOfWork, AccountingPeriodId id, int revision, Actor actor, Optional<Pin> pin) {
         Optional<PeriodRow> found = find(unitOfWork, id);
         if (found.isEmpty() || found.get().status() != PeriodStatus.OPEN || found.get().revision() != revision) {

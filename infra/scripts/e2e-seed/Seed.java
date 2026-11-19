@@ -213,21 +213,31 @@ public final class Seed {
         expect("attestation by " + who, post(operatorBase, "/v1/operator/settlement/files/" + fileId + "/attestation", null, session, null), 200);
     }
 
-    /** Finds the open FEE_MISMATCH this file raised, by each candidate's stored trace back to the raw file. */
+    /**
+     * Finds the open FEE_MISMATCH this file raised, by each candidate's stored trace back to the raw file. The break list is a
+     * section 7 collection since P17-TSK-042: every page is walked, its opaque {@code nextCursor} followed, never read.
+     */
     private void awaitBreak(String who, String fileId) throws Exception {
         String session = signIn(operatorBase, who);
         Pattern ids = Pattern.compile("\"id\"\\s*:\\s*\"([0-9a-f-]{36})\"");
+        Pattern next = Pattern.compile("\"nextCursor\"\\s*:\\s*\"([A-Za-z0-9_-]+)\"");
         Instant deadline = Instant.now().plus(Duration.ofMinutes(3));
         while (Instant.now().isBefore(deadline)) {
-            String list = expect("breaks", get(operatorBase, "/v1/operator/reconciliation/breaks?type=FEE_MISMATCH&status=OPEN", session), 200).body();
-            Matcher candidate = ids.matcher(list);
-            while (candidate.find()) {
-                String trace = expect("trace", get(operatorBase, "/v1/operator/reconciliation/breaks/" + candidate.group(1) + "/trace", session), 200).body();
-                if (trace.contains(fileId)) {
-                    System.out.println("BREAK_ID=" + candidate.group(1));
-                    return;
+            String cursor = null;
+            do {
+                String list = expect("breaks", get(operatorBase, "/v1/operator/reconciliation/breaks?type=FEE_MISMATCH&status=OPEN&limit=200"
+                        + (cursor == null ? "" : "&cursor=" + cursor), session), 200).body();
+                Matcher candidate = ids.matcher(list);
+                while (candidate.find()) {
+                    String trace = expect("trace", get(operatorBase, "/v1/operator/reconciliation/breaks/" + candidate.group(1) + "/trace", session), 200).body();
+                    if (trace.contains(fileId)) {
+                        System.out.println("BREAK_ID=" + candidate.group(1));
+                        return;
+                    }
                 }
-            }
+                Matcher following = next.matcher(list);
+                cursor = following.find() ? following.group(1) : null;
+            } while (cursor != null);
             Thread.sleep(3000);
         }
         throw new IllegalStateException("no open FEE_MISMATCH traced to file " + fileId + " after three minutes");

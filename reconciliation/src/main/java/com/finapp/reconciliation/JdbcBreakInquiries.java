@@ -20,7 +20,7 @@ public final class JdbcBreakInquiries implements BreakInquiries {
 
     @Override
     public List<BreakCaseStore.BreakRow> breaks(
-            Connection unitOfWork, BreakFilter filter, int limit) {
+            Connection unitOfWork, BreakFilter filter, Optional<BreakCursor> after, int limit) {
         StringBuilder sql =
                 new StringBuilder(
                         "SELECT " + JdbcBreakCaseStore.BREAK_COLUMNS
@@ -50,6 +50,13 @@ public final class JdbcBreakInquiries implements BreakInquiries {
             // Judged on the DATABASE clock against the stored raised_at (INV-SET-02's rule).
             sql.append(" AND raised_at < now() - make_interval(days => ?)");
             args.add(days);
+        });
+        after.ifPresent(cursor -> {
+            // Resuming newest-first: everything strictly before the cursor's row in (raised_at, id) - the order's own key,
+            // so the walk is served by V027's index read backwards (P17-TSK-042).
+            sql.append(" AND (raised_at, id) < (?, ?)");
+            args.add(OffsetDateTime.ofInstant(cursor.raisedAt(), java.time.ZoneOffset.UTC));
+            args.add(cursor.id());
         });
         sql.append(" ORDER BY raised_at DESC, id DESC LIMIT ?");
         args.add(limit);
