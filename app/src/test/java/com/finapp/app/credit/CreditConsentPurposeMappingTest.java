@@ -117,6 +117,12 @@ class CreditConsentPurposeMappingTest {
         }
 
         @Override
+        public java.util.List<HistoryEntry> historyFor(
+                Connection unitOfWork, UUID partyId, Optional<Long> beforeSeq, int limit) {
+            throw new UnsupportedOperationException("the credit gate reads only the derived basis");
+        }
+
+        @Override
         public ConsentText currentTextFor(Connection unitOfWork, ConsentPurpose purpose) {
             throw new UnsupportedOperationException("the credit gate reads only the derived basis");
         }

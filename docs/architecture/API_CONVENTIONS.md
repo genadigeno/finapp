@@ -287,6 +287,7 @@ needed for it (the distinction `P0-TSK-032` drew for the actor, in the opposite 
 | `GET /v1/operator/accounting/mapping-versions` (`P17-TSK-023`) | `ACCOUNTING_MAPPING_APPROVE` | version descending | 50 / 200 | `status` (`PROPOSED` is the approver's queue); each row marks whether the caller proposed it |
 | `GET /v1/operator/accounting/valuation-rate-sets` (`P17-TSK-023`) | `ACCOUNTING_CLOSE_APPROVE` | captured at descending, set id descending | 50 / 200 | `periodId`, `status` (`PROPOSED` is the approver's queue); each row marks whether the caller captured it; never a rate |
 | `GET /v1/operator/accounting/valuation-rate-sets/mine` (`P17-TSK-023`) | `ACCOUNTING_CLOSE_PROPOSE` | captured at descending, set id descending | 50 / 200 | `status`. The sets the caller captured, every period's |
+| `GET /v1/operator/parties/{id}/consents` (`P17-TSK-026`) | `CUSTOMER_READ`, on a `MULTI_FACTOR` session | the history's `seq` descending (server-assigned, unique) | 50 / 200 | none; the party in the path. Every page recorded as the audit action consent.HistoryRead; an unknown party `404` |
 
 All are keyset reads. `app`'s `OperatorCollection` is the one implementation of the request rules: the limit is refused above
 its maximum rather than reduced, and the cursor names its collection, so one collection's cursor is refused by another. Every

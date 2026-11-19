@@ -87,6 +87,14 @@ public interface CustomerAccountStore<T> {
     Optional<UUID> customerOf(T unitOfWork, CustomerAccountId accountId);
 
     /**
+     * One agreement by its identifier alone, in every status (`P17-TSK-026`, the operator lookup by an account's identifier;
+     * the operator's account read, `P17-TSK-027`). An operator's read of somebody else's agreement by design, under
+     * {@code CUSTOMER_READ} or {@code ACCOUNT_READ} on a {@code MULTI_FACTOR} session, every read recorded at app's door -
+     * never a customer's, whose reads stay {@link #findOwnedBy}. Empty for an unknown agreement.
+     */
+    Optional<CustomerAccount> findById(T unitOfWork, CustomerAccountId accountId);
+
+    /**
      * {@link #findOwnedBy}, read {@code FOR UPDATE} — the closer's serialization point
      * (`P3-TSK-014`): N concurrent closes queue here, one closes, and the rest re-read
      * {@code CLOSED} under the lock and converge. The ownership predicate is the same

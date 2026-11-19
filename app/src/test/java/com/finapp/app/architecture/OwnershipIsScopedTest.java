@@ -899,6 +899,16 @@ class OwnershipIsScopedTest {
                                         + " absence, withdrawal and a lapsed grant are one false"
                                         + " (INV-CNS-01).")),
                     Map.entry(
+                            "com.finapp.consent.JdbcConsentStore.historyFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-026. A party's consent history: the party comes from the URL of"
+                                        + " GET /v1/operator/parties/{id}/consents, somebody else by design. Standing in:"
+                                        + " CUSTOMER_READ on a MULTI_FACTOR session, the party's existence checked first (an"
+                                        + " unknown party is 404, recording nothing), every page recorded"
+                                        + " (consent.HistoryRead). The facts served are what the person agreed to and when,"
+                                        + " never the text itself.")),
+                    Map.entry(
                             "com.finapp.consent.JdbcConsentStore.latestFor",
                             new Entry(
                                     Scope.OWNER_SCOPED,
@@ -2398,6 +2408,15 @@ class OwnershipIsScopedTest {
                                         + " knows only an opaque owner_ref (ADR-0042). The"
                                         + " surfaces that control disclosure remain the"
                                         + " product's.")),
+                    Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.findById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-026. One agreement by its id alone, for the operator lookup by an account's"
+                                        + " identifier (and P17-TSK-027's account read): request-supplied, somebody else's"
+                                        + " by design. Standing in: CUSTOMER_READ or ACCOUNT_READ on a MULTI_FACTOR session,"
+                                        + " every read recorded and held at the answer by UnrecordedReadAdvice. A customer's"
+                                        + " own reads stay findOwnedBy, the owner in the statement.")),
                     Map.entry(
                             "com.finapp.accounts.JdbcCustomerAccountStore.customerOf",
                             new Entry(
@@ -7082,6 +7101,26 @@ class OwnershipIsScopedTest {
                                         + " on registrant_party_id is the arbiter, so a lost"
                                         + " race converges rather than double-registers. A"
                                         + " private helper found by the detector.")),
+                    Map.entry(
+                            "com.finapp.party.JdbcPartyStore.findCustomer",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-026. One customer by its id alone: the identifier comes from the URL of"
+                                        + " GET /v1/operator/customers/{id}, or a lookup's own answer, and names SOMEBODY"
+                                        + " ELSE by design - whom a support desk reads. Standing in for the owner predicate:"
+                                        + " @RequiresPermission(CUSTOMER_READ) on a MULTI_FACTOR session at the boundary"
+                                        + " (RoutePermissionRegisterTest, CustomerReadsApiDatabaseTest), the answer"
+                                        + " identifier-first - no name or contact - and an audit record of every read, held"
+                                        + " at the answer by UnrecordedReadAdvice. No not-self rule: a read changes nothing.")),
+                    Map.entry(
+                            "com.finapp.party.JdbcPartyStore.latestCustomerFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-026. A party's newest relationship, for the operator lookup by a party's or a"
+                                        + " login's identifier: the party is request-supplied (the lookup's body) or a login's"
+                                        + " own party, somebody else by design. Standing in: findCustomer's - CUSTOMER_READ on"
+                                        + " a MULTI_FACTOR session, the answer the customer's id alone, every probe recorded"
+                                        + " (party.CustomerLookedUp) whether it matched or not.")),
                     Map.entry(
                             "com.finapp.party.JdbcPartyStore.kindOf",
                             new Entry(

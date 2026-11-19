@@ -18017,6 +18017,28 @@
         ],
         "type": "object"
       },
+      "ConsentEntry": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "consentRecordId": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "recordedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "textVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "ConsentGrantRequest": {
         "properties": {
           "purpose": {
@@ -18038,6 +18060,20 @@
           "purpose",
           "textVersion"
         ],
+        "type": "object"
+      },
+      "ConsentHistoryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConsentEntry"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "ContactChannelRequest": {
@@ -19573,6 +19609,92 @@
               "$ref": "#/components/schemas/CreditSourceView"
             },
             "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "CustomerIdentity": {
+        "properties": {
+          "identityId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CustomerKycCase": {
+        "properties": {
+          "caseId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusChangedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CustomerLookupAnswer": {
+        "properties": {
+          "customerId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CustomerLookupRequest": {
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ],
+        "type": "object"
+      },
+      "CustomerProfile": {
+        "properties": {
+          "customerId": {
+            "type": "string"
+          },
+          "identities": {
+            "items": {
+              "$ref": "#/components/schemas/CustomerIdentity"
+            },
+            "type": "array"
+          },
+          "latestKycCase": {
+            "$ref": "#/components/schemas/CustomerKycCase"
+          },
+          "openedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "partyKind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusChangedAt": {
+            "format": "date-time",
+            "type": "string"
           }
         },
         "type": "object"
@@ -42010,6 +42132,60 @@
         }
       }
     },
+    "/v1/operator/customers/lookup": {
+      "post": {
+        "operationId": "lookUpCustomer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerLookupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerLookupAnswer"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/customers/{id}": {
+      "get": {
+        "operationId": "readCustomer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerProfile"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/disputes/{disputeId}": {
       "get": {
         "operationId": "viewDisputeAsOperator",
@@ -45322,6 +45498,49 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/parties/{id}/consents": {
+      "get": {
+        "operationId": "listPartyConsents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentHistoryPage"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

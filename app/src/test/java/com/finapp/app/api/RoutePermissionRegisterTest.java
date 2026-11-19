@@ -80,6 +80,10 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/identities/{id}", PermissionName.IDENTITY_READ),
                     entry("POST /v1/operator/identities/lookup", PermissionName.IDENTITY_READ),
                     entry("GET /v1/operator/roles", PermissionName.IDENTITY_READ),
+                    // P17-TSK-026: the customer lookup, profile and consent history - the support desk's read (ADR-C132).
+                    entry("POST /v1/operator/customers/lookup", PermissionName.CUSTOMER_READ),
+                    entry("GET /v1/operator/customers/{id}", PermissionName.CUSTOMER_READ),
+                    entry("GET /v1/operator/parties/{id}/consents", PermissionName.CUSTOMER_READ),
                     // P17-TSK-017: the audit trail, read - the AUDITOR's alone (ADR-C134; the owner, 2026-11-18).
                     entry("GET /v1/operator/audit-records", PermissionName.AUDIT_READ),
                     entry("GET /v1/operator/audit-records/{id}", PermissionName.AUDIT_READ),
@@ -750,6 +754,10 @@ class RoutePermissionRegisterTest {
             // P17-TSK-017: the audit trail - who did what to whom - is not a password's to read.
             "GET /v1/operator/audit-records",
             "GET /v1/operator/audit-records/{id}",
+            // P17-TSK-026: who is a customer, what they hold and what they agreed to - a map of customers, not on a password.
+            "POST /v1/operator/customers/lookup",
+            "GET /v1/operator/customers/{id}",
+            "GET /v1/operator/parties/{id}/consents",
             // P17-TSK-014: who holds the privileged roles, one of them, and who a login names - the same map, not on a password.
             "GET /v1/operator/identities",
             "GET /v1/operator/identities/{id}",

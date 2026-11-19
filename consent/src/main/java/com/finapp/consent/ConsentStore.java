@@ -31,6 +31,17 @@ public interface ConsentStore<T> {
      */
     Optional<ConsentRecord> latestFor(T unitOfWork, UUID partyId, ConsentPurpose purpose);
 
+    /** One fact of a party's history, with its place in the history's server-assigned order. */
+    record HistoryEntry(ConsentRecord record, long seq) {}
+
+    /**
+     * A page of a party's consent history, every purpose, newest fact first by {@code seq} - the order no instance's clock
+     * decides (ADR-0037) - those before {@code beforeSeq} when given, at most {@code limit} (`P17-TSK-026`). An operator's read
+     * of somebody else's history, under {@code CUSTOMER_READ} and recorded at app's door. A party's history is a handful of
+     * facts per purpose, so the range of {@code consent_record_latest_first} for the party, sorted, is the read.
+     */
+    java.util.List<HistoryEntry> historyFor(T unitOfWork, UUID partyId, Optional<Long> beforeSeq, int limit);
+
     /**
      * The derivation ({@code INV-CNS-01}/{@code 04}): is there a current basis for this
      * processing?

@@ -50,6 +50,16 @@ public enum ConsentAuditAction implements AuditableAction {
             "consent.ConsentWithdrawn",
             "A party withdrew consent for a purpose; the gated capability blocks from this"
                     + " record on.",
+            false),
+
+    /**
+     * An operator read a page of a party's consent history (`P17-TSK-026`; {@code GET /v1/operator/parties/{id}/consents},
+     * {@code CUSTOMER_READ}, on a {@code MULTI_FACTOR} session). Once per page, never per fact: the party the target, whether
+     * it followed a cursor and how many facts it served the summary. Written in the read's own transaction.
+     */
+    CONSENT_HISTORY_READ(
+            "consent.HistoryRead",
+            "An operator read a page of a party's consent history; the party and the count served recorded.",
             false);
 
     private final String code;

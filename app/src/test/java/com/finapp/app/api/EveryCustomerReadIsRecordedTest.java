@@ -24,7 +24,7 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  * {@link RecordedReadsTest} holds its behaviour - and this guard holds that it is on the application's answer path, so the
  * refusal is real and not a class nobody registered. <strong>At review</strong> the handlers under {@link RecordedReads#PERMISSIONS}
  * are exactly {@link #REGISTER}'s, each beside the record it writes, so a new read reaches a reviewer with the action its database
- * test proves. Empty at `P17-TSK-025`, which serves no route: the guard holds from the first one (`P17-TSK-026`).
+ * test proves. Empty at `P17-TSK-025`, which served no route; the guard holds from the first ones, `P17-TSK-026`'s.
  */
 @Tag("slice")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
@@ -33,7 +33,11 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 class EveryCustomerReadIsRecordedTest {
 
     /** {@code Controller#method} → the {@code <module>.<Thing>Read} it records. */
-    static final Map<String, String> REGISTER = Map.of();
+    static final Map<String, String> REGISTER = Map.of(
+            // P17-TSK-026: the customer lookup, profile and consent history (CUSTOMER_READ).
+            "CustomerReadController#lookUpCustomer", "party.CustomerLookedUp",
+            "CustomerReadController#readCustomer", "party.CustomerRead",
+            "CustomerReadController#listPartyConsents", "consent.HistoryRead");
 
     @Autowired private ApplicationContext context;
 

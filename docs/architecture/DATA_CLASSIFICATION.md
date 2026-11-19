@@ -379,6 +379,8 @@ adding "just the user agent", which is why the ceiling is set before anything po
 | `kyc_case` | `case_kind` | `INTERNAL` | *Added by `P2-TSK-015`.* As `party.kind` — an enumeration of two values, saying no more about the customer than the party row already says |
 | `kyc_case` | `case_order` | `INTERNAL` | *Added by `P15-TSK-037` (kyc `V012`).* The case's place in its customer's order of cases, a sequence drawn at insert - no fact about the customer, a rank that holds no clock. NULL for a case written before `V012` |
 
+**Served to staff by the customer reads** (`P17-TSK-026`, 2026-11-20; finapp-admin-panel ADR-C132 decision 3, D-5 identifier-first through M17.6), under `CUSTOMER_READ` on a `MULTI_FACTOR` session, every answer recorded. The profile (`GET /v1/operator/customers/{id}`, `party.CustomerRead`) serves `customer.id`, `status`, `opened_at`, `status_changed_at` and `party_id` - `CONFIDENTIAL` at most - the party's `kind`, each identity of the party by `id` and `status`, and the latest KYC case's `id`, `case_kind`, `status` and `status_changed_at`. **Never** `party.display_name` or `registered_at`, `identity.login_identifier`, a contact channel's value, a document or a check's result: the personal fields D-25 admits (a legal name and country) are a read of their own, B6.6, not yet a task. The lookup (`POST /v1/operator/customers/lookup`, `party.CustomerLookedUp`) takes a login identifier in its body - never a URL, never a record, never a log line - and answers a customer's id alone.
+
 ### `party.organisation_registrant` — *added by `P2-TSK-016`*
 
 | Table | Column | Level | Why |
@@ -2045,6 +2047,8 @@ door.
 | `consent_record` | `text_version` | `INTERNAL` | A counter pinning an artefact (`INV-CNS-04`) |
 | `consent_record` | `recorded_at` | `CONFIDENTIAL` | Dates a consent event for a person — `kyc_case.opened_at`'s reasoning |
 | `consent_record` | `seq` | `INTERNAL` | The server-assigned position in the history — data only in the schema's sense |
+
+**Served to staff** (`P17-TSK-026`): `GET /v1/operator/parties/{id}/consents` under `CUSTOMER_READ`, on a `MULTI_FACTOR` session, every page recorded (`consent.HistoryRead`) - a record's `id`, `purpose`, `action`, `text_version` and `recorded_at`, newest first by `seq`, which only orders the page and travels inside its opaque cursor. The text's `body` is `PUBLIC` and not served here.
 
 ### `kyc.kyc_document` — *added by `P2-TSK-008`*
 

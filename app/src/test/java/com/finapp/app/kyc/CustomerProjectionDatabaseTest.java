@@ -492,6 +492,18 @@ class CustomerProjectionDatabaseTest {
         }
 
         @Override
+        public java.util.Optional<com.finapp.party.Customer> findCustomer(
+                Connection unitOfWork, com.finapp.party.CustomerId customerId) {
+            return real.findCustomer(unitOfWork, customerId);
+        }
+
+        @Override
+        public java.util.Optional<com.finapp.party.Customer> latestCustomerFor(
+                Connection unitOfWork, com.finapp.party.PartyId partyId) {
+            return real.latestCustomerFor(unitOfWork, partyId);
+        }
+
+        @Override
         public java.util.List<com.finapp.party.PartyId> customerPartiesAfter(
                 Connection unitOfWork,
                 java.util.Set<com.finapp.party.CustomerStatus> statuses,

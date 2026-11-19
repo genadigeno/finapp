@@ -40,6 +40,21 @@ public interface PartyStore<T> {
     Optional<Customer> findLiveCustomerFor(T unitOfWork, PartyId partyId);
 
     /**
+     * One customer relationship by its identifier, in every status (`P17-TSK-026`): an operator's read of somebody else by
+     * design - a support desk names the customer from a URL or from a lookup's answer, under {@code CUSTOMER_READ} on a
+     * {@code MULTI_FACTOR} session, every read recorded. Every status, for {@code IdentityStore.findById}'s reason: a closed or
+     * rejected relationship is one an operator must still see. Empty for an unknown id. One primary-key read.
+     */
+    Optional<Customer> findCustomer(T unitOfWork, CustomerId customerId);
+
+    /**
+     * The party's newest customer relationship, in every status (`P17-TSK-026`, the operator lookup by a party's or a login's
+     * identifier): the live one while one exists - at most one, {@code customer_one_live_relationship_per_party} - otherwise
+     * the one opened last, the id breaking a tie. Empty for a party that never held one. One range of {@code customer_by_party}.
+     */
+    Optional<Customer> latestCustomerFor(T unitOfWork, PartyId partyId);
+
+    /**
      * {@code from → to} on a customer, conditionally — the projection write (`P2-TSK-014`).
      *
      * <p>The one production caller is the decision orchestration ({@code DecisionRecording},
