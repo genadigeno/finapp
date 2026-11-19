@@ -68,6 +68,20 @@ public class PayoutDestinationController {
     }
 
     /**
+     * The merchant's open change, read by the approver who decides it (`P17-TSK-114`): an approver without
+     * {@code MERCHANT_ADMINISTER} otherwise decides by identifier, blind. Proposed, or approved and cooling off; masked as the
+     * list serves it, with its proposer. Anything else at the identifier - a change no longer open included - is the one 404.
+     * Unrecorded, as the merchant reads beside it are; a refused permission is the interceptor's record.
+     */
+    @GetMapping("/{destinationId}")
+    @RequiresPermission(PermissionName.PAYOUT_DESTINATION_APPROVE)
+    public PayoutDestinationOperations.PayoutDestinationView viewPayoutDestinationChange(
+            @PathVariable("merchantId") String merchantId,
+            @PathVariable("destinationId") String destinationId) {
+        return destinations.viewOpenChange(merchantId, destinationId);
+    }
+
+    /**
      * Approves as a second operator — never the proposer ({@code INV-AUD-04}: refused {@code 409}
      * and audited {@code DENIED}). A {@code MULTI_FACTOR} session, always. The cooling-off starts.
      */

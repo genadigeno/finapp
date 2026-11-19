@@ -823,7 +823,9 @@ public class PaymentBeans {
                 // The chargeback-ratio report (P7-TSK-015): which rails can be charged back is
                 // their declared capability; the default period is the clock's month.
                 paymentRails,
-                clock);
+                clock,
+                // P17-TSK-114: whose answer a dispute is - the account its payment credited.
+                paymentIntentStore);
     }
 
     /**

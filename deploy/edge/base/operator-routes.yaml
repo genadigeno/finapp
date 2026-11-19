@@ -227,6 +227,7 @@ http:
         || (Method(`PUT`) && PathRegexp(`^/v1/operator/merchants/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/fee-schedule$`))
         || (Method(`GET`) && PathRegexp(`^/v1/operator/merchants/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/payout-destinations$`))
         || (Method(`POST`) && PathRegexp(`^/v1/operator/merchants/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/payout-destinations$`))
+        || (Method(`GET`) && PathRegexp(`^/v1/operator/merchants/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/payout-destinations/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
         || (Method(`POST`) && PathRegexp(`^/v1/operator/merchants/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/payout-destinations/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/approval$`))
         || (Method(`POST`) && PathRegexp(`^/v1/operator/merchants/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/payout-destinations/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/rejection$`))
         || (Method(`POST`) && PathRegexp(`^/v1/operator/merchants/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/payout-destinations/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/withdrawal$`))

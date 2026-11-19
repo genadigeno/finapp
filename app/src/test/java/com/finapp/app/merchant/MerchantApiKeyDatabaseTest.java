@@ -246,7 +246,8 @@ class MerchantApiKeyDatabaseTest {
     @DisplayName("NO SECRET IS RECOVERABLE: not from the list, not from a replay, not from any"
             + " column in the schema (INV-IDN-01)")
     void noSecretIsRecoverable() throws Exception {
-        String admin = administrator();
+        String adminLogin = registered();
+        String admin = sessionWith(adminLogin, RoleName.MERCHANT_ADMINISTRATOR);
         Merchant merchant = onboarded(admin);
         String idempotencyKey = someKey();
 
@@ -260,11 +261,12 @@ class MerchantApiKeyDatabaseTest {
         String secret = field(issued.body(), "secret");
         String keyId = field(issued.body(), "keyId");
 
-        // The list renders metadata and nothing else.
+        // The list renders metadata and nothing else - since P17-TSK-114, who issued each key, by identifier.
         HttpResponse<String> listed =
                 get("/v1/operator/merchants/" + merchant.id() + "/api-keys", null, admin);
         assertThat(listed.statusCode()).isEqualTo(200);
         assertThat(listed.body()).contains(keyId).doesNotContain(secret);
+        assertThat(field(listed.body(), "issuedBy")).isEqualTo(identityOf(adminLogin).toString());
 
         // THE REPLAY DOES NOT RE-SHOW IT. The claim stores the key id, never the plaintext -
         // so a retried issuance converges on the same credential and says so, rather than

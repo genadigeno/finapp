@@ -131,6 +131,9 @@ class RoutePermissionRegisterTest {
                     // Payout destinations: proposed and withdrawn by administration, decided by approval (Phase 6)
                     entry("POST /v1/operator/merchants/{merchantId}/payout-destinations", PermissionName.MERCHANT_ADMINISTER),
                     entry("GET /v1/operator/merchants/{merchantId}/payout-destinations", PermissionName.MERCHANT_ADMINISTER),
+                    // P17-TSK-114: the open change, read by the approver who decides it.
+                    entry("GET /v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}",
+                            PermissionName.PAYOUT_DESTINATION_APPROVE),
                     entry("POST /v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}/withdrawal", PermissionName.MERCHANT_ADMINISTER),
                     entry("POST /v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}/approval", PermissionName.PAYOUT_DESTINATION_APPROVE),
                     entry("POST /v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}/rejection", PermissionName.PAYOUT_DESTINATION_APPROVE),

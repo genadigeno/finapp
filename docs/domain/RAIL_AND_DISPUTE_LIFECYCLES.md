@@ -318,6 +318,10 @@ obey, judged under the attempt lock and then the dispute's (every delivery's ord
 | A representment with no document / a sixth document | `payments.DisputeEvidenceRequired` / `payments.DisputeEvidenceLimitReached` |
 | An operator on a payment with a merchant | `payments.DisputeAnsweredByItsMerchant` — the operator acts only where the payment credited a customer wallet |
 
+The operator's view of a dispute says which side of that last rule it is on (`answeredByMerchant`, `P17-TSK-114`): the same
+reach, read from the payment's credited account, so the console hides the acts the door would refuse. The door's judgement
+under the locks stays the control.
+
 The deadline is the network's `respondBy`, recorded once with the chargeback (`NULL → value`,
 the first statement standing; an inquiry's own answer-by date is dropped at the door), and
 `finapp.payments.dispute.deadline.near` counts the chargebacks near or past it with no answer

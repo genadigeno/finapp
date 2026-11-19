@@ -166,3 +166,6 @@ PROPOSED ──approve (a second operator, step-up)──► APPROVED ──cool
   included, as `DENIED`.
 - The platform holds the provider's opaque reference and a four-character suffix, never bank
   details.
+- Every operator view of a change names its proposer by identifier (`proposedBy`, `P17-TSK-114`), so the console disables
+  the proposer's own approval before the domain refuses it; and the approver reads the open change it decides by its
+  identifier under `PAYOUT_DESTINATION_APPROVE` alone - masked, unrecorded, and nothing once the change is no longer open.

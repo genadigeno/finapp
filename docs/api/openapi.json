@@ -22314,6 +22314,9 @@
           "issuedAt": {
             "type": "string"
           },
+          "issuedBy": {
+            "type": "string"
+          },
           "keyId": {
             "type": "string"
           },
@@ -24622,6 +24625,9 @@
       },
       "OperatorDisputeView": {
         "properties": {
+          "answeredByMerchant": {
+            "type": "boolean"
+          },
           "attemptId": {
             "type": "string"
           },
@@ -25549,6 +25555,9 @@
             "type": "string"
           },
           "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
             "type": "string"
           },
           "status": {
@@ -45138,6 +45147,41 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}": {
+      "get": {
+        "operationId": "viewPayoutDestinationChange",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchantId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "destinationId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutDestinationView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

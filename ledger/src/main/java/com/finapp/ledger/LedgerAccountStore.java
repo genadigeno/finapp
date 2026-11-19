@@ -122,7 +122,9 @@ public interface LedgerAccountStore<T> {
      * birth, so the answer cannot be invalidated. <strong>Cross-owner by design</strong> — its
      * callers are that operator report, under {@code MERCHANT_ADMINISTER}, and since
      * `P8-TSK-006` the adjustment binding ({@code AdjustmentService}: no {@code MANUAL} line on
-     * a reconciled position, judged from the purposes this read returns); no customer or
+     * a reconciled position, judged from the purposes this read returns), and since
+     * `P17-TSK-114` the operator's dispute reads under {@code DISPUTE_ADMINISTER} (whether a
+     * disputed payment credited a merchant's payable, so its merchant answers it); no customer or
      * merchant surface reaches it. {@code OwnershipIsScopedTest}'s detector keys on an
      * {@code EntityId} parameter and does not see a collection of them, so this sentence is the
      * classification: an administered read, the {@code ADMINISTERED} scope's reasoning.

@@ -122,6 +122,12 @@ public class DisputeOperations {
     @NonNull private final java.time.Clock clock;
 
     /**
+     * The disputed payments, read for the account each credited (`P17-TSK-114`): whose answer a dispute is, served on the
+     * operator's view. Last, so no positional argument moved.
+     */
+    @NonNull private final com.finapp.payments.PaymentIntentStore<Connection> intents;
+
+    /**
      * The chargeback-ratio report (`P7-TSK-015`): one calendar month, UTC, every merchant with a
      * card sale or a chargeback in it, worst first. {@code ratio} is chargebacks over sales to four
      * places, half up, and absent when there were no sales — chargebacks against no sales are
@@ -234,7 +240,11 @@ public class DisputeOperations {
      * recover), and the excess the platform bears ({@code excess}), each a decimal string in
      * {@code chargebackCurrency} and {@code null} until the funds are taken; and the PSP's
      * {@code disputeFee}, {@code null} until reported. Since `P7-TSK-014`: the deadline, the
-     * evidence and the answers.
+     * evidence and the answers. Since `P17-TSK-114`, {@code answeredByMerchant}: whether the disputed payment credited an
+     * account outside the operator's reach ({@code OPERATOR_REACH}) - a merchant's payable - so its merchant answers it and
+     * the operator's evidence, representment and acceptance are refused {@code payments.DisputeAnsweredByItsMerchant}. The
+     * console hides those acts instead of offering one {@code finapp} will refuse; the acts' own judgement under the locks
+     * stays the control. Both facts it is read from are frozen at the payment's birth, so it never changes.
      */
     public record OperatorDisputeView(
             String disputeId,
@@ -253,7 +263,8 @@ public class DisputeOperations {
             String openedAt,
             List<StageChangeView> history,
             List<EvidenceView> evidence,
-            List<OperatorResponseView> responses) {}
+            List<OperatorResponseView> responses,
+            boolean answeredByMerchant) {}
 
     /** One payment's disputes, oldest first. */
     public record OperatorDisputeList(List<OperatorDisputeView> disputes) {}
@@ -303,10 +314,11 @@ public class DisputeOperations {
     /** The operator's read of one dispute — audited; unknown and malformed are one 404. */
     public OperatorDisputeView readForOperator(String rawDisputeId) {
         DisputeId id = parsedDisputeOrAbsent(rawDisputeId);
-        DisputeReads.Read read =
-                inOneTransaction(unitOfWork -> reads.readForOperator(unitOfWork, id))
-                        .orElseThrow(DisputeOperations::disputeNotFound);
-        return operatorView(read);
+        return inOneTransaction(
+                        unitOfWork ->
+                                reads.readForOperator(unitOfWork, id)
+                                        .map(read -> operatorView(read, answeredByMerchant(unitOfWork, List.of(read)))))
+                .orElseThrow(DisputeOperations::disputeNotFound);
     }
 
     /**
@@ -315,11 +327,47 @@ public class DisputeOperations {
      */
     public OperatorDisputeList listForPaymentForOperator(String rawIntentId) {
         PaymentIntentId intent = parsedIntentOrAbsent(rawIntentId);
-        List<DisputeReads.Read> found =
-                inOneTransaction(unitOfWork -> reads.listForPaymentForOperator(unitOfWork, intent))
-                        .orElseThrow(DisputeOperations::paymentNotFound);
-        return new OperatorDisputeList(
-                found.stream().map(DisputeOperations::operatorView).toList());
+        return inOneTransaction(
+                        unitOfWork ->
+                                reads.listForPaymentForOperator(unitOfWork, intent)
+                                        .map(found -> {
+                                            Set<PaymentIntentId> merchants = answeredByMerchant(unitOfWork, found);
+                                            return new OperatorDisputeList(
+                                                    found.stream().map(read -> operatorView(read, merchants)).toList());
+                                        }))
+                .orElseThrow(DisputeOperations::paymentNotFound);
+    }
+
+    /**
+     * Which of the disputed payments credited an account outside the operator's reach (`P17-TSK-114`): each intent's credited
+     * account, read through the ledger's lock-free batch read - an administered read under {@code DISPUTE_ADMINISTER}, the
+     * permission every caller here already holds. A credited account that does not exist is a broken foreign key: loud.
+     */
+    private Set<PaymentIntentId> answeredByMerchant(Connection unitOfWork, List<DisputeReads.Read> found) {
+        java.util.Map<PaymentIntentId, LedgerAccountId> credited = new java.util.HashMap<>();
+        for (DisputeReads.Read read : found) {
+            PaymentIntentId intent = read.found().intentId();
+            credited.computeIfAbsent(intent, id -> intents.findById(unitOfWork, id)
+                    .orElseThrow(() -> new IllegalStateException("a dispute's intent exists: V003's foreign key holds it"))
+                    .creditAccount());
+        }
+        if (credited.isEmpty()) {
+            return Set.of(); // a payment nobody disputed: nothing to ask the ledger
+        }
+        java.util.Map<LedgerAccountId, AccountPurpose> purposes =
+                ledgerAccounts.findAllById(unitOfWork, Set.copyOf(credited.values())).stream()
+                        .collect(Collectors.toMap(LedgerAccount::id, LedgerAccount::purpose));
+        return credited.entrySet().stream()
+                .filter(entry -> answeredByMerchant(Optional.ofNullable(purposes.get(entry.getValue()))
+                        .orElseThrow(() -> new IllegalStateException(
+                                "an intent's credit account exists: V002's reference holds it"))))
+                .map(java.util.Map.Entry::getKey)
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    /** Whether a payment that credited an account of {@code purpose} is answered by its merchant, not by an operator. */
+    static boolean answeredByMerchant(AccountPurpose purpose) {
+        return !OPERATOR_REACH.contains(purpose);
     }
 
     // ----------------------------------------------------------------- the acts (P7-TSK-014)
@@ -521,7 +569,7 @@ public class DisputeOperations {
                 dispute.openedAt().toString());
     }
 
-    private static OperatorDisputeView operatorView(DisputeReads.Read read) {
+    private static OperatorDisputeView operatorView(DisputeReads.Read read, Set<PaymentIntentId> answeredByMerchant) {
         DisputeStore.Found found = read.found();
         Dispute dispute = found.dispute();
         return new OperatorDisputeView(
@@ -541,7 +589,8 @@ public class DisputeOperations {
                 dispute.openedAt().toString(),
                 history(read.history()),
                 evidenceViews(read.evidence()),
-                read.responses().stream().map(DisputeOperations::operatorResponseView).toList());
+                read.responses().stream().map(DisputeOperations::operatorResponseView).toList(),
+                answeredByMerchant.contains(found.intentId()));
     }
 
     private static List<EvidenceView> evidenceViews(List<DisputeEvidence> documents) {
