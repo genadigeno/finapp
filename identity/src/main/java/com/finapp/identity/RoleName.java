@@ -405,7 +405,28 @@ public enum RoleName {
      * disjoint permissions ({@code RoleNameTest#theGrantsArePairwiseDisjoint}), and {@code ADMINISTRATOR} holds it. An auditor
      * names an identity by the identifiers the records carry.
      */
-    AUDITOR(EnumSet.of(PermissionName.AUDIT_READ));
+    AUDITOR(EnumSet.of(PermissionName.AUDIT_READ)),
+
+    /**
+     * Reads customers, their accounts, their transfers and their payments, and acts on nothing (`P17-TSK-025`; finapp-admin-panel
+     * ADR-C132 decision 2): the support desk's population, every read recorded. ADR-C132 proposed {@code KYC_REVIEWER},
+     * {@code RISK_ANALYST} and {@code LEDGER_OPERATOR} as holders of some of these reads too; the roles are a partition
+     * ({@code RoleNameTest#theGrantsArePairwiseDisjoint}, the owner's C12), so a person on those desks who needs them holds this
+     * role as well - no segregation-of-duties pair forbids it ({@code PRIVILEGED_ACCESS_REVIEW.md} §3). Needs an enrolled
+     * factor at grant: {@code PAYMENT_READ} guards no route yet, and counts as an act until it does.
+     */
+    CUSTOMER_SUPPORT_AGENT(EnumSet.of(
+            PermissionName.CUSTOMER_READ,
+            PermissionName.ACCOUNT_READ,
+            PermissionName.TRANSFER_READ,
+            PermissionName.PAYMENT_READ)),
+
+    /**
+     * Reads the cross-domain overview reports and nothing else (`P17-TSK-025`, its reports `P17-TSK-039`'s; ADR-C132 decision 2;
+     * gap G-151): read-only, no act, no {@code *_PROPOSE}, no {@code *_APPROVE}. Needs an enrolled factor at grant while its
+     * permission guards no route.
+     */
+    OPERATIONS_VIEWER(EnumSet.of(PermissionName.PLATFORM_OVERVIEW_READ));
 
     private final Set<PermissionName> permissions;
 

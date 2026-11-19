@@ -391,6 +391,31 @@ class RoleNameTest {
     }
 
     @Test
+    @DisplayName("CUSTOMER_SUPPORT_AGENT grants exactly the four operator reads - customer, account, transfer, payment - and no"
+            + " act, never TRANSFER_REVERSE or PAYMENT_REFUND")
+    void customerSupportAgentGrantsExactlyTheFourReads() {
+        // The twenty-third population (P17-TSK-025; finapp-admin-panel ADR-C132 decision 2). ADR-C132 proposed KYC_REVIEWER,
+        // RISK_ANALYST and LEDGER_OPERATOR as holders of some of these reads as well; the pairwise disjointness below refuses a
+        // permission two roles grant (the owner's C12), so a person on those desks holds this role too.
+        assertThat(RoleName.CUSTOMER_SUPPORT_AGENT.permissions()).containsExactlyInAnyOrder(
+                PermissionName.CUSTOMER_READ, PermissionName.ACCOUNT_READ, PermissionName.TRANSFER_READ,
+                PermissionName.PAYMENT_READ);
+        assertThat(RoleName.CUSTOMER_SUPPORT_AGENT.permissions())
+                .as("reading a transfer or a payment is not reversing or refunding one")
+                .doesNotContain(PermissionName.TRANSFER_REVERSE, PermissionName.PAYMENT_REFUND);
+        assertThat(RoleName.CUSTOMER_SUPPORT_AGENT.requiresEnrolledFactor())
+                .as("PAYMENT_READ guards no route yet, so it counts as an act and the role needs a factor").isTrue();
+    }
+
+    @Test
+    @DisplayName("OPERATIONS_VIEWER grants exactly PLATFORM_OVERVIEW_READ, and needs a factor while it guards no route")
+    void operationsViewerGrantsExactlyTheOverviewRead() {
+        // The twenty-fourth (P17-TSK-025; ADR-C132 decision 2's permission; the reports are P17-TSK-039's).
+        assertThat(RoleName.OPERATIONS_VIEWER.permissions()).containsExactly(PermissionName.PLATFORM_OVERVIEW_READ);
+        assertThat(RoleName.OPERATIONS_VIEWER.requiresEnrolledFactor()).isTrue();
+    }
+
+    @Test
     @DisplayName("REGULATORY_REPORTER grants exactly REGULATORY_REPORT_PREPARE and REGULATORY_REPORT_SUBMIT - never the"
             + " approval")
     void regulatoryReporterGrantsExactlyTwo() {
@@ -503,6 +528,6 @@ class RoleNameTest {
                                 + " 'BNPL_OFFICER', 'BNPL_SERVICING_AGENT',"
                                 + " 'RISK_ANALYST', 'RISK_OFFICER', 'AML_OFFICER',"
                                 + " 'ACCOUNTANT', 'FINANCIAL_CONTROLLER', 'REGULATORY_REPORTER', 'EVENT_OPERATOR',"
-                                + " 'AUDITOR'");
+                                + " 'AUDITOR', 'CUSTOMER_SUPPORT_AGENT', 'OPERATIONS_VIEWER'");
     }
 }

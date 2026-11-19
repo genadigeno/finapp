@@ -91,13 +91,12 @@ class RoleAssignmentMigrationTest {
     }
 
     @Test
-    @DisplayName("identity V029 admits exactly AUDITOR beyond V026's twenty-one, NOT VALID, and is the latest role constraint"
-            + " (P17-TSK-017)")
+    @DisplayName("identity V029 admits exactly AUDITOR beyond V026's twenty-one, NOT VALID (P17-TSK-017; the latest until"
+            + " P17-TSK-025's V030)")
     void v029AdmitsTheAuditorAndNothingElse() {
         java.util.Map<String, String> migrations = allMigrations();
         String v029 = migrations.get("V029__admit_the_auditor_role.sql");
         assertThat(v029).as("V029 is on the classpath").isNotNull();
-        assertThat(latestConstraintDefinition()).as("V029 is the latest role constraint").isEqualTo(v029);
         java.util.Set<String> before = roleNames(migrations.get("V026__admit_the_event_operator_role.sql"));
         java.util.Set<String> after = roleNames(v029);
         assertThat(after).as("nothing removed").containsAll(before);
@@ -105,6 +104,26 @@ class RoleAssignmentMigrationTest {
         added.removeAll(before);
         assertThat(added).containsExactly("AUDITOR");
         assertThat(v029).as("judged on new writes, never over old rows").contains("NOT VALID;");
+    }
+
+    @Test
+    @DisplayName("identity V030 admits exactly CUSTOMER_SUPPORT_AGENT and OPERATIONS_VIEWER beyond V029's twenty-two, NOT VALID,"
+            + " and is the latest role constraint (P17-TSK-025)")
+    void v030AdmitsTheOperatorReadRolesAndNothingElse() {
+        java.util.Map<String, String> migrations = allMigrations();
+        String v030 = migrations.get("V030__admit_the_operator_read_roles.sql");
+        assertThat(v030).as("V030 is on the classpath").isNotNull();
+        assertThat(latestConstraintDefinition()).as("V030 is the latest role constraint").isEqualTo(v030);
+        java.util.Set<String> before = roleNames(migrations.get("V029__admit_the_auditor_role.sql"));
+        java.util.Set<String> after = roleNames(v030);
+        assertThat(after).as("nothing removed").containsAll(before);
+        java.util.Set<String> added = new java.util.TreeSet<>(after);
+        added.removeAll(before);
+        assertThat(added).containsExactlyInAnyOrder("CUSTOMER_SUPPORT_AGENT", "OPERATIONS_VIEWER");
+        assertThat(v030).as("judged on new writes, never over old rows").contains("NOT VALID;");
+        String statements = v030.lines().filter(line -> !line.stripLeading().startsWith("--"))
+                .collect(java.util.stream.Collectors.joining(" "));
+        assertThat(statements).doesNotContain("GRANT").doesNotContain("CREATE").doesNotContain("PERMISSION");
     }
 
     /** The quoted names inside a migration's {@code role_name IN (...)} list. */

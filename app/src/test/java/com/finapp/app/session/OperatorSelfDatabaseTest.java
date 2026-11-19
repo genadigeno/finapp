@@ -137,6 +137,25 @@ class OperatorSelfDatabaseTest {
     }
 
     @Test
+    @DisplayName("the operator read roles report their reads: a support agent and an operations viewer learn exactly the four"
+            + " customer reads and the overview read, and no act (P17-TSK-025)")
+    void theOperatorReadRolesAreReported() throws Exception {
+        IdentityId operator = givenAnIdentity();
+        givenTheRole(operator, RoleName.CUSTOMER_SUPPORT_AGENT);
+        givenTheRole(operator, RoleName.OPERATIONS_VIEWER);
+        String session = givenASessionAt(operator, AssuranceLevel.PASSWORD);
+
+        HttpResponse<String> answered = get(session);
+
+        assertThat(answered.statusCode()).as(answered.body()).isEqualTo(200);
+        JsonNode self = json.readTree(answered.body());
+        assertThat(strings(self.get("roles"))).containsExactly("CUSTOMER_SUPPORT_AGENT", "OPERATIONS_VIEWER");
+        assertThat(strings(self.get("permissions")))
+                .containsExactly("ACCOUNT_READ", "CUSTOMER_READ", "PAYMENT_READ", "PLATFORM_OVERVIEW_READ", "TRANSFER_READ")
+                .isEqualTo(grantsOf(RoleName.CUSTOMER_SUPPORT_AGENT, RoleName.OPERATIONS_VIEWER));
+    }
+
+    @Test
     @DisplayName("a stepped-up session with an enrolled factor reports MULTI_FACTOR and factorEnrolled; the same identity on a"
             + " password session reports PASSWORD - the assurance is the session's, the factor the identity's")
     void theAssuranceIsTheSessionsAndTheFactorTheIdentitys() throws Exception {

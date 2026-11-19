@@ -31610,7 +31610,9 @@
               "FINANCIAL_CONTROLLER",
               "REGULATORY_REPORTER",
               "EVENT_OPERATOR",
-              "AUDITOR"
+              "AUDITOR",
+              "CUSTOMER_SUPPORT_AGENT",
+              "OPERATIONS_VIEWER"
             ],
             "type": "string"
           }
@@ -34251,7 +34253,9 @@
                 "FINANCIAL_CONTROLLER",
                 "REGULATORY_REPORTER",
                 "EVENT_OPERATOR",
-                "AUDITOR"
+                "AUDITOR",
+                "CUSTOMER_SUPPORT_AGENT",
+                "OPERATIONS_VIEWER"
               ],
               "type": "string"
             }

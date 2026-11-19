@@ -22,6 +22,7 @@ check is possible at all.
 |---|---|
 | Every audit record names a *declared* action | The type system. `AuditRecord.operation` is an `AuditableAction`, so an ad-hoc string cannot be recorded |
 | Every action that *should* be audited *is* | **Nothing mechanical.** A missing call is a missing call |
+| Every operator read of a customer is recorded - a handler under `CUSTOMER_READ`, `ACCOUNT_READ`, `TRANSFER_READ` or `PAYMENT_READ` (`P17-TSK-025`; finapp-admin-panel ADR-C132 decision 5) | **At the answer.** The one helper, app's `RecordedReads`, writes the module's record in the read's own transaction and marks the request; `UnrecordedReadAdvice` refuses a successful answer from such a handler with no mark, `500 api.InternalError` before any byte leaves. `EveryCustomerReadIsRecordedTest` holds the advice on the answer path and every such handler named with its record. The exception to the row above, for these reads only |
 
 The second is what the Phase 15 gate and code review are for. Saying so plainly is more useful
 than implying a guarantee the mechanism does not provide — a registry that looked complete while
