@@ -92,10 +92,10 @@ public final class AccountingPeriods {
     @NonNull private final Clock clock;
     /** The period's FINAL report runs, superseded when it returns to {@code OPEN} (`P14-TSK-008`, {@code INV-ACC-04}). */
     @NonNull private final ReportRunSupersession runs;
-    /** The books' first month, read only when no period exists (`P17-TSK-113`, ADR-0152). */
+    /** The books' first month, read only when no period exists (`P17-TSK-120`, ADR-0152). */
     @NonNull private final BooksOpening opening;
 
-    /** The books opening in today's month - every caller before `P17-TSK-113`, and the default. */
+    /** The books opening in today's month - every caller before `P17-TSK-120`, and the default. */
     public AccountingPeriods(AccountingPeriodStore store, GlMappingStore mappings, PostingCutoff cutoff, LockGrace grace,
             AuditWriter<Connection> audit, OutboxWriter<Connection> outbox, IdGenerator ids, Clock clock,
             ReportRunSupersession runs) {
@@ -248,7 +248,7 @@ public final class AccountingPeriods {
 
     /**
      * Opens every month from the one after the latest period (the books' first month when none exists - today's, unless
-     * {@link BooksOpening} says how many months before it: `P17-TSK-113`) through today's month -
+     * {@link BooksOpening} says how many months before it: `P17-TSK-120`) through today's month -
      * each insert-if-absent, so ten instances open each month once; each born period evented and audited. Today is the
      * database's (`P14-REM-009`). No row exists to hold while reading it and none is needed: a reading gone stale across a
      * month's end only opens fewer months, and the next tick opens the rest.

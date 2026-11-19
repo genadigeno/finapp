@@ -136,7 +136,7 @@ public class AccountingBeans {
     }
 
     /**
-     * The books' first month (`P17-TSK-113`, ADR-0152): how many months before today's the first period opens, read only while no
+     * The books' first month (`P17-TSK-120`, ADR-0152): how many months before today's the first period opens, read only while no
      * period exists - 0 by default, 0 to 24. A test stack sets it (FINAPP_ACCOUNTING_PERIOD_BOOKSOPENMONTHSBACK) so a fresh
      * database holds past months for the console's end-to-end seed.
      */
