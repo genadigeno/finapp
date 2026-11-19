@@ -40,7 +40,8 @@ spec:
         - protocol: TCP
           port: 4318
     # The platform's own components on their own receiver, 4319 (P16-TSK-003): the edge's controllers' own log and access log, and the
-    # cluster watcher's records of the migrator Job. Never the application's 4318, and the application never on this one.
+    # cluster watcher's records of the migrator Job; since P17-TSK-044 the console probe's own lines. Never the application's 4318, and the
+    # application never on this one.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -51,6 +52,9 @@ spec:
         - podSelector:
             matchLabels:
               finapp/role: cluster-watch
+        - podSelector:
+            matchLabels:
+              finapp/role: console-probe
       ports:
         - protocol: TCP
           port: 4319
@@ -140,6 +144,14 @@ spec:
       ports:
         - protocol: TCP
           port: 8889
+    # The console probe's answer (P17-TSK-044): does /console/ answer through the operator edge.
+    - to:
+        - podSelector:
+            matchLabels:
+              finapp/role: console-probe
+      ports:
+        - protocol: TCP
+          port: 8889
     - to:
         - namespaceSelector:
             matchLabels:
@@ -176,6 +188,61 @@ spec:
         - protocol: TCP
           port: 8889
   egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              finapp/role: telemetry-collector
+      ports:
+        - protocol: TCP
+          port: 4319
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# The Operator Console's synthetic probe (P17-TSK-044; console-probe-workload.yaml): reached by the scraper on its exporter alone; it reaches
+# the operator edge's controllers on their TLS listener (the probe's one request, through the edge's Service), the collector's platform
+# receiver with its own lines, and its resolver. Nothing else: no credential, no other namespace, no address block. The edge's side of the
+# flow is deploy/edge/base/networkpolicy.yaml's finapp-edge-operator ingress rule naming this role; observability.rego's
+# [obs-console-probe-egress] holds this list.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: finapp-console-probe
+spec:
+  podSelector:
+    matchLabels:
+      finapp/role: console-probe
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              finapp/role: metrics-scraper
+      ports:
+        - protocol: TCP
+          port: 8889
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-edge
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: finapp-edge-operator
+      ports:
+        - protocol: TCP
+          port: 8443
     - to:
         - podSelector:
             matchLabels:

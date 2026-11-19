@@ -32544,7 +32544,7 @@ its findings fixed, a performance budget, the runbook, and its exit review (`fin
 `docs/PHASE_17_EXIT_REVIEW.md`), whose verdict is that the phase cannot exit yet - most of the plan's §19 criteria need the items
 in this section.
 
-**P17-TSK-044 — Monitoring for the console (`finapp`'s half)** — `PLANNED`
+**P17-TSK-044 — Monitoring for the console (`finapp`'s half)** — `COMPLETE` (2026-11-19; the hermetic half - the cluster half is owed with `P17-TST-001`'s run under `POSTPONED_ISSUES.md` PI-025; marked `READY` by the coordinator's parallel start on the owner's word, its one dependency `P17-TSK-104` `COMPLETE`; branch `P17-TSK-044` from `P17-TSK-120`; marks no next task, the coordinator does) *(read "`READY` (2026-11-19; marked by the coordinator's parallel start ...)" until its gate, and "`PLANNED`" before that)*
 - **Context**: the alert catalogue, `deploy/edge`, `OPERATIONS_RUNBOOK.md`; B11.1. The console's runbook
   (`finapp-admin-panel` `docs/CONSOLE_RUNBOOK.md` § Monitoring) lists what it needs. The console has no server state and emits
   no metrics, so all four are `finapp`'s monitoring.
@@ -32561,6 +32561,68 @@ in this section.
 - **Accept**: the four signals and their alerts exist, held by the alert catalogue's guards; the runbook section written; the
   probe's run on `kind` owed with `-104`'s.
 - **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`, `DOD-DOC`.
+- **As built (2026-11-19, gate `COMPLETE`; the cluster half owed)**: **three signals, four alerts, in a rule file of their own**,
+  `infra/prometheus/rules/console.yml` (group `console`, owner `platform`; kind's copy listed in the platform's rules ConfigMap):
+  `ConsoleProbeFailing` (page, 5m) - `max(httpcheck_status{job="finapp-console-probe", http_status_class="2xx"}) < 1`, or no probe
+  series at all on a deployed fleet (fail-closed, as `EdgeUnscraped`); `ConsoleReplicasUnavailable` (ticket, 5m) - the cluster
+  watcher's `k8s_deployment_available` for `finapp-console` below two (the Deployment's replicas), or no such series while a watcher
+  answers; `ConsoleAssetsMissing` and `ConsoleServerErrors` (tickets, 1m) - more than two `404`s, or `5xx`, within fifteen minutes in
+  the operator edge's `traefik_service_requests_total{service="finapp-console@file"}`, summed over the controllers. Each routed by
+  severity, each cited in **`OPERATIONS_RUNBOOK.md` §11.68** (written; its §11.38 row 0 rehearsed / 3 read, PI-025). **The probe** is
+  a pod of its own, `finapp-console-probe` in `finapp-observability` - the pinned collector image with the `httpcheck` receiver, one
+  replica, **no credential**, asking `GET https://finapp-edge-operator.finapp-edge.svc.cluster.local/console/` every 30 s with the
+  operator host as SNI (kind's overlay names `operator.finapp.test`) and not verifying the certificate (availability, not identity;
+  stated in §11.68). Not the cluster watcher, deliberately: the watcher is the one pod with a Kubernetes token and its reach stays the
+  collector and DNS (`THREAT_MODEL.md` T4), and the two signals then fail apart. Its flows: the scraper on 8889 in; the operator edge's
+  8443, the collector's platform receiver 4319 (its own lines) and DNS out - `networkpolicy.yaml`'s `finapp-console-probe`, the
+  scraper's and the collector's rules, and the operator edge's ingress rule naming it; `observability.rego`'s
+  `[obs-console-probe-egress]` (new), `scrape_targets`, `store_admits` and `platform_senders`; `telemetry-check.sh`'s three
+  `obs-probe-*` plants, and its two quota plants moved to the new numbers. The namespace's quota re-counted: 11 pods, 1100m, 11 CPU,
+  4096Mi in the base; 19, 1800m, 18, 6912Mi on kind. Kind's scrape job `finapp-console-probe`. **The watcher reads `finapp-console`**:
+  `k8s_cluster`'s `namespaces: [finapp, finapp-console]`, through `deploy/console/base/rbac-cluster-watch.yaml` (a Role on its
+  receiver's kinds, no events, granted by the console's own release); `finapp.rego`'s `[rbac-cluster-watch]` admits a RoleBinding in
+  `finapp` or `finapp-console`. **The asset signal needed no edge change**: the console's nginx answers `404` only from
+  `/console/assets/`, so the Service's per-service `404`s are its assets' exactly (its `5xx` the page's and the assets' together); a
+  second console router was rejected (it doubles the console's per-source limits and moves `edge.rego`'s "exactly one"). **CSP
+  violation reports: not collected** - the policy is the console's own definition (a `report-to` is the console's change first, and
+  `ConsoleHostingManifestsTest` is T48's control), a collector is an unauthenticated write door anyone inside could fill to page
+  on-call, reports carry the page's address and a script sample, extensions raise violations of their own; the CSP stays held by the
+  console's catalogue, the edge's guards and `P17-TST-001`'s count; §11.68 says so, `ConsoleAlertRulesTest` holds that no report
+  endpoint is named, and `P17-DOC-002` reads `PHASE_GATES.md`'s "CSP reports" clause against this decision. **The owner's
+  decision** (2026-11-20): not collected, the design's recommended option, taken under the owner's standing ruling relayed by the
+  coordinator - "if you rise questions, my answer is your recommended options". **The evidence**: a new
+  `ConsoleAlertRulesTest` (every rule through time with its `for` on `RuleTimeline`, firing and silent on the healthy shapes; every
+  threshold and `for` read from the manifests; the probe's question against the edge it asks; the watcher's Role; every series and
+  label against the capture or `infra/prometheus/console-series.txt`, which says it is written from documentation, not captured);
+  `RuleEvaluator`'s closed grammar widened with `=~`, `count`, `and on()` and a parenthesised expression, Prometheus' semantics, each
+  shown by the same test; promtool cases both ways in `infra/prometheus/tests/console.test.yml` (not run: no Prometheus image here);
+  `TelemetryPipelineManifestsTest#theConsoleProbeHoldsNoCredentialAndReachesTheEdgeAlone` and its quota, 4319 and watcher tests;
+  `PlatformComponentAlertRulesTest`'s namespace list. `THREAT_MODEL.md` T4 (two rows) and T46 (one), `DISTRIBUTED_EXECUTION.md` (two
+  notes), `POSTPONED_ISSUES.md` PI-025's owed list. **The Accept's "four signals"** is read through Scope item 3, which left the CSP
+  reports to this design: three signals carry alerts, and the fourth is decided not collected with its reasons, never a rule that
+  pretends.
+- **Gate (2026-11-19)**: two gaps found and fixed before the final runs - nothing held the unverified probe's request bare (a header
+  or an authenticating extension added later would travel over a connection whose certificate is not checked): `ConsoleAlertRulesTest`
+  now holds its target to where, how and how long, its TLS block to the two keys, and the receiver and extensions to the one each;
+  and §11.68 did not say what a `403` from the edge's `internal-only` allow-list means (an environment narrowing its ranges must keep
+  its pod network). Minor, recorded and not changed: the rehearsal's needle sweep (`kind-rehearsal/telemetry.sh`) does not read the
+  probe's own stream, because a healthy probe at `warn` writes nothing and the sweep fails on a stream with no record; its lines pass
+  the platform's net as the watcher's do. `kubectl kustomize` (v1.32.2's, the one already on this machine; nothing pulled) rendered
+  kind's observability, console and edge overlays: the generated ConfigMaps' hashed names reach the probe's Deployment, and the
+  console's RoleBinding keeps its subject in `finapp-observability`.
+- **Probe**: `P17-TSK-044`'s probe (2026-11-19, the unit tier; each file's sha256 saved first; three runs): run A, P1 the readiness
+  floor `< 2` planted `< 1`, P3 the watcher's `namespaces` back to `[finapp]`, P5 an egress to the application added to the probe's
+  NetworkPolicy; run B, P2 `ConsoleProbeFailing`'s absent half removed; run C, P4 the evaluator's `and on()` keeping its left side
+  whatever its right holds. Caught: run A 5 of 36 red, each plant by its own cases; run B 4 of 12, the no-probe timeline among them; run
+  C 3 of 12, compose and a watcher down each raising its alert. Restored, sha256 compared identical (`MUTATION_TESTING.md` §2).
+- **Fresh** (`--rerun`, on the final bytes): app's unit tier 2,126 tests in 361 classes (`ConsoleAlertRulesTest` 12 of 12,
+  `TelemetryPipelineManifestsTest` 16, `PlatformComponentAlertRulesTest` 8 and `AlertCatalogueTest` 16 among them), slice tier 321
+  in 55 and architecture tier 1,285 in 119 (`RunbookRehearsalCountTest`, `ThreatModelIsCompleteTest`, `ConsoleHostingManifestsTest`
+  and `DistributedExecutionRegisterTest` among them) - 0 failed (2026-11-19, 20:35-22:38 UTC). No database, Kafka, own-container
+  or `kind` tier: none of this task's classes is one.
+- **Multi-instance**: `PASS` for what is built - the edge's counters are per controller and summed; N watchers and N probers publish
+  the same series under N instances and every rule takes `max()`; nothing holds a lease, a decision or state, and a probe or watcher
+  lost is read (the probe's absent half pages; the watcher's is `ClusterWatchBlind`'s). The run that shows it on a cluster is owed.
 
 **P17-TST-001 — The end-to-end battery on `kind` at three replicas: the seven mandatory scenarios** — `PLANNED`
 - **Context**: the plan's §13 and §19 criteria 2-4; B11.2; both repositories.

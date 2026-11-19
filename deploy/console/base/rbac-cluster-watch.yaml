@@ -1,0 +1,40 @@
+# The console's namespace read from outside it (P17-TSK-044; finapp-admin-panel docs/CONSOLE_RUNBOOK.md, Monitoring: "pod readiness of
+# finapp-console"): the cluster watcher of finapp-observability (deploy/observability/base/cluster-watch.yaml) lists and watches what its
+# k8s_cluster receiver lists here, so the console's ready replicas reach ConsoleReplicasUnavailable (infra/prometheus/rules/console.yml).
+# Granted here, by the console's own release, as finapp's read is granted by the application's (deploy/base/rbac-cluster-watch.yaml): what may
+# read a namespace is that release's decision. finapp.rego's [rbac-cluster-watch] holds every rule below to the watcher's kinds and its binding
+# to a RoleBinding in finapp or finapp-console.
+#
+# EXACTLY THESE KINDS: every kind the receiver lists in a namespace (it logs a refusal every few seconds for any it may not, measured on kind
+# for finapp), and NOT events - the watcher ships no record of this namespace's; its records are the migrator's, in finapp. No Secret, no
+# ConfigMap, no pods/log, no exec, attach or port-forward, no write of any kind. The console holds no secret to read in any case.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: finapp-cluster-watch
+rules:
+  - apiGroups: [""]
+    resources: [pods, services, replicationcontrollers, resourcequotas]
+    verbs: [list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets, statefulsets, daemonsets]
+    verbs: [list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: finapp-cluster-watch
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: finapp-cluster-watch
+subjects:
+  - kind: ServiceAccount
+    name: finapp-cluster-watch
+    namespace: finapp-observability

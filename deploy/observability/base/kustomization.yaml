@@ -12,6 +12,8 @@ resources:
   - collector-workload.yaml
   # The cluster watcher (P16-TSK-003): the migrator Job's state and records, read from the API server.
   - cluster-watch-workload.yaml
+  # The Operator Console's synthetic probe (P17-TSK-044): GET /console/ through the operator edge, every 30 s, with no credential.
+  - console-probe-workload.yaml
   - networkpolicy.yaml
   # What a person may do here (P15-TSK-032; THREAT_MODEL.md section 6 item 42 (k)): read, and under break-glass evict.
   - rbac-humans.yaml
@@ -26,3 +28,6 @@ configMapGenerator:
   - name: finapp-cluster-watch-config
     files:
       - config.yaml=cluster-watch.yaml
+  - name: finapp-console-probe-config
+    files:
+      - config.yaml=console-probe.yaml

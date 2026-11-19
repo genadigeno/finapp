@@ -19,15 +19,23 @@ import java.util.regex.Pattern;
  * cannot evaluate fails its test rather than going unchecked:
  *
  * <pre>
- * expr     := cmp ('or' cmp)*
+ * expr     := conj ('or' conj)*
+ * conj     := cmp ('and' 'on' '(' ')' cmp)*
  * cmp      := arith (OP number)?                          OP: &gt; &gt;= &lt; &lt;= == !=
  * arith    := term (('+' | '-') term)*
  * term     := primary ('/' primary)*
- * primary  := '(' arith ')'  |  vector
+ * primary  := '(' expr ')'  |  vector
  * vector   := AGG ('by' '(' label (',' label)* ')')? '(' inner ')'  |  'absent' '(' selector ')'  |  selector ('!=' selector)?
  * inner    := ('increase' | 'delta') '(' selector '[' duration ']' ')'  |  selector ('!=' selector)?
- * selector := name ('{' label ('=' | '!=') "value" (',' ...)* '}')?          AGG: max | min | sum
+ * selector := name ('{' label ('=' | '!=' | '=~') "value" (',' ...)* '}')?   AGG: max | min | sum | count
  * </pre>
+ *
+ * <p><strong>Widened by `P17-TSK-044`</strong> for the console's rules, each addition with Prometheus' own semantics and
+ * nothing more: {@code =~} matches the whole label value against its regular expression (Prometheus anchors it); {@code count}
+ * is the number of elements per group, NaN included; {@code a and on() b} keeps every element of {@code a} when {@code b} has
+ * any and none when it has none - the empty {@code on()} is the only matching the grammar admits, so a bare {@code and}, whose
+ * matching is by every label, is refused; and a parenthesis may hold a whole expression, a comparison or a conjunction among
+ * them, where it held arithmetic alone (a superset: what parsed before parses to the same).
  *
  * <p>Semantics follow Prometheus for what the rules use: a comparison with a number FILTERS (NaN compares false, so a
  * threshold never sees an unreadable gauge); {@code x != x} on one selector keeps exactly the NaN samples; {@code max} and
@@ -61,10 +69,13 @@ final class RuleEvaluator {
     private static final Pattern LINE = Pattern.compile("^([a-zA-Z_:][a-zA-Z0-9_:]*)(\\{(.*)})?\\s+(\\S+)(\\s+\\S+)?$");
     private static final Pattern LABEL = Pattern.compile("([a-zA-Z_][a-zA-Z0-9_]*)=\"((?:[^\"\\\\]|\\\\.)*)\"");
     private static final Pattern TOKEN = Pattern.compile(
-            "\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|[a-zA-Z_:][a-zA-Z0-9_:]*|[0-9]+(?:\\.[0-9]+)?[smhd]?|>=|<=|==|!=|[(){}\\[\\],<>=+\\-/])");
-    private static final Set<String> AGGREGATIONS = Set.of("max", "min", "sum");
+            "\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|[a-zA-Z_:][a-zA-Z0-9_:]*|[0-9]+(?:\\.[0-9]+)?[smhd]?|=~|>=|<=|==|!=|[(){}\\[\\],<>=+\\-/])");
+    private static final Set<String> AGGREGATIONS = Set.of("max", "min", "sum", "count");
     private static final Set<String> RANGE_FUNCTIONS = Set.of("increase", "delta");
     private static final String ABSENT = "absent";
+
+    /** The words of {@code and on()} (`P17-TSK-044`): never a series' name. */
+    private static final Set<String> CONJUNCTION = Set.of("and", "on");
 
     private final List<String> tokens;
     private final List<Sample> before;
@@ -133,15 +144,32 @@ final class RuleEvaluator {
     // ------------------------------------------------------------------ the grammar
 
     private List<Element> expression() {
-        List<Element> left = comparison();
+        List<Element> left = conjunction();
         while (peek("or")) {
             take("or");
-            List<Element> right = comparison();
+            List<Element> right = conjunction();
             Set<Map<String, String>> present = new java.util.HashSet<>();
             left.forEach(element -> present.add(element.labels()));
             List<Element> union = new ArrayList<>(left);
             right.stream().filter(element -> !present.contains(element.labels())).forEach(union::add);
             left = union;
+        }
+        return left;
+    }
+
+    /**
+     * {@code cmp ('and' 'on' '(' ')' cmp)*} (`P17-TSK-044`): the left side kept whole while the right has any element, and
+     * nothing when it has none - an empty {@code on()} matches every element with every other. A bare {@code and} is refused.
+     */
+    private List<Element> conjunction() {
+        List<Element> left = comparison();
+        while (peek("and")) {
+            take("and");
+            take("on");
+            take("(");
+            take(")");
+            List<Element> right = comparison();
+            left = right.isEmpty() ? List.of() : left;
         }
         return left;
     }
@@ -176,11 +204,11 @@ final class RuleEvaluator {
         return left;
     }
 
-    /** {@code '(' arith ')'} or a vector. */
+    /** {@code '(' expr ')'} or a vector: a whole expression in parentheses since `P17-TSK-044`, arithmetic alone before. */
     private List<Element> primary() {
         if (peek("(")) {
             take("(");
-            List<Element> inner = arithmetic();
+            List<Element> inner = expression();
             take(")");
             return inner;
         }
@@ -285,7 +313,7 @@ final class RuleEvaluator {
     private List<Sample> selector(List<Sample> scrape, String[] spelled) {
         String name = tokens.get(at++);
         if (!name.matches("[a-zA-Z_:][a-zA-Z0-9_:]*") || AGGREGATIONS.contains(name) || RANGE_FUNCTIONS.contains(name)
-                || name.equals("or") || name.equals("by") || name.equals(ABSENT)) {
+                || name.equals("or") || name.equals("by") || name.equals(ABSENT) || CONJUNCTION.contains(name)) {
             throw new IllegalArgumentException("not a series name: " + name);
         }
         StringBuilder spelling = new StringBuilder(name);
@@ -295,8 +323,8 @@ final class RuleEvaluator {
             while (true) {
                 String label = tokens.get(at++);
                 String op = tokens.get(at++);
-                if (!op.equals("=") && !op.equals("!=")) {
-                    throw new IllegalArgumentException("only = and != matchers are evaluated: " + op);
+                if (!op.equals("=") && !op.equals("!=") && !op.equals("=~")) {
+                    throw new IllegalArgumentException("only =, != and =~ matchers are evaluated: " + op);
                 }
                 String value = tokens.get(at++);
                 if (!value.startsWith("\"")) {
@@ -323,7 +351,7 @@ final class RuleEvaluator {
         String name = brace < 0 ? spelling : spelling.substring(0, brace);
         Map<String, String[]> matchers = new TreeMap<>();
         if (brace >= 0) {
-            Matcher matcher = Pattern.compile("([a-zA-Z_][a-zA-Z0-9_]*)(!?=)\"([^\"]*)\"")
+            Matcher matcher = Pattern.compile("([a-zA-Z_][a-zA-Z0-9_]*)(=~|!=|=)\"([^\"]*)\"")
                     .matcher(spelling.substring(brace + 1, spelling.length() - 1));
             while (matcher.find()) {
                 matchers.put(matcher.group(1), new String[] {matcher.group(2), matcher.group(3)});
@@ -333,6 +361,10 @@ final class RuleEvaluator {
                 .filter(sample -> sample.name().equals(name))
                 .filter(sample -> matchers.entrySet().stream().allMatch(entry -> {
                     String actual = sample.labels().getOrDefault(entry.getKey(), "");
+                    if (entry.getValue()[0].equals("=~")) {
+                        // Prometheus anchors a label regex at both ends: the whole value matches, or the sample does not.
+                        return Pattern.matches(entry.getValue()[1], actual);
+                    }
                     boolean equal = actual.equals(entry.getValue()[1]);
                     return entry.getValue()[0].equals("=") == equal;
                 }))
@@ -364,6 +396,9 @@ final class RuleEvaluator {
             double result;
             if (operation.equals("sum")) {
                 result = values.stream().mapToDouble(Double::doubleValue).sum();
+            } else if (operation.equals("count")) {
+                // Every element counts, NaN among them: count asks how many series there are, not what they hold.
+                result = values.size();
             } else if (numbers.isEmpty()) {
                 result = Double.NaN;
             } else if (operation.equals("max")) {
@@ -454,9 +489,9 @@ final class RuleEvaluator {
             boolean afterBrace = i > 0 && (tokens.get(i - 1).equals("{") || tokens.get(i - 1).equals(","));
             boolean label = afterBrace || (i > 1 && tokens.get(i - 2).equals("by")) || (i > 0 && tokens.get(i - 1).equals("by"));
             if (token.matches("[a-zA-Z_:][a-zA-Z0-9_:]*") && !AGGREGATIONS.contains(token) && !RANGE_FUNCTIONS.contains(token)
-                    && !token.equals(ABSENT) && !token.equals("or") && !token.equals("by") && !label && !(i + 1 < tokens.size()
-                    && (tokens.get(i + 1).equals("=") || tokens.get(i + 1).equals("!=") && i + 2 < tokens.size()
-                            && tokens.get(i + 2).startsWith("\"")))) {
+                    && !token.equals(ABSENT) && !token.equals("or") && !token.equals("by") && !CONJUNCTION.contains(token) && !label
+                    && !(i + 1 < tokens.size() && (tokens.get(i + 1).equals("=") || tokens.get(i + 1).equals("=~")
+                            || tokens.get(i + 1).equals("!=") && i + 2 < tokens.size() && tokens.get(i + 2).startsWith("\"")))) {
                 names.add(token);
             }
         }

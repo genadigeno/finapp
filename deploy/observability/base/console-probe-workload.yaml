@@ -1,0 +1,128 @@
+# The Operator Console's synthetic probe (P17-TSK-044; console-probe.yaml says what it asks and why it is a pod of its own): one replica of the
+# pinned collector image, holding no credential. It reaches the operator edge's TLS listener, its resolver and the collector's platform
+# receiver, and the scraper reaches its exporter; nothing else reaches it (networkpolicy.yaml's finapp-console-probe, observability.rego's
+# [obs-console-probe-egress]).
+#
+# THE OPERATOR HOST IS THE OVERLAY'S: finapp-console-probe-target, which each observability overlay generates (kind's names
+# operator.finapp.test, the host its certificate is issued for). An overlay that names none leaves the variable empty, the edge's sniStrict
+# refuses the handshake, and ConsoleProbeFailing pages: the safe direction.
+#
+# Its resources are the cluster watcher's, the same image with less to do; a probe-only figure is measured with the run that is owed
+# (OPERATIONS_RUNBOOK.md section 11.68), never claimed here.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: finapp-console-probe
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finapp-console-probe
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: finapp-console-probe
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: finapp-console-probe
+        app.kubernetes.io/component: console-probe
+        finapp/role: console-probe
+        app.kubernetes.io/part-of: finapp
+    spec:
+      serviceAccountName: finapp-console-probe
+      automountServiceAccountToken: false
+      # No variable naming another Service: the probe names the one it asks in its configuration.
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: probe
+          image: docker.io/otel/opentelemetry-collector-contrib@sha256:e40d61f10c9a617cca1ffd1be4d7e2b3a4b0f0001798ff07e58cabe82e618cea
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/otelcol/config.yaml
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # The Go runtime's soft limit under the container's, as the watcher's.
+            - name: GOMEMLIMIT
+              value: 200MiB
+          envFrom:
+            - configMapRef:
+                name: finapp-console-probe-target
+          ports:
+            - name: metrics
+              containerPort: 8889
+              protocol: TCP
+            - name: health
+              containerPort: 13133
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
+          startupProbe:
+            httpGet: {path: /, port: health}
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /, port: health}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: {path: /, port: health}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: finapp-console-probe-config
+---
+# The scraper finds the probe by DNS, ready or not, as it finds the watcher: with the probe gone the job has no target and no series, which
+# ConsoleProbeFailing's absent half reads.
+apiVersion: v1
+kind: Service
+metadata:
+  name: finapp-console-probe
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: finapp-console-probe
+  ports:
+    - name: metrics
+      port: 8889
+      targetPort: metrics
+      protocol: TCP

@@ -1,0 +1,274 @@
+# promtool unit tests for infra/prometheus/rules/console.yml (P17-TSK-044). Run by infra/scripts/alert-rules-check.sh with every other case file.
+# Each rule fires on its planted failure and is silent on health, and on the healthy shapes that look like a failure for a moment: a blip of the
+# probe shorter than its five minutes, a second prober that still reaches the page, an eviction the replacement outlasts, a watcher down (the
+# watcher's own alert, not this one), a single stale tab's 404, compose. The series and labels are infra/prometheus/console-series.txt's and,
+# for the Deployment, infra/prometheus/platform-components-series.txt's; two controllers wherever a rule sums the edge's counters.
+#
+# NOT RUN YET: written with the rules, whose promtool run needs the pinned Prometheus image, which this task did not pull (the owner's standing
+# rule). ConsoleAlertRulesTest runs each rule through time with its for on the evaluator the build has, and the run of this file is owed with
+# the probe's on kind (OPERATIONS_RUNBOOK.md section 11.68).
+
+rule_files:
+  - ../rules/console.yml
+
+evaluation_interval: 15s
+
+tests:
+  # Health: the probe answers 200 through the edge on a deployed fleet. Silent.
+  - interval: 15s
+    input_series:
+      - series: 'httpcheck_status{job="finapp-console-probe", instance="p:8889", http_url="https://finapp-edge-operator.finapp-edge.svc.cluster.local/console/", http_method="GET", http_status_code="200", http_status_class="2xx"}'
+        values: '1x60'
+      - series: 'httpcheck_status{job="finapp-console-probe", instance="p:8889", http_url="https://finapp-edge-operator.finapp-edge.svc.cluster.local/console/", http_method="GET", http_status_code="200", http_status_class="5xx"}'
+        values: '0x60'
+      - series: 'up{job="finapp", instance="a:8081", env="kind"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ConsoleProbeFailing
+        exp_alerts: []
+
+  # The page starts failing at 1m15s: the edge answers 502 (the 200's series expires from the probe's exporter, a 2xx-class 0 replaces it). It
+  # pages once five minutes hold, and not before.
+  - interval: 15s
+    input_series:
+      - series: 'httpcheck_status{job="finapp-console-probe", instance="p:8889", http_url="https://finapp-edge-operator.finapp-edge.svc.cluster.local/console/", http_method="GET", http_status_code="200", http_status_class="2xx"}'
+        values: '1x4 stale'
+      - series: 'httpcheck_status{job="finapp-console-probe", instance="p:8889", http_url="https://finapp-edge-operator.finapp-edge.svc.cluster.local/console/", http_method="GET", http_status_code="502", http_status_class="2xx"}'
+        values: '_x5 0x55'
+      - series: 'up{job="finapp", instance="a:8081", env="kind"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ConsoleProbeFailing
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: ConsoleProbeFailing
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              owner: platform
+            exp_annotations:
+              summary: "The Operator Console does not answer through the operator edge"
+              description: "GET /console/ through the operator edge has not answered 2xx for 5 minutes, or no probe has answered. Operators have lost the console; the operator API still serves every act. See OPERATIONS_RUNBOOK.md section 11.68."
+
+  # A blip: the connection refused for three minutes (status 0 in every class), then 200 again. Never five minutes, so never a page.
+  - interval: 15s
+    input_series:
+      - series: 'httpcheck_status{job="finapp-console-probe", instance="p:8889", http_url="https://finapp-edge-operator.finapp-edge.svc.cluster.local/console/", http_method="GET", http_status_code="200", http_status_class="2xx"}'
+        values: '1x4 stale _x11 1x40'
+      - series: 'httpcheck_status{job="finapp-console-probe", instance="p:8889", http_url="https://finapp-edge-operator.finapp-edge.svc.cluster.local/console/", http_method="GET", http_status_code="0", http_status_class="2xx"}'
+        values: '_x5 0x11 stale'
+      - series: 'up{job="finapp", instance="a:8081", env="kind"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: ConsoleProbeFailing
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: ConsoleProbeFailing
+        exp_alerts: []
+
+  # Two probers: one cannot reach the page (its own network), the other can. The page answers, so no page; max() is the question asked.
+  - interval: 15s
+    input_series:
+      - series: 'httpcheck_status{job="finapp-console-probe", instance="p:8889", http_url="https://finapp-edge-operator.finapp-edge.svc.cluster.local/console/", http_method="GET", http_status_code="0", http_status_class="2xx"}'
+        values: '0x60'
+      - series: 'httpcheck_status{job="finapp-console-probe", instance="q:8889", http_url="https://finapp-edge-operator.finapp-edge.svc.cluster.local/console/", http_method="GET", http_status_code="200", http_status_class="2xx"}'
+        values: '1x60'
+      - series: 'up{job="finapp", instance="a:8081", env="kind"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ConsoleProbeFailing
+        exp_alerts: []
+
+  # No probe at all on a deployed fleet: the console's state is unknown, and that pages after the same five minutes, with absent()'s labels.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="finapp", instance="a:8081", env="kind"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: ConsoleProbeFailing
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: ConsoleProbeFailing
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              owner: platform
+              job: finapp-console-probe
+              http_status_class: 2xx
+            exp_annotations:
+              summary: "The Operator Console does not answer through the operator edge"
+              description: "GET /console/ through the operator edge has not answered 2xx for 5 minutes, or no probe has answered. Operators have lost the console; the operator API still serves every act. See OPERATIONS_RUNBOOK.md section 11.68."
+
+  # Compose: no edge, no console, no probe, and its finapp targets are env="local". Silent.
+  - interval: 15s
+    input_series:
+      - series: 'up{job="finapp", instance="localhost:8081", env="local"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ConsoleProbeFailing
+        exp_alerts: []
+
+  # Health: both of the console's replicas available, seen by two watchers. Silent.
+  - interval: 15s
+    input_series:
+      - series: 'k8s_deployment_available{job="finapp-cluster-watch", instance="w:8889", k8s_namespace_name="finapp-console", k8s_deployment_name="finapp-console", k8s_deployment_uid="c1"}'
+        values: '2x60'
+      - series: 'k8s_deployment_available{job="finapp-cluster-watch", instance="v:8889", k8s_namespace_name="finapp-console", k8s_deployment_name="finapp-console", k8s_deployment_uid="c1"}'
+        values: '2x60'
+      - series: 'up{job="finapp-cluster-watch", instance="w:8889", env="kind"}'
+        values: '1x60'
+      - series: 'up{job="finapp-cluster-watch", instance="v:8889", env="kind"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ConsoleReplicasUnavailable
+        exp_alerts: []
+
+  # One replica available from 1m15s (its pair crash-looping), seen by two watchers: one ticket for the Deployment, once five minutes hold.
+  - interval: 15s
+    input_series:
+      - series: 'k8s_deployment_available{job="finapp-cluster-watch", instance="w:8889", k8s_namespace_name="finapp-console", k8s_deployment_name="finapp-console", k8s_deployment_uid="c1"}'
+        values: '2x4 1x55'
+      - series: 'k8s_deployment_available{job="finapp-cluster-watch", instance="v:8889", k8s_namespace_name="finapp-console", k8s_deployment_name="finapp-console", k8s_deployment_uid="c1"}'
+        values: '2x4 1x55'
+      - series: 'up{job="finapp-cluster-watch", instance="w:8889", env="kind"}'
+        values: '1x60'
+      - series: 'up{job="finapp-cluster-watch", instance="v:8889", env="kind"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ConsoleReplicasUnavailable
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: ConsoleReplicasUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              owner: platform
+              k8s_namespace_name: finapp-console
+              k8s_deployment_name: finapp-console
+            exp_annotations:
+              summary: "The Operator Console has fewer than two replicas available"
+              description: "Fewer than two finapp-console replicas have been available for 5 minutes, or the watcher sees no console Deployment. One more failure is an outage of the console. See OPERATIONS_RUNBOOK.md section 11.68."
+
+  # An eviction the disruption budget admits: one replica for two minutes until its replacement is ready. Silent.
+  - interval: 15s
+    input_series:
+      - series: 'k8s_deployment_available{job="finapp-cluster-watch", instance="w:8889", k8s_namespace_name="finapp-console", k8s_deployment_name="finapp-console", k8s_deployment_uid="c1"}'
+        values: '2x4 1x8 2x47'
+      - series: 'up{job="finapp-cluster-watch", instance="w:8889", env="kind"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: ConsoleReplicasUnavailable
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: ConsoleReplicasUnavailable
+        exp_alerts: []
+
+  # A watcher that answers and publishes the application's Deployment but not the console's (not deployed, or its Role missing): a ticket.
+  - interval: 15s
+    input_series:
+      - series: 'k8s_deployment_available{job="finapp-cluster-watch", instance="w:8889", k8s_namespace_name="finapp", k8s_deployment_name="finapp-app", k8s_deployment_uid="a1"}'
+        values: '3x60'
+      - series: 'up{job="finapp-cluster-watch", instance="w:8889", env="kind"}'
+        values: '1x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: ConsoleReplicasUnavailable
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: ConsoleReplicasUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              owner: platform
+              k8s_namespace_name: finapp-console
+              k8s_deployment_name: finapp-console
+            exp_annotations:
+              summary: "The Operator Console has fewer than two replicas available"
+              description: "Fewer than two finapp-console replicas have been available for 5 minutes, or the watcher sees no console Deployment. One more failure is an outage of the console. See OPERATIONS_RUNBOOK.md section 11.68."
+
+  # The watcher down: its series stale, its scrape failing. ClusterWatchBlind's to say, so this rule is silent on the absence it causes.
+  - interval: 15s
+    input_series:
+      - series: 'k8s_deployment_available{job="finapp-cluster-watch", instance="w:8889", k8s_namespace_name="finapp-console", k8s_deployment_name="finapp-console", k8s_deployment_uid="c1"}'
+        values: '2x4 stale'
+      - series: 'up{job="finapp-cluster-watch", instance="w:8889", env="kind"}'
+        values: '1x4 0x55'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ConsoleReplicasUnavailable
+        exp_alerts: []
+
+  # Health: the console's Service answering 200 and 304 at both operator controllers, and the API's 404s on another service. Silent.
+  - interval: 15s
+    input_series:
+      - series: 'traefik_service_requests_total{job="finapp-edge", instance="o1:8081", edge="operator", env="kind", service="finapp-console@file", code="200", method="GET", protocol="http"}'
+        values: '0+4x80'
+      - series: 'traefik_service_requests_total{job="finapp-edge", instance="o2:8081", edge="operator", env="kind", service="finapp-console@file", code="200", method="GET", protocol="http"}'
+        values: '0+4x80'
+      - series: 'traefik_service_requests_total{job="finapp-edge", instance="o1:8081", edge="operator", env="kind", service="finapp-app@file", code="404", method="GET", protocol="http"}'
+        values: '0+2x80'
+      - series: 'traefik_service_requests_total{job="finapp-edge", instance="o1:8081", edge="operator", env="kind", service="finapp-app@file", code="502", method="GET", protocol="http"}'
+        values: '0+1x80'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ConsoleAssetsMissing
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: ConsoleServerErrors
+        exp_alerts: []
+
+  # A release that forgot the previous assets: open pages' lazy chunks answer 404 at both controllers from 1m15s, two a minute at each. One
+  # ticket, summed over the controllers.
+  - interval: 15s
+    input_series:
+      - series: 'traefik_service_requests_total{job="finapp-edge", instance="o1:8081", edge="operator", env="kind", service="finapp-console@file", code="404", method="GET", protocol="http"}'
+        values: '0x4 0+0.5x40'
+      - series: 'traefik_service_requests_total{job="finapp-edge", instance="o2:8081", edge="operator", env="kind", service="finapp-console@file", code="404", method="GET", protocol="http"}'
+        values: '0x4 0+0.5x40'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: ConsoleAssetsMissing
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              owner: platform
+            exp_annotations:
+              summary: "The Operator Console's assets are answering 404"
+              description: "More than two requests for the console's hashed assets answered 404 at the operator edge within 15 minutes: open pages cannot load their chunks. See OPERATIONS_RUNBOOK.md section 11.68."
+
+  # A single stale tab from two releases back: one 404, the image carrying only the previous release's assets. Silent.
+  - interval: 15s
+    input_series:
+      - series: 'traefik_service_requests_total{job="finapp-edge", instance="o1:8081", edge="operator", env="kind", service="finapp-console@file", code="404", method="GET", protocol="http"}'
+        values: '0x4 1x60'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ConsoleAssetsMissing
+        exp_alerts: []
+
+  # One replica unreachable behind the Service: the proxy's 502 for the requests sent to it, two a minute at one controller. One ticket.
+  - interval: 15s
+    input_series:
+      - series: 'traefik_service_requests_total{job="finapp-edge", instance="o1:8081", edge="operator", env="kind", service="finapp-console@file", code="502", method="GET", protocol="http"}'
+        values: '0x4 0+0.5x40'
+      - series: 'traefik_service_requests_total{job="finapp-edge", instance="o1:8081", edge="operator", env="kind", service="finapp-console@file", code="200", method="GET", protocol="http"}'
+        values: '0+2x44'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: ConsoleServerErrors
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              owner: platform
+            exp_annotations:
+              summary: "The Operator Console is answering server errors"
+              description: "More than two requests for the console answered 5xx at the operator edge within 15 minutes. See OPERATIONS_RUNBOOK.md section 11.68."

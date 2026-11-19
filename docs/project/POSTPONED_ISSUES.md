@@ -854,6 +854,17 @@ commit and the date; do not delete the entry.
     `P16-REM-001` *(then by `P16-DOC-001` from `P16-REM-001`'s gate, and by `P16-REM-004`, `PLANNED`, from the Phase 16 exit review, 2026-11-16)*. The database and Kafka fleet tiers the task named are PI-023's. Nothing ran. What ran instead, on 2026-11-15,
     without a cluster: every module's `unitTest`, `sliceTest` and `architectureTest`, fresh on the code of commit `8f20d7c3`
     (7,000 unit, 299 slice and 1,299 architecture tests across 25 modules, 0 failed, after the one red it found was fixed and platform's two tiers and app's architecture tier re-run on the fix).
+  - **`P17-TSK-044`** (the Operator Console watched, `OPERATIONS_RUNBOOK.md` §11.68, whose record is empty; listed here because the
+    standing word that keeps cluster runs off this phase's tasks is this item's, and run with `P17-TST-001`'s run, whose stack it needs):
+    on `kind` with a console image named (`CONSOLE_IMAGE`, §11.28), **the probe**, `finapp-console-probe`, answering `httpcheck_status` 1
+    for the 2xx class through the real operator edge, then `ConsoleProbeFailing` raised with the console scaled to zero (and
+    `ConsoleReplicasUnavailable`, `ConsoleServerErrors` beside it) and cleared when it is back, each read at Alertmanager's page and ticket
+    receivers; **the capture** of `httpcheck_status` and `traefik_service_requests_total` from the pinned images into
+    `infra/prometheus/console-series.txt`, replacing the lines written from documentation; **the watcher** listing `finapp-console` with no
+    refusal in its own lines; **the checks** - `alert-rules-check.sh` with `console.test.yml`, `telemetry-check.sh` with the three
+    `obs-probe-*` plants and the moved quota plants, and `edge-check.sh` over the console overlay's new Role and the operator edge's new
+    ingress rule; and **the probe's resources** measured. Nothing ran: what ran instead, on 2026-11-19, was each rule through time on the
+    build's evaluator and the manifests' guards (`ConsoleAlertRulesTest`, `TelemetryPipelineManifestsTest`), the scripts parsed with `sh -n`.
 
 ## PI-026 — The first real environment's managed-service decisions: the audit archive's bucket and read door, the restore's release and window
 

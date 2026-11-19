@@ -199,9 +199,10 @@ class TelemetryPipelineManifestsTest {
     }
 
     @Test
-    @DisplayName("the platform's own lines come in on a receiver of their own, 4319, from the edge's controllers and the cluster watcher alone,"
-            + " and leave through a net of their own: the client's, the backend's and the host's names dropped by name, an unrouted path and a"
-            + " query cut, the edge's body rebuilt from what was kept, card numbers and amounts scrubbed (P16-TSK-003)")
+    @DisplayName("the platform's own lines come in on a receiver of their own, 4319, from the edge's controllers, the cluster watcher and the"
+            + " console probe alone, and leave through a net of their own: the client's, the backend's and the host's names dropped by name, an"
+            + " unrouted path and a query cut, the edge's body rebuilt from what was kept, card numbers and amounts scrubbed (P16-TSK-003;"
+            + " the console probe P17-TSK-044)")
     @SuppressWarnings("unchecked")
     void thePlatformsOwnLinesHaveTheirOwnNet() {
         String config = read(COLLECTOR);
@@ -266,7 +267,7 @@ class TelemetryPipelineManifestsTest {
         assertThat(statements.indexOf("delete_key(attributes, \"RequestPath\") where attributes[\"RouterName\"] == nil"))
                 .isLessThan(statements.indexOf(theApplications.get(0)));
 
-        // Its senders: the edge's controllers and the watcher, each exactly, on 4319 and nothing else there.
+        // Its senders: the edge's controllers, the watcher and (P17-TSK-044) the console probe, each exactly, on 4319 and nothing else there.
         int platformRules = 0;
         for (Map<String, Object> policy : policies) {
             if (!"finapp-collector".equals(map(policy, "metadata").get("name"))) {
@@ -280,7 +281,8 @@ class TelemetryPipelineManifestsTest {
                     assertThat(ingress.get("from")).isEqualTo(List.of(
                             Map.of("namespaceSelector", Map.of("matchLabels", Map.of("kubernetes.io/metadata.name", "finapp-edge")),
                                     "podSelector", Map.of("matchLabels", Map.of("finapp/role", "ingress-controller"))),
-                            Map.of("podSelector", Map.of("matchLabels", Map.of("finapp/role", "cluster-watch")))));
+                            Map.of("podSelector", Map.of("matchLabels", Map.of("finapp/role", "cluster-watch"))),
+                            Map.of("podSelector", Map.of("matchLabels", Map.of("finapp/role", "console-probe")))));
                 }
             }
         }
@@ -300,11 +302,69 @@ class TelemetryPipelineManifestsTest {
         Map<String, Object> watcher = yaml(read(BASE + "cluster-watch.yaml"));
         assertThat(String.valueOf(map(map(watcher, "exporters"), "otlp_http/platform").get("endpoint"))).isEqualTo(platformEndpoint);
         assertThat(config).contains("endpoint: http://${env:POD_IP}:4319/v1/logs");
+        // The console probe's own lines, the one thing it sends to the collector (P17-TSK-044).
+        assertThat(read(BASE + "console-probe.yaml")).contains("endpoint: " + platformEndpoint + "/v1/logs").doesNotContain(":4318");
+    }
+
+    @Test
+    @DisplayName("the console probe holds no credential: the pinned collector, one replica, its account and pod mounting no token; reached by"
+            + " the scraper alone on its exporter, it reaches the operator edge's TLS listener, the collector's platform receiver and DNS alone,"
+            + " and the edge admits it by name; observability.rego holds that list and a plant of each is refused (P17-TSK-044)")
+    @SuppressWarnings("unchecked")
+    void theConsoleProbeHoldsNoCredentialAndReachesTheEdgeAlone() {
+        List<Map<String, Object>> documents = yamlAll(read(BASE + "console-probe-workload.yaml"));
+        Map<String, Object> account = documents.stream().filter(document -> "ServiceAccount".equals(document.get("kind"))).findFirst().orElseThrow();
+        assertThat(account).containsEntry("automountServiceAccountToken", false);
+        Map<String, Object> deployment = documents.stream().filter(document -> "Deployment".equals(document.get("kind"))).findFirst().orElseThrow();
+        assertThat(map(deployment, "spec")).containsEntry("replicas", 1);
+        Map<String, Object> pod = map(map(map(deployment, "spec"), "template"), "spec");
+        assertThat(pod).containsEntry("serviceAccountName", "finapp-console-probe").containsEntry("automountServiceAccountToken", false);
+        assertThat(map(map(map(map(deployment, "spec"), "template"), "metadata"), "labels")).containsEntry("finapp/role", "console-probe");
+        assertThat(read(BASE + "console-probe-workload.yaml")).contains("opentelemetry-collector-contrib@" + pin(read(PINS), "COLLECTOR_DIGEST"))
+                .contains("name: finapp-console-probe-config").contains("name: finapp-console-probe-target");
+        assertThat(read(BASE + "kustomization.yaml")).contains("  - console-probe-workload.yaml").contains("config.yaml=console-probe.yaml");
+        assertThat(read("infra/scripts/manifest-policy/finapp.rego")).as("not a listed controller: it holds no token to admit")
+                .doesNotContain("\"name\": \"finapp-console-probe\"");
+
+        Map<String, Object> probe = policies.stream().filter(candidate -> "finapp-console-probe".equals(map(candidate, "metadata").get("name")))
+                .findFirst().orElseThrow();
+        assertThat(map(probe, "spec").get("ingress")).isEqualTo(List.of(Map.of(
+                "from", List.of(Map.of("podSelector", Map.of("matchLabels", Map.of("finapp/role", "metrics-scraper")))),
+                "ports", List.of(Map.of("protocol", "TCP", "port", 8889)))));
+        assertThat(map(probe, "spec").get("egress")).isEqualTo(List.of(
+                Map.of("to", List.of(Map.of("namespaceSelector", Map.of("matchLabels", Map.of("kubernetes.io/metadata.name", "finapp-edge")),
+                                "podSelector", Map.of("matchLabels", Map.of("app.kubernetes.io/name", "finapp-edge-operator")))),
+                        "ports", List.of(Map.of("protocol", "TCP", "port", 8443))),
+                Map.of("to", List.of(Map.of("podSelector", Map.of("matchLabels", Map.of("finapp/role", "telemetry-collector")))),
+                        "ports", List.of(Map.of("protocol", "TCP", "port", 4319))),
+                Map.of("to", List.of(Map.of("namespaceSelector", Map.of("matchLabels", Map.of("kubernetes.io/metadata.name", "kube-system")),
+                                "podSelector", Map.of("matchLabels", Map.of("k8s-app", "kube-dns")))),
+                        "ports", List.of(Map.of("protocol", "UDP", "port", 53), Map.of("protocol", "TCP", "port", 53)))));
+        Map<String, Object> scraper = policies.stream().filter(candidate -> "finapp-metrics-scraper".equals(map(candidate, "metadata").get("name")))
+                .findFirst().orElseThrow();
+        assertThat((List<Object>) map(scraper, "spec").get("egress")).contains(Map.of(
+                "to", List.of(Map.of("podSelector", Map.of("matchLabels", Map.of("finapp/role", "console-probe")))),
+                "ports", List.of(Map.of("protocol", "TCP", "port", 8889))));
+
+        // The edge's side: its operator controllers admit the probe on 8443 by name, beside the internal ranges.
+        Map<String, Object> operator = yamlAll(read("deploy/edge/base/networkpolicy.yaml")).stream()
+                .filter(candidate -> "finapp-edge-operator".equals(map(candidate, "metadata").get("name"))).findFirst().orElseThrow();
+        assertThat((List<Object>) map(operator, "spec").get("ingress")).contains(Map.of(
+                "from", List.of(Map.of("namespaceSelector", Map.of("matchLabels", Map.of("kubernetes.io/metadata.name", "finapp-observability")),
+                        "podSelector", Map.of("matchLabels", Map.of("finapp/role", "console-probe")))),
+                "ports", List.of(Map.of("protocol", "TCP", "port", 8443))));
+
+        String policy = read(POLICY);
+        assertThat(policy).contains("[obs-console-probe-egress]").contains("\"console-probe\": [{\"role\": \"metrics-scraper\"")
+                .contains("{\"podSelector\": {\"matchLabels\": {\"finapp/role\": \"console-probe\"}}},");
+        assertThat(read(SCRIPT)).contains("obs_refused obs-probe-egress-to-app obs-console-probe-egress")
+                .contains("obs_refused obs-probe-reachable obs-store-ingress").contains("obs_refused obs-probe-mounted-account security-token");
     }
 
     @Test
     @DisplayName("the cluster watcher is the one pod of the namespace with a Kubernetes credential: the pinned collector, one replica, its"
-            + " account the controller list's one entry, its Role in finapp list and watch on the kinds its receiver reads, reached by the"
+            + " account the controller list's one entry, its Role in finapp list and watch on the kinds its receiver reads (and since P17-TSK-044"
+            + " its Role in finapp-console, ConsoleAlertRulesTest's to hold), reached by the"
             + " scraper alone and reaching the collector's platform receiver and DNS alone (P16-TSK-003)")
     @SuppressWarnings("unchecked")
     void theClusterWatcherReadsFinappAndNothingElse() {
@@ -317,7 +377,7 @@ class TelemetryPipelineManifestsTest {
         assertThat(map(map(map(map(deployment, "spec"), "template"), "metadata"), "labels")).containsEntry("finapp/role", "cluster-watch");
         assertThat(read(BASE + "cluster-watch-workload.yaml")).contains("opentelemetry-collector-contrib@" + pin(read(PINS), "COLLECTOR_DIGEST"));
         // No other workload of the namespace holds a token.
-        for (String file : List.of(BASE + "collector-workload.yaml", KIND + "backends.yaml")) {
+        for (String file : List.of(BASE + "collector-workload.yaml", BASE + "console-probe-workload.yaml", KIND + "backends.yaml")) {
             for (Map<String, Object> document : yamlAll(read(file))) {
                 if ("ServiceAccount".equals(document.get("kind"))) {
                     assertThat(document).as(file).containsEntry("automountServiceAccountToken", false);
@@ -595,12 +655,14 @@ class TelemetryPipelineManifestsTest {
         List<Map<String, Object>> base = new ArrayList<>(yamlAll(read(BASE + "collector-workload.yaml")));
         // The cluster watcher (P16-TSK-003), the base's second workload.
         base.addAll(yamlAll(read(BASE + "cluster-watch-workload.yaml")));
+        // The console probe (P17-TSK-044), the base's third.
+        base.addAll(yamlAll(read(BASE + "console-probe-workload.yaml")));
         List<Map<String, Object>> quotas = yamlAll(read(BASE + "resourcequota.yaml"));
         assertThat(quotas).as("exactly one quota, or the tightest decides").hasSize(1);
         assertThat(read(BASE + "kustomization.yaml")).containsPattern("(?m)^  - resourcequota\\.yaml$");
         Map<String, BigDecimal> stated = WorstMoment.stated(quotas.get(0));
         Map<String, BigDecimal> needed = WorstMoment.of(base);
-        assertThat(needed.get("pods")).as("the collector, 2 x 2 + 1, and the watcher, 2 x 1 + 1").isEqualByComparingTo("8");
+        assertThat(needed.get("pods")).as("the collector, 2 x 2 + 1, the watcher, 2 x 1 + 1, and the probe, 2 x 1 + 1").isEqualByComparingTo("11");
         needed.forEach((key, value) -> assertThat(stated.get(key)).as("the base's %s is the collector's worst moment", key).isEqualByComparingTo(value));
 
         // kind's overlay: the base, Alertmanager's ConfigMap alone, and the back ends; the quota replaced key by key, nothing else patched.
@@ -621,7 +683,7 @@ class TelemetryPipelineManifestsTest {
             patched.put(key, WorstMoment.quantity(operation.get("value")));
         }
         Map<String, BigDecimal> neededOnKind = WorstMoment.of(onKind);
-        assertThat(neededOnKind.get("pods")).as("the collector's 5, the watcher's 3, and each back end's pod and one replacing it").isEqualByComparingTo("16");
+        assertThat(neededOnKind.get("pods")).as("the collector's 5, the watcher's 3, the probe's 3, and each back end's pod and one replacing it").isEqualByComparingTo("19");
         neededOnKind.forEach((key, value) -> assertThat(patched.get(key)).as("kind's %s is its worst moment", key).isEqualByComparingTo(value));
     }
 

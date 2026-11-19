@@ -100,9 +100,10 @@ class PlatformComponentAlertRulesTest {
         for (String name : List.of("MigratorJobFailed", "MigratorJobOverdue")) {
             assertThat(expr(name)).as(name).doesNotContain("k8s_job_uid").contains("max by (k8s_namespace_name, k8s_job_name)");
         }
-        // And the watcher reads that namespace.
+        // And the watcher reads that namespace - and, since P17-TSK-044, the console's, for ConsoleReplicasUnavailable (ConsoleAlertRulesTest
+        // holds that half), and no other.
         Map<String, Object> receiver = map(map(yaml(WATCHER).get("receivers")).get("k8s_cluster"));
-        assertThat(receiver.get("namespaces")).isEqualTo(List.of(namespace));
+        assertThat(receiver.get("namespaces")).isEqualTo(List.of(namespace, String.valueOf(yaml("deploy/console/base/kustomization.yaml").get("namespace"))));
     }
 
     @Test
