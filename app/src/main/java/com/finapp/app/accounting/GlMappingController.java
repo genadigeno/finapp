@@ -43,6 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class GlMappingController {
 
     @NonNull private final GlMappingDesk desk;
+    @NonNull private final AccountingCollectionDesk collections;
 
     /** Proposes a whole new GL mapping version - coherent, and frozen from this moment. */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
@@ -84,6 +85,19 @@ public class GlMappingController {
     }
 
     /** One version by id, in any state: its machine row and its whole content. */
+    /**
+     * The GL mapping versions, newest first (`P17-TSK-023`, G-113), under the permission that decides them - the approver holds
+     * no read of a version; {@code status=PROPOSED} is the approver's queue, each row saying whether the caller proposed it.
+     */
+    @GetMapping
+    @RequiresPermission(PermissionName.ACCOUNTING_MAPPING_APPROVE)
+    public AccountingCollectionDesk.MappingVersionPage listGlMappingVersions(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return collections.mappingVersions(status, cursor, limit);
+    }
+
     @GetMapping(path = "/{versionId}")
     @RequiresPermission(PermissionName.ACCOUNTING_READ)
     public GlMappingDesk.GlMappingVersionView readGlMappingVersion(@PathVariable("versionId") String versionId) {

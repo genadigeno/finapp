@@ -4,6 +4,7 @@ import com.finapp.accounting.AccountingPeriodStore;
 import com.finapp.accounting.GlMappingGap;
 import com.finapp.accounting.GlMappingStore;
 import com.finapp.accounting.GlPins;
+import com.finapp.accounting.JdbcAccountingCollections;
 import com.finapp.accounting.JdbcPeriodPins;
 import com.finapp.accounting.JournalReads;
 import com.finapp.accounting.LedgerChart;
@@ -77,5 +78,20 @@ public class GeneralLedgerBeans {
             Clock clock) {
         return new GeneralLedgerDesk(generalLedger, glPins, glSnapshots, accountingTransactions, auditWriter,
                 accountingFlowScope, idGenerator, clock);
+    }
+
+    /**
+     * The accounting desks' lists (`P17-TSK-023`): report runs, FINAL statements, GL mapping versions and valuation rate sets,
+     * each page on a {@link GlSnapshots} snapshot.
+     */
+    @Bean
+    AccountingCollectionDesk accountingCollectionDesk(
+            GlSnapshots glSnapshots,
+            AccountingTransactions accountingTransactions,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new AccountingCollectionDesk(new JdbcAccountingCollections(), glSnapshots, accountingTransactions, auditWriter,
+                idGenerator, clock);
     }
 }

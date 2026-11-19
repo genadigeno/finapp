@@ -611,6 +611,15 @@ class RoutePermissionRegisterTest {
                     // The ledger as an accountant browses it (P17-TSK-022, G-110, G-111): the GL reads' permission.
                     entry("GET /v1/operator/ledger/accounts", PermissionName.ACCOUNTING_READ),
                     entry("GET /v1/operator/ledger/entries", PermissionName.ACCOUNTING_READ),
+                    // The accounting desks' lists (P17-TSK-023, G-113), each under the permission of the desk that needs it - the
+                    // finance roles a partition: the runs the accountant's; the FINAL statements the controller's, exactly what its
+                    // statement door serves (the owner's answer, 2026-11-19); the versions and the sets their approvers', the
+                    // sets a proposer's own under the permission that captures them.
+                    entry("GET /v1/operator/accounting/report-runs", PermissionName.ACCOUNTING_READ),
+                    entry("GET /v1/operator/accounting/report-runs/final-statements", PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    entry("GET /v1/operator/accounting/mapping-versions", PermissionName.ACCOUNTING_MAPPING_APPROVE),
+                    entry("GET /v1/operator/accounting/valuation-rate-sets", PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    entry("GET /v1/operator/accounting/valuation-rate-sets/mine", PermissionName.ACCOUNTING_CLOSE_PROPOSE),
                     // P14-TSK-008: the report runs - generation and regeneration the accountant's
                     // ACCOUNTING_REPORT_GENERATE, the audited read of a run's content the accountant's ACCOUNTING_READ
                     // (identity V025's partition); the negatives are ReportRunDeskTest's route declarations.

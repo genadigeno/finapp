@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -39,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ReportRunController {
 
     @NonNull private final ReportRunDesk desk;
+    @NonNull private final AccountingCollectionDesk collections;
 
     /**
      * Generates the run answering a definition for a period and parameters - or answers the run that already does: its
@@ -57,6 +59,21 @@ public class ReportRunController {
     }
 
     /** A run with its content - the issued canonical JSON, verifiable against its sha256; every read audited. */
+    /**
+     * The report runs, newest claim first (`P17-TSK-023`, G-113): a §7 collection of each run's head as {@code GET .../{runId}}
+     * serves it, never its content; {@code periodId} and {@code status} narrow it. Every page recorded
+     * {@code accounting.ReportRunsListed}.
+     */
+    @GetMapping
+    @RequiresPermission(PermissionName.ACCOUNTING_READ)
+    public AccountingCollectionDesk.ReportRunPage listReportRuns(
+            @RequestParam(name = "periodId", required = false) String periodId,
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return collections.reportRuns(periodId, status, cursor, limit);
+    }
+
     @GetMapping(path = "/{runId}")
     @RequiresPermission(PermissionName.ACCOUNTING_READ)
     public ReportRunDesk.ReportRunContentView readReportRun(@PathVariable("runId") String runId) {

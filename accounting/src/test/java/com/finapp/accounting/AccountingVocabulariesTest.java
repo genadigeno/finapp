@@ -295,7 +295,9 @@ class AccountingVocabulariesTest {
                         "regulatory.SubmissionDrafted=true", "regulatory.SubmissionValidated=false", "regulatory.SubmissionApproved=true", "regulatory.SubmissionRefused=true", "regulatory.SubmissionWithdrawn=true",
                         "regulatory.SubmissionSubmitted=true", "regulatory.SubmissionAcknowledged=false", "regulatory.SubmissionRejected=false", "regulatory.SubmissionUndelivered=true",
                         "regulatory.SubmissionContraryAnswer=false", "regulatory.SubmissionRead=false", "regulatory.SubmissionResent=false",
-                        "accounting.FinalStatementRead=false");
+                        "accounting.FinalStatementRead=false",
+                        // P17-TSK-023: the accounting lists' two recorded reads, no reason owed - a read is not an act.
+                        "accounting.ReportRunsListed=false", "accounting.FinalStatementsListed=false");
     }
 
     // ------------------------------------------------------------------

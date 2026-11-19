@@ -622,6 +622,10 @@ class OpenApiContractTest {
                         // account register and the journal entry search; the approvers' queues are GETs on existing paths.
                         ApiVersion.CURRENT_PREFIX + "/operator/ledger/accounts",
                         ApiVersion.CURRENT_PREFIX + "/operator/ledger/entries",
+                        // P17-TSK-023: the controller's FINAL statements (ACCOUNTING_CLOSE_APPROVE, every page recorded) and a
+                        // proposer's own rate sets (ACCOUNTING_CLOSE_PROPOSE); the other lists are GETs on existing paths.
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs/final-statements",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/valuation-rate-sets/mine",
                         // P14-TSK-008: the report runs - generated and regenerated (ACCOUNTING_REPORT_GENERATE, keyed),
                         // read with their content (ACCOUNTING_READ, audited).
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs",

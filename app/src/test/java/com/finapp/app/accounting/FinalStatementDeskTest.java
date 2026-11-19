@@ -285,10 +285,16 @@ class FinalStatementDeskTest {
     @DisplayName("the door: GET under report-runs, ACCOUNTING_CLOSE_APPROVE, not keyed; the controller holds it and no ACCOUNTING_READ, which stays the accountant's alone, so a figure's lines and the run's whole bytes stay out of its reach")
     void theDoorIsTheControllers() {
         assertThat(FinalStatementController.class.getAnnotation(RequestMapping.class).path()).containsExactly("/operator/accounting/report-runs");
-        Method handler = Arrays.stream(FinalStatementController.class.getDeclaredMethods()).filter(method -> method.isAnnotationPresent(GetMapping.class)).findFirst().orElseThrow();
+        Method handler = Arrays.stream(FinalStatementController.class.getDeclaredMethods()).filter(method -> method.getName().equals("readFinalStatement")).findFirst().orElseThrow();
         assertThat(handler.getAnnotation(GetMapping.class).value()).containsExactly("/{runId}/final-statement");
         assertThat(handler.getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.ACCOUNTING_CLOSE_APPROVE);
         assertThat(handler.isAnnotationPresent(RequiresIdempotencyKey.class)).isFalse();
+        // P17-TSK-023: the controller's list of exactly these runs, under the same permission - its only other door here.
+        Method list = Arrays.stream(FinalStatementController.class.getDeclaredMethods()).filter(method -> method.getName().equals("listFinalStatements")).findFirst().orElseThrow();
+        assertThat(list.getAnnotation(GetMapping.class).value()).containsExactly("/final-statements");
+        assertThat(list.getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.ACCOUNTING_CLOSE_APPROVE);
+        assertThat(list.isAnnotationPresent(RequiresIdempotencyKey.class)).isFalse();
+        assertThat(Arrays.stream(FinalStatementController.class.getDeclaredMethods()).filter(method -> method.isAnnotationPresent(RequiresPermission.class))).hasSize(2);
         assertThat(RoleName.FINANCIAL_CONTROLLER.permissions()).contains(PermissionName.ACCOUNTING_CLOSE_APPROVE).doesNotContain(PermissionName.ACCOUNTING_READ);
         assertThat(Arrays.stream(RoleName.values()).filter(role -> role.permissions().contains(PermissionName.ACCOUNTING_READ))).containsExactly(RoleName.ACCOUNTANT);
         assertThat(RoleName.ACCOUNTANT.permissions()).doesNotContain(PermissionName.ACCOUNTING_CLOSE_APPROVE);

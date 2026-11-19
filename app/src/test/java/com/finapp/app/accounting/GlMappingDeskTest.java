@@ -220,7 +220,9 @@ class GlMappingDeskTest {
                 "activateGlMappingVersion", PermissionName.ACCOUNTING_MAPPING_APPROVE,
                 "rejectGlMappingVersion", PermissionName.ACCOUNTING_MAPPING_APPROVE,
                 "readGlMappingVersion", PermissionName.ACCOUNTING_READ,
-                "readGlMappingVersionDiff", PermissionName.ACCOUNTING_MAPPING_APPROVE);
+                "readGlMappingVersionDiff", PermissionName.ACCOUNTING_MAPPING_APPROVE,
+                // P17-TSK-023: the versions' list, under the permission that decides them - the approver holds no read.
+                "listGlMappingVersions", PermissionName.ACCOUNTING_MAPPING_APPROVE);
         for (Method method : GlMappingController.class.getDeclaredMethods()) {
             if (expected.containsKey(method.getName())) {
                 assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName())

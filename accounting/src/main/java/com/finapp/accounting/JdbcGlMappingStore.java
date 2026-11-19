@@ -38,7 +38,7 @@ public final class JdbcGlMappingStore implements GlMappingStore {
     /** A2 shared - a period lock's pin read (`P14-TSK-005`), pinned by {@code AccountingPeriodMigrationTest}. */
     static final String SHARED_LOCK_SQL = "SELECT pg_advisory_xact_lock_shared(" + NAMESPACE + ", hashtext('" + KEY + "'))";
 
-    private static final String ROW = "SELECT id, version, status, effective_from_period, effective_to_period,"
+    static final String ROW = "SELECT id, version, status, effective_from_period, effective_to_period,"
             + " proposed_by, proposed_at, decided_by, decided_at, retired_at FROM accounting.gl_mapping_version";
 
     @Override
@@ -279,7 +279,7 @@ public final class JdbcGlMappingStore implements GlMappingStore {
         }
     }
 
-    private static VersionRow row(ResultSet row) throws SQLException {
+    static VersionRow row(ResultSet row) throws SQLException {
         Date to = row.getDate("effective_to_period");
         return new VersionRow(
                 GlMappingVersionId.of(row.getObject("id", java.util.UUID.class)),

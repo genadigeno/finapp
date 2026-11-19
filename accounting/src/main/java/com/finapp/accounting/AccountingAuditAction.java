@@ -546,6 +546,25 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " Recorded before it is served, in a transaction of its own; a failed record fails the read. No other definition or status"
                     + " is served, so nothing is recorded for one. Its target the run; the summary the definition, the period, its revision and"
                     + " status as read, the run's revision and its issued hash - never a figure.",
+            false),
+    /** An accountant listed report runs (`P17-TSK-023`, ACCOUNTING_READ) - every page recorded. */
+    REPORT_RUNS_LISTED(
+            "accounting.ReportRunsListed",
+            "A holder of ACCOUNTING_READ read a page of report runs (P17-TSK-023, gap G-113; GET /v1/operator/accounting/report-runs) -"
+                    + " each run's head as its own read serves it, never its content. Recorded SUCCEEDED in a transaction of its own after"
+                    + " the read and before the answer, so nothing is served unrecorded; a refused request records nothing. Its target the"
+                    + " period asked, or all; the summary the period, the status asked, whether the page continued a walk and how many rows"
+                    + " it served - never a figure or a parameter.",
+            false),
+    /** A controller listed the FINAL statements (`P17-TSK-023`, ACCOUNTING_CLOSE_APPROVE) - every page recorded. */
+    FINAL_STATEMENTS_LISTED(
+            "accounting.FinalStatementsListed",
+            "A holder of ACCOUNTING_CLOSE_APPROVE read a page of the FINAL BALANCE_SHEET and INCOME_STATEMENT runs - exactly the runs"
+                    + " .../report-runs/{runId}/final-statement serves, so a controller finds the statement of a close it approved (P17-TSK-023,"
+                    + " the owner's answer to the finance roles' read question: no ACCOUNTING_READ; GET .../report-runs/final-statements)."
+                    + " Recorded SUCCEEDED in a transaction of its own after the read and before the answer; a refused request records"
+                    + " nothing. Its target the period asked, or all; the summary the period, whether the page continued a walk and how"
+                    + " many rows it served - never a figure.",
             false);
 
     private final String code;

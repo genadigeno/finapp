@@ -21123,6 +21123,52 @@
         },
         "type": "object"
       },
+      "FinalStatementHead": {
+        "properties": {
+          "completedAt": {
+            "type": "string"
+          },
+          "definition": {
+            "type": "string"
+          },
+          "definitionVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodId": {
+            "type": "string"
+          },
+          "periodRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "revision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "runId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FinalStatementPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FinalStatementHead"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "FinalStatementView": {
         "properties": {
           "completedAt": {
@@ -23906,6 +23952,56 @@
           "reason": {
             "maxLength": 1000,
             "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MappingVersionItem": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "retiredAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MappingVersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MappingVersionItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -26737,6 +26833,64 @@
         ],
         "type": "object"
       },
+      "RateSetItem": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "capturedAt": {
+            "type": "string"
+          },
+          "capturedBy": {
+            "type": "string"
+          },
+          "capturedByCaller": {
+            "type": "boolean"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "maxAgeHours": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodId": {
+            "type": "string"
+          },
+          "rateCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "referenceGaps": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "setId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RateSetPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RateSetItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ReadmissionAnswer": {
         "properties": {
           "authentication": {
@@ -28131,6 +28285,20 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReportRunPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReportRunView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -37854,6 +38022,47 @@
       }
     },
     "/v1/operator/accounting/mapping-versions": {
+      "get": {
+        "operationId": "listGlMappingVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingVersionPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "proposeGlMappingVersion",
         "parameters": [
@@ -39000,6 +39209,55 @@
       }
     },
     "/v1/operator/accounting/report-runs": {
+      "get": {
+        "operationId": "listReportRuns",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "periodId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRunPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "generateReportRun",
         "parameters": [
@@ -39028,6 +39286,49 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReportRunView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/report-runs/final-statements": {
+      "get": {
+        "operationId": "listFinalStatements",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "periodId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalStatementPage"
                 }
               }
             },
@@ -39194,6 +39495,55 @@
       }
     },
     "/v1/operator/accounting/valuation-rate-sets": {
+      "get": {
+        "operationId": "listValuationRateSets",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "periodId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateSetPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "captureValuationRateSet",
         "parameters": [
@@ -39226,6 +39576,49 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/valuation-rate-sets/mine": {
+      "get": {
+        "operationId": "listOwnValuationRateSets",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateSetPage"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }
