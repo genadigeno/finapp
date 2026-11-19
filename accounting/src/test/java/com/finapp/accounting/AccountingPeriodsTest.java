@@ -99,6 +99,24 @@ class AccountingPeriodsTest {
     }
 
     @Test
+    @DisplayName("P17-TSK-113, ADR-0152: the books' first month - when no period exists the first opens that many months before"
+            + " today's and every month through today's follows; once any exists the setting is never read again; 0 to 24 months")
+    void theBooksOpenMonthsBack() {
+        assertThat(openedWith(2, "2026-11-19"))
+                .containsExactly(YearMonth.of(2026, 9), YearMonth.of(2026, 10), YearMonth.of(2026, 11));
+        assertThat(store.all()).extracting(AccountingPeriodStore.PeriodRow::status).containsOnly(PeriodStatus.OPEN);
+        assertThat(store.all()).extracting(AccountingPeriodStore.PeriodRow::revision).containsOnly(1);
+        assertThat(openedWith(24, "2027-01-04")).as("read only while none exists: the month after the latest, whatever it says")
+                .containsExactly(YearMonth.of(2026, 12), YearMonth.of(2027, 1));
+        assertThat(audit).extracting(record -> record.operation().code()).hasSize(5).containsOnly("accounting.PeriodOpened");
+
+        assertThat(BooksOpening.TODAY.firstMonth(YearMonth.of(2026, 11))).isEqualTo(YearMonth.of(2026, 11));
+        assertThat(new BooksOpening(BooksOpening.MAX_MONTHS_BACK).firstMonth(YearMonth.of(2026, 11))).isEqualTo(YearMonth.of(2024, 11));
+        assertThatThrownBy(() -> new BooksOpening(-1)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new BooksOpening(BooksOpening.MAX_MONTHS_BACK + 1)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("open next: today's month when none exists, then every month through today's - contiguous, each born"
             + " once, evented and audited once; a repeat opens nothing")
     void openNextOpensContiguousMonthsOnce() {
@@ -622,6 +640,16 @@ class AccountingPeriodsTest {
                     payloads.add(payload);
                 },
                 IDS, clock, (unitOfWork, period, actor, correlation) -> 0);
+    }
+
+    /** {@code openNext} on {@code day}, the books opening {@code monthsBack} months before it when none exists. */
+    private java.util.List<YearMonth> openedWith(int monthsBack, String day) {
+        store.databaseToday(LocalDate.parse(day));
+        Clock clock = Clock.fixed(Instant.parse(day + "T09:00:00Z"), ZoneOffset.UTC);
+        return new AccountingPeriods(store, mappings, cutoff, LockGrace.standard(), (unitOfWork, record) -> audit.add(record),
+                (unitOfWork, envelope, payload, mediaType) -> events.add(envelope), IDS, clock,
+                (unitOfWork, period, actor, correlation) -> 0, new BooksOpening(monthsBack))
+                .openNext(UOW, Actor.SYSTEM, correlation());
     }
 
     /** Opens {@code month} - the first period when none exists - and answers its id. */
