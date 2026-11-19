@@ -5942,6 +5942,35 @@ past 1,000 settled lines stores a new one in a savepoint that never fails it. Th
 
   No full `Sort` and no `Seq Scan` in any of them, so a page costs its own rows. The operation and decision filters narrow the
   window's range. The read stays on the application's pool, never a replica (ADR-0129).
+- **Before ledger `V039` runs on a large journal** (`P17-TSK-022`). Its index on `ledger.journal_entry` serves the journal entry
+  search by an economic event's reference. It holds `SHARE` on the journal while it reads the table, and every posting inserts
+  there, so build it first, by hand, outside a transaction, by this name. The migration's `IF NOT EXISTS` then keeps it:
+  `CREATE INDEX CONCURRENTLY journal_entry_by_reference ON ledger.journal_entry (reference, posting_date, id);`. On a large
+  chart, build the register's the same way: `CREATE INDEX CONCURRENTLY ledger_account_register ON ledger.ledger_account (purpose,
+  currency, id);`. A failed build leaves an `INVALID` index: drop it and build again. The two queues' partial indexes are on
+  tables people write a few rows a day to, and need no build ahead. **The plans**, recorded by app's
+  `LedgerCollectionsDatabaseTest` on forty thousand entries over twenty days, twenty thousand wallets and twenty thousand decided
+  proposals and rebuilds (2026-11-19), in a transaction it rolls back:
+  - **A window, newest first:** `Limit -> Index Only Scan Backward using journal_entry_by_posting_date` (`V029`), the window the
+    index condition.
+  - **A reference's entries:** `Limit -> Index Only Scan Backward using journal_entry_by_reference`, the reference and the window
+    the index condition.
+  - **A busy account's entries:** `Limit -> Nested Loop Semi Join`, the window walked backward on `journal_entry_by_posting_date`
+    and each entry's lines probed on their `(entry_id, seq)` key, so the page stops at its limit.
+  - **A rare account's entries:** the account's own lines through `V038`'s `journal_line_by_account_and_transaction`, their
+    entries on the primary key, and a `Sort` of those rows alone - its cost is the account's lines in the window, never the
+    window's entries.
+  - **A continued page:** the window's scan, the keyset row comparison `ROW(posting_date, id) < ROW(...)` inside the index
+    condition.
+  - **The register, whole, by a purpose, or continued:** `Index Only Scan using ledger_account_register`, the purpose and the
+    keyset row the index condition. A filter a large share of the chart matches - one wallet in three in one currency - may
+    walk the primary key with a filter instead, the order then the id's alone: no sort either way.
+  - **The two queues:** `Index Only Scan using adjustment_proposal_pending_manual` and `projection_rebuild_pending`, the decided
+    rows never read.
+
+  No `Seq Scan` in any of them, and no full `Sort` but the rare account's own rows, so a page costs its own rows. The reads run
+  on the GL's bounded snapshot (`GlSnapshots`, 10 s a statement): a statement past it answers `503`, nothing served and nothing
+  recorded - narrow the window or the filters. They stay on the application's pool, never a replica (ADR-0129).
 
 ### 11.49 The connection budget at ten replicas, the autoscaler's metric on `kind`, and a pooler refused (`P16-TSK-009`, ADR-0134)
 

@@ -457,6 +457,8 @@ sentence lands.
 | `journal_line` | `scale` | `INTERNAL` | Precision metadata of the amount |
 | `journal_line` | `seq` | `INTERNAL` | Line order |
 
+**Served to staff by the ledger's operator reads** (`P17-TSK-022`, 2026-11-19), under `ACCOUNTING_READ`, the GL reads' permission, every page recorded. The account register (`GET /v1/operator/ledger/accounts`, `ledger.AccountsListed`) serves an account's id, purpose, owner kind and owner reference - an id, never a name - currency, type, normal balance, `status` and `created_at`, both `CONFIDENTIAL`, to the accountant who already reads them through the GL; never `gl_code` or `status_changed_at`. The journal entry search (`GET /v1/operator/ledger/entries`, `ledger.EntriesSearched`) serves an entry's id, type, posting and value dates, `created_at`, the entry it reverses, its line count and, per currency, the sum of its debit lines' `amount_minor` - `RESTRICTED-FINANCIAL`, at the level the GL drill-down already serves its lines under the same permission. Never `reference`, `reason` or `actor_id`: the reference is matched, never served, and only an identifier-shaped value is accepted, so an operator's free text never travels in a URL. The two approvers' queues (`GET /v1/ledger/adjustments`, `GET /v1/ledger/projection-rebuilds`, under `LEDGER_ADJUST`) serve a proposal's proposer, its stamp, its reason code and posting date, and a rebuild's account, currency and which figures drifted - never a reason, a reference, a line or an amount.
+
 ### `ledger.account_balance` — *added by `P3-TSK-009`*
 
 The balance projection (ADR-0041): derived from the journal in the posting's own transaction,

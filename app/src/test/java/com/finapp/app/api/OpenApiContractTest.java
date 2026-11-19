@@ -618,6 +618,10 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/balances",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/accounts/{code}/activity",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/entries/{entryId}",
+                        // P17-TSK-022: the ledger as an accountant browses it (ACCOUNTING_READ, every page recorded) - the
+                        // account register and the journal entry search; the approvers' queues are GETs on existing paths.
+                        ApiVersion.CURRENT_PREFIX + "/operator/ledger/accounts",
+                        ApiVersion.CURRENT_PREFIX + "/operator/ledger/entries",
                         // P14-TSK-008: the report runs - generated and regenerated (ACCOUNTING_REPORT_GENERATE, keyed),
                         // read with their content (ACCOUNTING_READ, audited).
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs",

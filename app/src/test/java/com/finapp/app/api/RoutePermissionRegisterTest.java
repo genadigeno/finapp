@@ -100,6 +100,8 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/kyc/cases/{id}/reviews/{taskId}/resolution", PermissionName.KYC_REVIEW),
                     // Ledger adjustments, four-eyes by identity (Phase 3)
                     entry("POST /v1/ledger/adjustments", PermissionName.LEDGER_ADJUST),
+                    // The approver's queue (P17-TSK-022, G-112): the permission its door decides under.
+                    entry("GET /v1/ledger/adjustments", PermissionName.LEDGER_ADJUST),
                     entry("GET /v1/ledger/adjustments/{id}", PermissionName.LEDGER_ADJUST),
                     entry("DELETE /v1/ledger/adjustments/{id}", PermissionName.LEDGER_ADJUST),
                     // MULTI_FACTOR on this one, its three neighbours not (P14-TSK-022); this register holds permissions, ApprovalAssuranceTest the assurance.
@@ -606,6 +608,9 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/accounting/gl/balances", PermissionName.ACCOUNTING_READ),
                     entry("GET /v1/operator/accounting/gl/accounts/{code}/activity", PermissionName.ACCOUNTING_READ),
                     entry("GET /v1/operator/accounting/gl/entries/{entryId}", PermissionName.ACCOUNTING_READ),
+                    // The ledger as an accountant browses it (P17-TSK-022, G-110, G-111): the GL reads' permission.
+                    entry("GET /v1/operator/ledger/accounts", PermissionName.ACCOUNTING_READ),
+                    entry("GET /v1/operator/ledger/entries", PermissionName.ACCOUNTING_READ),
                     // P14-TSK-008: the report runs - generation and regeneration the accountant's
                     // ACCOUNTING_REPORT_GENERATE, the audited read of a run's content the accountant's ACCOUNTING_READ
                     // (identity V025's partition); the negatives are ReportRunDeskTest's route declarations.
@@ -636,6 +641,7 @@ class RoutePermissionRegisterTest {
                     // The four-eyes projection rebuild (P14-TSK-026, ADR-0119): the ledger operator's, LEDGER_ADJUST;
                     // MULTI_FACTOR on the approval alone (ApprovalAssuranceTest).
                     entry("POST /v1/ledger/projection-rebuilds", PermissionName.LEDGER_ADJUST),
+                    entry("GET /v1/ledger/projection-rebuilds", PermissionName.LEDGER_ADJUST),
                     entry("GET /v1/ledger/projection-rebuilds/{id}", PermissionName.LEDGER_ADJUST),
                     entry("POST /v1/ledger/projection-rebuilds/{id}/approval", PermissionName.LEDGER_ADJUST),
                     entry("POST /v1/ledger/projection-rebuilds/{id}/rejection", PermissionName.LEDGER_ADJUST)));

@@ -109,10 +109,11 @@ public final class GlSnapshots {
     /**
      * True when {@code failure} is a statement cancelled by the timeout: the stores report a failure as their operation
      * and {@code (SQLState 57014)} ({@code DatabaseFailure.describe}'s form - never the driver's message or cause), so the
-     * cancellation is read from that suffix.
+     * cancellation is read from that suffix. The ledger's own operator reads (`P17-TSK-022`, {@code LedgerCollectionDesk}) run
+     * on this snapshot too, and the ledger's stores describe a failure the same way.
      */
     static boolean timedOut(RuntimeException failure) {
-        return failure instanceof AccountingStorageException
+        return (failure instanceof AccountingStorageException || failure instanceof com.finapp.ledger.LedgerStorageException)
                 && failure.getMessage() != null
                 && failure.getMessage().endsWith("(SQLState " + QUERY_CANCELED + ")");
     }

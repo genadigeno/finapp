@@ -174,6 +174,29 @@ public class LedgerBeans {
         return new LedgerProjectionRebuilds(projectionRebuilds, ledgerTransactions, dataSource, projectionRebuildMetrics);
     }
 
+    /**
+     * The ledger's operator collections (`P17-TSK-022`): the account register, the journal entry search and the two approvers'
+     * queues, each page on a verified, bounded read-only snapshot of its own - the GL's ({@code GlSnapshots}, its statement
+     * timeout) - and the register's and the search's pages recorded on {@code ledgerTransactions}.
+     */
+    @Bean
+    LedgerCollectionDesk ledgerCollectionDesk(
+            TransactionTemplate ledgerTransactions,
+            DataSource dataSource,
+            AuditWriter<Connection> auditWriter,
+            com.finapp.sharedkernel.id.IdGenerator ids,
+            Clock clock) {
+        return new LedgerCollectionDesk(
+                new com.finapp.ledger.JdbcLedgerCollections(),
+                new com.finapp.app.accounting.GlSnapshots(
+                        dataSource::getConnection, com.finapp.app.accounting.GlSnapshots.STATEMENT_TIMEOUT),
+                ledgerTransactions,
+                dataSource,
+                auditWriter,
+                ids,
+                clock);
+    }
+
     @Bean
     LedgerAdjustments ledgerAdjustments(
             AdjustmentService adjustmentService,
