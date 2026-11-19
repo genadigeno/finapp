@@ -133,6 +133,47 @@ class AccountingBreakDeskTest {
     }
 
     @Test
+    @DisplayName("P17-TSK-111: a pending acknowledgement is rejected over the doors, reasoned - the break stays OPEN with nothing"
+            + " pending, the view names the proposer only while it is pending, the record keeps the reason, a replayed key answers"
+            + " the stored receipt, and a new proposal may follow; nothing pending is 409, no reason 422")
+    void aPendingAcknowledgementIsRejected() {
+        String id = raised();
+        as(ACCOUNTANT, () -> desk.proposeAcknowledgement("propose-1", id, "a fee line the transfer poster wrote"));
+        AccountingBreakDesk.AccountingBreakView pending = as(CONTROLLER, () -> desk.one(id));
+        assertThat(pending.acknowledgementPending()).isTrue();
+        assertThat(pending.acknowledgementProposedBy()).as("the approver sees whose proposal it decides").isEqualTo(ACCOUNTANT.id());
+
+        refused(() -> as(CONTROLLER, () -> desk.rejectAcknowledgement("reject-blank", id, " ")), AccountingErrorCode.REASON_REQUIRED, 422);
+        AccountingBreakDesk.AccountingBreakReceipt rejected =
+                as(CONTROLLER, () -> desk.rejectAcknowledgement("reject-1", id, "the disclosure names the wrong poster"));
+        assertThat(rejected.status()).isEqualTo("OPEN");
+        assertThat(rejected.acknowledgementPending()).isFalse();
+        assertThat(as(CONTROLLER, () -> desk.rejectAcknowledgement("reject-1", id, "the disclosure names the wrong poster")))
+                .as("the key's replay is the first answer").isEqualTo(rejected);
+        AccountingBreakDesk.AccountingBreakView cleared = as(CONTROLLER, () -> desk.one(id));
+        assertThat(cleared.acknowledgementPending()).isFalse();
+        assertThat(cleared.acknowledgementProposedBy()).isNull();
+        assertThat(cleared.acknowledgementProposedAt()).isNull();
+        assertThat(cleared.disclosure()).isNull();
+        assertThat(audited).filteredOn(record -> record.operation().code().equals("accounting.BreakAcknowledgementRejected"))
+                .singleElement().satisfies(record -> {
+                    assertThat(record.outcome()).isEqualTo(AuditOutcome.SUCCEEDED);
+                    assertThat(record.targetId()).isEqualTo(id);
+                    assertThat(record.reason()).contains("the disclosure names the wrong poster");
+                    assertThat(record.changeSummary()).get().asString().endsWith(", byProposer=false");
+                });
+        refused(() -> as(CONTROLLER, () -> desk.rejectAcknowledgement("reject-2", id, "again")), AccountingErrorCode.BREAK_STALE, 409);
+
+        AccountingBreakDesk.AccountingBreakReceipt again =
+                as(ACCOUNTANT, () -> desk.proposeAcknowledgement("propose-2", id, "a fee line the fee poster wrote"));
+        assertThat(again.acknowledgementPending()).as("a new proposal follows a rejected one").isTrue();
+        assertThat(as(ACCOUNTANT, () -> desk.rejectAcknowledgement("withdraw", id, "mine to withdraw")).acknowledgementPending())
+                .as("a rejection may be its own proposer's - four eyes guards the approval").isFalse();
+        assertThat(audited).filteredOn(record -> record.operation().code().equals("accounting.BreakAcknowledgementRejected"))
+                .last().satisfies(record -> assertThat(record.changeSummary()).get().asString().endsWith(", byProposer=true"));
+    }
+
+    @Test
     @DisplayName("resolution names an existing correcting entry: an unknown one 422, a malformed id 422, then RESOLVED"
             + " with the entry on the view; a second resolution 409")
     void resolutionIsByReference() {
@@ -243,6 +284,8 @@ class AccountingBreakDeskTest {
                 "readAccountingBreak", PermissionName.ACCOUNTING_ADJUST_APPROVE,
                 "proposeAccountingBreakAcknowledgement", PermissionName.ACCOUNTING_ADJUST_PROPOSE,
                 "approveAccountingBreakAcknowledgement", PermissionName.ACCOUNTING_ADJUST_APPROVE,
+                // P17-TSK-111: the rejection, the approval's permission - the act it races.
+                "rejectAccountingBreakAcknowledgement", PermissionName.ACCOUNTING_ADJUST_APPROVE,
                 "resolveAccountingBreak", PermissionName.ACCOUNTING_ADJUST_APPROVE);
         int doors = 0;
         for (Method method : AccountingBreakController.class.getDeclaredMethods()) {

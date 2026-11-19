@@ -64,7 +64,7 @@ class RiskCaseApiTest {
             + " proposer's approval 403 recorded FAILED; a password session 403 AssuranceRequired; from MULTI_FACTOR 200"
             + " DISPOSED and the profile PROHIBITED after the commit")
     void theCaseOverHttp() throws Exception {
-        Session alice = sessionWith(RoleName.RISK_ANALYST, false);
+        Session alice = sessionWith(RoleName.RISK_ANALYST, true);
         UUID customer = IDS.next();
         HttpResponse<String> opened = post("/v1/operator/risk/cases", "{\"kind\":\"FRAUD\",\"subjectKind\":\"PARTY\","
                 + "\"subjectRef\":\"" + customer + "\",\"reason\":\"a mule pattern\"}", alice.token());
@@ -84,12 +84,12 @@ class RiskCaseApiTest {
         HttpResponse<String> proposed = post(door(caseId) + "/dispositions", "{\"revision\":1,\"disposition\":"
                 + "\"CONFIRMED_FRAUD\",\"prohibit\":true,\"reason\":\"a mule account\"}", alice.token());
         assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
-        assertThat(proposed.body()).contains("\"status\":\"PROPOSED\"").contains("\"requiresSecondPerson\":true");
+        assertThat(proposed.body()).contains("\"status\":\"PROPOSED\"").contains("\"requiresSecondPerson\":true")
+                .contains("\"proposedBy\":\"" + alice.identity() + "\"");
         String dispositionId = field(proposed.body(), "dispositionId");
         String approval = door(caseId) + "/dispositions/" + dispositionId + "/approval";
 
-        Session aliceStepped = sessionOf(alice, true);
-        HttpResponse<String> own = post(approval, "{\"revision\":2,\"reason\":\"mine\"}", aliceStepped.token());
+        HttpResponse<String> own = post(approval, "{\"revision\":2,\"reason\":\"mine\"}", alice.token());
         assertThat(own.statusCode()).as(own.body()).isEqualTo(403);
         assertThat(own.body()).contains("risk.SelfApprovalRefused");
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'risk.SelfApprovalRefused'"
@@ -117,8 +117,8 @@ class RiskCaseApiTest {
             + " recorded FAILED; a card-shaped note 422 ReasonRequired; a confirming proposal on an untaken case 422"
             + " CaseNotTaken; an unknown case 404; a false positive closed from OPEN 201 DISPOSED")
     void theRefusals() throws Exception {
-        Session analyst = sessionWith(RoleName.RISK_ANALYST, false);
-        Session officer = sessionWith(RoleName.RISK_OFFICER, false);
+        Session analyst = sessionWith(RoleName.RISK_ANALYST, true);
+        Session officer = sessionWith(RoleName.RISK_OFFICER, true);
         String body = "{\"kind\":\"FRAUD\",\"subjectKind\":\"PARTY\",\"subjectRef\":\"" + IDS.next()
                 + "\",\"reason\":\"worth a look\"}";
         assertThat(post("/v1/operator/risk/cases", body, officer.token()).statusCode()).as("another desk")

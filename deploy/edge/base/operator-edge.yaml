@@ -49,7 +49,7 @@ http:
           tracestate: ""
           baggage: ""
 
-    # THE OPERATOR CONSOLE'S OWN HEADERS (X-TSK-020; finapp-admin-panel P17-TSK-004, ADR-0131 decision 4), on the operator-console router
+    # THE OPERATOR CONSOLE'S OWN HEADERS (X-TSK-020; finapp-admin-panel P17-TSK-004, finapp-admin-panel ADR-C131 decision 4), on the operator-console router
     # alone: the API routers keep edge-headers and its default-src 'none', and no router runs both. The policy is a copy of the console's one
     # definition, finapp-admin-panel config/console-headers.mjs (CONSOLE_CSP), under which its catalogue proves every component: scripts,
     # styles and fonts from the console's own origin, images from it or data: URLs, the API same-origin, no form posted elsewhere, no
@@ -81,6 +81,31 @@ http:
           - 10.0.0.0/8
           - 172.16.0.0/12
           - 192.168.0.0/16
+
+    # WHAT ONE OPERATOR SOURCE MAY SEND, AND HOLD AT ONCE (P17-TSK-103; the owner's D-7, "modest"; finapp-admin-panel ADR-C131 decision 6).
+    # The application exempts the operator surface from its load shedding by design (THREAT_MODEL.md T14), so these are the surface's
+    # first bound against a faulty client - a console looping on a request. Keyed on the connection's address, stated as the public
+    # edge's are: inFlightReq's default key is the Host header, which the client chooses. Like every limiter of the pinned proxy they
+    # count per router that names them and per controller replica, so one source's ceiling is these numbers times the routers times
+    # the operator controllers: no global limit is claimed. Sized for one person's console - a page's dozen requests and a first
+    # visit's assets inside the burst - never for a workload. A burst past either answers 429, the rate limit's with Retry-After,
+    # which the console reads and shows.
+    operator-rate:
+      rateLimit:
+        average: 20
+        period: 1s
+        burst: 50
+        sourceCriterion: {ipStrategy: {ipv6Subnet: 64}}
+    operator-hold:
+      inFlightReq:
+        amount: 10
+        sourceCriterion: {ipStrategy: {ipv6Subnet: 64}}
+    # The settlement upload's own, at its 25 MiB body cap: 2 in flight is 50 MiB, and with the other two operator routers' 10 each at
+    # 2 MiB one source holds 90 MiB of the operator controller's 256 MiB spool at most (EdgeAllowListTest holds the sum).
+    operator-hold-upload:
+      inFlightReq:
+        amount: 2
+        sourceCriterion: {ipStrategy: {ipv6Subnet: 64}}
 
     body-cap:
       buffering:

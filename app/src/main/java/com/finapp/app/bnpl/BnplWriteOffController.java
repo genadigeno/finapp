@@ -44,6 +44,7 @@ public class BnplWriteOffController {
     @NonNull private final BnplFlowScope flow;
 
     /** Proposes writing the defaulted agreement off, with a reason: nothing is posted. The receipt names the figures read. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/write-offs", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.BNPL_WRITE_OFF_PROPOSE)
     @RequiresIdempotencyKey
@@ -90,6 +91,7 @@ public class BnplWriteOffController {
     }
 
     /** Rejects it, on any account status - final, and the door out of one that can no longer post. A reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/write-offs/{writeOffId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.BNPL_WRITE_OFF_APPROVE)
     @RequiresIdempotencyKey

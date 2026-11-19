@@ -450,13 +450,14 @@ class ReconciledPositionResidueDatabaseTest {
         RANDOMNESS.nextBytes(bytes);
         String plaintext =
                 java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        // MULTI_FACTOR: the opening position is an operator act, and every one steps up (P17-TSK-102).
         com.finapp.identity.Session.Draft session =
                 com.finapp.identity.Session.issue(
                         IDS,
                         CLOCK,
                         controller,
                         SessionToken.of(plaintext),
-                        AssuranceLevel.PASSWORD,
+                        AssuranceLevel.MULTI_FACTOR,
                         SessionPolicy.current());
         try (Connection app = DatabaseRoles.application()) {
             sessions.insert(app, session);

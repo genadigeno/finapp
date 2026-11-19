@@ -60,7 +60,8 @@ public final class RegulatoryObligationDesk {
     public record RegulatoryObligationReceipt(String obligationId, String status, String standing, String configurationSha256) {}
 
     /** A version in a list. */
-    public record RegulatoryObligationSummaryView(String obligationId, String standing, String jurisdictionCode, String formCode, int formVersion, String status, String configurationSha256, String proposedAt) {}
+    public record RegulatoryObligationSummaryView(String obligationId, String standing, String jurisdictionCode, String formCode, int formVersion, String status, String configurationSha256, String proposedAt,
+            String proposedBy) {}
 
     /**
      * A version as its reader reads it.
@@ -69,7 +70,8 @@ public final class RegulatoryObligationDesk {
      * @param proposalReason the proposer's reason: to the controller's door alone
      */
     public record RegulatoryObligationView(String obligationId, String standing, String notice, String jurisdictionCode, String formCode, int formVersion, String periodType, String adapterName, boolean adapterHeld, String status,
-            String configurationSha256, List<RegulatoryObligationSourceItem> sources, List<RegulatoryObligationLineItem> lines, List<RegulatoryObligationRuleItem> rules, String proposedAt, String decidedAt, String retiredAt, String proposalReason) {
+            String configurationSha256, List<RegulatoryObligationSourceItem> sources, List<RegulatoryObligationLineItem> lines, List<RegulatoryObligationRuleItem> rules, String proposedAt, String decidedAt, String retiredAt, String proposalReason,
+            String proposedBy) {
 
         /** The reason stays out of a log line. */
         @Override
@@ -170,11 +172,11 @@ public final class RegulatoryObligationDesk {
                 row.configurationSha256(), configuration.sources().stream().map(source -> new RegulatoryObligationSourceItem(source.definition(), source.version())).toList(),
                 configuration.lines().stream().map(line -> new RegulatoryObligationLineItem(line.code(), line.label(), line.source(), line.figure())).toList(),
                 configuration.rules().stream().map(rule -> new RegulatoryObligationRuleItem(rule.code(), rule.type().name(), rule.left(), rule.right())).toList(), row.proposedAt().toString(), row.decidedAt().map(Instant::toString).orElse(null),
-                row.retiredAt().map(Instant::toString).orElse(null), withReason ? row.proposalReason() : null);
+                row.retiredAt().map(Instant::toString).orElse(null), withReason ? row.proposalReason() : null, row.proposedBy());
     }
 
     private static RegulatoryObligationSummaryView summary(RegulatoryObligationStore.Row row) {
-        return new RegulatoryObligationSummaryView(row.id().value().toString(), row.standing(), row.jurisdiction(), row.form(), row.formVersion(), row.status().name(), row.configurationSha256(), row.proposedAt().toString());
+        return new RegulatoryObligationSummaryView(row.id().value().toString(), row.standing(), row.jurisdiction(), row.form(), row.formVersion(), row.status().name(), row.configurationSha256(), row.proposedAt().toString(), row.proposedBy());
     }
 
     private RegulatoryObligationReceipt receipt(RegulatoryObligationId id) {

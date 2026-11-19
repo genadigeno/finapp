@@ -19,7 +19,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
 
 /**
  * The Operator Console is served same-origin on the operator edge alone, under headers of its own, from a workload that holds nothing and
- * reaches nothing (`X-TSK-020`; finapp-admin-panel `P17-TSK-004`, ADR-0130 decision 2, ADR-0131 decision 4; ADR-0120 decision 6's note).
+ * reaches nothing (`X-TSK-020`; finapp-admin-panel `P17-TSK-004`, finapp-admin-panel ADR-C130 decision 2 and ADR-C131 decision 4; ADR-0120 decision 6's note).
  *
  * <p>Held on the committed files on every build. {@code infra/scripts/edge-check.sh} renders the console's overlays beside the application's
  * and the edge's and runs them through {@code edge.rego}'s {@code [edge-console-*]} rules, each refused by a plant, and asks the pinned proxy
@@ -27,7 +27,8 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  *
  * <p><strong>The policy is a copy.</strong> Its one definition is finapp-admin-panel's {@code config/console-headers.mjs}
  * ({@code CONSOLE_CSP}), which this repository cannot read on a build. {@link #CONSOLE_CSP} is that string as of `X-TSK-020`; a change there
- * is a change here, in {@code edge.rego} and in {@code edge-check.sh}, each failing until the others agree.
+ * is a change here, in {@code edge.rego}, in {@code edge-check.sh} and (since `P17-TSK-104`) in {@code kind-rehearsal.sh}'s console step,
+ * each failing until the others agree ({@code KindRehearsalContractTest} holds the last).
  */
 @Tag("architecture")
 @DisplayName("the Operator Console is served on the operator edge alone, under its own headers, from a workload that holds and reaches nothing (X-TSK-020)")
@@ -257,6 +258,24 @@ class ConsoleHostingManifestsTest {
             assertThat(policy).as(id).contains("[" + id + "]");
             assertThat(Pattern.compile("(?m)^edge_refused \\S+ " + Pattern.quote(id) + "$").matcher(script).find()).as("%s is refused by a plant", id).isTrue();
         }
+    }
+
+    /**
+     * `P17-TSK-104`'s fourth item, {@code kubeconform} over {@code deploy/console}: the edge's check renders each console overlay into the very
+     * stream it hands {@code kubeconform -strict}, for every overlay there is, so no console manifest reaches a cluster unread by the schemas.
+     * Running it needs Docker; that it reads the console is held here.
+     */
+    @Test
+    @DisplayName("kubeconform -strict reads every console overlay: the edge's check appends each to the stream it validates, for kind, staging and production (P17-TSK-104)")
+    void kubeconformReadsEveryConsoleOverlay() {
+        String script = read("infra/scripts/edge-check.sh");
+        assertThat(script).as("the console's stream appended to the overlay's, which is what is validated")
+                .contains("kustomize build \"$1/console/overlays/$2\" >> \"$3\"")
+                .contains("render_both /repo/deploy \"$overlay\" \"/scratch/rendered/$overlay.yaml\"")
+                .contains("check \"kubeconform $overlay\" kubeconform_on \"/scratch/rendered/$overlay.yaml\"")
+                .contains("-strict -summary").doesNotContain("-ignore-missing-schemas");
+        assertThat(script).as("every overlay").contains("OVERLAYS=\"" + String.join(" ", OVERLAYS) + "\"");
+        assertThat(root.resolve("deploy/console/overlays").toFile().list()).as("and the console has no other").containsExactlyInAnyOrderElementsOf(OVERLAYS);
     }
 
     // ------------------------------------------------------------------------------------------------------------- reading

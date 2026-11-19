@@ -159,9 +159,13 @@ class RiskOverrideDeskTest {
             new IdempotentExecutor(new Claims(), RiskEvaluationWorld.CLOCK, Duration.ofDays(1), Duration.ofMinutes(1)),
             transactions, RiskFlowScope.NONE, metrics);
 
+    /**
+     * <em>(Read "the approval asks MULTI_FACTOR", and {@code isNull} on the proposal and the rejection, until `P17-TSK-102`,
+     * 2026-11-17.)</em>
+     */
     @Test
-    @DisplayName("every route carries exactly RISK_OVERRIDE; the approval asks MULTI_FACTOR; every act is keyed and the"
-            + " reads are not")
+    @DisplayName("every route carries exactly RISK_OVERRIDE; every act asks MULTI_FACTOR since the owner's D-6 (P17-TSK-102)"
+            + " and is keyed, and the reads are neither")
     void everyRouteIsTheOfficers() throws NoSuchMethodException {
         Method read = RiskOverrideController.class.getMethod("readRiskOverrides", String.class);
         Method readOne = RiskOverrideController.class.getMethod("readRiskOverride", String.class, String.class);
@@ -175,11 +179,12 @@ class RiskOverrideDeskTest {
             assertThat(route.getAnnotation(RequiresPermission.class).value()).as(route.getName())
                     .isEqualTo(PermissionName.RISK_OVERRIDE);
         }
-        assertThat(approve.getAnnotation(RequiresAssurance.class).value()).isEqualTo(AssuranceLevel.MULTI_FACTOR);
         for (Method act : List.of(propose, approve, reject)) {
+            assertThat(act.getAnnotation(RequiresAssurance.class)).as(act.getName()).isNotNull()
+                    .extracting(RequiresAssurance::value).isEqualTo(AssuranceLevel.MULTI_FACTOR);
             assertThat(act.getAnnotation(RequiresIdempotencyKey.class)).as(act.getName()).isNotNull();
         }
-        for (Method notStepped : List.of(read, readOne, propose, reject)) {
+        for (Method notStepped : List.of(read, readOne)) {
             assertThat(notStepped.getAnnotation(RequiresAssurance.class)).as(notStepped.getName()).isNull();
         }
         assertThat(read.getAnnotation(RequiresIdempotencyKey.class)).isNull();
@@ -352,8 +357,10 @@ class RiskOverrideDeskTest {
             assertThat(view.effect()).isEqualTo("RESUBMISSION");
             assertThat(view.decisionReason()).isEqualTo("withdrawn");
         });
+        // P17-TSK-109: of the persons, the proposer alone - who decided stays withheld.
         assertThat(RiskOverrideDesk.RiskOverrideView.class.getRecordComponents())
-                .noneMatch(component -> component.getName().contains("By"));
+                .filteredOn(component -> component.getName().contains("By"))
+                .extracting(java.lang.reflect.RecordComponent::getName).containsExactly("proposedBy");
         assertThat(as(officer(), () -> desk.readOne(id(review), overrideId)).overrides()).hasSize(1);
         assertThat(audited("risk.AssessmentRead")).hasSize(2).allSatisfy(record -> assertThat(
                 record.changeSummary().orElseThrow()).contains("door=override"));

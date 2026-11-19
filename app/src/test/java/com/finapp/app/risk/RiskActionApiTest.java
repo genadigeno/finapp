@@ -69,7 +69,7 @@ class RiskActionApiTest {
             + " 403 recorded FAILED, a password session 403; from MULTI_FACTOR 202 DONE on the first attempt - the"
             + " customer's session ended and the identity SUSPENDED by identity, audited as the platform")
     void theAtoResponseThroughIdentity() throws Exception {
-        Session alice = sessionWith(RoleName.RISK_ANALYST, false);
+        Session alice = sessionWith(RoleName.RISK_ANALYST, true);
         Session customer = customer();
         String caseId = takenCase("{\"kind\":\"ATO\",\"subjectKind\":\"PARTY\",\"subjectRef\":\"" + customer.party()
                 + "\",\"reason\":\"a recovery then a new payee\"}", alice);
@@ -79,16 +79,15 @@ class RiskActionApiTest {
         assertThat(revoke.statusCode()).as(revoke.body()).isEqualTo(201);
         assertThat(revoke.body()).contains("\"status\":\"PROPOSED\"").contains("\"targetKind\":\"PARTY\"")
                 .contains("\"targetRef\":\"" + customer.party() + "\"").contains("\"caseRevision\":2")
-                .doesNotContain("proposedBy");
+                .contains("\"proposedBy\":\"" + alice.identity() + "\"");
         String revokeId = field(revoke.body(), "actionId");
         HttpResponse<String> suspend = post(door(caseId) + "/risk-actions", "{\"revision\":2,\"kind\":"
                 + "\"SUSPEND_IDENTITY\",\"reason\":\"stop the logins\"}", alice.token());
         assertThat(suspend.statusCode()).as(suspend.body()).isEqualTo(201);
         String suspendId = field(suspend.body(), "actionId");
 
-        Session aliceStepped = sessionOf(alice, true);
         HttpResponse<String> own = post(door(caseId) + "/risk-actions/" + revokeId + "/approval",
-                "{\"revision\":3,\"reason\":\"mine\"}", aliceStepped.token());
+                "{\"revision\":3,\"reason\":\"mine\"}", alice.token());
         assertThat(own.statusCode()).as(own.body()).isEqualTo(403);
         assertThat(own.body()).contains("risk.SelfApprovalRefused");
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'risk.SelfApprovalRefused'"
@@ -131,7 +130,7 @@ class RiskActionApiTest {
             + " another desk 403, no session 401, a kind the case does not admit 409, an untaken case 422, an unknown"
             + " case 404")
     void theMerchantResponseAndTheRefusals() throws Exception {
-        Session alice = sessionWith(RoleName.RISK_ANALYST, false);
+        Session alice = sessionWith(RoleName.RISK_ANALYST, true);
         Merchant merchant = merchant();
         String caseId = takenCase("{\"kind\":\"MERCHANT_ABUSE\",\"subjectKind\":\"MERCHANT\",\"subjectRef\":\""
                 + merchant.id().value() + "\",\"reason\":\"a refund ratio\"}", alice);
@@ -153,7 +152,7 @@ class RiskActionApiTest {
         assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'merchant.MerchantSuspended'"
                 + " AND actor_type = 'SYSTEM' AND reason = 'RISK_CASE_MERCHANT_ABUSE'")).isGreaterThanOrEqualTo(1);
 
-        Session officer = sessionWith(RoleName.RISK_OFFICER, false);
+        Session officer = sessionWith(RoleName.RISK_OFFICER, true);
         String body = "{\"revision\":3,\"kind\":\"SUSPEND_MERCHANT\",\"reason\":\"again\"}";
         assertThat(post(door(caseId) + "/risk-actions", body, officer.token()).statusCode()).as("another desk")
                 .isEqualTo(403);

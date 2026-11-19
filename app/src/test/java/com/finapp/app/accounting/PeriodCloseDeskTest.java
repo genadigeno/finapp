@@ -260,7 +260,7 @@ class PeriodCloseDeskTest {
     }
 
     @Test
-    @DisplayName("the controller's read: recorded before it is served; each attempt, the evidence, the reason per DISCLOSED attempt, whether it still stands; no person, no proposal's reason; none is not found")
+    @DisplayName("the controller's read: recorded before it is served; each attempt, the evidence, the reason per DISCLOSED attempt, whether it still stands; the proposer by identifier since P17-TSK-111, never the approver or the proposal's reason; none is not found")
     void theControllersRead() {
         refused(() -> as(CONTROLLER, () -> desk.proposal(period())), AccountingErrorCode.NOT_FOUND, 404);
         propose("k-1");
@@ -279,7 +279,10 @@ class PeriodCloseDeskTest {
         assertThat(view.reopenPending()).isFalse();
         assertThat(view.overtakenReturns()).as("no reopen pending, no list read: none served, never an empty one").isNull();
         assertThat(view.valuationRateSetReferenceGaps()).as("P14-DOC-001: the named set's reference gaps, an ordinary capture's none").isZero();
-        assertThat(view.toString()).doesNotContain(ACCOUNTANT.id()).doesNotContain(REASON);
+        // P17-TSK-111: the proposer named, by identifier - the reason and the approver never.
+        assertThat(view.proposedBy()).isEqualTo(ACCOUNTANT.id());
+        assertThat(view.reopenProposedBy()).isNull();
+        assertThat(view.toString()).doesNotContain(REASON).doesNotContain(CONTROLLER.id());
         AuditRecord read = audited.get(audited.size() - 1);
         assertThat(read.operation().code()).isEqualTo("accounting.CloseProposalRead");
         assertThat(read.changeSummary().orElseThrow()).doesNotContain(DISCLOSURE);
@@ -308,8 +311,13 @@ class PeriodCloseDeskTest {
         refused(() -> as(ACCOUNTANT, () -> desk.proposeReopen("k-q", period(), List.of(), "again")), AccountingErrorCode.PERIOD_STALE, 409);
     }
 
+    /**
+     * <em>(Read "the close's and the reopen's approvals step up; an end, a proposal, a rejection of a close and a read do not"
+     * until `P17-TSK-102`, 2026-11-17.)</em>
+     */
     @Test
-    @DisplayName("the routes are the partition: every act keyed; the accountant proposes, the controller decides and reads what it decides")
+    @DisplayName("the routes are the partition: every act keyed and, since the owner's D-6 (P17-TSK-102), MULTI_FACTOR; the reads"
+            + " not; the accountant proposes, the controller decides and reads what it decides")
     void theRoutesAreThePartition() throws Exception {
         Map<String, PermissionName> expected = Map.of("proposeAccountingPeriodClose", PermissionName.ACCOUNTING_CLOSE_PROPOSE, "readAccountingPeriodCloseProposal", PermissionName.ACCOUNTING_CLOSE_APPROVE,
                 "approveAccountingPeriodClose", PermissionName.ACCOUNTING_CLOSE_APPROVE, "rejectAccountingPeriodClose", PermissionName.ACCOUNTING_CLOSE_APPROVE, "proposeAccountingPeriodReopen",
@@ -319,8 +327,9 @@ class PeriodCloseDeskTest {
         for (Method method : PeriodCloseController.class.getDeclaredMethods()) {
             if (method.isAnnotationPresent(RequiresPermission.class)) {
                 seen++;
-                // P14-TSK-024, the owner's acceptance: the close's and the reopen's approvals step up; an end, a proposal, a rejection of a close and a read do not.
-                boolean stepsUp = method.getName().equals("approveAccountingPeriodClose") || method.getName().equals("approveAccountingPeriodReopen");
+                // P14-TSK-024, the owner's acceptance: the close's and the reopen's approvals step up; since the owner's D-6
+                // (P17-TSK-102) so does every other act - an end, a proposal, a rejection - and only a read does not.
+                boolean stepsUp = !method.getName().startsWith("read");
                 assertThat(Optional.ofNullable(method.getAnnotation(com.finapp.app.session.RequiresAssurance.class)).map(com.finapp.app.session.RequiresAssurance::value)).as(method.getName())
                         .isEqualTo(stepsUp ? Optional.of(com.finapp.identity.AssuranceLevel.MULTI_FACTOR) : Optional.empty());
                 assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName()).isEqualTo(expected.get(method.getName()));
@@ -814,7 +823,7 @@ class PeriodCloseDeskTest {
     }
 
     @Test
-    @DisplayName("P14-TSK-024's fix round (M-1): the controller's read of a period's pending requests - an unlock by when it was proposed, a reopen by its id and when it was proposed, what each act names; null where none is pending; no person, no reason; an unknown period 404")
+    @DisplayName("P14-TSK-024's fix round (M-1): the controller's read of a period's pending requests - an unlock by when it was proposed, a reopen by its id and when it was proposed, what each act names, its proposer by identifier and the latest close proposal since P17-TSK-111; null where none is pending; no reason; an unknown period 404")
     void theControllerReadsWhatItWillName() {
         propose("k-q1");
         PeriodCloseDesk.PeriodRequestsView proposed = as(CONTROLLER, () -> desk.requests(period()));
@@ -824,6 +833,11 @@ class PeriodCloseDeskTest {
         assertThat(proposed.reopenPending()).isFalse();
         assertThat(proposed.reopenId()).isNull();
         assertThat(proposed.reopenProposedAt()).isNull();
+        // P17-TSK-111: "no close proposal" is an answer here - this period has one, PROPOSED.
+        assertThat(proposed.closeProposalId()).isEqualTo(closes.latest(UOW, march).orElseThrow().id().value().toString());
+        assertThat(proposed.closeProposalStatus()).isEqualTo("PROPOSED");
+        assertThat(proposed.unlockProposedBy()).isNull();
+        assertThat(proposed.reopenProposedBy()).isNull();
 
         as(CONTROLLER, () -> desk.approve("k-q2", period(), closes.latest(UOW, march).orElseThrow().id().value().toString(), REASON));
         as(ACCOUNTANT, () -> desk.proposeReopen("k-q3", period(), List.of(), "a correction"));
@@ -832,7 +846,9 @@ class PeriodCloseDeskTest {
         assertThat(reopening.reopenPending()).isTrue();
         assertThat(reopening.reopenId()).isEqualTo(closes.reopens().get(0).id().value().toString());
         assertThat(reopening.reopenProposedAt()).isEqualTo(closes.reopens().get(0).proposedAt().toString());
-        assertThat(reopening.toString()).doesNotContain(ACCOUNTANT.id()).doesNotContain("a correction");
+        assertThat(reopening.reopenProposedBy()).as("P17-TSK-111: the reopen's proposer named").isEqualTo(ACCOUNTANT.id());
+        assertThat(reopening.closeProposalStatus()).isEqualTo("APPROVED");
+        assertThat(reopening.toString()).doesNotContain("a correction").doesNotContain(CONTROLLER.id());
         refused(() -> as(CONTROLLER, () -> desk.requests(UUID.randomUUID().toString())), AccountingErrorCode.NOT_FOUND, 404);
 
         AccountingPeriodId april = AccountingPeriodId.next(IDS);
@@ -843,6 +859,9 @@ class PeriodCloseDeskTest {
         assertThat(unlocking.unlockPending()).isTrue();
         assertThat(unlocking.unlockProposedAt()).isEqualTo(periods.find(UOW, april).orElseThrow().unlockProposedAt().orElseThrow().toString());
         assertThat(unlocking.reopenPending()).isFalse();
+        assertThat(unlocking.unlockProposedBy()).as("P17-TSK-111: the unlock's proposer named").isEqualTo(ACCOUNTANT.id());
+        assertThat(unlocking.closeProposalId()).as("P17-TSK-111: no close proposal is an answer, never a 404").isNull();
+        assertThat(unlocking.closeProposalStatus()).isNull();
     }
 
     // ------------------------------------------------------------------ plumbing

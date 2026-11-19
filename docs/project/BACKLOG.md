@@ -31548,6 +31548,1052 @@ parts are `POSTPONED_ISSUES.md` PI-026 and PI-027.*
 
 ---
 
+# Phase 17 — Operator Console (backend half)
+
+Status: `READY` (2026-11-17 — entry gate passed by the Phase 16 → 17 transition: Phase 16 `COMPLETE` by the owner's flip of
+2026-11-17 on its exit review's verdict, "complete with recorded deviations" ([`reviews/PHASE_16_REVIEW.md`](reviews/PHASE_16_REVIEW.md));
+the transition's record is [`reviews/PHASE_16_TO_17_TRANSITION.md`](reviews/PHASE_16_TO_17_TRANSITION.md)), initialised as
+documents only by the same transition (`P17-INIT`, branch `P17-INIT` from master `5227f57e`): forty-four items across eleven
+milestones, two of them `COMPLETE` before the phase opened (`P17-TSK-003` and `-004`, under the owner's decision D-12),
+`P17-TSK-101` marked `READY` and every other item `PLANNED`.
+
+**What this section is.** Phase 17 builds the Operator Console: a single-page application in its own repository,
+`finapp-admin-panel`, served same-origin on the operator edge as a static workload holding no state. That repository holds the
+console's plan (`finapp-admin-panel` `docs/PHASE_17_PLAN.md`), its decisions (ADR-C130…C136, `Proposed` there), its definition of
+done (`DOD-UI`) and **its own tasks** (its `docs/BACKLOG.md`). This section holds **the backend half only**: what only `finapp`
+can do, as the console handed it off in `finapp-admin-panel` `docs/FINAPP_BACKEND_WORK.md` (items B0.1…B11.3, written
+2026-11-15 against master `b23e3212`). Each entry names its B-item and its gap (`G-nn`, the console plan's §7).
+
+**Identifiers.** `P17-TSK-001`…`-044`, `P17-TST-001` and `P17-DOC-001`/`-002` are the console plan's, a namespace both
+repositories share: an identifier names the same task in both, and the backend ones (the plan's §15) are carried here under
+their own numbers. **Tasks only `finapp` has take the reserved block `P17-TSK-101` onward**, which the console's plan does not
+use, so neither repository can mint an identifier the other already holds - the collision that renumbered this repository's
+`X-TSK-019`/`-020` pair on 2026-11-16 (now `X-TSK-022` and `-023`). Milestones M17.1…M17.11 are the console's M1…M11; its M0
+was the transition itself (`P17-INIT`, with B0.1 and B0.2).
+
+**The objective** (the plan's §0): an operator acts on the platform only through real operator endpoints, each authorised,
+factor-proven, audited, and readable before it is decided. **No new financial invariant** (the plan's §19): the console moves no
+money. `-031` and `-116` change who may trigger existing postings and when (four-eyes, thresholds, keys), never the postings,
+and carry `DOD-FIN` for that; `-028` adds a transition to the customer account and carries `DOD-FIN` because a restriction gates
+money movement. The invariants the phase holds under its new doors are the catalogue's existing ones - `INV-AUD-*`,
+`INV-IDN-*`, `INV-IDEM-*`, `INV-HIST-01`, and `INV-LED-*`/`INV-BAL-*` unchanged under `-028` and `-031`.
+
+**The honest environment boundary.** As in Phase 16, the project has no cloud account, and a cluster run is a local `kind`.
+The owner's standing rule postpones every cluster run, so each task's cluster half (`-104`, the `kind` forms of the seeding
+tasks, `-044`'s probe, `P17-TST-001`) is written and held hermetically, and its run is **owed to the owner's run**, as
+`POSTPONED_ISSUES.md` PI-025 records Phase 16's - never claimed as executed.
+
+**Testing.** Per task: the changed classes' tests, and by name the guards that read the changed files and the published
+contract (`OpenApiContractTest`, `EveryEndpointDeclaresARuleTest`, `RoutePermissionRegisterTest`, `EdgeAllowListTest` where
+routes change). **By the owner's grant of 2026-11-17 for this phase's programme, each task runs the database test classes it
+adds or changes** - targeted, never the whole `databaseTest`, `kafkaTest` or own-container tier, which stay PI-023's. Every new
+route is in `docs/api/openapi.json`; every new list is an ADR-C133 §7 collection (`{ items, nextCursor }`, `nextCursor` absent
+at the end, a declared order; `API_CONVENTIONS.md` §7), paged by a key, never an offset; every new read of a customer or of
+staff is audited (ADR-C132 decision 5); every new permission is pinned in `RoleNameTest` and registered in
+`PRIVILEGED_ACCESS_REVIEW.md`; every new act is `MULTI_FACTOR` (D-6, `-102`) and, where it moves or controls money, keyed. The
+ten-instance question is answered per task.
+
+**Milestones** (the console plan's §14):
+- M17.1 Foundation (`-003`, `-004`, `-101`…`-105`)
+- M17.2 First workflows on existing APIs (`-106`, `-107`)
+- M17.3 Administration and audit (`-014`…`-017`, `-108`)
+- M17.4 Risk and AML (`-020`, `-109`, `-110`)
+- M17.5 Finance (`-022`, `-023`, `-111`, `-112`)
+- M17.6 Customers and KYC (`-025`…`-029`, `-113`)
+- M17.7 Payments and merchants (`-031`…`-033`, `-114`, `-115`)
+- M17.8 Credit, lending and BNPL (`-035`, `-116`, `-117`)
+- M17.9 FX, cross-border and integration availability (`-037`, `-118`, `-119`)
+- M17.10 Overview and approvals inbox (`-039`, `-040`, `-042`)
+- M17.11 Hardening and exit (`-044`, `P17-TST-001`, `P17-DOC-002`)
+
+**Order** (the plan's §14). M17.1 first. M17.3, M17.4 and M17.5 may proceed in parallel after M17.2. **M17.6 waits for M17.3**:
+customer reads must be auditable and reviewable before they exist (`-014`'s directory, `-017`'s audit read). M17.7 follows
+M17.6 (`PAYMENT_READ`, the transfer read); M17.8 follows M17.5; M17.9 follows M17.7 (the rails read); M17.10 follows M17.4…M17.9,
+whose pending lists it composes; M17.11 is last. Each milestone's seeding task follows its read tasks and extends `-106`'s
+script.
+
+**Critical path**: `-101` → `-102` → `-014` → `-017` → `-025` → `-027` → `-032` → `-031` → `-040` → `P17-TST-001` →
+`P17-DOC-002`.
+
+**What Phase 17 must not implement** (the plan's §15, "deliberately not in the backlog", and the console's ADRs):
+- a money movement, or a financial rule changed beyond `-031`'s and `-116`'s controls and `-028`'s transition;
+- a free-text search over personal data - lookups match an identifier exactly, the identifier in the body, never a URL
+  (ADR-C132 decision 4);
+- a name, contact detail or document served to staff (D-5: identifier-only through M17.6), the KYC document view (G-62), a
+  request-for-information case state (G-63), operator consent revocation;
+- audit export (G-21, deferred by D-9), generic exports (G-152), a job-status API (G-130);
+- a workforce identity provider (G-13, the existing C13), cookie sessions (D-4);
+- a central approval service - the inbox is composed in the browser from each domain's list (ADR-C133 decision 4);
+- a read from a replica (ADR-0129), or a cross-schema read - each module exposes a query port through `app` (ADR-C132);
+- a test-only seeding path in an image, or on a route production serves;
+- a claim of production readiness or compliance.
+
+A reviewer finding any of it refuses the change.
+
+**Owner decisions this section leaves open** - each the owner's, recorded where it bites, none decided here:
+- which role pairs conflict, for the segregation-of-duties refusal (`-016`, B3.3);
+- whether `ADMINISTRATOR` holds `AUDIT_READ` - ADR-C134 decision 2 says not, unless the owner decides otherwise (`-017`);
+- whether an investigator may see that a regulatory report exists, the tipping-off question (`-109`, B4.5) - if not, a case's
+  reports are served only to `AML_REPORT_APPROVE`;
+- whether staff may read a screening list's entries, classified `RESTRICTED` (ADR-C132 decision 3; `-020`) - metadata only
+  until decided;
+- whether finance approvers also read: `ACCOUNTING_READ` on `FINANCIAL_CONTROLLER`, or a read-only role beside theirs (B5's
+  role note; `-022`, `-023`, `-111`). finapp's finance roles are a partition today - `ACCOUNTANT` reads and proposes,
+  `FINANCIAL_CONTROLLER` approves and holds no `ACCOUNTING_READ`, `REGULATORY_REPORTER` prepares and submits, and the
+  regulatory approver holds no `REGULATORY_REPORT_PREPARE` - so a controller reaches each item by an identifier someone gives
+  them;
+- whether a KYC rejection, or an approval over an adverse provider verdict, needs a second person (ADR-0035; `-029`);
+- **B6.6, not tasks until decided**: personal data shown to staff, field by field with a named operator need (G-31, D-5); a
+  KYC document view (G-62 - it would be `KYC_DOCUMENT_READ`, `MULTI_FACTOR`, an audited, short-lived, non-cacheable read over
+  `DocumentAccess.read`, which deliberately has no HTTP caller); "request more information from the customer" (G-63 - a new
+  case state, `AWAITING_CUSTOMER`, and a customer notification);
+- which identity signs the console's image in a real environment (`-105`) - keyless from CI's identity, as `THREAT_MODEL.md`
+  §6 item 35 records for the platform images, is the proposal;
+- the console's ADR-C130…C136 are `Proposed` in `finapp-admin-panel`. A task that implements one records the decision in this
+  repository's register (an ADR, or a dated note on the ADR it amends) before code, and `P17-DOC-002` proposes their
+  acceptance.
+
+*M17.1 — Foundation*
+
+**P17-TSK-003 — `GET /v1/operator/me`: an operator's own identity, roles, permissions and session (G-01)** — `COMPLETE` (2026-11-13; built and gated as `X-TSK-019`, branch `P17-TSK-003` from master `ce1abd2e`, under the owner's decision D-12 - "complete M1" ahead of the Phase 16 → 17 transition - and merged to master by the owner; recorded here by `P17-INIT` on 2026-11-17, which records its gate as D-12 asked. Its entry and as-built are `X-TSK-019`'s, §Cross-cutting work)
+- **Context**: `identity`, `app`; the console's permission-aware navigation reads it.
+- **Carried forward**: `-014`, `-015`, `-017`, `-025` and `-039` add permissions and roles. It reports them without change,
+  because `RoleName`'s mapping is its source; B6.1's "done when" ("`/v1/operator/me` reports them") is checked by `-025`.
+- **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-004 — The Operator Console served on the operator edge: its own workload, router and headers (G-02, `finapp`'s half)** — `COMPLETE` (2026-11-14; built and gated as `X-TSK-020`, branch `P17-TSK-004` from master `e56d1e69`, under D-12, merged to master by the owner; recorded here by `P17-INIT` on 2026-11-17, which records its gate as D-12 asked. Its entry and as-built are `X-TSK-020`'s, §Cross-cutting work)
+- **Context**: `deploy/console`, `deploy/edge`, `infra/scripts/manifest-policy/edge.rego`, `ConsoleHostingManifestsTest`;
+  ADR-0120 decision 6 (its dated note).
+- **Carried forward to `-104`**: its acceptance on a cluster - a test operator signing in through
+  `https://<operator host>/console/`, the CSP present once on `/console/`, the API routes keeping `default-src 'none'`,
+  `/console` unreachable from the public host - never ran, because the image did not exist in this repository; and
+  `kubeconform` over `deploy/console`, which TLS interception blocked at `X-TSK-020`.
+- **DoD**: `DOD-BUILD`, `DOD-SEC`.
+
+**P17-TSK-101 — `Cache-Control: no-store` on every operator API response (G-05)** — `COMPLETE` (2026-11-17; marked `READY` by the Phase 16 → 17 transition, `P17-INIT`; on the owner's "do milestone-by-milestone", branch `P17-TSK-101` from `P17-INIT`) *(read "`READY` (marked by the Phase 16 → 17 transition, `P17-INIT`, 2026-11-17: the phase's first task; no dependency open)" until its gate)*
+- **Context**: `app` (the web layer) or `deploy/edge` (the operator edge's middleware); ADR-C131 decision 5; B1.1. The
+  console's `P17-TSK-002` found no `Cache-Control` set anywhere in `app/src/main` or `deploy/`: operator responses carry
+  identifiers, amounts and statuses, and nothing tells a browser or an intermediary not to store them.
+- **Scope**: every `/v1/**` response the operator surface serves carries `Cache-Control: no-store`, **error responses
+  included** - problem documents, the session interceptor's `401` and `403`, the shedding `503`. Where: a response filter in
+  the application covering the operator surface, or the operator edge's middleware on **the API routes only**. The design
+  decides and says why: an application filter also covers a response the edge never shapes, and an edge middleware also
+  covers an answer the application never produced. It also states whether the public surface's API responses carry the
+  header; the hand-off asks only for the operator surface.
+- **Exclusions**: `/console/**`. The console's nginx sets its caching per path (`index.html` `no-cache`, hashed assets
+  immutable), and `ConsoleHostingManifestsTest` and `edge.rego` already refuse a `Cache-Control` in `console-headers`; both
+  stay unchanged and green.
+- **Deps**: none.
+- **Accept**:
+  - every `/v1/**` response on the operator surface, error responses included, carries `Cache-Control: no-store`;
+  - a guard holds it: a request per status class through the real filter chain, or the middleware required on every
+    operator API router by `EdgeManifestsTest` and `edge.rego`;
+  - `/console/**` is unchanged, and its guards are green.
+- **Probe**: the header dropped from one error path, or one operator API router left without the middleware → the guard red.
+- **Multi-instance**: stateless; every replica, or every edge instance, sets the header. `PASS` by construction.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-SEC`, `DOD-API`.
+- **As built (2026-11-17, gate `COMPLETE`)**: **the application, not the edge** - one filter, `OperatorResponsesAreNotStored` (`app`, the `surface` package), sets `Cache-Control: no-store` on every answer of a request the operator edge marked (`X-Finapp-Surface: operator`, read by `RequestSurfaces`), and on `SINGLE_PORT`, where nothing is deployed and the one port is the operator surface too. Chosen over an edge middleware because the application's filter covers every answer the application produces wherever it runs - the single port of a laptop and the test tiers included - while the edge's own answers (a route it does not serve, its rate limit's `429` once `P17-TSK-103` lands, a `502` with no backend) carry no operator data; and because a middleware on the API routers would be one more line per router for `EdgeManifestsTest` and `edge.rego` to hold, with the same reach. Ordered next after `CorrelationFilter`, before the size limit and everything else that may answer, and set **before** the chain runs; run on the error dispatch too (`shouldNotFilterErrorDispatch` false, and the nested error dispatch marked), so a response a library or the container resets and sends to the error page gets it back. **The public surface is left as it was**, and an unmarked request where an edge is in front is treated as the public surface, as everywhere else: the customer API's caching is not this task's decision. **The guard** - `OperatorResponsesAreNotStoredTest`, a real server (MockMvc runs no error dispatch): one request per kind of answer - a handler's `200`, the session interceptor's `401` on a real operator route, an unknown route's `404`, `405`, a body that never parsed (`400`), `415`, an unexpected failure (`500`), a body over the size bound (`413`) and a response reset and sent to the container's error page (`503`) - each `no-store` on the operator surface and on the single port, none carrying a `Cache-Control` on the public surface; the filter ordered before every other application filter that may answer and registered by Spring Boot's default for every dispatcher type; and no main code in any module sets `Cache-Control` or resets a response. `THREAT_MODEL.md` T55 registered with its evidence (§6 item 73 (b), as recommended); `API_CONVENTIONS.md` §8a and `SECURITY_ARCHITECTURE.md` say so. `/console/**` unchanged. **Probe** (`MUTATION_TESTING.md` §2): the header never set - 2 red; the error dispatch skipped - the reset case red on both surfaces that carry it; a `Cache-Control` planted in another controller - the source rule red; restored, sha256 identical. **Fresh**: 2026-11-17 on the task's final bytes, every count from a fresh run: `OperatorResponsesAreNotStoredTest` 6 of 6; app's whole slice tier 313 tests in 54 classes, 0 failed (19:01-19:05 UTC); app's whole architecture tier 1,265 in 118 classes, 0 failed (19:05-19:31 UTC); after the records were written, the eight guards reading them, 107 tests in 18 classes, 0 failed (19:32-19:33 UTC). No database, Kafka or cluster tier: the task touches no persistence. **Multi-instance**: `PASS` - stateless, the same header from the request's own marker on every replica. *(Found at `P17-TSK-102`, 2026-11-18: this gate ran app's slice and architecture tiers and not its unit tier, where `ApiSchemaNamesAreUniqueTest` - which reads test controllers too - was red on the probe's record `Payload`, a name `ApiErrorHandlerTest`'s probe already used. Renamed `NoStorePayload` there; a gate's fresh run covers every tier of the module it changes.)*
+
+**P17-TSK-102 — A second factor on every operator act (D-6)** — `COMPLETE` (2026-11-18; marked `READY` at `P17-TSK-101`'s gate; on the owner's "do milestone-by-milestone", branch `P17-TSK-102` from `P17-TSK-101`) *(read "`READY` (marked at `P17-TSK-101`'s gate, 2026-11-17 ...)" until its gate, and "`PLANNED`" before that)*
+- **Context**: `app` (the session interceptor, `@RequiresAssurance`) and every operator controller; ADR-C131 decision 3; D-6
+  ("require `MULTI_FACTOR` for every act on the operator surface, server-enforced"); B1.2. Today many operator commands accept a
+  password-only session.
+- **Scope**: `@RequiresAssurance(AssuranceLevel.MULTI_FACTOR)` on every unsafe handler under `/v1/operator/**`, and on the
+  operator acts outside it (`/v1/identities/**`, `/v1/kyc/cases/**`, `/v1/ledger/**`, payment refund and void, transfer
+  reversal). A guard in the spirit of `EveryEndpointDeclaresARuleTest`: every `POST`, `PUT`, `PATCH` or `DELETE` handler that
+  declares `@RequiresPermission` also declares `@RequiresAssurance` at `MULTI_FACTOR` or above, any exception named in a
+  register beside the guard with its reason. The hand-off's count at `b23e3212` - rough, to be re-derived by the guard:
+  - the M2 screens' controllers: `ReconciliationInvestigationController` 4 of 4 acts, `ReconciliationResolutionController`
+    5 of 5, `SettlementOperationsController` 7 of 7, `ReconciliationAdministrationController` 6 of 6,
+    `ReconciliationOperationsController` 1 of 1 (`DeadLetterController` already requires the factor);
+  - elsewhere: accounting (eight controllers), regulatory (two), BNPL (five), credit (four), lending (five), FX and
+    cross-border (three), merchant (three), disputes and counterparty screening (two), risk (ten). Some are partly done.
+- **Exclusions**: safe methods (reads); a customer's own doors on the public surface, whose step-up stays ADR-0030's.
+- **Deps**: none. Every later task's new act carries the factor from birth.
+- **Accept**:
+  - the guard is green over every handler;
+  - a password-only operator session gets `403 identity.AssuranceRequired` on any act, with a negative test per surface
+    class (the plan's §19 criterion 5);
+  - the console's step-up replays the act once. It already prompts for the factor and replays with the same idempotency key,
+    so the console needs no change.
+- **Failure**: the interceptor refuses before the handler runs, so a replay after step-up cannot double an act. The refusal
+  is recorded where the handler records refusals (`@RecordsRefusals`).
+- **Probe**: the annotation removed from one handler → the guard red, and a password-only session admitted by that
+  handler's negative test → red.
+- **Multi-instance**: a session's assurance is the database's row, read per request; `PASS` by construction.
+- **Risk**: Medium - every operator controller. **Cx**: M. **DoD**: `DOD-SEC`, `DOD-API`.
+- **As built (2026-11-18, gate `COMPLETE`)**: **two halves, because either alone is hollow.** (1) **The act**: `@RequiresAssurance(MULTI_FACTOR)` on every `POST`, `PUT`, `PATCH` or `DELETE` handler that declares a permission - 158 handlers in 57 controllers had none, proposals, rejections, withdrawals, drafts and a kill switch's stop among them; the factor is judged before the permission, so a password session is told to step up whether or not it holds the role. (2) **The grant**: a password may enrol an identity's *first* factor, so a factorless holder's stolen password (or password-level session) would enrol the thief's factor and step up into every act - the reasoning `P15-TSK-032` applied to the administrator, applied to every act. `RoleName.requiresEnrolledFactor` is now decided from `PermissionName.guardsAnAct` (written as the reads - `ACCOUNTING_READ`, `FX_INVESTIGATE` - so a permission added later counts as an act): every role that can act is refused to an identity with no enrolled factor, today all twenty-one. **The guard** - `EveryOperatorActRequiresAFactorTest` (slice): the acts derived from the dispatcher; each declares `MULTI_FACTOR` or is named in its `EXEMPT` register with a reason (empty: D-6 is every act); each knocked on through the real interceptor - a password session holding the permission refused `403 identity.AssuranceRequired`, its `identity.StepUpRefused` written, and a stepped-up one let through (the plan's §19 criterion 5's negative test, per act, not per class); the domain's read-only permissions held to the routes' both ways; every role that can act needing a factor. **Superseded knowingly**: `PRIVILEGED_ACCESS_REVIEW.md` §6's second ruling (`P15-TSK-039`), "what stops a change stays quick" - recorded there as the fourth ruling's tension, the `EXEMPT` register the owner's lever. **Tests moved with it**: thirteen unit classes that pinned "only the approval steps up" now pin every act; the two identity grant tests; and every database class that drove an act on a password session now steps up through the real endpoints (`OperatorStepUp.elevated`) or issues a `MULTI_FACTOR` session - customers' sessions untouched, every deliberate step-up negative kept. **Docs**: `PRIVILEGED_ACCESS_REVIEW.md` §5 q5 and §6 (the fourth ruling), `THREAT_MODEL.md` T50 and T53 `EXISTS`, `SECURITY_ARCHITECTURE.md`, ADR-0030's dated note, `RequiresAssurance`'s javadoc. **Probe**: `P17-TSK-102`'s probe (2026-11-18; the guard in the slice tier, `RoleGrantNeedsAFactorTest` in identity's unit tier; `SettlementOperationsController.java`, `PermissionName.java` and `RoleName.java` sha256 saved first): P1 one act's factor removed (`SettlementOperationsController`'s first); P2 `RISK_INVESTIGATE` declared read-only; P3 the grant rule put back to the six permissions it named before - Caught, each: P1 the guard 2 of 6 red (the declaration, and the knock that let a password session through); P2 the guard's classification red (`RISK_INVESTIGATE` guards acts on the routes) and `RoleGrantNeedsAFactorTest#onlyTheReadsNeedNone` red; P3 the guard's role check red (`KYC_REVIEWER`) and 5 of 9 `RoleGrantNeedsAFactorTest` red. Restored, the three files' sha256 compared identical. **Database**: on PostgreSQL 18.6 under the owner's allowance of 2026-11-17 for this programme: the 114 database classes the change reaches (77 in the shared JVM, 37 own-container; 984 tests; the storms excluded, PI-004) - 111 failed at first; thirty-odd were this task's (database-tagged API tests still driving acts on password sessions), fixed, and their 19 classes run again: 66 tests, 2 failed, both the platform's before this task; every remaining failure was there before it - twelve classes run again on `P17-TSK-101`'s commit failed alike (ten racers answered `503` by the shedding's five permits, operators asserted `CUSTOMER`, three in `PayByBankDatabaseTest`), the rest share the shedding's signature - recorded under `POSTPONED_ISSUES.md` PI-023. **Fresh**: 2026-11-18 on the task's final bytes and records, every count from a fresh run: identity's unit tier 209 tests in 24 classes, app's unit tier 2,091 in 356, its slice tier 319 in 55 (`EveryOperatorActRequiresAFactorTest` 6 of 6 among them) and its architecture tier 1,265 in 118 - 0 failed (2026-11-17, 21:50-22:22 UTC). **Multi-instance**: `PASS` - a session's assurance and an identity's roles and factor are the database's rows, read per request on every replica; the grant's factor read is on its own unit of work after the identity's lock, as before.
+
+**P17-TSK-103 — A rate limit and an in-flight bound on the operator edge (D-7)** — `COMPLETE` (2026-11-18; marked `READY` at `P17-TSK-102`'s gate; on the owner's "do milestone-by-milestone", branch `P17-TSK-103` from `P17-TSK-102`) *(read "`READY` (marked at `P17-TSK-102`'s gate ...)" until its gate, and "`PLANNED`" before that)*
+- **Context**: `deploy/edge/base/operator-edge.yaml`, `infra/scripts/manifest-policy/edge.rego`, `EdgeManifestsTest`; D-7
+  ("modest"); ADR-C131 decision 6; B1.3. `deploy/edge/base/public-edge.yaml` has `rateLimit` and `inFlightReq`;
+  `operator-edge.yaml` has neither.
+- **Scope**: both middlewares on every operator router, `/console/**` included, keyed by the client address as the public
+  edge states it, never by the `Host` header. `edge.rego` and `EdgeManifestsTest` are taught to require them on the operator
+  edge.
+- **Deps**: none.
+- **Accept**:
+  - the operator routes, `/console/**` included, carry both middlewares;
+  - `edge-check.sh` is green;
+  - a burst beyond the limit answers `429` with `Retry-After`. The console reads `Retry-After` and shows the refusal.
+- **Multi-instance**: the edge's limiters count per edge replica, in memory, so the fleet's effective bound is the configured
+  one times the edge replicas. The task states both figures and claims no global limit; the application's own bound stays
+  its load shedding (`P16-TSK-016`).
+- **Probe**: one operator router without the middleware → `edge.rego` and `EdgeManifestsTest` red.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-SEC`, `DOD-BUILD`.
+- **As built (2026-11-18, gate `COMPLETE`)**: three middlewares on the operator edge (`operator-edge.yaml`): `operator-rate` (`rateLimit`, 20 a second, a burst of 50), `operator-hold` (`inFlightReq`, 10) and the settlement upload's own `operator-hold-upload` (2, at its 25 MiB body cap), each keyed on the connection (`ipStrategy`, an IPv6 /64), never the Host header. Every operator router names a rate limit and an in-flight bound **after** `internal-only`, so an address outside the private ranges spends no bucket: the console's, the API's default and the upload's - the generator (`EdgeRoutes`) writes them and `EdgeAllowListTest#theRouteFilesAreGenerated` holds the committed file to it. **The numbers**: "modest" (D-7), one person's console - a page's dozen requests and a first visit's assets inside the burst. **What is claimed and what is not**: the pinned proxy counts per router and per controller replica, so one source's ceiling is these figures times the three routers times the operator controllers - no global limit is claimed (the application's own bound for its public surface stays its shedding, which exempts the operator surface, T14). One source's worst in flight - 10 × 2 MiB at the console, 10 × 2 MiB at the API, 2 × 25 MiB at the upload, 90 MiB - fits the operator controller's 256 MiB spool, held by `EdgeAllowListTest#theOperatorRoutersAreBoundedPerSource`, which also holds the keying and the order. **The policy**: `edge.rego`'s `[edge-operator-limits]` refuses an operator router without either bound keyed on the connection, the console's pinned middleware list moved with it, and two plants in `edge-check.sh` (`edge-operator-no-rate`, `edge-operator-hold-on-host`) refuse it; four existing plants moved to the new middleware strings. **Owed**: `edge-check.sh` was not run - its pinned images are not on this machine and pulling them is a download the owner has not authorised in this run - so the policy's execution, its plants and the proxy's `429` with `Retry-After` on a real burst are its to show. `THREAT_MODEL.md` T52 `EXISTS` for what the build holds; `SECURITY_ARCHITECTURE.md`. **Probe**: `P17-TSK-103`'s probe (2026-11-18, `EdgeAllowListTest` in the slice tier; `operator-routes.yaml`, `operator-edge.yaml` and `EdgeRoutes.java` sha256 saved first): P1 the console router's `operator-rate` removed from the committed routes; P2 `operator-hold` keyed on the Host header; P3 the generator dropping the console's `operator-hold` - Caught, each of 23 tests: P1 3 red (the files no longer generated, the router's missing rate limit, the console's pinned middlewares); P2 1 red (the keying); P3 1 red (the committed file no longer what the generator renders). Restored, the three files' sha256 compared identical. The policy's half - `edge.rego`'s `[edge-operator-limits]` and its two plants in `edge-check.sh` - is not run here: owed with `edge-check.sh`. **Fresh**: 2026-11-18 on the task's final bytes and records, every count from a fresh run: app's unit tier 2,091 tests in 356 classes, its slice tier 320 in 55 (`EdgeAllowListTest` 23 of 23 among them) and its architecture tier 1,265 in 118 (`EdgeManifestsTest` 17 and `ConsoleHostingManifestsTest` 8 among them) - 0 failed (2026-11-17, 22:31-23:03 UTC). `edge-check.sh` not run (owed). **Multi-instance**: `PASS` for what is claimed - each edge replica bounds its own share, stated as such; nothing here is financial state.
+
+**P17-TSK-104 — The console image on `kind`: build, sign, attest, load, apply** — `COMPLETE` (2026-11-18; the hermetic half - the cluster half is `P17-TST-001`'s; marked `READY` at `P17-TSK-103`'s gate; on the owner's "do milestone-by-milestone", branch `P17-TSK-104` from `P17-TSK-103`) *(read "`READY` (marked at `P17-TSK-103`'s gate, 2026-11-18: the next of M17.1) *(read '`PLANNED`' until then)*" until its gate)*
+- **Context**: `infra/scripts/kind-rehearsal.sh`, `infra/scripts/admission-check.sh`, `deploy/console/overlays/kind`,
+  `deploy/admission/clusterimagepolicies.yaml`; B1.4. It completes `-004`'s acceptance on a cluster and the console's
+  `P17-TSK-009` (its `kind` end-to-end run). What the console provides:
+  - `finapp-admin-panel/Dockerfile`: a two-stage build whose final stage is `nginxinc/nginx-unprivileged` pinned by digest,
+    uid 101. Verified 2026-11-15: it runs with a read-only root and a `/tmp` tmpfs; `/console/` and deep links answer `200`
+    `no-cache`; hashed assets are immutable; everything else is `404`.
+  - the CI job `image`, which keeps the image as an OCI archive (`finapp-console.oci.tar`) with the commit's CycloneDX SBOM
+    (`sbom.cdx.json`), unsigned and unpushed by design: admission trusts an environment's authority, not the console
+    repository's.
+  - the rollout fix recorded at `X-TSK-020`: `scripts/collect-previous-assets.sh <registry>/finapp-console@sha256:<serving
+    digest>` before the build, so the new image also carries the previous release's hashed assets and a page from an old pod
+    never gets a `404` for its asset during a rolling update. With no argument (the first release) the image carries its own
+    assets only.
+- **Scope**:
+  1. obtain the image: build `finapp-admin-panel` at a named commit
+     (`docker build --build-arg VITE_CONSOLE_ENVIRONMENT=kind -t finapp-console .`), or load the CI artefact's archive;
+  2. sign and attest it with the run's key exactly as the platform images are: a signature and two attestations, provenance
+     (`https://slsa.dev/provenance/v1`) and SBOM (`https://cyclonedx.org/bom`, the console's `sbom.cdx.json`). The two
+     policies in `clusterimagepolicies.yaml` already name `finapp-console`;
+  3. load it into the `kind` node, put its digest into the rehearsal's rendered copy of `deploy/console/overlays/kind`
+     (sixty-four zeros today), and apply that overlay after the edge;
+  4. `kubeconform` over `deploy/console`.
+- **Deps**: `-004` (`COMPLETE`); the console repository at a named commit.
+- **Accept** (`-004`'s, and the console's `-009`'s):
+  - on `kind` with three application replicas, a test operator signs in through `https://<operator host>/console/`, steps up,
+    and opens a module;
+  - the CSP header is present once on `/console/`, and the API routes keep `default-src 'none'`;
+  - `/console` is unreachable from the public host;
+  - then the console's `kind` end-to-end run: `CONSOLE_BASE_URL=https://<operator host>/console/ npm run test:e2e`, which
+    selects the Playwright `kind` project;
+  - **the hermetic half** - the rehearsal's new steps, the digest substitution, the admission check's expectations - is held
+    by the rehearsal's contract tests now; **the cluster half is owed to the owner's run** and is never claimed until it runs.
+- **Multi-instance**: the console holds no state, and its replicas serve the same immutable files. The answer is counted on
+  the run; until then the gate records the owner's postponement, not a `PASS`.
+- **Probe**: an unsigned console image, or one without its SBOM attestation, admitted → the admission check red.
+- **Risk**: Medium - another repository's artefact in this repository's supply chain. **Cx**: M. **DoD**: `DOD-BUILD`,
+  `DOD-SEC`, `DOD-TEST`.
+- **As built (2026-11-18, gate `COMPLETE` for the hermetic half)**: **the console's image is named, never fetched**: both scripts take it as `CONSOLE_IMAGE` (with `CONSOLE_SBOM`), the console CI's OCI archive as `CONSOLE_ARCHIVE` (its `sbom.cdx.json` beside it), or `CONSOLE_REPOSITORY` at `CONSOLE_COMMIT`, exported with `git archive` - the checkout untouched - and built for `kind` with `collect-previous-assets.sh` run first; two sources at once, a repository without a commit, or an image without its SBOM is refused up front (exit 2). With none named, the console's cases and step are **skipped and said so** (`skipped.txt`, a `SKIPPED:` line before every result), never passed. **`admission-check.sh`**: the console's SBOM - given, or written by `npm sbom` in the console Dockerfile's own pinned node stage with no network - and its SLSA provenance; pushed with an unsigned and an unattested variant; signed and attested under the run's key as the platform images are; `cosign verify` before the controller; three cases in `finapp-console` - signed admitted at its digest, unsigned refused, signed without its SBOM attestation refused, each beside its control - and `finapp-console` opted in. **`kind-rehearsal.sh`**: the image built or loaded at `build-images`; a `console` step after `edge` loads it into every node, substitutes its digest into the run's **rendered copy** of `deploy/console/overlays/kind` (the committed file keeps sixty-four zeros, and the step refuses to run if it ever stops doing so), applies it, waits for its rollout and its pods at that digest, and asks through the real edge (`Rehearsal.java`'s `console` command, statuses and policies only): the operator host's `/console/` `200` under the console's policy exactly once, an operator API route `401` keeping `default-src 'none'`, the public host's `/console` and `/console/` `404`; skipped in the `delivery` and `dr` scopes, whose images come from elsewhere. **`kubeconform`** already reads every console overlay in `edge-check.sh`; `ConsoleHostingManifestsTest#kubeconformReadsEveryConsoleOverlay` now holds it. **The guards**: `ImageAdmissionTest#theConsolesImageIsSignedAttestedAndAdmittedOnKind` and the enumerated case list, `KindRehearsalContractTest#theConsoleIsLoadedAppliedAndAskedAfterTheEdge`. `THREAT_MODEL.md` T54: two rows `EXISTS` for what the scripts now hold, a `PLANNED` row for the run (`P17-TST-001`); `OPERATIONS_RUNBOOK.md` §11.28 and §11.32. **Owed**: the cluster half - both scripts green with a console image named, the sign-in, step-up and module through `/console/` at three replicas, and the console's `kind` end-to-end run - is `P17-TST-001`'s, never claimed here; assumptions it will test: Docker Engine 25 or later for `docker load` of a buildx OCI archive, `npm sbom`'s flags on the console's node image. **Probe**: `P17-TSK-104`'s probe (2026-11-18, the architecture tier; each script's sha256 saved first): P1 the `refused "console unsigned"` case removed from `admission-check.sh`; P2 the console step's digest substitution pointed at the committed `deploy/console/overlays/kind/kustomization.yaml` instead of the rendered copy - Caught: P1 `ImageAdmissionTest` 2 of 12 red (the enumerated cases and the console's own test); P2 `KindRehearsalContractTest` 1 of 16 red (the rendered-copy-only rule). Restored, sha256 compared identical (`fc8c846d…`, `7ded4ae4…`), the scripts' mode 100755 kept. The scripts themselves were parsed (`sh -n`, `dash -n`) and never run: their run is `P17-TST-001`'s. **Fresh**: 2026-11-18 on the task's final bytes and records: app's unit tier 2,091 tests in 356 classes and its slice tier 320 in 55, 0 failed; its architecture tier 1,268 in 118, 1 failed - `ThreatModelIsCompleteTest` on this task's own read-note, which quoted the finished task's id in backticks - fixed, and then the guards reading the records with the console's three contract classes, 129 tests in 20 classes, 0 failed (`ImageAdmissionTest` 12, `KindRehearsalContractTest` 16, `ConsoleHostingManifestsTest` 9 among them; 2026-11-17 23:43 to 2026-11-18 00:16 UTC). The scripts were never run. **Multi-instance**: the owner's postponement, not `PASS` - the console holds no state and its replicas serve the same immutable files, which the run counts.
+
+**P17-TSK-105 — The console's registry repository and delivery** — `COMPLETE` (2026-11-18; marked `READY` at `P17-TSK-104`'s gate; on the owner's "do milestone-by-milestone", branch `P17-TSK-105` from `P17-TSK-104`) *(read "`READY` (marked at `P17-TSK-104`'s gate, 2026-11-18: the last of M17.1) *(read '`PLANNED`' until then)*" until its gate)*
+- **Context**: `infra/terraform/modules/registry`, `deploy/delivery` (Argo CD), `promote.sh`, `Promotion.java`; B1.5.
+- **Scope**:
+  - a repository named `finapp-<environment>-console` in the registry module; the admission policies already match that name;
+  - an Argo CD Application for `deploy/console`;
+  - the console in `promote.sh` and `Promotion.java`, promoted by digest as the platform images are. Promotion hands the
+    serving digest to the next console build, for `-104`'s rollout fix.
+- **Exclusions**: an apply to a real account (none exists).
+- **Owner's decision**: which identity signs the console in a real environment. The proposal is keyless signing from CI's
+  identity, as `THREAT_MODEL.md` §6 item 35 records for the platform images; the owner ratifies it.
+- **Deps**: `-104`.
+- **Accept**: the module and the Application exist, checked as the platform's are (Terraform with mock providers, the
+  delivery's guards); promotion moves the console by digest and records the serving digest.
+- **Multi-instance**: promotion is a commit to the delivery repository, arbitrated there; no runtime state. `PASS` by
+  construction.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-BUILD`, `DOD-SEC`.
+- **As built (2026-11-18, gate `COMPLETE`)**: **the repository** - `finapp-<environment>-console` is a key of the registry module's existing `for_each`, so it gets the platform's immutability, scanning and encryption by construction; the environments pass both overlays' images (`local.console_overlay`), and the module's and both environments' `.tftest.hcl` assert it. **The Application** - `finapp-console`, a fifth, wave 4 (last: the platform it calls is healthy first), project `finapp` (the `finapp-console` destination added), path `deploy/console/overlays/<environment>`, the platform's sync policy; `DeliveryManifestsTest` holds the five, their order and the console's record. **The promotion** - `promote.sh console <environment> <digest> <commit>` (`Promotion.java` `console-check`, `console-write`): a digest, never a tag or the placeholder, a 40-hex revision, staging or production only, production only for a digest and revision staging's own merged record names (one change bringing both is refused, and `recheck` judges it again in CI); verified in `finapp-<environment>-console` under the environment's authority; each console overlay's `release.yaml` records the digest it serves. **The rollout fix's input** - `promote.sh console-serving` prints each environment's serving digest, refusing an overlay that disagrees with its record, for the next build's `collect-previous-assets.sh`. **The delivery rehearsal** - `delivery.sh` taught the fifth Application both ways - a console named is pushed as `finapp-staging-console`, signed and attested under the run's key (its provenance naming finapp-admin-panel and the image's revision, never this tree's), pulled by digest, patched into the run's root and a console layer, created only after the edge's wave, counted in "every Application synced and healthy" and its pods held at the digest; none named, `$patch: delete` removes it from the run's own rendered root, said so in `skipped.txt` and beside the result, and the cluster checked to hold no such Application; both refuse a change under the clone's `deploy/`. `DeliveryRehearsalContractTest` 17 → 20; the harness's own delivery-scope skip line no longer says no Application delivers the console. The owner's run still has to show both - Argo CD's own kustomize has not rendered the delete (Docker Desktop's `kubectl kustomize` did, offline) - and `promote.sh console` is not exercised there. **The owner's decision, open**: which identity signs the console in a real environment - the proposal, keyless from CI's identity as `THREAT_MODEL.md` §6 item 35 (a) records for the platform; another identity means a second authority in both admission policies and in `promote.sh`. Until decided, admission refuses the console in a real environment. **Gaps recorded**: no console smoke exists, so production asks that staging was given the digest, not a smoke record of it; when production skips a digest staging ran, the build needs both serving digests (`console-serving` prints both). **Docs**: `OPERATIONS_RUNBOOK.md` §11.36, `THREAT_MODEL.md` §6 item 35's dated note, ADR-0122's dated note, `DISTRIBUTED_EXECUTION.md` §3's console row, the admission policies' comment. **Owed**: `terraform test` and `validate` (`infra/scripts/terraform-check.sh`) - the pinned provider is cached nowhere on this machine and the local binary is older than the pinned 1.17.1; `terraform fmt -check` ran in the pinned image with no network and passed. **Probe**: `P17-TSK-105`'s probe (2026-11-18, the architecture tier; each file's sha256 saved first): P1 the console's Application removed from staging; P2 the staging root dropping the console overlay's images; P3 the console's production-needs-staging rule disabled in `Promotion.java`; P4 the console's patch removed from the delivery rehearsal's root, and separately its loud skip (`delivery.sh`) - Caught: P1 3 of `DeliveryManifestsTest`'s red (five Applications, the install order, the root's render); P2 `PromotionTest#theConsoleIsVerifiedInTheRepositoryTheRegistryMakes` red (its Terraform half, `staging.tftest`, owed with `terraform test`); P3 `PromotionTest#productionNeedsTheConsoleInStagingFirst` red; P4 `DeliveryRehearsalContractTest` 1 of 20 red each time (`aConsoleNamedIsDeliveredInTheLastWave`; `noConsoleNamedRemovesItsApplicationFromTheRunsRootLoudly`). Restored, sha256 compared identical. **Fresh**: 2026-11-18 on the task's final bytes and records, every count from a fresh run: app's unit tier 2,091 tests in 356 classes, its slice tier 320 in 55 and its architecture tier 1,278 in 118 (`DeliveryManifestsTest` 11, `PromotionTest` 27, `DeliveryRehearsalContractTest` 20, `TerraformIsPinnedAndCheckedTest` 17 among them) - 0 failed (00:37-01:09 UTC); `terraform fmt -check` in the pinned image with no network, passed; `terraform test` owed. **Multi-instance**: `PASS` - a promotion is a commit to the delivery repository, arbitrated there, and the serving digest a committed record, not runtime state.
+
+*M17.2 — First workflows on existing APIs*
+
+The console's four M2 screens use only APIs `finapp` already serves: dead letters (`/v1/operator/events/**`); reconciliation
+breaks, resolutions, runs, expectations, settlement status and reports; settlement files, sources, refused deliveries and
+batches. No API change is required. One thing is: the console's end-to-end tests need data to act on.
+
+**P17-TSK-106 — Test-only seeding for the console's end-to-end tests: M2's scenarios** — `COMPLETE` (2026-11-18; marked `READY` at `P17-TSK-105`'s gate; on the owner's "do milestone-by-milestone", branch `P17-TSK-106` from `P17-TSK-105`) *(read "`READY` (marked at `P17-TSK-105`'s gate, 2026-11-18: M17.1 closed, the first of M17.2) *(read '`PLANNED`' until then)*" until its gate)*
+- **Context**: `infra/scripts/` (a new `e2e-seed.sh <scenario>`, or as the design names it); the compose database locally,
+  and `kind`; B2.1. Each M2 acceptance is end to end against the real application, and an empty platform has nothing to act
+  on. The console's acceptances:
+  - `P17-TSK-010`: "an `EVENT_OPERATOR` pair can discard a parked record end to end on kind";
+  - `P17-TSK-011`: "a break can be resolved by two operators, with a stale attempt refused and re-confirmed";
+  - `P17-TSK-012`: attest and decline a file.
+
+  The console's harness can already register test identities through `finapp`'s own doors, grant roles, and insert the first
+  administrator by the one documented break-glass step (`finapp-admin-panel` `e2e/support/platform.ts`).
+- **Scope**: a **test-only** way to put the following in place, printing the identifiers it created:
+  1. **an abandoned outbox event**: a published-type event whose relay gave up (`dead_lettered_at` set, not discarded, not
+     published), so the console can retry it, and propose and approve its discard;
+  2. **a parked inbox record**: state `PARKED`, re-drivable from the outbox, so the console can release it and discard it by
+     four-eyes;
+  3. **a break with a resolution to decide**: a settlement file for a declared source, ingested through the existing upload
+     door (or `fetch` against a stub collector), producing at least one break of a known type - for example an
+     `AMOUNT_MISMATCH` against a seeded expectation. The console's harness then proposes a `TRANSFER_TO_ACCOUNT` or
+     `ACKNOWLEDGE` resolution, moves the proposal, and checks the stale approval;
+  4. **a `PARSED` uploaded file awaiting attestation**, submitted by a different test identity from the one that attests.
+
+  Every effect goes through the platform's own doors where one exists. A state no door reaches (an abandoned relay, a parked
+  record) is planted against the test database only, by its owning module's rules.
+- **Exclusions**: anything in an image, or on a route production serves - a guard holds that the script and what it needs
+  ship nowhere.
+- **Deps**: none for the local form; `-104` for the `kind` form.
+- **Accept**: `finapp-admin-panel`'s end-to-end tests can run each acceptance above against a running `finapp`, locally (Vite
+  proxy, `npm run test:e2e`) and on `kind` (`CONSOLE_BASE_URL`, after `-104`; owed to the owner's run); the script reruns
+  without collision (fresh identifiers per run).
+- **Multi-instance**: the seeded rows are ordinary rows that every replica's relays and sweepers also see. The script plants a
+  state no live relay or sweep undoes before the test acts (the design says how, for example an attempt count past the
+  relay's limit). `PASS` when the seeded state survives the fleet's sweeps.
+- **Risk**: Medium - a test-only path must stay test-only. **Cx**: M. **DoD**: `DOD-TEST`, `DOD-SEC`.
+- **As built (2026-11-18, gate `COMPLETE`)**: `infra/scripts/e2e-seed.sh <scenario>...`, four scenarios, each printing only `KEY=value` lines on stdout and making fresh rows, identities and references every run. **The dead letters, planted** - one SQL statement per plant (`infra/scripts/e2e-seed/abandoned-event.sql`, `parked-record.sql`), each written as the module's own machinery leaves the row: the abandoned event unpublished at `RetryPolicy.DEFAULT`'s fourteen attempts with `dead_lettered_at` set; the parked record `PARKED` after five failures over two minutes (the application's `finapp.inbox.park-after-*`), naming a **published** event, so a release can re-drive it (a malformed record's key would be refused `NOT_RELEASABLE`, which is why the kind rehearsal's poison record cannot stand in). Both carry `e2e.SeededEvent`, a type no handler reads, published on a declared topic (`finapp.reconciliation`): a retry or a release publishes it and every consumer group answers it `UNHANDLED` - no effect anywhere. The consumer and group are named for what they are (`e2e.seed-consumer`, `finapp.e2e-seed`), so the parked page says whose record it is. **The settlement scenarios, through the doors** - `infra/scripts/e2e-seed/Seed.java`, a single source file with no route to the database (the kind rehearsal's division of work): registration, a factor, step-up, the role grant, the upload, the attestation; the shell asks the database the two things only it answers, a test identity's id (the console's gap G-10) and the run's first administrator by README §5e's break-glass step, a login's shape checked before it reaches SQL. `parsed-file`: a simulated-PSP report uploaded by the seed's operator and `PARSED`, unattested - an unattested upload is never accepted, so it waits for the console's second person. `fee-break`: a report uploaded by one of the seed's operators, attested by another, accepted and matched by the platform's own sweeps, raising an `OPEN` `FEE_MISMATCH` of 1.75 EUR (`Matching.applyFeeCheck`: no capture expectation reaches the sale, so the fee is priced at zero); found by its stored trace to the file. **Why a FEE_MISMATCH, not B2.1's example AMOUNT_MISMATCH**: an amount mismatch needs a capture expectation, which only a completed card payment opens, and locally no card provider is configured (`finapp.payments.provider.url` has no default); planting one by SQL would be an expectation with no economic event behind it. ACKNOWLEDGE admits a FEE_MISMATCH, four-eyes, moving no money; B2.1 names ACKNOWLEDGE. **The targets**: compose (this checkout's own compose service as `finapp_migrator`, an application on this machine's loopback only, anchored) and kind (a node container carrying kind's own label, the edge's local CA read from the cluster, the HTTP half in the application's JDK image on the kind network); an unknown target refused, never defaulted. **The proofs**: `E2eSeedPlantsDatabaseTest` (platform, `database`) runs the plant files unchanged as the migrator through `DeadLetterOperations` - listed, untouched by a relay poll and the retention sweep, retried and republished, released and republished, discarded by two persons and never by one, rerun without collision; `E2eSeedDoorsDatabaseTest` (app, `own-container`: the intake's and the matcher's real schedules on, at a one-second poll) runs `Seed.java` itself as a separate JDK process against the application, then shows the console's acceptances possible on what it seeded - the parsed file refusing its submitter's attestation (`settlement.AttestationBySubmitter`), and the break resolved by two persons: ACKNOWLEDGE proposed, the proposer's approval refused (`SelfApprovalRefused`), an approval echoing an operand the proposal does not name refused stale (`ResolutionStale`), the plain re-confirmation approved, the break `RESOLVED`; `E2eSeedStaysTestOnlyTest` (app, `architecture`) holds that no module's main source set names the seed (the application image's only input is the boot jar, the migrator's the migrations), that nothing under `deploy/` or `infra/terraform` does, the refusals, and that the HTTP half has no database route. `THREAT_MODEL.md` T56 (B10, HIGH, two `EXISTS` rows); `TESTING.md` §4a. **Run for real**: the dead-letter scenarios against a compose PostgreSQL in a throwaway compose project (its own volume, removed after), twice, stdout only the `KEY=value` lines and no collision; the lookalike URLs (`http://localhost:8.example`, `http://localhost.example`, a path, `https`) each refused. **Not run here, owed**: the settlement scenarios against a running compose stack - its Kafka and Redis images are not on this machine and pulling them is a download the owner has not authorised (their doors are proven by `E2eSeedDoorsDatabaseTest` against the real application instead); the kind target, with `P17-TST-001`; the console's own end-to-end run, postponed by the owner in finapp-admin-panel. **Gaps recorded**: TRANSFER_TO_ACCOUNT is not seeded - its target must be an `ACTIVE` customer wallet or merchant payable, and locally only KYC by SQL activates a customer; an AMOUNT_MISMATCH needs a provider stub. **Probe**: `P17-TSK-106`'s probe (2026-11-18; each file's sha256 saved first): P1 the parked plant's dedupe key written `'malformed:' || event_id`, a record no release can re-drive; P2 the abandoned plant written with `dead_lettered_at` NULL, a live pending row; P3 the script's loopback check unanchored at its end (`^http://(localhost|127\.0\.0\.1)`, which admits `http://localhost.example.org`); P4 the seed's event type named in a main source set (`OutboxRelay.java`); P5 `Seed.java`'s fee 0.01 with its trailer's net kept consistent, inside the 0.02 tolerance, so no break is raised - Caught: P1 and P2 together, `E2eSeedPlantsDatabaseTest` 4 of 5 red - P2 in the abandoned plant's retry, its two-person discard (`NOT_ABANDONED`) and the rerun's census, P1 at the parked plant's own printed output, no longer an event's id; the parked discard rightly green, P1 not touching a discard. P3 and P4 together, `E2eSeedStaysTestOnlyTest` 2 of 6 red, each its own (`theScriptRefusesAnythingButATestStack`, `noImageCarriesTheSeed`). P5 `E2eSeedDoorsDatabaseTest` 1 of 2 red - the fee-break, `Seed.java` answering "no open FEE_MISMATCH traced to file ... after three minutes"; the parsed file rightly green. Restored, sha256 compared identical. **Fresh**: 2026-11-18 on the task's final bytes, every count from a fresh run: platform's unit tier 447 tests in 49 classes and its architecture tier 4 in 2 (its slice tier holds none); app's unit tier 2,091 in 356, its slice tier 320 in 55 and its architecture tier 1,284 in 119 (`E2eSeedStaysTestOnlyTest` 6 and `ThreatModelIsCompleteTest` 14 among them) - 0 failed (07:16-07:49 UTC); and, under the owner's allowance, the task's own database classes - `E2eSeedPlantsDatabaseTest` 5 (platform `databaseTest`) and `E2eSeedDoorsDatabaseTest` 2 (app `ownContainerDatabaseTest`, a JVM and container of its own) - 0 failed (07:50 UTC); the records' guards re-run after the records were written. **Multi-instance**: `PASS` - every seeded row is an ordinary row the fleet's relays and sweepers see, planted in a state none of them changes (an abandoned head stops every relay at its aggregate; a parked row changes only on its own consumer's next failure, and no such consumer exists; the sweep keeps what a standing parked record names), and the settlement scenarios are the doors' own acts, arbitrated by their row locks as any operator's are.
+
+**P17-TSK-107 — Optional settlement and reconciliation lists: batches, and resolutions awaiting a decision (G-120, G-122)** — `COMPLETE` (2026-11-18; marked `READY` at `P17-TSK-106`'s gate; on the owner's "do milestone-by-milestone", branch `P17-TSK-107` from `P17-TSK-106`) *(low priority: the console works without them; G-121, the breaks' cursor, is `-042`'s)* *(read "`READY` (marked at `P17-TSK-106`'s gate ...)" until its gate, and "`PLANNED`" before that)*
+- **Context**: `settlement`, `reconciliation`; B2.2.
+- **Scope**:
+  - `GET /v1/operator/settlement/batches?source=&from=&cursor`, to browse batches. Today the console opens a batch by its
+    exact identifier;
+  - `GET /v1/operator/reconciliation/resolutions?status=PROPOSED&cursor`, in ADR-C133's pending-decision shape
+    (`{ id, kind, proposedBy, proposedAt, reasonSummary, subjectId }`): an approver's queue. Today a pending resolution is
+    reached from its break.
+
+  Each a §7 collection under the permission the existing reads of the same records use (the design names it); the batches
+  with a bounded window.
+- **Deps**: none.
+- **Accept**: both routes in the contract, with tests for the permission, the cursor and the declared order; the resolutions
+  list marks the caller's own proposals.
+- **Multi-instance**: keyset reads of committed rows; `PASS` by construction.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`.
+- **As built (2026-11-18, gate `COMPLETE`)**: the first two operator collections that implement `API_CONVENTIONS.md` §7 exactly (now marked **Implemented** there, with both listed - ADR-C133's follow-up). **`GET /v1/operator/settlement/batches`** (`RECONCILIATION_INVESTIGATE`, as the batch's own read): `source` (a declared code, else `422 settlement.SourceUnknown`), `from`/`to` (business dates, inclusive; `to` today in UTC and `from` thirty days before it unless named; a reversed window or one wider than 92 days `422`), business date descending and the batch's id breaking the tie; each item the batch's identity and the trailer's declared words (`SettlementBatchSummary`), the reference withheld as the batch's own read withholds a non-reference shape, the folded totals left to that read. **`GET /v1/operator/reconciliation/resolutions`** (`RECONCILIATION_RESOLVE`, as the resolution's read and its approval - ADR-C133: a queue is read by who may decide it): `status` `PROPOSED` or absent (anything else `422`), oldest proposal first and the id breaking the tie, ADR-C133's pending-decision shape - `id`, `kind` (`reconciliation.<KIND>`), `proposedBy`, `proposedAt`, `reasonSummary` (the reason **code**: the narrative is the proposer's confidential account and stays on the resolution's page), `subjectId` - with `subjectKind` (`BREAK` or `SETTLEMENT_BATCH`, a repudiation's) and `proposedByCaller`, the caller's own proposals marked. **Both**: `limit` 50 unless named, 200 at most, refused `422 api.ValidationFailed` outside `1..200` and never reduced; an opaque `cursor` naming its collection (`app`'s `OperatorCollection`), so one collection's cursor is refused by the other, as is any it did not write; `{items, nextCursor}`, `nextCursor` absent on the last page; no totals; keyset reads of committed rows - a row comparison over the order key - served by settlement `V021`'s two indexes and reconciliation `V026`'s partial index on the `PROPOSED` rows, each built in its migration's transaction (identity `V027`'s reasoning: small tables, `IF NOT EXISTS` for a deployment that builds ahead). Not audited, as the existing reads of the same records are not: no narrative, no restricted field. **The contract**: `docs/api/openapi.json` gains the two paths and four schemas, no existing path changed; the operator edge's generated routes gain the two `GET`s, the public routes unchanged. **A finding**: `OpenApiChange` labels every added `required` leaf BREAKING, `required: false` under a brand-new path included, which constrains no caller - accepted, as every earlier optional query parameter in the baseline was. **Tests**: `BatchBrowseDatabaseTest` (settlement) and `PendingResolutionQueueDatabaseTest` (reconciliation, through the real machine) for the declared order and the keyset walk - each row once, a decided proposal gone, a page strictly after its cursor; `OperatorListsApiDatabaseTest` (app, over HTTP) for the permission (`RECONCILIATION_CONTROLLER` `403` on both), the `422`s and the absent `nextCursor`; `PendingResolutionViewTest` for the shape and the caller's mark; `OperatorCollectionTest` for the limit and the cursor; `RoutePermissionRegisterTest`, `OpenApiContractTest`, `EdgeAllowListTest` for the routes. **Owed**: `edge-check.sh` over the regenerated routes (its images are a download). **Probe**: `P17-TSK-107`'s probe (2026-11-18; each file's sha256 saved first; five plants at once, each aimed at its own test): P1 the queue's order reversed (`ORDER BY proposed_at DESC, id DESC`); P2 the browse's keyset comparison made `<=`, so a page repeats its cursor's row; P3 the queue's route moved to `RECONCILIATION_INVESTIGATE`; P4 the caller's mark always false; P5 an over-maximum limit reduced to the maximum instead of refused - Caught, each by its own: P1 `PendingResolutionQueueDatabaseTest#theQueueIsTheProposalsInTheirDeclaredOrder` red; P2 both `BatchBrowseDatabaseTest` cases red (a batch served twice); P3 `RoutePermissionRegisterTest`'s register red; P4 `PendingResolutionViewTest#theCallersOwnIsMarked` red; P5 `OperatorCollectionTest#theLimitIsBoundedNotReduced` red. Restored, sha256 compared identical. **Fresh**: 2026-11-18 on the task's final bytes, every count from a fresh run: settlement's unit tier 240 tests in 41 classes and its architecture tier 2 in 1; reconciliation's unit tier 197 in 37 and its architecture tier 2 in 1; migrator's unit tier 119 in 9 (neither module, nor migrator, holds a slice test); app's unit tier 2,098 in 358 (`OperatorCollectionTest` 4, `PendingResolutionViewTest` 3 among them), its slice tier 320 in 55 (`OpenApiContractTest`, `EdgeAllowListTest`, `RoutePermissionRegisterTest` among them) and its architecture tier 1,284 in 119 - 0 failed (08:11-08:44 UTC); and, under the owner's allowance, the task's own database classes - `PendingResolutionQueueDatabaseTest` 2, `BatchBrowseDatabaseTest` 2, `OperatorListsApiDatabaseTest` 4 - 0 failed (08:45 UTC); the records' guards re-run after the records were written. **Multi-instance**: `PASS` - keyset reads of committed rows in one snapshot each; a row written or decided between pages lands where its own key puts it or leaves, and nothing is repeated.
+
+*M17.3 — Administration and audit*
+
+The console has built what `finapp` already serves: an identity opened by its exact identifier; grant and revoke a role,
+suspend and reinstate (`/v1/identities/{id}/roles[/{role}]`, `…/suspension`); the factorless-holdings review
+(`/v1/operator/access-review/factorless-holdings`), with a revoke on each row. The permissions and roles named below are
+ADR-C132's and ADR-C134's. The console's audit trail screens (its `P17-TSK-019`) cannot start until `-017` exists.
+
+**P17-TSK-014 — Staff directory, identity detail, lookup and role catalogue (G-10, G-11)** — `COMPLETE` (2026-11-18; marked `READY` at `P17-TSK-107`'s gate; on the owner's "Continue to M17.3", branch `P17-TSK-014` from `P17-TSK-107`) *(read "`READY` (marked at `P17-TSK-107`'s gate, 2026-11-18: M17.2 closed, the first of M17.3) *(read '`PLANNED`' until then)*" until its gate)*
+- **Context**: `identity` (ADR-0031), `app`; B3.1. An administrator today acts on an identifier obtained elsewhere and cannot
+  see whom they act on: the console's identity page shows no status, no roles and no factor state.
+- **Scope**:
+  - **a new permission, `IDENTITY_READ`**, held by `ADMINISTRATOR`, and by `AUDITOR` when `-017` creates it. Pinned in
+    `RoleNameTest`, registered in `PRIVILEGED_ACCESS_REVIEW.md`;
+  - `GET /v1/operator/identities?role=&status=&cursor`: identities that hold, or held, an operator role. Filters `role` (a
+    `RoleName`) and `status` (`ACTIVE`, `SUSPENDED`, `CLOSED`); ordered by `(createdAt, identityId)` descending.
+    `RoleAssignmentStore.activeHoldingsOf` already exists, unexposed;
+  - `GET /v1/operator/identities/{id}`: `{ identityId, status, suspendedAt?, suspensionCause?, factorEnrolled,
+    roles: [{ role, assignedAt, assignedBy }], createdAt }`. **Identifier-first** (ADR-C132 decision 3): no name, no login
+    identifier, no contact detail;
+  - `POST /v1/operator/identities/lookup` with `{ loginIdentifier }` **in the body, never the URL** (ADR-C132 decision 4),
+    answering `{ identityId }` or `404`;
+  - `GET /v1/operator/roles`: `[{ role, permissions: [...], requiresEnrolledFactor }]`, built from `RoleName` itself. The
+    console shows it as the role catalogue and uses it, in place of the contract's enum, for its role picker.
+- **Audit**: the detail read and the lookup are recorded (`identity.IdentityRead`, `identity.IdentityLookedUp`) with actor and
+  target; the list once per request, with its filter. `AUDITABLE_ACTIONS.md` gains them.
+- **Deps**: `-003` (`COMPLETE`).
+- **Accept**: the four routes in `docs/api/openapi.json`, behind the operator surface, with tests for the permission (a
+  negative per route), the audit, the §7 cursor, no personal-data field served, and the lookup's value never in a URL or a log.
+- **Multi-instance**: reads of committed rows, the audit record written as the existing audited reads write theirs; `PASS` by
+  construction.
+- **Risk**: Medium - the first read of staff data. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+- **As built (2026-11-18, gate `COMPLETE`)**: **`IDENTITY_READ`**, held by `ADMINISTRATOR` (`RoleNameTest` pins it; `PRIVILEGED_ACCESS_REVIEW.md` §3; the auditor gains it with `-017`). It guards an act in the step-up rule's sense - the lookup is a `POST` - so `PermissionName.guardsAnAct` is true and every holder needs an enrolled factor, which `ADMINISTRATOR` already did. **Four routes** (`StaffDirectoryController`, `StaffDirectoryService`; the identity module's `IdentityDirectory` over `JdbcIdentityDirectoryStore`): `GET /v1/operator/identities` - a §7 collection (`OperatorCollection`; `limit` 50/200), the identities that hold or held a role, newest first by creation and id, `role` a live holding of it, `status` the identity's, each item `{ identityId, status, createdAt, roles }` (the live ones); driven from `identity.role_assignment` and joined by key, so a page costs the staff's number, never the customers', and no index was added. `GET /v1/operator/identities/{id}` - `{ identityId, status, suspendedAt?, suspensionCause?, factorEnrolled, roles: [{ role, assignedAt, assignedBy }], createdAt }`, the suspension's instant `status_changed_at`; unknown and malformed ids one `404 api.NotFound`. `POST /v1/operator/identities/lookup` `{ loginIdentifier }` in the body - `{ identityId }` or `404`; a value of a shape no identity can carry matches nothing and is not queried. `GET /v1/operator/roles` - `RoleName` itself, each role's permissions and `requiresEnrolledFactor`. **On a `MULTI_FACTOR` session**: the list, the detail and the lookup, as the factorless review is (a list of who holds the privileged roles is the map a stolen password must not buy) - pinned in `RoutePermissionRegisterTest`'s rulings; the catalogue names nobody and asks for none. **Identifier-first** (ADR-C132 decision 3): no name, login identifier or contact detail is served. **Recorded** in the read's own transaction (`AUDITABLE_ACTIONS.md`): `identity.IdentityDirectoryRead` once per page with its filter and count, `identity.IdentityRead` with the identity as target (an unknown identity is no read and records nothing), `identity.IdentityLookedUp` whether it matched or not, the matched identity or `no-match` the target - **the login identifier never**, in the trail, a URL or a log line. **The contract**: four paths and seven schemas, nothing existing changed; the operator edge's routes gain the four. `API_CONVENTIONS.md` §7 lists the directory. **Tests**: `IdentityDirectoryDatabaseTest` (the directory's membership, order and keyset walk, the filters, the detail, the lookup, each read's record); `StaffDirectoryApiDatabaseTest` (a negative per route - `KYC_REVIEWER` `403` on all four; a password session `403 identity.AssuranceRequired` on the three that name or find people; identifier-first answers; the identifier in no audit record or captured log line); `RoleNameTest`; the route, contract, edge, factor, access-review and auditable-action guards. **Owed**: `edge-check.sh` over the regenerated routes. **Probe**: `P17-TSK-014`'s probe (2026-11-18; each file's sha256 saved first; four plants at once, each aimed at its own test): P1 the lookup's audit summary also naming the login identifier (`asked=`); P2 the directory's role filter counting a revoked holding; P3 the detail route's `MULTI_FACTOR` removed; P4 the directory taking every identity (`LEFT JOIN` on the role assignments), not only those that hold or held a role - Caught, each by its own: P1 `IdentityDirectoryDatabaseTest`'s lookup case red, and over HTTP `StaffDirectoryApiDatabaseTest#anAdministratorReadsIdentifierFirst` red (the identifier in the trail); P2 the filters case red; P3 `StaffDirectoryApiDatabaseTest#thePeopleReadsAskForASecondFactor` red and `RoutePermissionRegisterTest`'s MULTI_FACTOR ruling red; P4 the directory case red (an identity that never held a role served). Restored, sha256 compared identical. **Fresh**: 2026-11-18, every count from a fresh run on the task's final main code: identity's unit tier 209 tests in 24 classes (`RoleNameTest` among them) and its architecture tier 2 in 1 (no slice test); app's unit tier 2,098 in 358, its slice tier 320 in 55 (`RoutePermissionRegisterTest`, `OpenApiContractTest`, `EdgeAllowListTest`, `EveryOperatorActRequiresAFactorTest` among them) and its architecture tier 1,284 in 119 (09:14-09:46 UTC). That run found two registers the task had not taught, both test-only: `CredentialReachesNoEmittedSinkTest` (unit) did not list the lookup's new request schema, and `OwnershipIsScopedTest` (architecture) did not classify `JdbcIdentityDirectoryStore.detail` - now `ADMINISTERED`, its stand-in named; both classes re-run green, 9 and 15 tests (09:52 UTC). Under the owner's allowance, the task's own database classes: `IdentityDirectoryDatabaseTest` 5 and `StaffDirectoryApiDatabaseTest` 4, 0 failed (09:47 UTC); the records' guards re-run after the records were written. **Multi-instance**: `PASS` - lock-free reads of committed rows, each with its audit record in its own transaction; a page's keyset is stable while identities are created and roles granted, a later grant landing where its identity's key puts it.
+
+**P17-TSK-015 — Another identity's sessions: list and revoke (G-12)** — `COMPLETE` (2026-11-18; marked `READY` at `P17-TSK-014`'s gate; on the owner's "Continue to M17.3", branch `P17-TSK-015` from `P17-TSK-014`) *(read "`READY` (marked at `P17-TSK-014`'s gate, 2026-11-18: the next of M17.3) *(read '`PLANNED`' until then)*" until its gate)*
+- **Context**: `identity` (the session store), `app`; B3.2. Today an administrator can end someone's sessions only by
+  suspending them, which ends all of them. During an incident they need to end one session - a lost laptop - without locking
+  the person out.
+- **Scope**:
+  - **a new permission, `SESSION_ADMINISTER`**, held by `ADMINISTRATOR`;
+  - `GET /v1/operator/identities/{id}/sessions`: the live sessions, `{ sessionId, issuedAt, lastSeenAt, expiresAt,
+    assurance }`. **No token, and no token hash**;
+  - `DELETE /v1/operator/identities/{id}/sessions/{sessionId}`, with `{ reason }` in the body;
+  - optionally, `DELETE /v1/operator/identities/{id}/sessions` with `{ reason }`, ending them all without suspending.
+- **Controls**: `MULTI_FACTOR` and a reason. Audited as `identity.SessionRevokedByAdministrator`, with refusals recorded
+  (`@RecordsRefusals`). The actor's own identity is refused, as the role doors refuse it. Revoking a session that has already
+  ended answers `204`: idempotent in effect, like the role doors.
+- **Deps**: `-014`.
+- **Accept**: the routes in the contract; a revoked session's next request is `401`; the audit names actor, subject and
+  session; no token material is served.
+- **Multi-instance**: liveness and revocation are the shared `LIVE` predicate on the database's clock (`X-TSK-007`,
+  `X-TSK-008`), so a revocation racing the session's own request, or another administrator's revocation, ends it once, and ten
+  instances agree on which sessions are live. `PASS` with the race in the database tests.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+- **As built (2026-11-18, gate `COMPLETE`)**: **`SESSION_ADMINISTER`**, held by `ADMINISTRATOR` (`RoleNameTest`; `PRIVILEGED_ACCESS_REVIEW.md` §3). **Three routes** (`SessionAdministrationController` over the app's `SessionAdministrationService` and the identity module's `SessionAdministration`), each on a `MULTI_FACTOR` session: `GET /v1/operator/identities/{id}/sessions` - the live sessions, newest first, `{ sessions: [{ id, issuedAt, expiresAt, absoluteExpiresAt, assurance }] }`, recorded `identity.SessionsRead` with the count; `DELETE /v1/operator/identities/{id}/sessions/{session}` `{ reason }` - `204`; `DELETE /v1/operator/identities/{id}/sessions` `{ reason }` - `{ sessionsRevoked }`, the identity left `ACTIVE`. The acts record their refusals (`@RecordsRefusals`) and, when something ended, `identity.SessionRevokedByAdministrator` with the reason - one session: only when a live session of that identity's ended, so no guessed identifier enters the trail; all: with the count, however small. **Every rule the store's, on the database's clock**: live is `SessionStore`'s one predicate; one session ends through `revokeOwned` - the ownership in the statement - so another identity's session named under this one ends nothing, and a session already ended, not this identity's, or of a shape no session has is `204` alike (no oracle); all end through `revokeAllFor`, under the identity's lock. The administrator's own identity `422`, as the role doors; an unknown one `404`. **No token material**: no token, hash or device detail is served. **Two deviations from the entry, both recorded**: no `lastSeenAt` - the platform keeps an idle bound, not a last-seen instant, so the view serves `expiresAt` (the earlier bound) and `absoluteExpiresAt` rather than derive one; and the session's identifier is `id`, its path variable `{session}` - `sessionId` is in the build rule's secret vocabulary (`CredentialReachesNoEmittedSinkTest`), which a URL or an answer must not carry, as the customer's own `DELETE /v1/sessions/{id}` already names it. **The contract**: two paths and four schemas, nothing existing changed; the operator edge's routes gain the three. **Tests**: `SessionAdministrationDatabaseTest` (the live list, the ownership, the idempotence, all without suspending, self and unknown refused, and ten instances ending one session once with one record); `SessionAdministrationApiDatabaseTest` (a negative per route, a password session refused at each, no token material, a revoked session's next request `401` while the person's other lives, the non-oracle `204`s, the reason required); `RoleNameTest`; the route, contract, edge, factor, credential-schema and auditable-action registers taught. **Owed**: `edge-check.sh` over the regenerated routes. **Probe**: `P17-TSK-015`'s probe (2026-11-18; each file's sha256 saved first; two runs so each catch is attributable): run A, at once, P1 the one session ended by `SessionStore.revoke` - no ownership in the statement; P2 the administrator's own identity no longer refused; P3 the list's `MULTI_FACTOR` removed; run B, P4 a revocation recorded even when nothing ended - Caught: P1 `SessionAdministrationDatabaseTest#oneSessionEndsOnlyIfItIsTheIdentitys` red and over HTTP `SessionAdministrationApiDatabaseTest#theRefusalsAndTheNonOracle` red (a stranger's session ended under another identity); P2 `#selfAndUnknownAreRefused` red; P3 `RoutePermissionRegisterTest`'s MULTI_FACTOR ruling red and `#aPasswordSessionIsRefused` red; P4 `#oneSessionEndsOnlyIfItIsTheIdentitys` red and `#tenRacersEndOneSessionOnce` red (ten records where one transition happened). Restored after each run, sha256 compared identical. **Fresh**: 2026-11-18 on the task's final bytes, every count from a fresh run: identity's unit tier 209 tests in 24 classes and its architecture tier 2 in 1 (no slice test); app's unit tier 2,098 in 358 (`CredentialReachesNoEmittedSinkTest` among them), its slice tier 320 in 55 (`RoutePermissionRegisterTest`, `OpenApiContractTest`, `EdgeAllowListTest`, `EveryOperatorActRequiresAFactorTest`) and its architecture tier 1,284 in 119 (`OwnershipIsScopedTest`, `PrivilegedAccessReviewTest`, `AuditableActionRegistryTest`) - 0 failed (10:49-11:23 UTC); under the owner's allowance, `SessionAdministrationDatabaseTest` 5 and `SessionAdministrationApiDatabaseTest` 4, 0 failed (11:23 UTC); the records' guards re-run after the records were written. **Multi-instance**: `PASS` - the revocation is a conditional update on the live predicate at the database's `now()`, its ownership in the statement; ten racers end one session once and write one record, shown on PostgreSQL.
+
+**P17-TSK-016 — Segregation-of-duties refusal at grant, and the review read (G-14)** — `COMPLETE` (2026-11-18; marked `READY` at `P17-TSK-015`'s gate; on the owner's "Continue to M17.3" and their pairs, branch `P17-TSK-016` from `P17-TSK-015`) *(read "`READY` (marked at `P17-TSK-015`'s gate, 2026-11-18: the next of M17.3; its pairs decided by the owner the same day) *(read '`PLANNED`' until then)*" until its gate)*
+- **Context**: `identity` (`RoleName`, the grant door `POST /v1/identities/{id}/roles`), `app`; B3.3; the console plan's open
+  item 9. Today the only separation is per act: the proposer cannot approve. Nothing stops one person holding both halves of a
+  four-eyes pair - for example `RECONCILIATION_OPERATOR` and `RECONCILIATION_CONTROLLER`, or `RISK_ANALYST` and `RISK_OFFICER`.
+- **Scope**:
+  1. **a declared conflict table** in `identity`, in code beside `RoleName`, pinned by a test and listed in
+     `PRIVILEGED_ACCESS_REVIEW.md`. **Which pairs conflict is the owner's decision**; the table makes it reviewable;
+  2. **the grant refuses a conflicting role**: `409 identity.RoleConflict`, a new problem code (`ERROR_CONTRACT.md`) naming the
+     role already held, the refusal recorded;
+  3. **the review read**: `GET /v1/operator/access-review/sod-conflicts`, the live holdings that already conflict because they
+     were granted before the rule. Shaped like the factorless review - `{ conflicts: [{ identityId, roles: [a, b], since }],
+     truncated }` - under `ROLE_ASSIGN` and `MULTI_FACTOR`, and recorded, as the factorless review is.
+- **Deps**: `-014`; the owner's conflict pairs.
+- **The owner's decision (2026-11-18, asked at M17.3's start)**: seven pairs conflict - `ACCOUNTANT`/`FINANCIAL_CONTROLLER`, `REGULATORY_REPORTER`/`FINANCIAL_CONTROLLER`, `LOAN_SERVICING_AGENT`/`LENDING_OFFICER`, `BNPL_SERVICING_AGENT`/`BNPL_OFFICER` (the propose/approve splits), `RECONCILIATION_OPERATOR`/`RECONCILIATION_CONTROLLER` and `RISK_ANALYST`/`RISK_OFFICER` (B3.3's examples), `LEDGER_OPERATOR`/`RECONCILIATION_OPERATOR` (the checker and the desk it checks). Not `CREDIT_POLICY_OFFICER`/`UNDERWRITER`: no four-eyes act spans the two today.
+- **Accept**: the table pinned; a conflicting grant refused `409` and recorded; the review lists the conflicts that predate the
+  rule. The console shows the `409` by its code with no change, and adds the second list beside the factorless one.
+- **Multi-instance**: **two concurrent grants of the two halves of a pair to one identity must not both succeed.** The check
+  and the insert serialise on the identity's holdings - a lock on the identity's row, or the design's equivalent - never a read
+  and an insert in separate transactions. `PASS` only with that race in the database tests.
+- **Probe**: the serialisation removed → the concurrent-grant case admits both → red.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-SEC`, `DOD-API`.
+- **As built (2026-11-18, gate `COMPLETE`)**: **the table** - `identity`'s `RoleConflicts`, the owner's seven pairs (`ACCOUNTANT`/`FINANCIAL_CONTROLLER`, `REGULATORY_REPORTER`/`FINANCIAL_CONTROLLER`, `LOAN_SERVICING_AGENT`/`LENDING_OFFICER`, `BNPL_SERVICING_AGENT`/`BNPL_OFFICER`, `RECONCILIATION_OPERATOR`/`RECONCILIATION_CONTROLLER`, `RISK_ANALYST`/`RISK_OFFICER`, `LEDGER_OPERATOR`/`RECONCILIATION_OPERATOR`), pinned by `RoleConflictsTest`, listed in `PRIVILEGED_ACCESS_REVIEW.md` §4. **The refusal** - `IdentityAdministration.assignRole` reads the identity's live roles from `standingForChange`, after the identity's lock every grant and revocation takes, and refuses a role whose partner is held: `RoleGrant.CONFLICT`, answered `409 identity.RoleConflict` (`IdentityErrorCode`, `ERROR_CONTRACT.md`), the detail naming the role already held - read after the refusal, without a lock, for the words only - and recorded as `door.ActRefused` by the door's `@RecordsRefusals`; nothing granted. Re-granting a held role is not a conflict. **Two concurrent grants of a pair's halves** to one identity serialise on that lock, the second reading the first's committed role: ten rounds on PostgreSQL, one granted and one refused each. **The review** - `GET /v1/operator/access-review/sod-conflicts` (`ROLE_ASSIGN`, on a `MULTI_FACTOR` session, as the factorless review), `{ conflicts: [{ identityId, roles: [a, b], since }], truncated }`, `since` the later of the two grants, oldest first, at most 200; one read of both holdings (`RoleAssignmentStore.conflictingHoldings`); recorded `identity.SodConflictsRead`; it names, never revokes. **The contract**: one path, two schemas, nothing existing changed; the operator edge gains the route. **Tests**: `RoleConflictsTest`; `RoleConflictDatabaseTest` (either way round refused, the race, the review of a holding from before the rule); `RoleConflictApiDatabaseTest` (the `409` naming the held role, nothing granted, the refusal recorded; the review's negative, password and positive); the route, contract and edge registers. **Owed**: `edge-check.sh` over the regenerated routes. **Probe**: `P17-TSK-016`'s probe (2026-11-18; each file's sha256 saved first; two runs): run A, P1 the conflict's read taken without the identity's lock (`standingOf` for `standingForChange`, in the grant only) - the backlog's own probe; run B, at once, P2 the conflict check disabled, P3 the `REGULATORY_REPORTER`/`FINANCIAL_CONTROLLER` pair dropped from the table, P4 the review's `MULTI_FACTOR` removed - Caught: P1 `RoleConflictDatabaseTest#racingHalvesNeverBothSucceed` red - both halves of a pair granted to one identity under concurrency, the other two cases rightly green; P2 `#aConflictingGrantIsRefused`, the race and over HTTP `RoleConflictApiDatabaseTest#aConflictingGrantIsRefusedAndRecorded` red; P3 both `RoleConflictsTest` pins red; P4 `RoutePermissionRegisterTest`'s MULTI_FACTOR ruling and `#theReviewIsTheAdministrators` red. Restored after each run, sha256 compared identical. **Fresh**: 2026-11-18 on the task's final bytes, every count from a fresh run: identity's unit tier 213 tests in 25 classes (`RoleConflictsTest` 4, `RoleGrantNeedsAFactorTest`, `FirstRoleEndsSessionsTest` among them) and its architecture tier 2 in 1; app's unit tier 2,098 in 358, its slice tier 320 in 55 (`RoutePermissionRegisterTest`, `OpenApiContractTest`, `EdgeAllowListTest`) and its architecture tier 1,284 in 119 (`RoleGrantDoorTest`, `PrivilegedAccessReviewTest`, `AuditableActionRegistryTest`) - 0 failed (11:37-12:10 UTC); under the owner's allowance, `RoleConflictDatabaseTest` 3 and `RoleConflictApiDatabaseTest` 2, 0 failed (12:10 UTC); the records' guards re-run after the records were written. **Multi-instance**: `PASS` - the check and the grant are one transaction after one lock on the identity's row, so no two instances grant a pair's halves; shown with the race on PostgreSQL and its probe.
+
+**P17-TSK-017 — The audit trail query (G-20)** — `COMPLETE` (2026-11-18; marked `READY` at `P17-TSK-016`'s gate; on the owner's "Continue to M17.3" and their `AUDIT_READ` decision, branch `P17-TSK-017` from `P17-TSK-016`) *(read "`READY` (marked at `P17-TSK-016`'s gate, 2026-11-18: the next of M17.3; `AUDIT_READ` the auditor's alone, by the owner the same day) *(read '`PLANNED`' until then)*" until its gate)*
+- **Context**: `platform` (`platform.audit_record`, ADR-0010), `app`; ADR-C134; B3.4. Every act writes to
+  `platform.audit_record`, and nothing reads it: an auditor today needs database access. The console's audit search and the
+  History tab on every detail page (its `P17-TSK-019`) wait for this.
+- **Scope**:
+  - **a new permission, `AUDIT_READ`**, held by **a new read-only role, `AUDITOR`**: no `*_PROPOSE`, no `*_APPROVE`, an
+    enrolled factor required. **`ADMINISTRATOR` does not hold `AUDIT_READ` unless the owner decides otherwise** (ADR-C134
+    decision 2);
+  - `GET /v1/operator/audit-records?from=&to=&actor=&operation=&targetType=&targetId=&correlationId=&outcome=&cursor`.
+    `from` and `to` are **required**; the window is bounded (31 days proposed) and checked with a query plan. A §7 collection
+    ordered by `(occurredAt, auditId)` descending; items `{ auditId, occurredAt, actorId, operation, targetType, targetId,
+    outcome, correlationId, changeSummary }`;
+  - `GET /v1/operator/audit-records/{id}`: one record;
+  - no update and no delete, and a grant that forbids both;
+  - **the read is itself recorded**: each page served is `audit.RecordsRead`, its filter the change summary (ADR-C134
+    decision 3).
+- **Indexes**: decided with `EXPLAIN` plans for the filters above - at least `(occurred_at, audit_id)`, and
+  `(target_type, target_id, occurred_at)` for the History tab - and built without blocking the writers, under the migration
+  lint's rules for a table an earlier release created. The read uses the reporting pool if the plan shows contention, **never
+  a replica** (ADR-0129). Audit records are never deleted (`DATA_RETENTION.md`), so the window, not retention, bounds a query.
+- **Exclusions**: export (G-21, `AUDIT_EXPORT`), deferred to M10 by D-9 and not in this phase's backlog.
+- **Deps**: none; ADR-C134's decisions recorded in this repository's register by the design.
+- **The owner's decision (2026-11-18, asked at M17.3's start)**: `AUDIT_READ` is the `AUDITOR`'s alone - `ADMINISTRATOR` does not hold it (ADR-C134 decision 2's default, confirmed): whoever grants roles does not also read the record of what was done with them.
+- **Accept**: the routes in the contract, with tests for the required window and its bound, the cursor, the permission (a
+  negative for every other role: the plan's §19 criterion 7), that a read is itself recorded, and the application role's lack
+  of `UPDATE` and `DELETE` on the table (`42501`); the plans recorded.
+- **Multi-instance**: keyset paging over an append-only table is stable while every replica appends. A writer's stamp can
+  commit after a row with a later stamp, so a page boundary already passed can gain a late row; the design states what a page
+  promises about late commits. `PASS` with that statement and its test.
+- **Risk**: Medium - the busiest table, and an index built on a large one. **Cx**: L. **DoD**: `DOD-API`, `DOD-SEC`,
+  `DOD-KERNEL`.
+- **As built (2026-11-18, gate `COMPLETE`)**: **`AUDIT_READ` and `AUDITOR`** - the role read-only, holding `AUDIT_READ` alone (`RoleNameTest`; `PRIVILEGED_ACCESS_REVIEW.md` §3; identity `V029` admits its name, its contract marker the superset check); `ADMINISTRATOR` does not hold it, the owner's decision. **A deviation, for the owner**: ADR-C132 proposed `IDENTITY_READ` for the auditor too, and the build refuses a permission two roles grant (`RoleNameTest#theGrantsArePairwiseDisjoint`) - so the auditor names an identity by the records' identifiers; a separate read permission would be needed to change that. **A factor at grant for a read-only role** - `PermissionName.readsBehindAFactor` (true for `AUDIT_READ`): a read behind a second factor is as hollow without a factor at grant as an act is, so `RoleName.requiresEnrolledFactor` is an act's or such a read's; `EveryOperatorActRequiresAFactorTest` holds the flag to the routes both ways (true exactly when every route under the permission is a read declaring `MULTI_FACTOR`), and every role still needs a factor. **The read port** - platform's `AuditTrail` over `JdbcAuditTrail`: a half-open window on `occurred_at` and exact-match filters, `(occurred_at, audit_id)` descending, keyset; one record by id. **Two routes** (`AuditTrailController`, `AuditTrailService`), `AUDIT_READ` on a `MULTI_FACTOR` session: `GET /v1/operator/audit-records?from=&to=&actor=&operation=&targetType=&targetId=&correlationId=&outcome=&cursor=&limit=` - `from` and `to` required instants, 31 days at most, a reversed or missing end `422`; a §7 collection (`OperatorCollection`, 50/200), items `{ auditId, occurredAt, actorId, operation, targetType, targetId, outcome, correlationId, changeSummary }`; `GET /v1/operator/audit-records/{id}` - the record with its actor type and reason, unknown and malformed `404`. **Every read recorded** as `audit.RecordsRead` (`PlatformAuditAction`) in the read's own transaction - a page with its filter and count, a record with itself the target. **No update and no delete**: no door does, and the application role holds neither (`42501`, shown). **The indexes** - platform `V017`: `audit_record_by_time (occurred_at, audit_id)` and `audit_record_by_target_time (target_type, target_id, occurred_at, audit_id)`, in the migration's transaction (`CONCURRENTLY` is refused by the build, `EveryMigrationRunsInATransactionTest`) and built ahead, concurrently, by those names on a large table (`OPERATIONS_RUNBOOK.md` §11.48, the plans there: index-only scans backward, no sort and no scan, for a window, a target's history and a continued page, on sixty thousand records); the application's pool, never a replica. **What a page promises about late commits** (`AuditTrail`'s javadoc and §11.48): each page is exact for what was committed when it was read; a record committed later, stamped inside a range a walk already served, is in no later page of that walk and a fresh walk shows it; no instant after which a window is final is claimed - the archive's queue is the reader that misses no row. **The contract**: two paths, three schemas, and `AUDITOR` added to the role enum the grant and revocation name (a value an older client never sends, as every role before it). **Tests**: `AuditTrailDatabaseTest` (the plans, the walk, the late commit, the `42501`), `AuditTrailApiDatabaseTest` (a negative for every other role on both routes, `ADMINISTRATOR` among them; the password refused; the window required and bounded; the cursor; each read recorded); `RoleNameTest`, `RoleGrantNeedsAFactorTest`, `EveryOperatorActRequiresAFactorTest`; the route, contract, edge, ownership and auditable-action registers. **Owed**: `edge-check.sh` over the regenerated routes; the build-ahead on a real table, an operator's. **Probe**: `P17-TSK-017`'s probe (2026-11-18; each file's sha256 saved first; three runs so each catch is attributable): run A, at once, P1 `ADMINISTRATOR` given `AUDIT_READ` (the owner's decision broken), P2 the 31-day bound disabled, P3 the list's `MULTI_FACTOR` removed; run B, P5 the trail ordered oldest first; run C, P4 a page's read no longer recorded - Caught: P1 `RoleNameTest#theGrantsArePairwiseDisjoint`, `#auditorGrantsExactlyTheTrailRead` and the administrator's pin, and over HTTP `AuditTrailApiDatabaseTest#everyOtherRoleIsRefused` red; P2 `#theWindowIsRequiredAndBounded` red; P3 `RoutePermissionRegisterTest`'s MULTI_FACTOR ruling, `EveryOperatorActRequiresAFactorTest#everyPermissionSaysWhetherItReadsBehindAFactor` and `#aPasswordSessionIsRefused` red; P5 `AuditTrailDatabaseTest#aWalkServesEachRecordOnce` and `#aLateCommitIsSeenByAFreshWalk` red; P4 alone `#theAuditorReadsAndIsRecorded` red (one read record where four were owed). Restored after each run, sha256 compared identical. **Fresh**: 2026-11-18 on the task's final bytes, every count from a fresh run. The full run (12:36-13:10 UTC): identity's unit tier 214 tests (`RoleNameTest`, `RoleGrantNeedsAFactorTest`, `RoleAssignmentMigrationTest` among them) and its architecture tier 2 in 1; platform's unit tier 447 in 49 and its architecture tier 4 in 2; migrator's unit tier 119 in 9; app's unit tier 2,098 in 358, its slice tier 321 in 55 (`RoutePermissionRegisterTest`, `OpenApiContractTest`, `EdgeAllowListTest`, `EveryOperatorActRequiresAFactorTest`) and its architecture tier 1,284 (`PrivilegedAccessReviewTest`, `AuditableActionRegistryTest`); under the owner's allowance, `AuditTrailDatabaseTest` 4 and `AuditTrailApiDatabaseTest` 4. It found four gaps, each a pin or a register the task had not yet taught - `RoleAssignmentMigrationTest` still pinning `V026` as the latest, the expand-only lint wanting `V029`'s CHECK `NOT VALID`, a stale `OwnershipIsScopedTest` entry (`byId` takes a raw `UUID`, which the guard does not read as a resource id), and `StoredBoundsAreTheDatabasesTest`'s census missing `JdbcAuditTrail#occurred_at` - 1 failed in identity's unit tier and 3 in app's architecture tier; fixed, and those four classes re-run with `AuditTrailApiDatabaseTest` (13:11-13:35 UTC): 50 tests, 0 failed; the records' guards re-run after the records were written. **Multi-instance**: `PASS` - keyset reads of committed rows on an append-only table every replica writes, each read recorded in its own transaction; what a page promises about a row committed late is stated and shown on PostgreSQL.
+
+**P17-TSK-108 — Test-only seeding for M3's end-to-end tests** — `COMPLETE` (2026-11-18; marked `READY` at `P17-TSK-017`'s gate; on the owner's "Continue to M17.3", branch `P17-TSK-108` from `P17-TSK-017`) *(read "`READY` (marked at `P17-TSK-017`'s gate, 2026-11-18: the last of M17.3) *(read '`PLANNED`' until then)*" until its gate)*
+- **Context**: `-106`'s script; B3.5. The console's harness already registers identities and grants roles through `finapp`'s
+  doors.
+- **Scope**: `-106`'s script extended with an identity holding a factor-requiring role with **no** factor enrolled, so the
+  factorless review has a row; and, once `-016` exists, an identity holding two conflicting roles from before the rule.
+- **Deps**: `-106`; `-016` for the second.
+- **Accept**: the console's end-to-end tests can grant, revoke, suspend, reinstate and review against a running `finapp`; the
+  `kind` form owed with `-104`'s.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+- **As built (2026-11-18, gate `COMPLETE`)**: `infra/scripts/e2e-seed.sh` gains M3's two scenarios, `all` running them after M2's four. **Both states are ones the grant door now refuses**, which is why the reviews exist and why the seed plants them: `factorless-holding` - an identity registered through the door and nothing more (`Seed.java register-bare`: no session, no factor) holding `LEDGER_OPERATOR`, a role that needs a factor (`409 identity.FactorRequiredForRole` at the door) -> `FACTORLESS_IDENTITY_ID`, `FACTORLESS_ROLE`; `sod-conflict` - an identity with a factor holding `ACCOUNTANT`, granted through the door by the run's administrator, and `FINANCIAL_CONTROLLER`, its pair in the owner's table (`409 identity.RoleConflict` at the door) -> `SOD_CONFLICT_IDENTITY_ID`, `SOD_CONFLICT_ROLES` in the review's order. **The plant** - a third, `infra/scripts/e2e-seed/held-role.sql`: one live `identity.role_assignment` row, granted by the run's administrator, `assigned_at` the moment it is written; the table's own constraints refuse an unknown role, a missing identity and a second live holding. Its values reach it as psql's quoted variables (`:'identity'`, `:'role'`, `:'granter'`), the ids checked by the shell first and the roles the script's own words. Like the break-glass step it has no audit record; on a test stack, by design (`THREAT_MODEL.md` T56). **The script** - the run's administrator is now its own step (`administrator`), made once and shared by the settlement and review scenarios; an identity's id is looked up by `identity_of`, its login's shape checked before SQL as before; each step's id is taken by assignment, so a failed step stops the run under `set -e` rather than handing on an empty id (the settlement scenarios' `set -- $(...)` did not). **What the console's tests then do** - read the factorless or SoD review, and revoke through the door; the reviews serve the oldest 200 holdings, so a stack keeping more than 200 unrevoked seeds serves a new one past the page (the script's header). **The proofs**: `E2eSeedReviewsDatabaseTest` (app, `database`) runs `Seed.java` itself as a separate JDK process and `held-role.sql` unchanged as the migrator, each scenario showing the door's refusal, the plant's row, the review naming it (the holdings moved a century back first, ahead of the shared database's fixtures) and the revocation door taking it away - the factorless holder's role, one half of the pair - with the SoD holder absent from the factorless review; `E2eSeedStaysTestOnlyTest` (app, `architecture`) now lists three plants, holds each marked and one statement, and holds the plant's values to the quoted variables after the shell's check (`#aPlantsValuesAreQuotedVariables`, T56's control). `Seed.java`'s registration, factored into `registered` and shared by `register` and `register-bare`, is exercised by the same test (the administrator and the SoD holder); `E2eSeedDoorsDatabaseTest`, an `own-container` class this task does not change, was not re-run. `TESTING.md` §4a. **Run for real**: `held-role.sql` through `psql` itself - the script's `plant` - on a throwaway `postgres:18.6` (the compose image, already on this machine) carrying identity's 29 migrations and the compose stack's roles script, as `finapp_migrator`: the holding written; the same role again refused by `role_assignment_one_live_per_identity`, an unknown one by `role_assignment_role_is_known`; a value carrying a quote and a statement stayed one literal, refused as a uuid, the table intact. Then `e2e-seed.sh factorless-holding sod-conflict` itself, its compose target, twice, against such a database, with a `docker` shim taking its `psql` there and a `java` shim answering for `Seed.java` (whose HTTP half `E2eSeedReviewsDatabaseTest` proves against the application): stdout only the four `KEY=value` lines each run, no collision, one administrator a run serving both scenarios, the factorless holder with no factor and its role granted by that administrator, the SoD holder with a factor and both halves, the factorless review's own query counting both runs' holdings; an unknown scenario and a look-alike URL refused before anything was touched; and a failed `Seed.java` registration, bare registration or grant each stopped the run with nothing further planted and no identifier printed for the scenario that failed. **Not run here, owed**: the script against a running compose stack - its Kafka and Redis images are not on this machine and pulling them is a download the owner has not authorised; the kind target, with `P17-TST-001`; the console's own end-to-end run. **Probe**: `P17-TSK-108`'s probe (2026-11-18; each file's sha256 saved first; one run): P1 `Seed.java`'s `register-bare` answered by `register`, the identity given a factor; P2 `held-role.sql` writing the holding already revoked (`revoked_by` and `revoked_at` set); P3 the script's id check before the plant removed (`uuid_like` in `held_role`); P4 `held-role.sql`'s `TEST-ONLY` marker removed - Caught: P1 `E2eSeedReviewsDatabaseTest#aFactorlessHoldingIsReviewedAndRevoked` red at its first assertion, a factor where none should be (expected "0" but was "1"); P2 `#aSodConflictIsReviewedAndOneHalfRevoked` red, one live holding where the plant should have made two; P3 `E2eSeedStaysTestOnlyTest#aPlantsValuesAreQuotedVariables` red, the check not found; P4 `#everyPlantIsOneMarkedStatement` red; the guard's other five tests green. Restored, sha256 compared identical. **Fresh**: 2026-11-18 on the task's final bytes, every count from a fresh run (13:51-14:27 UTC): app's unit tier 2,098 tests in 358 classes, its slice tier 321 in 55 and its architecture tier 1,285 in 119 (`E2eSeedStaysTestOnlyTest` 7, `ThreatModelIsCompleteTest`, `MutationDemonstrationTest`) - 0 failed; under the owner's allowance, `E2eSeedReviewsDatabaseTest` 2, 0 failed; no production source changed, so no other module's tiers were re-run; the records' guards re-run after the records were written. **Multi-instance**: `PASS` - a planted holding is an ordinary row, read by every instance's grant under the identity's lock and by the reviews as committed rows; the console's revocation is the door's own act, serialised on that lock as any administrator's is; the seed runs once a run and makes fresh identities, so no two runs meet.
+
+*M17.4 — Risk and AML*
+
+`finapp` already serves almost all of M4: the alert and case queues, a case's file and evidence, the investigator's acts,
+suppressions, dispositions, risk actions, regulatory reports (drafting, approval, filing), assessments with their replays and
+overrides, a party's risk profile, policy versions, screening lists, monitoring reprocessing and the four risk reports. The
+console's screens (its `P17-TSK-021`) need no API change to work; the risk controllers' second factor is `-102`'s.
+
+**P17-TSK-020 — Risk read gaps: alert detail, assessment search, policy versions and screening-list reads (G-90, G-91, G-92)** — `COMPLETE` (2026-11-18; marked `READY` at `P17-TSK-108`'s gate; on the owner's "Continue to M17.4", branch `P17-TSK-020` from `P17-TSK-108`) *(read "`READY` (marked at `P17-TSK-108`'s gate, 2026-11-18: M17.3 closed, the first of M17.4) *(read '`PLANNED`' until then)*" until its gate)*
+- **Context**: `risk`, `app`; B4.1…B4.3.
+- **Scope**:
+  1. **alert detail** (G-90): `GET /v1/operator/risk/alerts/{alertId}`, answering the queue's `RiskAlertView`, under
+     `RISK_INVESTIGATE`, audited as the queue is (`risk.CaseRead`). The operator's own party's alerts are withheld, as the
+     queue withholds them: fail closed, `404`. Today an alert is reachable only as a queue row, so a link to one cannot be
+     opened;
+  2. **assessment search** (G-91): `GET /v1/operator/risk/assessments?partyId=&operation=&decision=&from=&to=&cursor`. A §7
+     collection ordered by `(assessedAt, assessmentId)` descending, with a required, bounded window as ADR-C134 sets for the
+     audit trail; items are the assessment's head (`assessmentId, assessedAt, operation, decision, score, policyVersion,
+     partyId`). Under `RISK_INVESTIGATE`, audited once per request with its filter, the operator's own party's assessments
+     withheld. Indexes decided with `EXPLAIN` plans;
+  3. **policy versions and screening lists** (G-92), all under `RISK_POLICY_ADMINISTER`:
+     `GET /v1/operator/risk/policies/versions?operation=&status=&cursor` (newest first, `status` one of `PROPOSED`, `ACTIVE`,
+     `RETIRED`, `REJECTED` - the approver's queue for policies); `GET /v1/operator/risk/screening-lists?list=&cursor` (list
+     versions: `id, list, version, ordinal, status, recordedAt, activatedAt`); `GET
+     /v1/operator/risk/screening-lists/{listVersionId}` (a version's metadata; `ScreeningListStore.find` exists).
+- **Entries are `RESTRICTED`**: whether staff may read a list's entries is a separate classification decision (ADR-C132
+  decision 3), the owner's. Until it is made, these reads serve metadata only.
+- **Deps**: M17.1 (`-101`, `-102`).
+- **Accept**: the routes in the contract, with tests for permission and audit; self-withholding for alerts and assessments;
+  the window and the cursor for assessments; and no screening-list entry served.
+- **Multi-instance**: reads of committed rows; `PASS` by construction.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+- **As built (2026-11-18, gate `COMPLETE`)**: **one alert** (G-90) - `GET /v1/operator/risk/alerts/{alertId}` under `RISK_INVESTIGATE`, the queue's `RiskAlertView`: `AlertQueue.read`, the queue's own judgement of that one row on a read-only snapshot, recorded `risk.AlertRead` (target `risk_alert`) in a transaction of its own before the answer. **A deviation from B4.1's "fail closed, 404", for the console**: an alert of the reader's own party, or one whose party cannot be placed, is `403 risk.SelfDealingRefused` recorded `FAILED` - the answer the case file and the one-assessment read already give, so every single risk read says the same thing; an unknown or malformed id is the uniform `404 risk.NotFound`. **The assessment search** (G-91) - `GET /v1/operator/risk/assessments?from=&to=&partyId=&operation=&decision=&cursor=&limit=`, under `RISK_INVESTIGATE`: a §7 collection (`OperatorCollection`, 50/200) of heads - `{ assessmentId, assessedAt, operation, decision, score, policyVersionId, policyVersion, partyId }`, never an input, a hit or a reason - newest first by `(assessed_at, id)`, keyset; `from` and `to` required instants, `[from, to)`, 31 days at most (the audit trail's bound, ADR-C134), anything else `422 api.ValidationFailed`. Risk's `AssessmentSearch` places the reader as the one-assessment read does: the reader's own party's assessments withheld by the statement itself (`party_id <> ?`, so no scan counts them), a search naming that party - or by a reader the platform cannot place - `403 risk.SelfDealingRefused` recorded `FAILED`; every page recorded `risk.AssessmentsSearched` (new, `AUDITABLE_ACTIONS.md`) on the read's own transaction, its filter and count the summary. **The index** - risk `V022`: `risk_assessment_by_time (assessed_at, id)`, built in the migration's transaction and ahead, concurrently, on a large table (`OPERATIONS_RUNBOOK.md` §11.48, the plans there); a party's assessments ride `V007`'s `(party_id, assessed_at)` with an incremental sort over ties, so the busiest risk table gains one index, not two. **The officer's lists** (G-92), under `RISK_POLICY_ADMINISTER`: `GET /v1/operator/risk/policies/versions?operation=&status=&cursor=&limit=` - heads newest first by proposal, `PROPOSED` the approver's queue; `GET /v1/operator/risk/screening-lists?list=&cursor=&limit=` and `GET .../screening-lists/{listVersionId}` - `{ id, list, version, ordinal, status, recordedAt, activatedAt, retiredAt }`. Never a person (who proposed, decided, recorded or activated stays withheld, as the version reads withhold it) and never an entry: finapp holds none - a list's content is the provider's - so ADR-C132 decision 3 (whether staff may read entries) stays the owner's with nothing to serve yet. Unrecorded, as the policy reads beside them are. Risk's `RiskCollections`/`JdbcRiskCollections` is the read model under all three collections. **The contract**: four paths, a `GET` on the recording door's path, six schemas, all additive; the edge's operator list five `GET` routes; `API_CONVENTIONS.md` §7's table (the audit trail's row, missed at `P17-TSK-017`, added with them). **Tests**: risk's `AssessmentSearchDatabaseTest` (the plans on sixty thousand heads, the walk, the withholding, the refusals, the record - every row in a transaction it rolls back, so the shared database keeps none); app's `RiskReadGapsApiDatabaseTest` (each route's permission both ways and no session, the alert's record and refusal, the search's window, cursor, withholding, refusal and records, the lists' order, metadata and 404s); the route, contract, edge, census and auditable-action registers. **Owed**: `edge-check.sh` over the regenerated routes; the build-ahead on a real table, an operator's. **Probe**: `P17-TSK-020`'s probe (2026-11-18; each file's sha256 saved first; three runs, so no probe hides another): run A, P1 the one-alert read's own-party refusal removed (`AlertQueue.read`), P2 the search's own-party withholding defeated (`party_id <> ?` made `(party_id <> ? OR TRUE)`), P5 the policy versions ordered oldest first; run B, P4 a page served unrecorded (`search.record` removed from the desk); run C, P3 the window's bound lifted to ten years - Caught: P1 `RiskReadGapsApiDatabaseTest#oneAlert` red, the own party's alert answered 200; P2 `AssessmentSearchDatabaseTest#aWalkServesEachOnceAndWithholdsTheReadersParty` red (thirty served, not twenty) and `RiskReadGapsApiDatabaseTest#theAssessmentSearch` red, the reader's own assessment served; P5 `#theOfficersLists` red, not newest first; P4 `#theAssessmentSearch` red, its records counted 0 where 3 were owed; P3 `#theAssessmentSearch` red, a 32-day window answered 200; every other case green in each run (runs B and C ran app's class alone). Restored after each run, sha256 compared identical. **Fresh**: 2026-11-18 on the task's final bytes, every count from a fresh run. The full run (18:53-19:31 UTC): risk's unit tier 576 tests in 85 classes and its architecture tier 3 in 1 (its slice tier holds none); app's unit tier 2,098 in 358, its slice tier 321 in 55 (`RoutePermissionRegisterTest`, `OpenApiContractTest`, `EdgeAllowListTest`, `EveryOperatorActRequiresAFactorTest`) and its architecture tier 1,285 in 119 (`StoredBoundsAreTheDatabasesTest`, `AuditableActionRegistryTest`, `OwnershipIsScopedTest`, `MigrationsAreExpandOnlyTest`); under the owner's allowance, `AssessmentSearchDatabaseTest` 3 and `RiskReadGapsApiDatabaseTest` 3, 0 failed. It found two pins the task had not yet taught - `RiskVocabulariesTest`'s list of risk's audit actions and `RiskSpansTest`'s argued unspanned records (the alert's and the search's records and refusals) - 1 failed in each unit tier; fixed, and the two classes re-run (19:31 UTC): 18 tests, 0 failed; the records' guards re-run after the records were written. Docker Desktop had stopped during the task; started on the owner's word (2026-11-18). **Multi-instance**: `PASS` - keyset reads of committed rows, each record appended in the read's transaction or its own; no instance holds state between pages, the cursor carrying the whole position.
+
+**P17-TSK-109 — Two additions to existing risk views: a case's reports, and proposals naming their proposer** — `COMPLETE` (2026-11-18; marked `READY` at `P17-TSK-020`'s gate; on the owner's "Continue to M17.4" and their tipping-off answer, branch `P17-TSK-109` from `P17-TSK-020`) *(read "`READY` (marked at `P17-TSK-020`'s gate, 2026-11-18: the next of M17.4; its first part waits on the owner's tipping-off answer) *(read '`PLANNED`' until then)*" until its gate)*
+- **Context**: `risk`; B4.5.
+- **Scope**:
+  1. **a case's file lists its regulatory reports**: `RiskCaseFileView` gains `reports: [{ reportId, status, jurisdiction,
+     draftedAt }]`, under `RISK_INVESTIGATE` like the rest of the file. Today a report is reached only from the draft's answer
+     or by its exact identifier. **Whether an investigator may see that a report exists at all (tipping-off) is the owner's
+     decision**; if not, the list is served only to `AML_REPORT_APPROVE`;
+  2. **proposals name their proposer**: `RiskSuppressionView`, `RiskDispositionView`, `RiskActionView` and
+     `RiskOverrideView` gain `proposedBy`, so the console disables the proposer's own approval in advance, as it does for
+     reconciliation resolutions. `risk.SelfApprovalRefused` stays the control.
+- **Deps**: the owner's tipping-off answer, for (1).
+- **Accept**: both additive changes in the contract, with tests for the permission split decided in (1) and the proposer
+  named in (2).
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`.
+- **As built (2026-11-18, gate `COMPLETE`)**: **(1) a case's reports - the owner's answer (2026-11-18): "AML approvers only".** `RiskCaseFileView` gains `reports: [{ reportId, status, jurisdiction, draftedAt }]`, served only when the standing that admitted the read - the one the interceptor read with the session and left on the request (`CURRENT_STANDING`) - also permits `AML_REPORT_APPROVE` (`AML_OFFICER`'s); for every other reader the field is absent (`NON_NULL`), so an analyst's file is byte for byte what it was and still says nothing of a report. Read on the file's own snapshot (`RegulatoryReportStore.ofCase`, every report of the case in drafting order, the rejected ones too; a case holds a few at most, so no index serves it); never the narrative, which the report's own audited read serves; the `REPORT_DRAFTED` investigator action stays withheld from every reader (`CaseWorklist.read`, `INV-RSK-08`'s `CaseWorklistTest#theFileWithholdsTheReport` unchanged). The file's `risk.CaseRead` counts them, `reports=n`, when served. `RISK_LIFECYCLES.md`'s report section, `AUDITABLE_ACTIONS.md`. **(2) proposals name their proposer** - `RiskSuppressionView`, `RiskDispositionView`, `RiskActionView` and `RiskOverrideView` gain `proposedBy`, the proposer's actor id (an operator's identity id), so the console disables the proposer's own approval in advance; `risk.SelfApprovalRefused` stays the control, and who approved, decided or took stays withheld. The rule "never a person" (`DESIGN-018`) is narrowed to that one name, in the desks' own documentation. **The contract**: five schemas gain a property and one is added - all additive, no path. **Tests**: `RiskQueueDeskTest` (an analyst's file has no reports and its record no count; an approver's file the case's reports, recorded `reports=0`; the file names the action's proposer and no other person); `ReportApiTest` (an analyst's file carries no `reports`; the same analyst granted `AML_OFFICER` reads the report's head by reference, never the narrative, recorded `reports=1`); `AlertSuppressionApiTest`, `RiskActionApiTest`, `RiskOverrideApiTest`, `RiskCaseApiTest` (each proposal names its proposer); `AlertSuppressionDeskTest`, `RiskActionDeskTest`, `RiskOverrideDeskTest` (the proposer the one person a view names); `QueueApiTest` re-run. **Found and corrected on the way**: two assertions in classes this task changed - `ReportApiTest`'s and `AlertSuppressionApiTest`'s persons typed `CUSTOMER` - stale since `P15-TSK-021` typed every operator act `EMPLOYEE` by its standing (2026-11-08): the database tier those classes sit in is skipped by the owner's standing instruction, so it had not run them since; corrected to `EMPLOYEE`. The rest of that tier may hold the same drift - owed with its full run. **Probe**: `P17-TSK-109`'s probe (2026-11-18; each file's sha256 saved first; two runs, so no probe hides another): run A, P1 the reports served to every reader of the file (the standing's `AML_REPORT_APPROVE` judgement dropped), P3 the suppression's proposer dropped, P4 the risk action's; run B, P2 the reports served to no reader, an approver included, P5 the file's `risk.CaseRead` silent on the reports served - Caught: P1 `ReportApiTest#theReportThroughItsDoors` red, an analyst's file carrying `reports`; P3 `AlertSuppressionApiTest#twoPersonsSuppress` red, no proposer named; P4 `RiskActionApiTest` (the ATO case) and `RiskQueueDeskTest`'s file red, the action's proposer absent; P2 `ReportApiTest#theReportThroughItsDoors` red, the approver's file without its report; P5 `RiskQueueDeskTest`'s file red, the record not ending `reports=0`; every other case green in each run. Restored after each run, sha256 compared identical. **Fresh**: 2026-11-18 on the task's final bytes, every count from a fresh run. The full run (19:45-20:19 UTC): risk's unit tier 576 tests in 85 classes and its architecture tier 3 in 1; app's unit tier 2,098 in 358, its slice tier 321 in 55 (`OpenApiContractTest`) and its architecture tier 1,285 in 119; under the owner's allowance, `ReportApiTest`, `AlertSuppressionApiTest`, `RiskActionApiTest`, `RiskOverrideApiTest`, `RiskCaseApiTest` and `QueueApiTest` - 12 tests in 6 classes, 0 failed. It found four pins the task had not yet taught: three unit tests holding the rule this task narrows - `AlertSuppressionDeskTest` (no person in the answer), `RiskActionDeskTest` and `RiskOverrideDeskTest` (no component named for a person) - and `OwnershipIsScopedTest`'s register, missing `JdbcRegulatoryReportStore.ofCase`; 3 failed in app's unit tier and 1 in its architecture tier; fixed - the proposer alone named, the read classified `ADMINISTERED` - and the four classes re-run (20:24 UTC: 30 tests, 0 failed); the records' guards re-run after the records were written. **Multi-instance**: `PASS` - reads of committed rows and a field more on views every instance computes the same way; the report list is read on the file's own snapshot and judged from the request's own standing, nothing held between requests.
+
+**P17-TSK-110 — Test-only seeding for M4's end-to-end tests** — `COMPLETE` (2026-11-18; marked `READY` at `P17-TSK-109`'s gate; on the owner's "Continue to M17.4" and their answer "Activate a test policy", branch `P17-TSK-110` from `P17-TSK-109`) *(read "`READY` (marked at `P17-TSK-109`'s gate, 2026-11-18: the last of M17.4) *(read '`PLANNED`' until then)*" until its gate)*
+- **Context**: `-106`'s script; B4.4. Every risk queue starts empty.
+- **Scope**: (1) an `OPEN` alert for a seeded party - best, one a rule raises from a seeded transaction; (2) a case in
+  `IN_INVESTIGATION` with that alert attached; (3) a `HOLD` or `REVIEW` assessment that can be overridden; (4) a `PROPOSED`
+  policy version, proposed by a different test identity from the one that activates it.
+- **Deps**: `-106`.
+- **Accept**: the console's end-to-end tests can suppress an alert by four-eyes, dispose a case by four-eyes, and approve an
+  override and a policy activation, against a running `finapp`.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+- **As built (2026-11-18, gate `COMPLETE`)**: `infra/scripts/e2e-seed.sh` gains M4's four, `all` running them after M3's. **The finding that shaped it**: under no active policy the engine ALLOWs every movement (`RiskEngineV1.failSafe`, `NO_POLICY_ACTIVE`) and an ALLOW is never overridden, so an overridable assessment needs a version in force; and a judged movement through the doors needs a funded, KYC-approved customer, which locally only the database makes. **The owner's answer (2026-11-18), "Activate a test policy"**: the first risk scenario (`risk_desks`) has two of the seed's officers propose and activate, through the doors, the seed's TRANSFER version (`Seed.java testPolicy`) - one `AMOUNT_BAND` rule of weight 600 above 10,000,000.00 EUR, score bands ALLOW to 499 and REVIEW from 500, the fail-safe ALLOW, an override threshold of 1,000.00 EUR - which ALLOWs everything a test stack does. **The scenarios**: `open-alert` - an `OPEN` `ACCOUNT_TAKEOVER` alert on a fresh party naming that version, a fourth plant (`risk-alert.sql`) -> `OPEN_ALERT_ID`, `OPEN_ALERT_PARTY_ID`; `investigated-case` - such an alert, a case opened by hand on it and taken by the seed's analyst through the doors, `IN_INVESTIGATION` (the console's analyst takes it over) -> `CASE_ID`, `CASE_ALERT_ID`; `overridable-assessment` - a fifth plant (`sealed-assessment.sql`): a sealed REVIEW of a 20,000,000.00 EUR transfer pinned to that version, the head, the canonical inputs (the party and account substituted, the digest recomputed by the table's own CHECK), the rule hit and the reason, the verdict's digest the engine's own for that version and amount -> `OVERRIDABLE_ASSESSMENT_ID`; `proposed-policy` - the same content `PROPOSED` by the seed's officer, which an officer other than its proposer activates -> `POLICY_VERSION_ID`, `POLICY_PROPOSER_ID`. `Seed.java` gains `propose-policy`, `activate-policy`, `open-case` and `take-case`. **What a test stack then shows, by design**: the seed's TRANSFER version in force; the planted assessment, of no command, counted so by the risk decisions report's census, and its override's RESUBMISSION finding nothing to resubmit; the alerts' evidence a reference to no row. **The proofs**: `E2eSeedRiskDatabaseTest` (app, `own-container`, since it activates a TRANSFER version - `RiskPolicyEndpointDatabaseTest`'s reason - and listed in `ownContainerSuites`) runs `Seed.java` and both plants unchanged, then shows the console's four acts possible: the alert suppressed by two analysts; the case taken over and disposed `CONFIRMED_FRAUD` by two; the assessment read with its seal `HOLDS`, replayed `IDENTICAL` to the engine under the seed's version, and overridden by two officers (`requiresSecondPerson`); the proposed version refused its proposer's activation (`risk.SelfApprovalRefused`) and activated by another officer. `E2eSeedStaysTestOnlyTest` lists five plants and holds every plant's values to quoted variables, the risk plants' version checked first. `THREAT_MODEL.md` T56, `TESTING.md` §4a. **Run**: the two plants through JDBC as the migrator with psql's quoting applied - the substitution `P17-TSK-108` showed equal to real `psql`'s - and the doors through `Seed.java` itself; the script's new functions checked by `sh -n` and the guard; during the work, the test's first run caught its own ordering - the proposed version's activation retires the seed's, so the console's activation is the run's last act. **Not run here, owed**: the script against a running compose stack and on `kind`, with the earlier scenarios. **Probe**: `P17-TSK-110`'s probe (2026-11-18; each file's sha256 saved first; two runs, so no probe hides another): run A, P1 `risk-alert.sql`'s party fixed rather than fresh, P2 `sealed-assessment.sql`'s verdict digest one character off, P5 the script's version check before the alert's plant removed; run B, P4 `Seed.java`'s seed version without its REVIEW band, so the planted REVIEW is no longer that version's verdict - Caught: P1 `E2eSeedRiskDatabaseTest#anInvestigatedCaseTwoDispose` red, the second alert refused by `risk_alert_born_once`; P2 `#anOverridableAssessmentTwoOfficersOverride` red, the seal `BROKEN`; P5 `E2eSeedStaysTestOnlyTest#aPlantsValuesAreQuotedVariables` red, the version not checked first; P4 `#anOverridableAssessmentTwoOfficersOverride` red, the replay `DIVERGED`; every other case green in each run. Restored after each run, sha256 compared identical. **Fresh**: 2026-11-18 on the task's final bytes, every count from a fresh run (21:25-22:05 UTC): app's unit tier 2,098 tests in 358 classes, its slice tier 321 in 55 and its architecture tier 1,285 in 119 (`E2eSeedStaysTestOnlyTest` 7, `TestTaxonomyTest`, `ThreatModelIsCompleteTest`) - 0 failed; under the owner's allowance, `E2eSeedRiskDatabaseTest` in its own container, 5, 0 failed; no production source changed, so no other module's tiers were re-run; the records' guards re-run after the records were written. **Multi-instance**: `PASS` - every seeded row is an ordinary row the fleet's readers and doors see, written in a state none of them changes on its own (an `OPEN` alert, a taken case, a sealed assessment, a `PROPOSED` version); the console's acts on them are the doors' own, arbitrated by their row locks and four-eyes rules as any operator's are; the seed's version is activated through the activation door's own lock.
+
+*M17.5 — Finance*
+
+`finapp` already serves almost all of M5: the general ledger (balances, account activity, entries) and the posting-rule
+register; ledger adjustments and projection rebuilds; accounting periods - lock, close, reopen and unlock by four-eyes, the
+close run and its checks, operational reports; prior-period adjustments, report runs and their final statements; GL mapping
+versions, valuation rate sets and accounting breaks; regulatory obligations and submissions. The console's screens (its
+`P17-TSK-024`) are built over those; the finance controllers' second factor is `-102`'s. The finance roles' read question is
+in this section's open decisions.
+
+**P17-TSK-022 — Ledger read gaps: account register, entry search, pending adjustments and rebuilds (G-110, G-111, G-112)** — `COMPLETE` (2026-11-19; marked `READY` at `P17-TSK-110`'s gate; on the owner's "Continue to M17.5", branch `P17-TSK-022` from `P17-TSK-110`) *(read "`READY` (marked at `P17-TSK-110`'s gate, 2026-11-18: M17.4 closed, the first of M17.5) *(read '`PLANNED`' until then)*" until its gate)*
+- **Context**: `ledger`, `app`; B5.1…B5.3.
+- **Scope**:
+  1. **the ledger account register** (G-110): `GET /v1/operator/ledger/accounts?purpose=&currency=&cursor`, items
+     `{ accountId, purpose, ownerKind, ownerRef, currency, openedAt, status }`, a §7 collection under `ACCOUNTING_READ`;
+     customer-owned accounts identifier-first (ADR-C132 decision 3). `LedgerAccountStore.findAllOfPurpose` and
+     `findAllOwned` exist. Today there is no chart of accounts as the ledger sees it;
+  2. **journal entry search** (G-111): `GET /v1/operator/ledger/entries?reference=&financialTransactionId=&accountId=&from=&to=&cursor`,
+     the window required and bounded, ordered by `(postedAt, entryId)` descending, a §7 collection under `ACCOUNTING_READ`
+     (`JournalEntryStore.entriesAfter` exists). Indexes decided with `EXPLAIN` plans;
+  3. **pending adjustments and rebuilds** (G-112): `GET /v1/ledger/adjustments?status=PROPOSED&cursor` and
+     `GET /v1/ledger/projection-rebuilds?status=PROPOSED&cursor`, in ADR-C133's pending-decision shape, under
+     `LEDGER_ADJUST`, the proposer's own items marked so the console can disable self-approval in advance.
+- **Deps**: M17.1.
+- **Accept**: the routes in the contract, with tests for the window, the cursor and the permission; M17.10's inbox can compose
+  (3).
+- **Financial**: reads only. Amounts are decimal strings with their currency, and no balance is computed beyond what the
+  ledger's own reads serve.
+- **Multi-instance**: keyset reads of committed, immutable entries; `PASS` by construction.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+- **As built (2026-11-19, gate `COMPLETE`)**: four §7 collections (`OperatorCollection`, 50/200), the ledger's own reads (ADR-C132 decision 1) through one read port, ledger's `LedgerCollections`/`JdbcLedgerCollections`, and app's `LedgerCollectionDesk`. **The account register** (G-110) - `GET /v1/operator/ledger/accounts?purpose=&currency=&cursor=&limit=` under `ACCOUNTING_READ`: `{ accountId, purpose, ownerKind, ownerRef, currency, accountType, normalBalance, status, openedAt }` (B5.1's seven fields and the account's type and normal balance), the owner a reference and never a name, in `(purpose, currency, id)` order - a chart of accounts; every page recorded `ledger.AccountsListed` (new). **The journal entry search** (G-111) - `GET /v1/operator/ledger/entries?from=&to=&reference=&accountId=&cursor=&limit=` under `ACCOUNTING_READ`: heads `{ entryId, entryType, postingDate, valueDate, postedAt, reversesEntryId, lineCount, amounts: [{ currency, amount }] }`, each amount the entry's debit lines' sum in that currency (equal to its credits, `INV-LED-01`), exact at the lines' own scale; every page recorded `ledger.EntriesSearched` (new). **Three deviations from B5.2, for the console**: the window is posting dates, `from` and `to` inclusive, required, 31 at most, and the order `(postingDate, entryId)` descending - the accounting date that decides the period, served by `V029`'s index - with `postedAt` in each item rather than its order; there is no `financialTransactionId` filter, since the ledger holds no such identifier - an entry's economic event is its `reference` (`transfer:<id>` and the like), the filter offered; and the reference is matched, never served (`RESTRICTED-FINANCIAL`, free text on a manual adjustment - the GL's reads never select it either), accepted only identifier-shaped, so an operator's free text never travels in a URL (ADR-C132 decision 4). **The approvers' queues** (G-112) - `GET /v1/ledger/adjustments?status=PROPOSED` and `GET /v1/ledger/projection-rebuilds?status=PROPOSED` under `LEDGER_ADJUST`, the permission their doors decide under: ADR-C133's pending-decision shape, oldest first, `proposedByCaller` marking the caller's own; the adjustments only `MANUAL` ones (`ledger.ManualAdjustment`, the proposal its own subject, its reason code the summary, its posting date) - the only origin that door decides, a reconciliation's and an accounting correction's being decided through their own domains' doors and queues; the rebuilds (`ledger.ProjectionRebuild`, the account their subject, with its currency) summarised by which figures drifted (`NO_PROJECTION_ROW`, or `DRIFTED:` and `POSTED`, `HOLDS`, `APPLIED_ENTRIES`), never by the proposer's prose; neither recorded, as the proposals' own reads beside them are not. **One bounded snapshot per page**: the GL's `GlSnapshots`, verified `REPEATABLE READ READ ONLY`, 10 s a statement - a read past it `503 api.TemporarilyUnavailable`, nothing served and nothing recorded (`GlSnapshots.timedOut` now reads the ledger's store failures too). **The indexes** - ledger `V039`: `journal_entry_by_reference (reference, posting_date, id)`, `ledger_account_register (purpose, currency, id)` and the two queues' partial `(proposed_at, id)` indexes - decided by the plans in `OPERATIONS_RUNBOOK.md` §11.48: the window and a busy account's entries ride `V029`'s index, a rare account's its own lines through `V038`'s, so the journal gains the one index a reference needs; the build ahead on a large journal is the runbook's. **The contract**: three new paths and a `GET` on two existing ones, all additive; the edge's operator list four `GET` routes; `API_CONVENTIONS.md` §7's table; `AUDITABLE_ACTIONS.md`; `DATA_CLASSIFICATION.md` (what each read serves). **Tests**: app's `LedgerCollectionDeskTest` (the window, the reference's shape, the vocabularies, each cursor its own, the queues' status, the views, the drift), `LedgerCollectionsDatabaseTest` (the plans on forty thousand entries, the walks, the exact sums, the queues' exclusions - every row in a transaction it rolls back) and `LedgerReadGapsApiDatabaseTest` (the finance roles' partition both ways, the 422s recording nothing, the empty last page, the records); the route, contract, edge and auditable-action registers. **The gate found** that §7's two new rows named the audit actions in code spans, which `ApiConventionsAreAccurateTest` reads as error codes - written plainly now, the guard green. **Owed**: `edge-check.sh` over the regenerated routes; the build-ahead on a real journal, an operator's. **Probe**: `P17-TSK-022`'s probe (2026-11-19; each file's sha256 saved first; three runs, so no probe hides another): run A, P1 the adjustments' queue serving every origin (`AND origin = 'MANUAL'` removed from `JdbcLedgerCollections`), P3 the register's page served unrecorded (the desk's `record` skipped), P4 the search's keyset resuming forwards (`<` made `>`); run B, P5 the window's bound lifted to a year, P6 a reference of free text accepted (a space admitted to `REFERENCE`); run C, P2 alone - an entry's movement placed at scale 0 rather than its lines' scale - since P4 broke the same walk in run A - Caught: P1 `LedgerCollectionsDatabaseTest#theQueuesHoldWhatTheirDoorsDecide` red, the reconciliation's and the accounting correction's proposals served; P3 `LedgerReadGapsApiDatabaseTest#theRegisterIsServedAndRecorded` red, its records counted 0 where 3 were owed; P4 `LedgerCollectionsDatabaseTest#theSearchWalksOnceAndSumsExactly` red, six entries walked where seven were owed; P5 `LedgerCollectionDeskTest#theWindowIsRequiredAndBounded` and P6 `#aReferenceIsAnIdentifier` red, each refusal not raised; P2 `#theSearchWalksOnceAndSumsExactly` red, `1050` where `10.50` was owed; every other case green in each run. Restored after each run, sha256 compared identical. **Fresh**: app's unit tier 2,106 tests in 359 classes (`LedgerCollectionDeskTest` 8 of 8 and `ApiConventionsAreAccurateTest` among them), its slice tier 321 in 55 (`RoutePermissionRegisterTest`, `OpenApiContractTest` and `EdgeAllowListTest` among them) and its architecture tier 1,285 in 119 (`AuditableActionRegistryTest` among them), `LedgerCollectionsDatabaseTest` 4 of 4 and `LedgerReadGapsApiDatabaseTest` 5 of 5 (the database tier's other classes not run, by the owner's word), ledger's unit tier 217 in 39 and architecture tier 2 in 1, migrator's 119 in 9 - 0 failed (2026-11-19, 09:21-10:00 UTC). **Multi-instance**: `PASS` - keyset reads of committed rows on a snapshot, no lock and no state between pages, the cursor carrying the whole position; a proposal decided between two pages is gone from the next and none is served twice; each record appended in a transaction of its own.
+
+**P17-TSK-023 — Accounting lists: report runs, mapping versions, valuation rate sets (G-113)** — `COMPLETE` (2026-11-19; marked `READY` at `P17-TSK-022`'s gate; on the owner's "Continue to M17.5", branch `P17-TSK-023` from `P17-TSK-022`) *(read "`READY` (marked at `P17-TSK-022`'s gate, 2026-11-19: the next of M17.5; the approver's read of report runs waits on the owner's finance roles answer) *(read '`PLANNED`' until then)*" until its gate)*
+- **Context**: `accounting`, `app`; B5.4. Report runs, GL mapping versions and valuation rate sets are each opened only by
+  identifier; a mapping version or a rate set awaiting approval cannot be found by its approver.
+- **Scope**:
+  - `GET /v1/operator/accounting/report-runs?periodId=&status=&cursor`, under `ACCOUNTING_READ` - and the approver's read, if
+    the owner decides the finance roles' question that way;
+  - `GET /v1/operator/accounting/mapping-versions?status=&cursor`, under `ACCOUNTING_READ` or `ACCOUNTING_MAPPING_APPROVE`;
+  - `GET /v1/operator/accounting/valuation-rate-sets?status=&cursor`, under `ACCOUNTING_CLOSE_APPROVE`, and
+    `ACCOUNTING_CLOSE_PROPOSE` for the proposer's own.
+
+  Each a §7 collection with a declared order; the `PROPOSED` filter is the approver's queue.
+- **Deps**: M17.1.
+- **Accept**: the routes in the contract, with tests for permission and the cursor.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`.
+- **As built (2026-11-19, gate `COMPLETE`)**: five §7 collections (`OperatorCollection`, 50/200), each under the permission of the desk that needs it - a route takes one, and the owner's answer to the finance roles' read question (2026-11-19, "FINAL statements only"): the controller holds no `ACCOUNTING_READ` and no read-only role is added - the roles stay a partition (C12, `RoleNameTest`'s pairwise-disjoint grants) - and it finds the statements of the closes it approves in a list of exactly the runs its statement door (`P14-TSK-022`, ruling (v)) already serves. accounting's `AccountingCollections`/`JdbcAccountingCollections` - each page the store's own row select (`JdbcReportRunStore.ROW`, `JdbcGlMappingStore.ROW`, `JdbcValuationRateSetStore.ROW`, now package-visible with their mappers), so a list and a by-id read never describe one row two ways - and app's `AccountingCollectionDesk`. **The report runs** - `GET /v1/operator/accounting/report-runs?periodId=&status=&cursor=&limit=` under `ACCOUNTING_READ`: each run's head as `GET …/{runId}` serves it (`ReportRunDesk.view`), never its content, newest claim first; every page recorded `accounting.ReportRunsListed` (new), as every read of a run is. **The FINAL statements** - `GET …/report-runs/final-statements?periodId=&cursor=&limit=` under `ACCOUNTING_CLOSE_APPROVE`: FINAL `BALANCE_SHEET` and `INCOME_STATEMENT` runs only (`FinalStatementDesk.STATEMENTS`), each `{ runId, definition, definitionVersion, periodId, period, periodRevision, revision, completedAt }`; every page recorded `accounting.FinalStatementsListed` (new). **The mapping versions** - `GET …/mapping-versions?status=&cursor=&limit=` under `ACCOUNTING_MAPPING_APPROVE` (the backlog's "or" decided for the approver, the gap's own subject: the accountant reads each version by id under `ACCOUNTING_READ` already), newest version first. **The rate sets** - `GET …/valuation-rate-sets?periodId=&status=&cursor=&limit=` under `ACCOUNTING_CLOSE_APPROVE`, as the set's own read, and `GET …/valuation-rate-sets/mine?status=` under `ACCOUNTING_CLOSE_PROPOSE`, the caller's own captures (a proposer holds no read of a set), newest capture first, each with its rate count and reference gaps, never a rate. `PROPOSED` is each approver's queue, every row marking whether the caller proposed or captured it (`accounting.SelfApprovalRefused` stays the control); neither list recorded, as their by-id reads are not. **No index**: each table grows by people's acts, so a page is a top-N over a period's index, the version's unique key or a small table. **One bounded snapshot per page** (`GlSnapshots`): past its statement timeout `503 api.TemporarilyUnavailable`, nothing served or recorded. **The contract**: two new paths and a `GET` on three existing ones, all additive; the edge's operator list five `GET` routes; `API_CONVENTIONS.md` §7; `AUDITABLE_ACTIONS.md`; `DATA_CLASSIFICATION.md` (what each list serves - `proposed_by` and `captured_by`, `CONFIDENTIAL`, to the approver and the proposer). **Tests**: app's `AccountingCollectionDeskTest` (the filters, each cursor its own and exact to the microsecond, the FINAL statements' filter the statement door's, the proposer marked, no reason or rate on a row), `AccountingCollectionsDatabaseTest` (each walk once in its order, a tie split by a page boundary, every filter - rows planted as the owner with the triggers off, rolled back) and `AccountingListsApiDatabaseTest` (the partition both ways and a ledger operator refused all five, the records, the unrecorded lists, the 422s recording nothing); the route, contract, edge and auditable-action registers. **The gate found** three pins the new doors had to join - `AccountingVocabulariesTest`'s audit actions and the route maps of `ReportRunDeskTest`, `ValuationRateSetDeskTest` and `GlMappingDeskTest` (a `list` handler unkeyed, as a `read` is) - and `FinalStatementDeskTest` taking the controller's first `GET`, right only by the order of its methods once it had two: it names its handler now and pins the list beside it. **Owed**: `edge-check.sh` over the regenerated routes. **Probe**: `P17-TSK-023`'s probe (2026-11-19; each file's sha256 saved first; three runs, so no probe hides another): run A, P1 the report runs' keyset resuming forwards (`<` made `>` in `JdbcAccountingCollections`), P2 the rate sets' tie broken the other way from the cursor (`s.id ASC`), P3 the report runs' page served unrecorded (the desk's `record` skipped); run B, P5 the FINAL statements' filter admitting every definition (`STATEMENTS` made `Set.of()`), P6 the proposer's own sets serving everyone's (the caller dropped from `ownSetFilter`), P7 the mapping versions' list moved under `ACCOUNTING_READ`, P8 the caller's own proposal never marked; run C, P4 alone - the capturing person's filter dropped from the read - since P2 broke the same walk in run A - Caught: P1 `AccountingCollectionsDatabaseTest#theRunsWalkOnceNewestFirst` red, the walk out of its order; P2 `#theSetsWalkOnceNewestFirst` red, three sets walked where four were owed - the tie's second lost at the page boundary; P3 `AccountingListsApiDatabaseTest#theRunListsAreRecorded` red, its records counted 0 where 2 were owed; P5 `AccountingCollectionDeskTest#theStatementsListIsTheStatementDoors` red, no definition named where the two statements were owed; P6 `#aRateSetsRow` red, the proposer's own empty of its caller; P8 `#aMappingVersionsRow` red, the caller's own unmarked; P7 `RoutePermissionRegisterTest#everyGuardedRouteRequiresItsRegisteredPermission` red, the route's permission off the register; P4 `#theSetsWalkOnceNewestFirst` red, another accountant's set in the proposer's own; every other case green in each run. Restored after each run, sha256 compared identical. **Fresh**: app's unit tier 2,111 tests in 360 classes (`AccountingCollectionDeskTest` 5 of 5, `ApiConventionsAreAccurateTest` and the four desks' route maps among them - re-run whole on the final bytes, 12:48-12:50 UTC, after the gate's pins), its slice tier 321 in 55 (`RoutePermissionRegisterTest`, `OpenApiContractTest` and `EdgeAllowListTest` among them) and its architecture tier 1,285 in 119 (`AuditableActionRegistryTest` among them), `AccountingCollectionsDatabaseTest` 3 of 3 and `AccountingListsApiDatabaseTest` 4 of 4 (the database tier's other classes not run, by the owner's word), accounting's unit tier 783 in 80 (`AccountingVocabulariesTest` among them) and architecture tier 3 in 1 - 0 failed (2026-11-19, 12:10-12:50 UTC). **Multi-instance**: `PASS` - keyset reads of committed rows on a snapshot, no lock and no state between pages, the cursor carrying the whole position; a proposal decided between two pages is served once at most; each record appended in a transaction of its own.
+
+**P17-TSK-111 — Small additions to existing finance and regulatory views** — `COMPLETE` (2026-11-19; marked `READY` at `P17-TSK-023`'s gate; on the owner's "Continue to M17.5", branch `P17-TSK-111` from `P17-TSK-023`) *(read "`READY` (marked at `P17-TSK-023`'s gate, 2026-11-19: the next of M17.5) *(read '`PLANNED`' until then)*" until its gate)*
+- **Context**: `accounting`, `ledger`, `regulatory`; B5.6. The console works around each today.
+- **Scope**:
+  1. **proposers named** (`proposedBy`) on a period's close, reopen and unlock requests, prior-period adjustments, GL mapping
+     versions, valuation rate sets, accounting-break acknowledgements, regulatory obligations and submissions.
+     `accounting.SelfApprovalRefused` stays the control;
+  2. **one period by identifier**, under `ACCOUNTING_READ`. Today the list serves the latest 120, and an older period is
+     reached only by a controller, through its requests;
+  3. **"no close proposal" as an answer**: a view with `closeProposal: null`, or a `204`, instead of a `404` on
+     `GET …/close-proposal`;
+  4. **a reason on ledger adjustment rejection**: `DELETE /v1/ledger/adjustments/{id}` takes no body, so a rejection records
+     no reason (the projection rebuild's rejection takes one);
+  5. **a rejection door for accounting-break acknowledgements**: a proposed acknowledgement can be approved but not rejected;
+  6. **a return's period identifier** on a regulatory submission's view, which carries the period's label today, so drafting
+     a correction asks the operator for the identifier again.
+- **Deps**: none. (5) is a new act and carries `-102`'s factor.
+- **Accept**: each addition in the contract with its test; (4) and (5) recorded with actor and reason; existing clients
+  unaffected - additive changes, and for (4) an optional body or a new door, as the design decides under the contract's
+  compatibility rules.
+- **Multi-instance**: (5) is a conditional transition on the acknowledgement's status that races its approval; exactly one
+  wins and the other answers `409`. `PASS` with that race in the database tests.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`, `DOD-DOMAIN`.
+- **As built (2026-11-19, gate `COMPLETE`)**: six additions, every one additive under `API_CONVENTIONS.md` §8 - no field removed, no status changed. **(1) Proposers named**, by identifier and never a name, on the views their approvers read: a close proposal (`proposedBy`, a pending reopen's `reopenProposedBy`), a period's requests and the period list (`unlockProposedBy`, `reopenProposedBy`), a prior-period adjustment and the pending list (`proposedBy`), a GL mapping version (`proposedBy`), a valuation rate set (`capturedBy`; `ValuationRateSets.Read` widened), an accounting break while its acknowledgement is pending (`acknowledgementProposedBy`), a regulatory obligation (`proposedBy`) and a submission (`preparedBy`); the desks' javadocs and the tests that pinned "no person" corrected; `accounting.SelfApprovalRefused` stays the control. **(2) One period by its id**, `GET /v1/operator/accounting/periods/{periodId}` under `ACCOUNTING_READ`: the list's view, however old (`AccountingPeriods.find`), unrecorded as the list is; an unknown or malformed id `404 accounting.NotFound`. **(3) "No close proposal" as an answer**: the period's requests view (`GET …/periods/{periodId}/requests`, the controller's) now names the latest close proposal, `closeProposalId` and `closeProposalStatus`, null when it never had one (`PeriodCloses.PendingRequests.latestClose`) - and `GET …/close-proposal`'s `404` stays, since §8 forbids changing an answer inside version 1: a reader now learns the absence before asking. **(4) A reason on a ledger adjustment's rejection**: `POST /v1/ledger/adjustments/{id}/rejection` (`LEDGER_ADJUST`, `MULTI_FACTOR`, `{ reason }`), the `DELETE`'s act with the rejecter's reason on `ledger.AdjustmentRejected` (`AdjustmentService.reject(…, reason)`, screened as a proposal's reason - not blank, at most 1000, no instrument shape - a refusal `422` with nothing decided); unkeyed as the approval and the `DELETE` are, the proposal's one-way machine the idempotency, a repeat converging with the first reason standing; the `DELETE` unchanged. The backlog's premise that the projection rebuild's rejection takes a reason was wrong - it takes none either - and is left as it is. **(5) A rejection door for accounting-break acknowledgements**: `POST /v1/operator/accounting/breaks/{breakId}/acknowledgement-rejection` (`ACCOUNTING_ADJUST_APPROVE`, `MULTI_FACTOR`, keyed, `{ reason }`; `AccountingBreaks.rejectAcknowledgement`): the pending proposal cleared whole, the break `OPEN` for a new one, the case file keeping the proposal and an `ACKNOWLEDGEMENT_REJECTED` act naming its proposer, recorded `accounting.BreakAcknowledgementRejected` (new) with its reason. Accounting `V018` (contract marker `ANY`, waiving `DROP`, `CHECK`, `REPLACED_BODY`): `break_event`'s two act checks replaced by supersets, `NOT VALID`, and the edge trigger V016's body with one edge added. May be the proposer's own, as every accounting rejection may; it races the approval on the row's lock, one wins and the other is `409 accounting.BreakStale`. ADR-0117 amended. **(6) A return's period by its id**: `periodId` on a submission's view and its list item. **The contract**: three new operations and fields on twelve views, all additive (the contract test's `BREAKING` labels are the new operations' own `required` flags, the known false positive); the edge's operator list three routes. **Tests**: the eight desks' tests (the proposers, the latest close proposal, the period by id, the rejection over the doors and its route), `AccountingBreaksTest` and the in-memory store held to `V018`'s check, `AccountingBreakMigrationTest` reading the act list's latest definition, `AccountingBreakDatabaseTest` (the rejection against `V018`'s trigger and checks; the race - five breaks, an approval and a rejection started together on each, exactly one winner) and `AdjustmentEndpointDatabaseTest#aReasonedRejectionRecordsItsReason`; the route, contract, edge and ownership registers. **Found, not this task's**: `AdjustmentEndpointDatabaseTest`'s two ten-racer cases (`tenConcurrentApprovalsProduceOneEntry`, `crossOriginDecisionsAreRefusedBothWays`) answered `503`: since `P16-TSK-016` the door sheds a command past its five permits at once, and these send ten concurrent commands with no operator-surface marker - on doors this task did not touch, red since that task in a tier not run per task; recorded as debt, not fixed here. **The gate found** `CredentialReachesNoEmittedSinkTest`'s exact list of the bodies a free text may reach missing the new `AdjustmentRejectionRequest` - a reason and nothing else - named there now. **Owed**: `edge-check.sh` over the regenerated routes. **Probe**: `P17-TSK-111`'s probe (2026-11-19; each file's sha256 saved first; three runs, so no probe hides another): run A, P1 the rejection's case-file row skipped (`AccountingBreaks.rejectAcknowledgement`), P5 a break's proposer served after its decision, P6 a period that never had a close proposal answered `NONE` rather than null, P7 one period by id answering the newest whatever the id, P10 a submission's period id served as its obligation's, P11 the rejection's route under `ACCOUNTING_ADJUST_PROPOSE`; run B, P8 the reason dropped from the ledger rejection's record; run C, P2 the break rejection's record without its reason and P9 an instrument-bearing rejection reason admitted - each in a case P1 or P8 broke - Caught: P1 `AccountingBreaksTest#aPendingAcknowledgementIsRejected` red, the case file without its rejection; P5 `AccountingBreakDeskTest#theProposerCannotAcknowledge` red, the approved break's view naming its proposer; P11 `#theRoutesAreThePartition` red; P6 `PeriodCloseDeskTest#theControllerReadsWhatItWillName` red, `NONE` where null was owed; P7 `AccountingPeriodDeskTest#onePeriodByItsId` red, an unknown id answered; P10 `RegulatorySubmissionDeskTest#aReportersRead` red, the obligation's id where the period's was owed; P8 `AdjustmentEndpointDatabaseTest#aReasonedRejectionRecordsItsReason` red, the record's reason null; P2 `AccountingBreaksTest#aPendingAcknowledgementIsRejected` red - the audit writer itself refused a reasoned action's record without one; P9 `#aReasonedRejectionRecordsItsReason` red, `204` where `422` was owed; every other case green in each run. Restored after each run, sha256 compared identical. **Fresh**: app's unit tier 2,113 tests in 360 classes (the eight desks' tests and `CredentialReachesNoEmittedSinkTest` among them) and ledger's unit tier 217 in 39 - both re-run whole on the final bytes, 14:12-14:14 UTC, after the gate's exemption - app's slice tier 321 in 55 (`RoutePermissionRegisterTest`, `OpenApiContractTest`, `EdgeAllowListTest` among them) and architecture tier 1,285 in 119 (`OwnershipIsScopedTest`, `MigrationsAreExpandOnlyTest`, `AuditableActionRegistryTest` among them), accounting's unit tier 784 in 80 (`AccountingBreaksTest`, `AccountingBreakMigrationTest`, `AccountingVocabulariesTest` among them) and architecture tier 3 in 1, ledger's architecture tier 2 in 1, migrator's 119 in 9, `AccountingBreakDatabaseTest` 12 of 12 and `AdjustmentEndpointDatabaseTest` 21 of 23 - its two ten-racer cases red, shed by the door since `P16-TSK-016` (recorded as debt), every other case green (the database tier's other classes not run, by the owner's word; 2026-11-19, 13:33-14:14 UTC). **Multi-instance**: `PASS` - the rejection a conditional edge under the break's row lock, racing the approval with exactly one winner (the race test); the reasoned ledger rejection the `DELETE`'s locked, converging act; the reads plain snapshots of committed rows.
+
+**P17-TSK-112 — Test-only seeding for M5's end-to-end tests** — `READY` (marked at `P17-TSK-111`'s gate, 2026-11-19: the last of M17.5) *(read "`PLANNED`" until then)*
+- **Context**: `-106`'s script; B5.5.
+- **Scope**: an open period with a completed close run; a proposed prior-period adjustment; a proposed GL mapping version and
+  a captured valuation rate set; an accounting break; an active regulatory obligation with a draft submission. Each proposal
+  is made by a different test identity from the one that approves it.
+- **Deps**: `-106`; `-113` (added 2026-11-19 at this task's design: a fresh stack's books opened in today's month, which cannot lock until the next, so no past month existed to lock, close or correct - the owner's decision, "Configurable first month", then "Split, gate setting, continue").
+- **Design notes (2026-11-19)**: the period scenarios need two past months - one the seed closes end to end (its zero-amount reports from the four required reconciliation sources, planted FX reference rates, an approved rate set, the close run, four eyes), one it locks with a captured set for the console to approve and close - so they run on a local stack started on a fresh database with `finapp.accounting.period.books-open-months-back` at 2; the kind rehearsal keeps 0, its FX reference feed observing only the present. A proposed rate set and a completed close run cannot stand on one month at once: the run's valuation check waits on the approved set, so the console approves the seeded set, the run completes, then the close.
+- **Accept**: the console's end-to-end tests can close a period by four-eyes, and approve a prior-period adjustment, a mapping
+  version, a rate set and a submission, against a running `finapp`.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+
+**P17-TSK-113 — The books' first month (ADR-0152)** — `COMPLETE` (2026-11-19; added at `P17-TSK-112`'s design on the owner's decisions "Configurable first month" and "Split, gate setting, continue"; branch `P17-TSK-113` from `P17-TSK-111`)
+- **Context**: `accounting` (`AccountingPeriods`), `app`; ADR-0152. `-112`'s dependency: a fresh database's books opened in today's month, so no past month existed to lock, close or correct.
+- **Scope**: `finapp.accounting.period.books-open-months-back` (0 by default, 0 to 24): when no period exists, the first opens that many months before today's; read only then.
+- **Deps**: none.
+- **Accept**: a fresh database with the setting at 2 opens three months, each `OPEN` at revision 1, evented and audited; once any exists the setting changes nothing; a value outside 0 to 24 refuses to start.
+- **Multi-instance**: ten instances on an empty table insert each month if absent, `V003`'s unique and contiguity rules deciding; `PASS`.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-DOMAIN`.
+- **As built (2026-11-19, gate `COMPLETE`)**: accounting's `BooksOpening` (a record, `0` to `24`, `TODAY` the default), `AccountingPeriods.openNext` starting at `opening.firstMonth(today)` when no period exists - a constructor kept for every caller before it, the books opening in today's month - and app's `booksOpening` bean (`FINAPP_ACCOUNTING_PERIOD_BOOKSOPENMONTHSBACK`). No migration: `V003`'s trigger already admits any month as the first and refuses one before it. ADR-0152 (`Proposed`), its index rows, `CONFIGURATION_REGISTER.md`, `OPERATIONS_RUNBOOK.md`'s period calendar. **Tests**: `AccountingPeriodsTest#theBooksOpenMonthsBack`. **Probe**: `P17-TSK-113`'s probe (2026-11-19; each file's sha256 saved first; three runs, each plant in the one case alone): run A, P1 the books opening at today's month whatever the setting (`orElse(through)`); run B, P2 the setting read even once periods exist (the latest ignored); run C, P3 the 24-month bound lifted - Caught: P1 `AccountingPeriodsTest#theBooksOpenMonthsBack` red, `2026-11` alone where `2026-09…2026-11` were owed; P2 the same case and `#openNextOpensContiguousMonthsOnce` red, the in-memory store's contiguity refusing a month before the first, as `V003`'s trigger does; P3 `#theBooksOpenMonthsBack` red, 25 months back not refused; every other case green in each run. Restored after each run, sha256 compared identical. **Fresh**: accounting's unit tier 785 tests in 80 classes (`AccountingPeriodsTest` among them) and architecture tier 3 in 1, app's unit tier 2,113 in 360, slice tier 321 in 55 and architecture tier 1,285 in 119 - `ConfigurationRegisterIsCompleteTest` red once, the new row's local column stating a value no local file sets, corrected and re-run 39 of 39 - 0 failed (2026-11-19, 17:41-18:28 UTC). **Multi-instance**: `PASS` - each month inserted if absent, the database deciding contiguity and uniqueness.
+
+*M17.6 — Customers and KYC*
+
+Unlike M17.4 and M17.5, **most of M17.6 needs `finapp` first**. `finapp` serves a KYC case's file by its identifier, as
+references (`kyc.CaseRead`), the resolution of a review task, the case's one decision, and a counterparty screening released or
+blocked by its identifier. What does not exist is any operator read of a customer: no lookup and no profile; no accounts, no
+transfers, no consent history; no KYC queue, no latest case per customer, no screening backlog. **Transfer reversal is not
+offered by the console on purpose**: `POST /v1/transfers/{id}/reversal` exists, but the operator cannot read the transfer first
+(`GET /v1/transfers/{id}` is the caller's own), and the act moves money with one person, no second factor and no idempotency
+key (G-36). It waits for `-027`'s read and `-031`'s remediation.
+
+**P17-TSK-025 — The operator read permissions and roles (ADR-C132)** — `PLANNED`
+- **Context**: `identity` (`RoleName`, the permission catalogue), `app`; ADR-C132; B6.1; G-151 in part. Every M17.6 and
+  M17.7 read needs a permission, and roles to hold it.
+- **Scope**:
+  - **new permissions**, each pinned in `RoleNameTest`: `CUSTOMER_READ`, `ACCOUNT_READ`, `TRANSFER_READ`, `PAYMENT_READ` (the
+    last for M17.7). `IDENTITY_READ` is `-014`'s;
+  - **new roles**, each needing an enrolled factor and registered in `PRIVILEGED_ACCESS_REVIEW.md`:
+    `CUSTOMER_SUPPORT_AGENT` (customer, account, transfer and payment reads); `OPERATIONS_VIEWER` (read-only reports - its
+    report permissions are `-039`'s); `AUDITOR` is `-017`'s;
+  - **proposed holders** are ADR-C132 decision 2's table: `KYC_REVIEWER`, `RISK_ANALYST` and `LEDGER_OPERATOR` also read
+    customers and accounts. The design records the decision in this repository's register;
+  - **audited reads**: every customer-scoped read is recorded as `<module>.<Thing>Read`, with actor, target and correlation;
+    a list once per request, with its filter (ADR-C132 decision 5). One helper the M17.6 and M17.7 reads use, and a guard that
+    every handler under these permissions records its read.
+- **Deps**: M17.3 - `-014`'s `IDENTITY_READ`, and `-017`'s `AUDITOR` and audit read, so a customer read is reviewable before
+  one exists.
+- **Accept**: the permissions and roles exist and are tested (`RoleNameTest`, including
+  `#noRoleProposesAndApprovesTheSameAct`); `/v1/operator/me` reports them; the audited-read guard holds from the first route
+  (`-026`).
+- **Multi-instance**: grants go through the existing role doors; `PASS` by construction.
+- **Risk**: Medium - this decides who may read customers. **Cx**: M. **DoD**: `DOD-SEC`.
+
+**P17-TSK-026 — Customer lookup, profile and consent history (G-30, G-31, G-70)** — `PLANNED`
+- **Context**: `party`, `identity`, `kyc`, `consent`, `app`; ADR-C132; ADR-0037; B6.2.
+- **Scope**, under `CUSTOMER_READ`, audited:
+  1. `POST /v1/operator/customers/lookup` with `{ kind, value }`. `kind` is one of `CUSTOMER_ID`, `PARTY_ID`,
+     `LOGIN_IDENTIFIER` or `ACCOUNT_ID`; the value is matched **exactly** and travels **in the body, never the URL**
+     (ADR-C132 decision 4). It answers `{ customerId }` or `404`;
+  2. `GET /v1/operator/customers/{id}`: the profile, identifiers and statuses only - party state, relationship status,
+     identity status, and the latest KYC case's identifier and status. **No name, contact detail or document** (D-5,
+     identifier-only through M17.6); any such field is a separate classification decision with a named operator need (G-31,
+     the owner's);
+  3. `GET /v1/operator/parties/{id}/consents`: the append-only consent history (ADR-0037), a §7 collection.
+
+  Composed from each module's query port, exposed through `app` (ADR-C132): no cross-schema read.
+- **Deps**: `-025`.
+- **Accept**: the routes in the contract, with tests for the exact match, the identifier never in a URL or a log, the audit,
+  and that no personal-data field is served (checked against `DATA_CLASSIFICATION.md`'s personal-data columns).
+- **Multi-instance**: reads; `PASS` by construction.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-027 — Accounts and transfers operator reads (G-32, G-35)** — `PLANNED`
+- **Context**: `accounts`, `ledger`, `transfers`, `app`; B6.3.
+- **Scope**:
+  1. `GET /v1/operator/customers/{id}/accounts` (`ACCOUNT_READ`);
+  2. `GET /v1/operator/accounts/{id}`: posted, held and available balances, **with the instant they were read as of**;
+  3. `GET /v1/operator/accounts/{id}/entries?cursor`: ledger lines, a §7 collection;
+  4. `GET /v1/operator/transfers?customerId=&status=&from=&to=&cursor` (`TRANSFER_READ`), with a bounded window;
+  5. `GET /v1/operator/transfers/{id}`: the transfer with its journal entry reference.
+
+  Amounts are decimal strings with their currency. Every read is audited.
+- **Deps**: `-025`.
+- **Accept**: the routes in the contract, with tests for permission, audit, the cursor and the as-of instant.
+- **Financial**: the balances are the ledger's own (`INV-BAL-*`); the read computes none of its own.
+- **Multi-instance**: the three balances are read in one statement or one snapshot, so they agree with each other while
+  every replica posts, and the as-of instant is the database's. `PASS` with that.
+- **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-029 — The KYC queue, a customer's latest case, the screening backlog, and the decision's controls (G-60, G-61, G-64, G-65)** — `PLANNED`
+- **Context**: `kyc` and counterparty screening, `app`; ADR-0035; D-8; B6.4.
+- **Scope**, every read audited:
+  1. `GET /v1/operator/kyc/cases?status=&cursor` (`KYC_REVIEW`): the review queue, oldest first;
+  2. `GET /v1/operator/customers/{id}/kyc-case` (`KYC_REVIEW`); `KycCaseStore.findLatestFor` exists;
+  3. `GET /v1/operator/kyc/counterparty-screenings?status=IN_REVIEW&cursor` (`COUNTERPARTY_SCREENING_REVIEW`);
+     `reviewBacklog` exists. A row shows the screening's identifier, its status and when it was raised; nothing reaches the
+     customer (tipping-off);
+  4. **the decision's controls** (G-61, D-8): `POST /v1/kyc/cases/{id}/decision` and the task resolution gain an
+     `Idempotency-Key` and `MULTI_FACTOR`. **Whether a rejection, or an approval over an adverse provider verdict, needs a
+     second person is the owner's ruling** (ADR-0035).
+- **Deps**: `-025`; `-102` (the factor).
+- **Accept**: the routes in the contract; the decision and the resolution require the factor and a key - a replay with the
+  same key returns the first outcome, and a different request under the same key is refused (`INV-IDEM-*`). The console moves
+  to keyed dialogs the day the key is required; the design says whether the key is required at once or after a window.
+- **Multi-instance**: the decision is one conditional transition of the case, so of two reviewers deciding at once one wins
+  and the other answers `409`; a duplicate keyed request replays. `PASS` with both races in the database tests.
+- **Risk**: Medium - a key added to an existing door. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-028 — Account restriction: suspension and reinstatement by four-eyes (G-33)** — `PLANNED` *(new domain behaviour)*
+- **Context**: `accounts` (the customer account aggregate), `risk` (its `SUSPEND_ACCOUNT` and `REINSTATE_ACCOUNT` actions,
+  which cannot be carried out today because accounts have no suspension command; ADR-0112), `app`; B6.5. The console does not
+  offer risk's two actions for that reason.
+- **Scope**: **an ADR in the accounts module first** (the next free number, written `Proposed` by the design and decided
+  before code), then:
+  - `POST /v1/operator/accounts/{id}/suspension` with an approval door, and reinstatement;
+  - reason codes, four-eyes, `MULTI_FACTOR` and an `Idempotency-Key`;
+  - new permissions `ACCOUNT_RESTRICT` and `ACCOUNT_RESTRICT_APPROVE`, split across roles;
+  - risk's two actions carried out through it;
+  - **a statement of how a restriction interacts with holds and balances**: which debits and credits a suspended account
+    refuses or admits, and what happens to its open holds and in-flight transfers.
+- **Deps**: `-027` (the operator reads the account first); the ADR.
+- **Accept**: the domain transition exists with an explicit lifecycle, invalid transitions refused and tested; risk's two
+  actions use it; the operator doors are in the contract; a suspended account refuses what the ADR says it refuses **at the
+  posting's own check**, not only at the door.
+- **Financial**: the restriction itself changes no balance; `INV-LED-*` and `INV-BAL-*` hold unchanged. A money movement
+  racing the suspension commits before it or is refused after it, never half.
+- **Multi-instance**: the suspension is a conditional transition on the account row, and the posting path reads the status
+  under the same lock, or by a check the database enforces. Ten instances posting while one suspends: each posting sees the
+  account either before or after. `PASS` only with that race in the database tests.
+- **Probe**: the status check removed from the posting path → a debit against a suspended account admitted → red.
+- **Risk**: High - new behaviour on money's path. **Cx**: L. **DoD**: `DOD-DOMAIN`, `DOD-FIN`, `DOD-SEC`, `DOD-API`.
+
+**P17-TSK-113 — Test-only seeding for M6's end-to-end tests** — `PLANNED`
+- **Context**: `-106`'s script; B6.7.
+- **Scope**: a customer whose KYC case is `IN_REVIEW`, with one `HIT` check and its open review task; a counterparty screening
+  `IN_REVIEW`; and, once `-026` and `-027` exist, the same customer with an account, a few posted transfers and a consent
+  history.
+- **Deps**: `-106`; `-026` and `-027` for the last.
+- **Accept**: the console's end-to-end tests can resolve a task and decide a case, and release or block a screening, against
+  a running `finapp`.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+
+*M17.7 — Payments and merchants*
+
+`finapp` serves the merchant and dispute doors, and the console has built screens over them: merchant onboarding, standing,
+API keys and payout destinations by four-eyes, the fee schedules read; disputes by identifier, with evidence, representment and
+acceptance; a payment's routing decision, rail availability and routing policy versions. **Not offered by the console until
+`-031` changes them** (ADR-C135 decision 3): refund (G-41) and void, which cannot be done without reading the payment first
+(G-40); transfer reversal (G-36); merchant closure; the operator merchant payout; fee-schedule versions and merchant fee
+assignment (G-53).
+
+**P17-TSK-031 — The money-control remediation: transfer reversal, refund and void, fee schedules, merchant closure, the operator payout (G-36, G-41, G-53; ADR-C135)** — `PLANNED`
+- **Context**: `transfers`, `payments`, `merchant`, `app`; ADR-C135 decision 3, as decided; D-8 ("rule now; fix as
+  remediation on their own merit"); ADR-0125 decision 4 (fee schedules by four-eyes); B7.1. Each act is today weaker than the
+  platform's own standard, and a console makes it one click away.
+- **Scope** (ADR-C135 decision 3):
+  - **transfer reversal**: always four-eyes. A new `TRANSFER_REVERSE_APPROVE`; `MULTI_FACTOR` on the approval; a key on the
+    proposal;
+  - **refund**: four-eyes above a threshold pinned per currency in versioned four-eyes configuration (the BNPL dispute
+    threshold's pattern). A new `PAYMENT_REFUND_APPROVE`; `MULTI_FACTOR`; a key;
+  - **void**: stays one person, since it moves no captured money, and gains `MULTI_FACTOR` and a key;
+  - **fee-schedule versions and merchant fee assignment**: four-eyes (ADR-0125 decision 4), with keys;
+  - **merchant closure**: four-eyes. Suspension and reinstatement stay one person, with a reason, `MULTI_FACTOR` and a key;
+  - **the operator merchant payout**: four-eyes above a threshold, as for refunds; `MULTI_FACTOR`;
+  - proposals are **new states before the existing effect** (ADR-C135 decision 4). **No financial rule changes.** The decision
+    is recorded in this repository's register before code.
+- **Deps**: `-027` (the transfer read); `-032` (the payment read, for void and refund).
+- **Accept**:
+  - each door has its proposal and its decision;
+  - the propose and approve permissions are split across roles (`RoleNameTest#noRoleProposesAndApprovesTheSameAct`);
+  - the thresholds are versioned and pinned; a proposal below its threshold executes as today, with the factor and a key;
+  - the plan's scenario 4 holds at the door: a refund whose response is lost, retried with the same key, returns the
+    original outcome, and exactly one refund exists;
+  - the console offers each act through its four-eyes panel.
+- **Financial**: the postings are unchanged - the same journal entries, made at approval instead of at request. A rejected
+  or expired proposal posts nothing. Whether a proposal reserves the funds its effect will need (an approved refund must
+  still find the merchant's funds; so must a payout) is stated by the design for each door. `INV-IDEM-*` on every proposal
+  and approval.
+- **Multi-instance**: approval is a conditional transition from the proposed state, so two approvers, or an approval racing
+  a rejection, produce one winner; the effect runs once, in the approval's transaction or the continuation each door's
+  existing effect already uses; a duplicate keyed request replays. `PASS` only with those races in the database tests, per
+  door.
+- **Probe**: four-eyes skipped above the threshold → the door's above-threshold case executes with one person → red.
+- **Risk**: High - six money doors. **Cx**: L. **DoD**: `DOD-FIN`, `DOD-SEC`, `DOD-API`, `DOD-DOMAIN`.
+
+**P17-TSK-032 — Payment reads, the dispute queue, payment methods, the payments report, routing and rail reads (G-40, G-42…G-47)** — `PLANNED`
+- **Context**: `payments` (payments, disputes, routing, rails), `app`; B7.2.
+- **Scope**:
+  1. `GET /v1/operator/payments?partyId=&merchantId=&status=&rail=&from=&to=&cursor` and `GET /v1/operator/payments/{id}`
+     (the detail with its attempts, refunds, routing decision, disputes and provider reference), under `PAYMENT_READ`
+     (`-025`), audited, the list with a bounded window;
+  2. `GET /v1/operator/disputes?stage=&deadlineBefore=&cursor` (`DISPUTE_ADMINISTER`), ordered by deadline;
+     `DisputeStore.pageAll` exists;
+  3. `GET /v1/operator/parties/{id}/payment-methods`: masked, under `PAYMENT_READ`;
+  4. `GET /v1/operator/reports/payments?date`: success and failure by rail, outcome and provider, and the unknown-state
+     backlog (G-45);
+  5. `GET /v1/operator/routing-policy/versions[/{v}]` (`PAYMENT_ROUTING_ADMINISTER`). Today a version can be created and
+     never read back;
+  6. `GET /v1/operator/rails`: each rail's current availability. Today a rail can be switched and nobody can see its state.
+     The switch gains a key (ADR-C135 decision 2);
+  7. a read-only list of held payments, under `RISK_INVESTIGATE` (G-43). The doors that release or capture them stay risk's
+     (ADR-0112).
+- **Deps**: `-025`.
+- **Accept**: the routes in the contract, with tests for permission, audit and cursors; a method is never served unmasked;
+  the rail switch's key replays.
+- **Multi-instance**: reads, and one keyed switch whose duplicate replays; `PASS` by construction.
+- **Risk**: Medium - the widest read set of the phase. **Cx**: L. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-033 — Merchant list, payouts and transactions (G-50…G-52)** — `PLANNED`
+- **Context**: `merchant`, `app`; B7.3.
+- **Scope**, under `MERCHANT_ADMINISTER`: `GET /v1/operator/merchants?status=&cursor` (an exact name match at most, never
+  free text); `GET /v1/operator/merchants/{id}/payouts[/{payoutId}]`; `GET /v1/operator/merchants/{id}/transactions?cursor`.
+- **Deps**: M17.1.
+- **Accept**: the routes in the contract, with tests for permission and cursors.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-114 — Small additions to existing merchant and dispute views** — `PLANNED`
+- **Context**: `merchant`, `payments`; B7.5. The console works around each today.
+- **Scope**:
+  1. **payout destination changes name their proposer**, so the console disables the proposer's own approval in advance;
+     `merchant.SelfApprovalRefused` stays the control;
+  2. **a destination approver can read the change**: `PAYOUT_DESTINATION_APPROVE` without `MERCHANT_ADMINISTER` decides the
+     change by its identifier, blind. A read of the open change under the approve permission;
+  3. **an API key list names who issued each key**;
+  4. **a dispute says whether its payment has a merchant**: an operator may answer only a dispute whose payment has none
+     (`payments.DisputeAnsweredByItsMerchant`), so the console hides the answer buttons instead of offering an act `finapp`
+     will refuse.
+- **Deps**: none.
+- **Accept**: each addition in the contract with its test; (2) audited as the merchant reads are, and serving the
+  destination masked as the existing views serve it.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-115 — Test-only seeding for M7's end-to-end tests** — `PLANNED`
+- **Context**: `-106`'s script; B7.4.
+- **Scope**: an active merchant with an API key; a proposed payout destination, made by a different test identity from the one
+  that approves it; a payment with an open dispute at a stage that admits evidence and representment.
+- **Deps**: `-106`.
+- **Accept**: the console's end-to-end tests can onboard and suspend a merchant, approve a destination, and represent or
+  accept a dispute, against a running `finapp`.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+
+*M17.8 — Credit, lending and BNPL*
+
+`finapp` serves almost all of M8's acts, nearly all by four-eyes: the underwriting review queue and its decisions, decision
+explanations and replays, credit policies and scorecards; loans by identifier, their servicing and write-offs, lending terms
+and capital contributions; BNPL agreements by identifier, their servicing and write-offs, BNPL disputes, terms and merchant
+enablement; eleven credit, lending and BNPL reports. The console's screens (its `P17-TSK-036`) are built over those.
+
+**P17-TSK-035 — Credit, lending and BNPL read gaps (G-80…G-85)** — `PLANNED`
+- **Context**: `credit`, `lending`, `bnpl`, `app`; B8.1…B8.5. The design may split it by module and says so.
+- **Scope**:
+  1. **credit** (G-80, G-81), under `CREDIT_INVESTIGATE`: `GET /v1/operator/credit/decision-requests?status=&product=&cursor`
+     (today a decision is reached only by its identifier or the review queue); `GET /v1/operator/credit/policies/versions`
+     and `/{versionId}` (today only the version in force at an instant is readable); `GET /v1/operator/credit/scorecards` and
+     `/{versionId}` - **a scorecard has no read at all today**: it can be proposed, approved and rejected, but nobody can see
+     the version they approve. The scorecard read comes first;
+  2. **lending** (G-82), under the lending investigate permission: `GET /v1/operator/loan-applications?status=&cursor`;
+     `GET /v1/operator/loans?partyId=&state=&bucket=&cursor`, filtered by delinquency bucket (`LoanStore.listOwnedBy`
+     exists); a loan's schedule versions and statements for operators (`LoanAccountDesk.schedule` and `statements` exist and
+     are served to the borrower only);
+  3. **BNPL** (G-83), under `BNPL_INVESTIGATE`: `GET /v1/operator/bnpl-applications?cursor`,
+     `GET /v1/operator/bnpl-agreements?status=&merchantId=&cursor`, `GET /v1/operator/bnpl-purchases/{id}/refunds`
+     (`BnplPurchaseStore.ownedBy` and `BnplRefundStore.ofPurchase` exist);
+  4. **pending servicing decisions** (G-84): `GET /v1/operator/loans/servicing-requests?status=PROPOSED&cursor` and the BNPL
+     equivalent, in ADR-C133's pending-decision shape naming the proposer, under the approve permissions. Write-offs already
+     have a pending list; amendments, waivers and repayment reversals are reachable today only through the loan or
+     agreement;
+  5. **lending terms versions** (G-85): `GET /v1/operator/lending/terms/versions`. Today only the terms in force at an
+     instant are readable, so a proposed version cannot be found by its approver.
+
+  Every list a §7 collection; every party-scoped read audited (ADR-C132 decision 5).
+- **Deps**: M17.1; `-025` (the audited-read rule its party-scoped reads follow).
+- **Accept**: the routes in the contract, with tests for permission and cursors; M17.10's inbox can compose (4).
+- **Multi-instance**: reads; `PASS` by construction.
+- **Risk**: Medium - three modules. **Cx**: L. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-116 — Two BNPL acts for the money-control remediation; the reads an approver lacks; proposers named** — `PLANNED`
+- **Context**: `bnpl`, `credit`, `lending`, `merchant`; ADR-C135; B8.7.
+- **Scope**:
+  1. **for `-031`'s remediation** (ADR-C135), not offered by the console until four-eyes:
+     `POST /v1/operator/bnpl-purchases/{id}/refunds` - `finapp`'s own documentation says "no four-eyes and no threshold
+     review"; it is a refund like any other, so ADR-C135's refund rule applies, four-eyes above a pinned threshold; and
+     `PUT /v1/operator/merchants/{merchantId}/bnpl-fee-schedules/{product}` - one person assigns a merchant's fees today, and
+     ADR-C135 makes merchant fee assignment four-eyes;
+  2. **reads an approver lacks** - today each is decided by its identifier alone: a credit policy version by identifier; a
+     lending terms version by identifier, and the BNPL terms versions; a capital contribution by identifier; a merchant's BNPL
+     enablement; the underwriting case by identifier (the queue serves the oldest 50, with no cursor and no truncation flag:
+     G-03, `-042`'s); an agreement read for `BNPL_SERVICING_AGENT`, who proposes and approves servicing without
+     `BNPL_INVESTIGATE`;
+  3. **proposers named**: loan and BNPL amendments, waivers and repayment reversals, terms, capital contributions and policy
+     versions. Only the write-off views name theirs today;
+  4. **credit evidence** gains a `mediaType`; today it comes as bytes with no media type;
+  5. the second factor on M8's approvals is `-102`'s (only write-offs ask for one today).
+- **Deps**: `-031` (the threshold configuration and the four-eyes pattern), `-035`.
+- **Accept**: the two acts four-eyes as `-031`'s doors are, with the same tests; each read and each proposer in the contract,
+  with its test.
+- **Financial**: the BNPL refund's postings unchanged, made at approval; as `-031`.
+- **Multi-instance**: as `-031`: one winner per proposal, the effect once, a keyed duplicate replayed. `PASS` only with the
+  races in the database tests.
+- **Risk**: High - a money door. **Cx**: M. **DoD**: `DOD-FIN`, `DOD-SEC`, `DOD-API`.
+
+**P17-TSK-117 — Test-only seeding for M8's end-to-end tests** — `PLANNED`
+- **Context**: `-106`'s script; B8.6.
+- **Scope**: a credit review case awaiting a decision; an active loan with a posted repayment and a proposed waiver; an active
+  BNPL agreement with a proposed write-off; a BNPL dispute awaiting resolution; proposed versions of a credit policy, lending
+  terms and BNPL terms. Each proposal is made by a different test identity from the one that approves it.
+- **Deps**: `-106`.
+- **Accept**: the console's end-to-end tests can decide a review case, and approve a waiver, a write-off and a terms version,
+  against a running `finapp`.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+
+*M17.9 — FX, cross-border and integration availability*
+
+`finapp` serves the FX and cross-border administration acts: pricing and corridor policies by four-eyes; pair, provider and
+corridor availability switches; enable requests decided by identifier; FX trade provenance and reversal; a cross-border
+payment's trace; the FX and corridor reports. **The console's integration availability view is not built**: `finapp` serves the
+switches, never the state (G-101, G-47).
+
+**P17-TSK-037 — FX and cross-border read gaps: reference rates, availability state, enable requests, trades, payments (G-100…G-103)** — `PLANNED`
+- **Context**: `fx`, `crossborder`, `app`; B9.1…B9.3.
+- **Scope**:
+  1. **reference rates and their age** (G-100): `GET /v1/operator/fx/rates`, the latest reference rate per pair with its
+     snapshot instant and its age; rates are decimal strings; under the FX investigate permission
+     (`RateSnapshotStore.latest` and `age` exist);
+  2. **availability state and pending enable requests** (G-101, with G-47): `GET /v1/operator/fx/providers` and
+     `GET /v1/operator/fx/pairs`, each with its availability and who changed it, when;
+     `GET /v1/operator/fx/enable-requests?status=PENDING&cursor`; `GET /v1/operator/cross-border/corridors`, the operator view
+     with availability; `GET /v1/operator/cross-border/corridor-enable-requests?status=PENDING&cursor`. The rails' state is
+     `-032`'s item 6;
+  3. **trades and payments** (G-102, G-103): `GET /v1/operator/fx/trades?pair=&status=&from=&to=&cursor` and
+     `GET /v1/operator/cross-border/payments?corridor=&status=&cursor`, §7 collections with a bounded window. Today a trade or
+     a payment is reached only by its identifier.
+- **Deps**: M17.1; `-032` (the rails, for the one availability view).
+- **Accept**: the routes in the contract, with tests for permission and cursors. Then the console builds the single
+  availability view the milestone names.
+- **Multi-instance**: the availability served is the committed row, with who and when; reads, `PASS` by construction.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-118 — Small additions to FX and cross-border views** — `PLANNED`
+- **Context**: `fx`, `crossborder`; B9.5.
+- **Scope**:
+  1. **reads an approver lacks**: an FX enable request, a corridor enable request and a pending FX trade reversal, each read
+     by its identifier, so the approver sees what they approve;
+  2. **proposers named** on every FX and corridor proposal, so the console disables the proposer's own approval in advance;
+     `fx.SelfApprovalRefused` and `crossborder.SelfApprovalRefused` stay the control;
+  3. **the pricing-policy list paged** by a §7 cursor; it carries only a `truncated` flag today. `-042` lists it too; whichever
+     lands first does it.
+- **Deps**: none.
+- **Accept**: each addition in the contract with its test.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-119 — Test-only seeding for M9's end-to-end tests** — `PLANNED`
+- **Context**: `-106`'s script; B9.4.
+- **Scope**: a proposed FX pricing policy and a proposed corridor policy, each by a different test identity from its approver;
+  a pending FX enable request and a pending corridor enable request; a booked FX trade; a cross-border payment with a trace.
+- **Deps**: `-106`.
+- **Accept**: the console's end-to-end tests can approve both policies and both enable requests, and read a trade's provenance
+  and a payment's trace, against a running `finapp`.
+- **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
+
+*M17.10 — Overview and approvals inbox*
+
+The console has built both screens from what `finapp` serves (its `P17-TSK-041`). "My approvals" is composed in the browser from
+the pending-decision lists that exist, as ADR-C133 decision 4 requires - no central approval service - and each decision is still
+taken on its domain's page. The operations overview is composed from the operator reports the operator may read, each tile
+showing how fresh it is. Both say what is missing.
+
+**P17-TSK-039 — Report freshness and the overview reports (G-04, G-150, G-151)** — `PLANNED`
+- **Context**: every module with an operator report, `app`; ADR-C133 decision 5; B10.1.
+- **Scope**:
+  1. **`asOf` (or `generatedAt`) on every operator report**: the instant of the data it read. Today only risk alerts, risk
+     cases and the FX position state one; found without it while building: dead letters, the reconciliation reports,
+     cross-border corridors, credit outcomes, and the lending and BNPL reports;
+  2. **the figures no report covers** (G-150): `GET /v1/operator/reports/customers?date` (customer counts by state);
+     `GET /v1/operator/reports/transfers?date` (volumes and outcomes); the payments report is `-032`'s item 4;
+  3. **one role that can read the overview** (G-151): `OPERATIONS_VIEWER` (created by `-025`), read-only, holding each
+     overview report's read permission and nothing else. Today an overview reader needs about seven permissions spread across
+     roles.
+- **Deps**: `-025`, `-032`.
+- **Accept**: every operator report states its as-of instant, held by a guard over the report views; the three reports
+  exist; the role exists, pinned in `RoleNameTest`.
+- **Multi-instance**: the as-of instant is the database's - the snapshot the report read - never an instance's clock
+  (ADR-0063). `PASS` with that.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-040 — Pending-decision lists in one shape across the four-eyes domains (G-140)** — `PLANNED`
+- **Context**: every four-eyes domain, `app`; ADR-C133 decision 3; B10.2.
+- **The shape**: every four-eyes domain serves its proposals awaiting decision as a §7 collection filtered by
+  `status=PROPOSED`, under the domain's approve permission, items
+  `{ "id", "kind": "<domain>.<ProposalKind>", "proposedBy", "proposedAt", "reasonSummary", "subjectId" }`.
+- **Scope**:
+  - **lists to add**, each first named in its milestone's task; this task builds any not yet built and holds all of them to
+    the shape: reconciliation resolutions (`-107`); ledger adjustments and projection rebuilds (`-022`); mapping versions
+    and valuation rate sets (`-023`); loan and BNPL servicing (`-035`); credit, lending and BNPL terms and scorecards (`-035`,
+    `-116`); FX and corridor enable requests (`-037`); payout destinations (`-114`); alert suppressions, risk dispositions,
+    risk actions and overrides (`risk`); period close, reopen and unlock requests (`-111`);
+  - **lists that exist but not in the shape**, converted in place - the operator surface is internal (ADR-C133 decision 2):
+    regulatory obligations and submissions awaiting a decision, prior-period adjustments, loan and BNPL write-offs,
+    dead-letter discards, FX pricing and corridor policies;
+  - found while building: the write-off, prior-period-adjustment and regulatory lists name no proposer; no list says which
+    BNPL disputes have a resolution awaiting approval;
+  - a guard: every four-eyes domain's pending list exists and matches the shape, by a register beside the guard.
+- **Deps**: the lists' first forms - `-107`, `-022`, `-023`, `-035`, `-037`, `-111`, `-114`, `-116`.
+- **Accept**: every four-eyes domain serves its list in the shape; the console's inbox reads them all through one function and
+  marks the operator's own proposals.
+- **Multi-instance**: reads; a proposal decided between the list and the click answers `409` at its decision door, the
+  existing conditional transitions. `PASS` by construction.
+- **Risk**: Medium - breadth, and lists converted in place (the console is their only client). **Cx**: L. **DoD**:
+  `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-042 — The §7 retrofit of capped operator lists (G-03, G-121)** — `PLANNED`
+- **Context**: every module with a capped operator list; `API_CONVENTIONS.md` §7; ADR-C133; B10.3. Several operator lists are
+  capped, some with a `truncated` flag and some without, and some page by `after`/`limit`. The console shows each as capped and
+  never as complete, but cannot page past the cap.
+- **Scope**: each of these becomes a §7 collection (`{ items, nextCursor }`, a declared order): reconciliation breaks (100;
+  G-121); dead letters (capped, no flag); settlement files and refused deliveries (100); the factorless-holdings review
+  (200); the credit underwriting queue (50, no flag); the risk alert and case queues (`after`/`limit`); the FX pricing policy
+  list (`truncated` only; `-118` if first); periods (120). `API_CONVENTIONS.md` §7 marked implemented for operator lists, and a
+  guard that no operator list answers a bare capped array.
+- **Deps**: none.
+- **Accept**: each list a §7 collection; the console drops its "capped" rendering for each.
+- **Multi-instance**: keyset cursors stay stable while rows are inserted, which offset paging does not. `PASS` by
+  construction.
+- **Risk**: Medium - contracts changed in place. **Cx**: M. **DoD**: `DOD-API`.
+
+*M17.11 — Hardening and exit*
+
+The console's side is done: an accessibility and CSP audit of every route in both themes, an independent security review with
+its findings fixed, a performance budget, the runbook, and its exit review (`finapp-admin-panel`
+`docs/PHASE_17_EXIT_REVIEW.md`), whose verdict is that the phase cannot exit yet - most of the plan's §19 criteria need the items
+in this section.
+
+**P17-TSK-044 — Monitoring for the console (`finapp`'s half)** — `PLANNED`
+- **Context**: the alert catalogue, `deploy/edge`, `OPERATIONS_RUNBOOK.md`; B11.1. The console's runbook
+  (`finapp-admin-panel` `docs/CONSOLE_RUNBOOK.md` § Monitoring) lists what it needs. The console has no server state and emits
+  no metrics, so all four are `finapp`'s monitoring.
+- **Scope**:
+  1. **a synthetic probe** of `/console/` through the operator edge, alerting after five minutes failing;
+  2. **`finapp-console` pod readiness**, alerting below two ready;
+  3. **CSP violation reports**, if the edge collects them (`report-to` on the console's CSP) - the design decides whether to
+     collect, and says why;
+  4. **edge 5xx and 404 rates on `/console/assets/**`**, which rise after a release that forgot the previous assets (`-104`'s
+     rollout fix).
+
+  Each alert routed and in the alert catalogue, with a runbook section.
+- **Deps**: `-104`.
+- **Accept**: the four signals and their alerts exist, held by the alert catalogue's guards; the runbook section written; the
+  probe's run on `kind` owed with `-104`'s.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-OBS`, `DOD-DOC`.
+
+**P17-TST-001 — The end-to-end battery on `kind` at three replicas: the seven mandatory scenarios** — `PLANNED`
+- **Context**: the plan's §13 and §19 criteria 2-4; B11.2; both repositories.
+- **Scope**: the seven mandatory scenarios against the real application on `kind` at three replicas, through the operator
+  edge: (1) an unauthorised privileged operation; (2) a permission revoked during a session; (3) two administrators
+  conflicting; (4) a timeout after the backend executed - a refund's response dropped after its commit, the same key returning
+  the original outcome and exactly one refund existing; (5) a stale record submitted; (6) duplicate approval requests; (7) the
+  backend unavailable - the application scaled to zero. `finapp`'s side: the stack (`-104`), every seeding task (`-106`,
+  `-108`, `-110`, `-112`, `-113`, `-115`, `-117`, `-119`), the test proxy that drops a response after the commit, and `-031`
+  (scenario 4: refunds are not in the console until they are four-eyes). The console's side writes the specs when the run can
+  happen; `e2e/local/m1.spec.ts` and `e2e/local/dead-letters.spec.ts` exist. The CSP-violation count across the battery
+  (criterion 3) and no session token at rest in the browser (criterion 4) are read from the same run.
+- **Deps**: `-104`, the seeding tasks, `-031`.
+- **Accept**: the seven scenarios green from a fresh run, read from the run's records; the multi-instance answer counted at
+  three replicas. **The run is owed to the owner** - the owner postponed end-to-end runs on 2026-11-15 (the console's record),
+  and the standing rule postpones cluster runs; the hermetic half (the harness, the proxy, the specs' contracts) is held, and
+  the run is never claimed until it happens.
+- **Risk**: Medium. **Cx**: L. **DoD**: `DOD-TEST`.
+
+**P17-DOC-002 — The Phase 17 exit review** — `PLANNED`
+- **Context**: `PHASE_GATES.md` §5 Phase 17; B11.3's exit half.
+- **Scope**: each of `PHASE_GATES.md` §5 Phase 17's criteria, and the universal criteria, ruled on fresh evidence from both
+  repositories - the console's own exit review found on 2026-11-15 that the phase could not exit yet. ADR-C130…C136 proposed
+  for acceptance as recorded in this repository. `MUTATION_TESTING.md`'s row for the console's money-lint demonstration (the
+  plan's §19 criterion 9: a planted `parseFloat(amount)` and `Number(amountMinor)` both fail lint, demonstrated in
+  `finapp-admin-panel` at its M11), if the transition did not record it. `THREAT_MODEL.md`'s Phase 17 threats re-rated against
+  what was built, with the owner's acceptance of the compromised-workstation threat. The debt register.
+- **Deps**: every other Phase 17 item.
+- **Accept**: every criterion ruled with its evidence; the flip the owner's.
+- **Risk**: Low. **Cx**: M. **DoD**: `DOD-DOC`.
+
+---
+
 # Cross-cutting work
 
 Status: items here belong to no phase. They change no roadmap commitment, displace no phase task,
@@ -32609,7 +33655,7 @@ task `READY`, and leaves `CURRENT_STATE.md`, `THREAT_MODEL.md`, `PRODUCTION_READ
 coordinator. The number is the next free one on master and on branch `P17-TSK-003` (`X-TSK-019`); the two entries sit at the
 same place in this file, so whichever merges second takes the other's entry above its own)*
 - **Context**: the edge (ADR-0120 decision 6, `P15-TSK-011`), the delivery's manifests (`deploy/`), admission (ADR-0122
-  decision 3, `P15-TSK-007`). The Operator Console (finapp-admin-panel ADR-0130, ADR-0131) is a static single-page application
+  decision 3, `P15-TSK-007`). The Operator Console (finapp-admin-panel ADR-C130, ADR-C131 *(read "ADR-0130, ADR-0131", that repository's numbers before it renumbered its register, until `P17-INIT`, 2026-11-17)*) is a static single-page application
   that calls the API same-origin, so it must be served by the operator host, and its pages need a Content-Security-Policy the
   API's `default-src 'none'` cannot be. `THREAT_MODEL.md` T1, T3, T5, T31.
 - **Objective**: `GET /console/**` on the operator host alone, from a hardened static server, under the console's own headers,
@@ -32902,3 +33948,4 @@ and the transition's design (C1–C12).)*
 | 14 Accounting and Reporting | Elaborated to the section "Phase 14 — Accounting and Financial Reporting" above by the Phase 13 → 14 transition — initialised 2026-10-29, 24 items (`P14-TSK-001`…`-021`, `P14-TST-001` (`POSTPONED`, PI-004), `P14-TST-002`, `P14-DOC-001`) across M14.1–M14.10, `P14-TSK-001` marked `READY`; the epic wording (GL account model; versioned GL mapping; accounting periods; period close with approval; trial balance and continuous verification; GL drill-down; prior-period adjustment; financial statement production; regulatory reporting abstraction; report reproducibility) superseded by the task decomposition |
 | 15 Production Hardening | Elaborated to the section "Phase 15 — Production Hardening" above by the Phase 14 → 15 transition — initialised 2026-11-07, 37 items (`P15-TSK-001`…`-034`, `P15-TST-001` (`POSTPONED`, PI-004), `P15-TST-002`, `P15-DOC-001`) across M15.1–M15.11, `P15-TSK-001` marked `READY`; the epic wording (threat modelling; security hardening; secret and key rotation; privileged access review; audit completeness verification; rate limiting and quotas; schema registry and compatibility; dead-letter handling; SLO definition and alerting; runbooks and rehearsal; incident response; data retention and deletion) superseded by the task decomposition - a runtime schema registry decided against (C11) and data purges re-dated to a real jurisdiction (C12) |
 | 16 Scale and DR | Elaborated to the section "Phase 16 — Scale, Resilience and Disaster Recovery" above by the Phase 15 → 16 transition — initialised 2026-11-12, 34 items (`P16-TSK-001`…`-031`, `P16-TST-001`, `P16-TST-002`, `P16-DOC-001`) across M16.1–M16.13, `P16-TSK-001` marked `READY`; the epic wording (load characterisation; capacity model; performance testing with invariant assertion; table partitioning and archival; read-replica routing policy; backpressure and load shedding; chaos engineering; database failover; backup and restore rehearsal; DR plan and RPO/RTO; post-recovery financial verification; service extraction evaluation) superseded by the task decomposition - partitioning, a replica route and an extraction each decided by measurement and an ADR, never assumed |
+| 17 Operator Console | Not a row of this table before: the owner appended Phase 17 after the roadmap's last phase (decision D-1, 2026-11-13, recorded in `finapp-admin-panel`). Initialised directly to the section "Phase 17 — Operator Console (backend half)" above by the Phase 16 → 17 transition, 2026-11-17: 44 items (`P17-TSK-003`, `-004` `COMPLETE` under D-12; `P17-TSK-014`…`-044` as the console's plan numbers them; `P17-TSK-101`…`-119` reserved for `finapp`-only work; `P17-TST-001`; `P17-DOC-002`) across M17.1–M17.11, `P17-TSK-101` `READY`. The console's own tasks are in `finapp-admin-panel` |

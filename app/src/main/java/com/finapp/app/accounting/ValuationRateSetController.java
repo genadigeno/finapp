@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -42,11 +43,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class ValuationRateSetController {
 
     @NonNull private final ValuationRateSetDesk desk;
+    @NonNull private final AccountingCollectionDesk collections;
 
     /**
      * Captures a valuation rate set for a LOCKED period: per valued currency the reference's last EUR-based observation
      * before the period's end, within the staleness bound - one stale or missing pair refuses all. PROPOSED, immutable.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
     @RequiresIdempotencyKey
@@ -64,6 +67,7 @@ public class ValuationRateSetController {
      * Reasoned. {@code 409 accounting.ReferenceGapRefused} when a named pair is no gap, or its last observation is not the
      * one named. PROPOSED, approved only at its own door.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/reference-gap", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
     @RequiresIdempotencyKey
@@ -97,6 +101,7 @@ public class ValuationRateSetController {
      * Approves a pending set - a person other than its capturer, while the period is LOCKED; the period's one approved
      * set. A reason is required. A set holding a reference gap is approved at its own door.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{setId}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
     @RequiresIdempotencyKey
@@ -108,6 +113,7 @@ public class ValuationRateSetController {
     }
 
     /** Rejects a pending set - terminal; a correction is a new capture. A reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{setId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
     @RequiresIdempotencyKey
@@ -119,6 +125,33 @@ public class ValuationRateSetController {
     }
 
     /** One set by id, in any state - what the controller reviews before deciding: every rate with its provenance. */
+    /**
+     * The valuation rate sets, newest capture first (`P17-TSK-023`, G-113), under the permission that decides them, as the set's
+     * own read; {@code periodId} and {@code status} narrow it, and {@code status=PROPOSED} is the approver's queue.
+     */
+    @GetMapping
+    @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
+    public AccountingCollectionDesk.RateSetPage listValuationRateSets(
+            @RequestParam(name = "periodId", required = false) String periodId,
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return collections.rateSets(periodId, status, cursor, limit);
+    }
+
+    /**
+     * The sets the caller captured, newest first (`P17-TSK-023`): the proposer's own, under the permission that captures them -
+     * a proposer holds no read of a set, so this is where its capture's fate is seen.
+     */
+    @GetMapping("/mine")
+    @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
+    public AccountingCollectionDesk.RateSetPage listOwnValuationRateSets(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return collections.ownRateSets(status, cursor, limit);
+    }
+
     @GetMapping(path = "/{setId}")
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
     public ValuationRateSetDesk.ValuationRateSetView readValuationRateSet(@PathVariable("setId") String setId) {

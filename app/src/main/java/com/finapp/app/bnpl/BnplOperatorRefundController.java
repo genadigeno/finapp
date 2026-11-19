@@ -1,7 +1,9 @@
 package com.finapp.app.bnpl;
 
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.bnpl.BnplSpans;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -37,6 +39,7 @@ public class BnplOperatorRefundController {
     @NonNull private final BnplFlowScope flow;
 
     /** An operator refunds the BNPL purchase on its merchant's behalf. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/refunds", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.PAYMENT_REFUND)
     @RequiresIdempotencyKey

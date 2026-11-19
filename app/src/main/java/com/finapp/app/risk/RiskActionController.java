@@ -43,6 +43,7 @@ public class RiskActionController {
     @NonNull private final RiskActionDesk desk;
 
     /** Proposes a downstream action on the case - awaiting a second holder's approval. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{caseId}/risk-actions", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_INVESTIGATE)
     @RequiresIdempotencyKey
@@ -72,6 +73,7 @@ public class RiskActionController {
     }
 
     /** Rejects a standing action - anyone, the proposer's withdrawal included; nothing is dispatched. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{caseId}/risk-actions/{actionId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_CASE_APPROVE)
     @RequiresIdempotencyKey

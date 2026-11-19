@@ -1500,6 +1500,12 @@ real burn by shedding under a slowed database, E86 a decline wave; every run owe
 proposed, not adopted (`THREAT_MODEL.md` §6 item 70). Item 42 (a)'s counts of what is past each age rule's bound, with a rule beside each
 that fires on a rise while one stands. → [ADR-0148](../adr/ADR-0148-the-objectives-judged-under-load-and-break-age-counts.md)
 
+### The books' first month (proposed)
+When no accounting period exists, the first opens `finapp.accounting.period.books-open-months-back` months before today's (0 by default, 0 to 24), then every month through today's; read only while none exists, so it never reaches behind books already kept. A fresh test stack holds past months to lock, close and correct for the console's end-to-end seed; the kind rehearsal keeps 0. (`P17-TSK-113`, 2026-11-19, the owner's decision on `P17-TSK-112`.) → [ADR-0152](../adr/ADR-0152-the-books-first-month.md)
+
+### The Operator Console (Phase 17, opened at the Phase 16 → 17 transition)
+Opened 2026-11-17, when the owner flipped Phase 16 complete and appended Phase 17 ("Flip 16, open 17"). The console is a separate repository, `finapp-admin-panel`, which keeps the plan, the console's backlog and its decisions: **ADR-C130…C136**, `Proposed` there - the console itself, session handling and browser hardening, the operator read model, operator collections and pending-decision queues, the audit trail's read path, single-actor money controls, the frontend stack. They were numbered ADR-0130…0136 until that repository renumbered them to end a collision with this register; this register reserves none of them, and a citation of one here reads "finapp-admin-panel ADR-C13n". The owner's decisions on the console (D-1…D-23) are recorded in that plan. This repository holds the backend half, `BACKLOG.md` §Phase 17, its finapp-only tasks numbered from `P17-TSK-101`. No new invariant: the console moves no money. **The next free number in this register is ADR-0152.**
+
 ### Integration
 External financial providers are accessed through adapters and treated as unreliable.
 Provider vocabulary never enters the domain or a public API contract; unknown provider state

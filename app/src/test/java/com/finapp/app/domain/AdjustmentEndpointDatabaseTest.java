@@ -251,6 +251,52 @@ class AdjustmentEndpointDatabaseTest {
     }
 
     @Test
+    @DisplayName("P17-TSK-111: a rejection with a reason - recorded on the rejection's audit record with its actor; a repeat"
+            + " converges, the first reason standing; a blank, over-long or instrument-bearing reason 422, nothing decided; an"
+            + " APPROVED proposal 409")
+    void aReasonedRejectionRecordsItsReason() throws Exception {
+        Operator initiator = givenAnOperator();
+        Operator approver = givenAnOperator();
+        LedgerAccount wallet = givenAWallet();
+        UUID proposal =
+                proposalIdOf(post(body(wallet, "4.00", "reasoned rejection probe"), initiator.token(), "adj-" + IDS.next()));
+
+        for (String refused : new String[] {"{\"reason\":\"   \"}", "{\"reason\":\"" + "x".repeat(1001) + "\"}",
+                "{\"reason\":\"card 4111 1111 1111 1111\"}", "{}"}) {
+            HttpResponse<String> answer = rejectWithReason(proposal.toString(), approver.token(), refused);
+            assertThat(answer.statusCode()).as(answer.body()).isEqualTo(422);
+            assertThat(answer.body()).doesNotContain("4111");
+        }
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(proposalColumn(app, proposal, "status")).as("a refused reason decides nothing").isEqualTo("PROPOSED");
+        }
+
+        assertThat(rejectWithReason(proposal.toString(), approver.token(), "{\"reason\":\"the wrong wallet\"}").statusCode())
+                .isEqualTo(204);
+        assertThat(rejectWithReason(proposal.toString(), approver.token(), "{\"reason\":\"another reason\"}").statusCode())
+                .as("a repeat converges").isEqualTo(204);
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement("SELECT actor_id, reason FROM platform.audit_record"
+                        + " WHERE operation = 'ledger.AdjustmentRejected' AND target_id = ?")) {
+            assertThat(proposalColumn(app, proposal, "status")).isEqualTo("REJECTED");
+            read.setString(1, proposal.toString());
+            try (ResultSet rows = read.executeQuery()) {
+                assertThat(rows.next()).isTrue();
+                assertThat(rows.getString("actor_id")).isEqualTo(approver.identity().value().toString());
+                assertThat(rows.getString("reason")).as("the first reason stands").isEqualTo("the wrong wallet");
+                assertThat(rows.next()).as("one act, one record").isFalse();
+            }
+        }
+
+        UUID approved =
+                proposalIdOf(post(body(wallet, "4.00", "approved then reasoned rejection"), initiator.token(), "adj-" + IDS.next()));
+        assertThat(approve(approved.toString(), approver.token()).statusCode()).isEqualTo(201);
+        HttpResponse<String> late = rejectWithReason(approved.toString(), approver.token(), "{\"reason\":\"too late\"}");
+        assertThat(late.statusCode()).isEqualTo(409);
+        assertThat(late.body()).contains("ledger.ProposalNotOpen");
+    }
+
+    @Test
     @DisplayName("the initiator withdraws their own proposal - and a decided proposal"
             + " refuses every further decision (INV-LIFE-04)")
     void aRejectionConvergesAndClosesTheProposal() throws Exception {
@@ -317,7 +363,7 @@ class AdjustmentEndpointDatabaseTest {
     }
 
     @Test
-    @DisplayName("P14-TSK-022: the approval is MULTI_FACTOR: the holder on a password session is 403 identity.AssuranceRequired with nothing written, while its proposal, its read and its rejection are not stepped up; the same proposal then posts from a MULTI_FACTOR session")
+    @DisplayName("P14-TSK-022, P17-TSK-102: the approval is MULTI_FACTOR: the holder on a password session is 403 identity.AssuranceRequired with nothing written, and so are its proposal and its rejection, every operator act being stepped up; only its read is not; the same proposal then posts from a MULTI_FACTOR session")
     void theApprovalIsMultiFactor() throws Exception {
         Operator initiator = givenAnOperator();
         IdentityId holder = givenAnIdentity();
@@ -338,8 +384,15 @@ class AdjustmentEndpointDatabaseTest {
         }
 
         assertThat(get(proposal.toString(), password).statusCode()).as("the read is not stepped up").isEqualTo(200);
-        UUID mine = proposalIdOf(post(body(wallet, "6.00", "a password session proposes"), password, "adj-" + IDS.next()));
-        assertThat(reject(mine.toString(), password).statusCode()).as("nor the rejection").isEqualTo(204);
+        HttpResponse<String> proposing = post(body(wallet, "6.00", "a password session proposes"), password, "adj-" + IDS.next());
+        assertThat(proposing.statusCode()).as("the proposal is an operator act, stepped up too (P17-TSK-102)").isEqualTo(403);
+        assertThat(proposing.body()).contains("identity.AssuranceRequired");
+        HttpResponse<String> rejecting = reject(proposal.toString(), password);
+        assertThat(rejecting.statusCode()).as("and so is the rejection").isEqualTo(403);
+        assertThat(rejecting.body()).contains("identity.AssuranceRequired");
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(proposalColumn(app, proposal, "status")).isEqualTo("PROPOSED");
+        }
 
         assertThat(approve(proposal.toString(), steppedUp).statusCode()).isEqualTo(201);
         assertThat(adjustmentEntryCount()).isEqualTo(entriesBefore + 1);
@@ -1239,6 +1292,16 @@ class AdjustmentEndpointDatabaseTest {
                 HttpRequest.newBuilder(proposalUri(proposal))
                         .header("Authorization", "Bearer " + token)
                         .DELETE()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> rejectWithReason(String proposal, String token, String json) throws Exception {
+        return http.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/v1/ledger/adjustments/" + proposal + "/rejection"))
+                        .header("Authorization", "Bearer " + token)
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(json))
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
     }

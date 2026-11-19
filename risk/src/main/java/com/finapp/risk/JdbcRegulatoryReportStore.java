@@ -47,6 +47,8 @@ public final class JdbcRegulatoryReportStore implements RegulatoryReportStore {
     static final String LIVE_OF = "SELECT " + COLUMNS + " FROM risk.regulatory_report"
             + " WHERE case_id = ? AND status <> 'REJECTED'";
 
+    static final String OF_CASE = "SELECT " + COLUMNS + " FROM risk.regulatory_report WHERE case_id = ? ORDER BY id";
+
     static final String APPROVE = "UPDATE risk.regulatory_report SET status = 'APPROVED', approved_by = ?,"
             + " approved_by_type = ? WHERE id = ? AND status = 'DRAFT' RETURNING " + COLUMNS;
 
@@ -90,6 +92,24 @@ public final class JdbcRegulatoryReportStore implements RegulatoryReportStore {
             + " AND ((subject_kind = 'ACCOUNT' AND subject_ref = ANY (?))"
             + " OR (counterparty_kind = 'CUSTOMER' AND counterparty_ref = ANY (?)))"
             + " ORDER BY journal_sequence, id LIMIT ?";
+
+    @Override
+    public List<RegulatoryReport> ofCase(Connection unitOfWork, RiskCaseId caseId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(caseId, "caseId");
+        try (PreparedStatement select = unitOfWork.prepareStatement(OF_CASE)) {
+            select.setObject(1, caseId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                List<RegulatoryReport> reports = new ArrayList<>();
+                while (rows.next()) {
+                    reports.add(report(rows));
+                }
+                return reports;
+            }
+        } catch (SQLException failure) {
+            throw failed("reading a case's regulatory reports", failure);
+        }
+    }
 
     @Override
     public Optional<RegulatoryReport> liveOf(Connection unitOfWork, RiskCaseId caseId) {

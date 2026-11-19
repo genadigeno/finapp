@@ -89,6 +89,62 @@ class AccountingBreaksTest {
     }
 
     @Test
+    @DisplayName("P17-TSK-111: a pending acknowledgement is rejected, reasoned - the proposal cleared, the break OPEN for a new"
+            + " one, the case file keeping the proposal and the rejection naming its proposer; nothing pending, an ACKNOWLEDGED"
+            + " break or no reason is refused, nothing written; the proposer may reject their own")
+    void aPendingAcknowledgementIsRejected() {
+        AccountingBreakId id = raised();
+        assertThatThrownBy(() -> breaks.rejectAcknowledgement(UOW, id, controller, "none proposed", correlation()))
+                .isInstanceOf(AccountingBreaks.BreakStale.class);
+        breaks.proposeAcknowledgement(UOW, id, accountant, "the transfer poster's fee line", correlation());
+        assertThatThrownBy(() -> breaks.rejectAcknowledgement(UOW, id, controller, " ", correlation()))
+                .isInstanceOf(AccountingReasons.ReasonRequired.class);
+        assertThat(store.find(UOW, id)).hasValueSatisfying(row -> assertThat(row.acknowledgementPending()).isTrue());
+
+        AccountingBreaks.Acted rejected = breaks.rejectAcknowledgement(UOW, id, controller, "the wrong poster", correlation());
+
+        assertThat(rejected.status()).isEqualTo(BreakStatus.OPEN);
+        assertThat(rejected.acknowledgementPending()).isFalse();
+        assertThat(store.find(UOW, id)).hasValueSatisfying(row -> {
+            assertThat(row.status()).isEqualTo(BreakStatus.OPEN);
+            assertThat(row.ackProposedBy()).isEmpty();
+            assertThat(row.ackProposedAt()).isEmpty();
+            assertThat(row.disclosure()).isEmpty();
+            assertThat(row.ackApprovedBy()).isEmpty();
+        });
+        assertThat(store.history()).extracting(AccountingBreakStore.EventRow::act).containsExactly(
+                AccountingBreakStore.Act.RAISED, AccountingBreakStore.Act.ACKNOWLEDGEMENT_PROPOSED,
+                AccountingBreakStore.Act.ACKNOWLEDGEMENT_REJECTED);
+        AccountingBreakStore.EventRow rejection = store.history().get(2);
+        assertThat(rejection.proposedBy()).as("the rejection names the proposal it rejected").contains("accountant-1");
+        assertThat(rejection.reason()).contains("the wrong poster");
+        assertThat(rejection.from()).contains(BreakStatus.OPEN);
+        assertThat(rejection.to()).isEqualTo(BreakStatus.OPEN);
+        assertThat(store.history().get(1).reason()).as("the proposal's disclosure stays in the case file")
+                .contains("the transfer poster's fee line");
+        assertThat(audit).last().satisfies(record -> {
+            assertThat(record.operation().code()).isEqualTo("accounting.BreakAcknowledgementRejected");
+            assertThat(record.reason()).contains("the wrong poster");
+            assertThat(record.changeSummary()).get().asString().endsWith(", byProposer=false");
+        });
+        assertThatThrownBy(() -> breaks.rejectAcknowledgement(UOW, id, controller, "again", correlation()))
+                .isInstanceOf(AccountingBreaks.BreakStale.class);
+        assertThatThrownBy(() -> breaks.approveAcknowledgement(UOW, id, controller, "too late", correlation()))
+                .as("nothing pending to approve once rejected").isInstanceOf(AccountingBreaks.BreakStale.class);
+
+        breaks.proposeAcknowledgement(UOW, id, accountant, "the fee poster's line", correlation());
+        assertThat(breaks.rejectAcknowledgement(UOW, id, accountant, "withdrawn", correlation()).acknowledgementPending())
+                .as("a rejection may be its own proposer's").isFalse();
+        assertThat(audit).last().satisfies(record -> assertThat(record.changeSummary()).get().asString().endsWith(", byProposer=true"));
+
+        breaks.proposeAcknowledgement(UOW, id, accountant, "the fee poster's line, again", correlation());
+        breaks.approveAcknowledgement(UOW, id, controller, "approved", correlation());
+        assertThatThrownBy(() -> breaks.rejectAcknowledgement(UOW, id, controller, "after the approval", correlation()))
+                .as("an ACKNOWLEDGED break has nothing pending").isInstanceOf(AccountingBreaks.BreakStale.class);
+        assertThat(store.find(UOW, id)).hasValueSatisfying(row -> assertThat(row.status()).isEqualTo(BreakStatus.ACKNOWLEDGED));
+    }
+
+    @Test
     @DisplayName("acknowledgement is four-eyes: the proposal moves nothing, the proposer cannot approve - refused before"
             + " anything is written - and a second person's approval acknowledges with the disclosure kept")
     void theProposerCannotAcknowledge() {

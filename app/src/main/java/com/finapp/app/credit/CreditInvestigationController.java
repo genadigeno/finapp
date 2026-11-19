@@ -2,8 +2,10 @@ package com.finapp.app.credit;
 
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RecordsRefusals;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.app.session.RequiresSession;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
@@ -37,6 +39,7 @@ public class CreditInvestigationController {
         return desk.explain(id);
     }
 
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/records/{id}/evidence-read", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.CREDIT_INVESTIGATE)
     public CreditInvestigationDesk.CreditEvidenceView evidence(
@@ -45,6 +48,7 @@ public class CreditInvestigationController {
     }
 
     /** Replays a decision from its sealed snapshot and pinned versions - audited, a reason required, nothing changed. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/decisions/{id}/replay", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.CREDIT_INVESTIGATE)
     public CreditInvestigationDesk.CreditReplayView replay(

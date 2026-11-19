@@ -43,8 +43,10 @@ import org.springframework.web.bind.annotation.RestController;
 public class RiskPolicyController {
 
     @NonNull private final RiskPolicyDesk desk;
+    @NonNull private final RiskCollectionDesk collections;
 
     /** Proposes a whole new policy version for an operation - complete, judged, and frozen from this moment. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_POLICY_ADMINISTER)
     @RequiresIdempotencyKey
@@ -71,6 +73,7 @@ public class RiskPolicyController {
     }
 
     /** Rejects a pending version - anyone, the proposer's withdrawal included; a reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{versionId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_POLICY_ADMINISTER)
     @RequiresIdempotencyKey
@@ -86,6 +89,22 @@ public class RiskPolicyController {
     @RequiresPermission(PermissionName.RISK_POLICY_ADMINISTER)
     public RiskPolicyDesk.RiskPolicyView readRiskPolicyInForce(@RequestParam("operation") String operation) {
         return desk.inForce(operation);
+    }
+
+    /**
+     * The policy versions, newest first by proposal (`P17-TSK-020`, gap G-92): a §7 collection of heads, of one
+     * {@code operation} and one {@code status} ({@code PROPOSED}, {@code ACTIVE}, {@code RETIRED}, {@code REJECTED}) when named
+     * - {@code PROPOSED} is the approver's queue; {@code limit} 50 unless named, 200 at most; the opaque {@code cursor} of the
+     * page before. Never who proposed or decided.
+     */
+    @GetMapping(path = "/versions")
+    @RequiresPermission(PermissionName.RISK_POLICY_ADMINISTER)
+    public RiskCollectionDesk.RiskPolicyVersionPage listRiskPolicyVersions(
+            @RequestParam(name = "operation", required = false) String operation,
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return collections.policyVersions(operation, status, cursor, limit);
     }
 
     /** One policy version by id, in any state - the proposal a second person reviews before deciding it. */

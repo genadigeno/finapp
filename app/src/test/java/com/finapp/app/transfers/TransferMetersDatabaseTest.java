@@ -300,7 +300,7 @@ class TransferMetersDatabaseTest {
 
     /**
      * Registers an identity over HTTP, grants {@code LEDGER_OPERATOR} through the real
-     * {@code Authorization} write (the `P4-TSK-009` fixture), and returns its token.
+     * {@code Authorization} write (the `P4-TSK-009` fixture), and returns its stepped-up token.
      */
     private String operator(String login) throws Exception {
         assertThat(register(login).statusCode()).isEqualTo(201);
@@ -315,7 +315,9 @@ class TransferMetersDatabaseTest {
                     "test fixture");
             app.commit();
         }
-        return tokenFrom(authenticate(login).body());
+        // The reversal is an operator act, MULTI_FACTOR (P17-TSK-102): the operator steps up.
+        return com.finapp.app.session.OperatorStepUp.elevated(tokenFrom(authenticate(login).body()),
+                (path, body, bearer, key) -> post(path, body, bearer, key != null));
     }
 
     private static String identityIdOf(Connection app, String login) throws SQLException {

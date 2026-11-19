@@ -242,6 +242,30 @@ would collide with the first region's, and its state is in the lost region. That
 live in the backup account so that the account's loss and the region's meet one site, are `THREAT_MODEL.md` §6 item 72, beside item
 71 (the rings and the images outside the account). Until decided, tier 4's recovery point exists and its rebuild is designed only.
 
+## The Operator Console (Phase 17)
+
+*(Written by the Phase 16 → 17 transition, P17-INIT, 2026-11-17, from finapp-admin-panel ADR-C130 and ADR-C131, both `Proposed`
+there, and its `PHASE_17_PLAN.md` §2. The console's hosting on the operator edge was built by X-TSK-020 (2026-11-14); ADR-0120
+decision 6 carries its dated note.)*
+
+**A client of the operator surface, and nothing more.** The Operator Console is a single-page application in its own repository,
+finapp-admin-panel, built against this repository's published contract (`docs/api/openapi.json`, pinned by commit there). It calls
+the same operator routes any operator client calls, under the same session, permissions, step-up, idempotency keys and audit:
+
+- **No backend-for-frontend.** No server composes, caches or authorises on the console's behalf. A second policy point would be a
+  second place to disagree with the first, as an API gateway would (`THREAT_MODEL.md` §7). What the console needs that the
+  operator surface does not serve is closed in the owning module, as a gap of `BACKLOG.md` §Phase 17.
+- **Same-origin on the operator edge.** `/console/**` is served by `finapp-console`, a third deployable unit beside `finapp-app`
+  and `finapp-migrator`: static files from an unprivileged web server, holding no state, opening no connection, reached by the
+  operator ingress alone and never by the public one, under its own content security policy (`console-headers`). Every API route
+  keeps `default-src 'none'`.
+- **No authority in the browser.** The bearer session token lives in script memory alone (ADR-C131). No money arithmetic, business
+  rule or state transition is decided in the client; an unknown outcome is re-asked under the same idempotency key. The console's
+  correctness under N replicas is therefore the operator surface's, and nothing it does needs an instance of its own.
+
+The console's own tiers, its supply chain and `DOD-UI` are finapp-admin-panel's. This repository owes the endpoints, the edge, the
+console image's admission and its run on `kind` (`P17-TSK-104`), and the boundary the browser adds (`THREAT_MODEL.md` B11).
+
 ## Architectural Principles
 
 1. Domain ownership before service decomposition.

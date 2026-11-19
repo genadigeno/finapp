@@ -1,7 +1,9 @@
 package com.finapp.app.bnpl;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -40,6 +42,7 @@ public class MerchantBnplController {
     @NonNull private final MerchantBnplDesk desk;
 
     /** Proposes enabling BNPL at the merchant - nothing is offered until a second operator approves. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/bnpl-enablement", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
     @RequiresIdempotencyKey
@@ -52,6 +55,7 @@ public class MerchantBnplController {
     }
 
     /** Approves a proposal - never by its proposer ({@code 409 merchant.SelfApprovalRefused}, audited FAILED). */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/bnpl-enablement/{enablementId}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
     @RequiresIdempotencyKey
@@ -64,6 +68,7 @@ public class MerchantBnplController {
     }
 
     /** Rejects a proposal - any operator, the proposer included. Terminal. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/bnpl-enablement/{enablementId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
     @RequiresIdempotencyKey
@@ -76,6 +81,7 @@ public class MerchantBnplController {
     }
 
     /** Withdraws the enablement in force - one operator's risk-reducing act. Terminal. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/bnpl-enablement/{enablementId}/withdrawal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
     @RequiresIdempotencyKey
@@ -92,6 +98,7 @@ public class MerchantBnplController {
      * versions return their fee on refund ({@code 422 merchant.BnplScheduleNotReturning} otherwise), reasoned. Converges
      * when it is already there.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PutMapping(path = "/bnpl-fee-schedules/{product}", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.FEE_ADMINISTER)
     public MerchantBnplDesk.BnplFeeScheduleView assignMerchantBnplFeeSchedule(

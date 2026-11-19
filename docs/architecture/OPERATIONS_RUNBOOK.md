@@ -1772,7 +1772,7 @@ Every return here is `REFERENCE`, through a simulated adapter (ADR-0118, C4): no
 
 ### 10.7 The close calendar and a lock - `AccountingCloseOverdue`, `AccountingScheduleOff`
 
-**The calendar, as the code holds it.** (1) **A month opens by itself**: the schedule's open leg, `finapp.accounting.close.open-poll` (default an hour), inserts it if absent. No door births a period. `GET /v1/operator/accounting/periods` (`ACCOUNTING_READ`) lists them. (2) **It may lock from its last day plus two business days** (`finapp.accounting.period.lock-grace-business-days`; Monday to Friday, since no holiday calendar exists; never under 2), and only once the month before it is `CLOSED`. (3) **A person locks it**: `POST .../periods/{periodId}/lock` (`ACCOUNTING_CLOSE_PROPOSE`), keyed. In one transaction the ledger's cutoff moves to the month's end and the GL mapping version in force is pinned. From that commit no entry dated in the month commits (`INV-ACC-08`). `409 accounting.PeriodNotLockable`: too early, or the month before is not closed. `accounting.CutoffBusy`: postings held the cutoff through its attempts; nothing moved, ask again. (4) **The checks run by themselves**: within one poll of `finapp.accounting.close.checks-poll` (default 30 s) the schedule births the run and its nine attempts. `GET .../periods/{periodId}/close-run` (`ACCOUNTING_READ`). (5) **A valuation rate set is captured and approved**: `POST /v1/operator/accounting/valuation-rate-sets` (`ACCOUNTING_CLOSE_PROPOSE`), then `POST .../valuation-rate-sets/{setId}/approval` (`ACCOUNTING_CLOSE_APPROVE`), a different person. `VALUATION_SET_APPROVED` waits for it. (6) **An accountant proposes**: `POST .../periods/{periodId}/close-proposal` (`ACCOUNTING_CLOSE_PROPOSE`), keyed, a reason per `DISCLOSED` attempt. Section 10.3 if it is refused. (7) **A controller decides**: reads `GET .../periods/{periodId}/close-proposal` (`ACCOUNTING_CLOSE_APPROVE`), each check with `concludedAt`, when its attempt concluded: what it judged was read no later than that, and nothing judges it again at the approval. Then `POST .../periods/{periodId}/close-approval` (`ACCOUNTING_CLOSE_APPROVE`), from a `MULTI_FACTOR` session (`P14-TSK-024`, the owner's acceptance: `403 identity.AssuranceRequired` below it, nothing read or written and the key unspent; step up and retry), or `POST .../periods/{periodId}/close-rejection` (`ACCOUNTING_CLOSE_APPROVE`), from any session. Each names the proposal read. The accountant who proposed cannot: `403 accounting.SelfApprovalRefused`. (8) **The month's safeguarding return is a person's too**: each month, once it is `CLOSED`, an accountant issues the run, `POST /v1/operator/accounting/report-runs` (`ACCOUNTING_REPORT_GENERATE`), definition `SAFEGUARDING_POSITION`. **Nothing issues it for them**, and a month nobody issues shows nothing at all (`PI-011`). Without it a draft of that return is `409 accounting.RegulatorySourceNotFinal`. Section 10.6 has the rest, a reference return on a simulated channel.
+**The calendar, as the code holds it.** (1) **A month opens by itself**: the schedule's open leg, `finapp.accounting.close.open-poll` (default an hour), inserts it if absent. No door births a period. `GET /v1/operator/accounting/periods` (`ACCOUNTING_READ`) lists them, and `GET …/periods/{periodId}` reads one (`P17-TSK-111`). **The books' first month** is today's unless `finapp.accounting.period.books-open-months-back` (`FINAPP_ACCOUNTING_PERIOD_BOOKSOPENMONTHSBACK`, 0 to 24, ADR-0152) names how many months before it: read only while no period exists, so set it before the platform first runs on a fresh database - a local stack for the console's end-to-end seed sets `2` - and changing it later changes nothing. (2) **It may lock from its last day plus two business days** (`finapp.accounting.period.lock-grace-business-days`; Monday to Friday, since no holiday calendar exists; never under 2), and only once the month before it is `CLOSED`. (3) **A person locks it**: `POST .../periods/{periodId}/lock` (`ACCOUNTING_CLOSE_PROPOSE`), keyed. In one transaction the ledger's cutoff moves to the month's end and the GL mapping version in force is pinned. From that commit no entry dated in the month commits (`INV-ACC-08`). `409 accounting.PeriodNotLockable`: too early, or the month before is not closed. `accounting.CutoffBusy`: postings held the cutoff through its attempts; nothing moved, ask again. (4) **The checks run by themselves**: within one poll of `finapp.accounting.close.checks-poll` (default 30 s) the schedule births the run and its nine attempts. `GET .../periods/{periodId}/close-run` (`ACCOUNTING_READ`). (5) **A valuation rate set is captured and approved**: `POST /v1/operator/accounting/valuation-rate-sets` (`ACCOUNTING_CLOSE_PROPOSE`), then `POST .../valuation-rate-sets/{setId}/approval` (`ACCOUNTING_CLOSE_APPROVE`), a different person. `VALUATION_SET_APPROVED` waits for it. (6) **An accountant proposes**: `POST .../periods/{periodId}/close-proposal` (`ACCOUNTING_CLOSE_PROPOSE`), keyed, a reason per `DISCLOSED` attempt. Section 10.3 if it is refused. (7) **A controller decides**: reads `GET .../periods/{periodId}/close-proposal` (`ACCOUNTING_CLOSE_APPROVE`), each check with `concludedAt`, when its attempt concluded: what it judged was read no later than that, and nothing judges it again at the approval. Then `POST .../periods/{periodId}/close-approval` (`ACCOUNTING_CLOSE_APPROVE`), from a `MULTI_FACTOR` session (`P14-TSK-024`, the owner's acceptance: `403 identity.AssuranceRequired` below it, nothing read or written and the key unspent; step up and retry), or `POST .../periods/{periodId}/close-rejection` (`ACCOUNTING_CLOSE_APPROVE`), from any session. Each names the proposal read. The accountant who proposed cannot: `403 accounting.SelfApprovalRefused`. (8) **The month's safeguarding return is a person's too**: each month, once it is `CLOSED`, an accountant issues the run, `POST /v1/operator/accounting/report-runs` (`ACCOUNTING_REPORT_GENERATE`), definition `SAFEGUARDING_POSITION`. **Nothing issues it for them**, and a month nobody issues shows nothing at all (`PI-011`). Without it a draft of that return is `409 accounting.RegulatorySourceNotFinal`. Section 10.6 has the rest, a reference return on a simulated channel.
 
 **Each month's runs: the monthly chore** (`P14-TSK-012`'s (e), as the owner narrowed it by (c) and (k), built by `P14-TSK-025`). `RECONCILIATION_DISCLOSURE` asks one counting run of every source the month requires: declared by the build, admitted by the month's last day, not retired before its first, and with a rule set active by its last day. A source with a scheduled pull brings its reports itself. **A source without one, quiet that month, needs a person's nil report**: uploaded and attested by a second person, dated in the month, before the lock's checks run or followed by a re-run (section 10.3). A source not yet admitted, retired before the month, or whose rule set no person has activated, needs nothing. `GET .../periods/{periodId}/operational-reports/RECONCILIATION_STATUS` (`ACCOUNTING_READ`) lists every source with its days and whether the month requires it.
 
@@ -1836,7 +1836,7 @@ refusing a role that can write: section 11.37, `P15-TSK-043`.)*
 
 **What it means.** `finapp.accounting.break.aged{type}`: breaks still `OPEN` past `finapp.accounting.break.aged-after`, seven days by default on the database's clock. Nobody has decided on them. While its month is unclosed a break blocks `OPEN_ACCOUNTING_BREAKS`; on a `CLOSED` month it is what an overtaken worker's raise leaves, never hidden, and corrected as any finding after a close. **It is not `finapp.accounting.break.open`**, the dashboard's count of every status but `RESOLVED`, per generation: an `ACKNOWLEDGED` break, even one a later generation has superseded, was decided under four eyes and can stand for good, and no alert reads it.
 
-**Act.** The alert names no month and `GET .../breaks` (`ACCOUNTING_READ`) requires `?period=`, so walk the months from `GET /v1/operator/accounting/periods` (`ACCOUNTING_READ`), oldest unclosed first, then the closed ones, since a raise can land on one. Then `GET .../breaks/{breakId}` (`ACCOUNTING_ADJUST_APPROVE`). Either acknowledge with a disclosure, `POST .../breaks/{breakId}/acknowledgement-proposal` (`ACCOUNTING_ADJUST_PROPOSE`) then `POST .../breaks/{breakId}/acknowledgement-approval` (`ACCOUNTING_ADJUST_APPROVE`), a different person; or correct through the owning domain's door and resolve naming the entry, `POST .../breaks/{breakId}/resolution` (`ACCOUNTING_ADJUST_APPROVE`). **What you cannot do**: a break posts nothing, and nothing here corrects a figure. `FINDING_CHANGED`: section 10.3.
+**Act.** The alert names no month and `GET .../breaks` (`ACCOUNTING_READ`) requires `?period=`, so walk the months from `GET /v1/operator/accounting/periods` (`ACCOUNTING_READ`), oldest unclosed first, then the closed ones, since a raise can land on one. Then `GET .../breaks/{breakId}` (`ACCOUNTING_ADJUST_APPROVE`). Either acknowledge with a disclosure, `POST .../breaks/{breakId}/acknowledgement-proposal` (`ACCOUNTING_ADJUST_PROPOSE`) then `POST .../breaks/{breakId}/acknowledgement-approval` (`ACCOUNTING_ADJUST_APPROVE`), a different person - or, when the disclosure is wrong, reject it reasoned, `POST .../breaks/{breakId}/acknowledgement-rejection` (`ACCOUNTING_ADJUST_APPROVE`, `P17-TSK-111`), which leaves the break `OPEN` for a better proposal; or correct through the owning domain's door and resolve naming the entry, `POST .../breaks/{breakId}/resolution` (`ACCOUNTING_ADJUST_APPROVE`). **What you cannot do**: a break posts nothing, and nothing here corrects a figure. `FINDING_CHANGED`: section 10.3.
 
 ### 10.14 A gauge that cannot be read, or is not there - `AccountingGaugesUnreadable`, `AccountingGaugesAbsent`, `RegulatoryAttentionUnreadable`
 
@@ -4093,6 +4093,8 @@ next run, owed under `POSTPONED_ISSUES.md` PI-025.)*
 
 **What this does not mean.** One node, three replicas, the test-only copies of a managed database and broker: a managed minor upgrade (a provider's own restart and endpoint) never ran, and is `THREAT_MODEL.md` section 6 item 43 (f)'s with the first real environment. A controller lost under traffic is experiment E25's. The numbers are from a loaded development machine.
 
+
+**The Operator Console's step** *(`P17-TSK-104`, 2026-11-18)*. Named an image the same three ways as the admission check (`CONSOLE_IMAGE`, `CONSOLE_ARCHIVE`, or `CONSOLE_REPOSITORY` at `CONSOLE_COMMIT`), the rehearsal builds or loads it at `build-images`, and after `edge` its `console` step loads it into every node, puts its digest into its own rendered copy of `deploy/console/overlays/kind` - never the committed file, whose digest stays sixty-four zeros - applies it, waits for its rollout, and asks through the real edge: the operator host's `/console/` answers `200` under the console's own policy exactly once, an operator API route keeps `default-src 'none'`, and the public host serves no `/console`. Read `console.txt`, `console-pods.txt`, `images.txt`'s `console=` and `console.ref`. It is skipped, and said so in `skipped.txt` and the result, with no image named, in the `delivery` scope - whose edge is Argo CD's, and which since `P17-TSK-105` delivers a named console through its own Application, signed under the run's key, in the root's last wave, and without one removes that Application from its own rendered root and says so - and in the `dr` scope (its images come from the vault only). The console's own end-to-end run then goes against a kept cluster (`REHEARSAL_KEEP=1`): `CONSOLE_BASE_URL=https://operator.finapp.test:30444/console/ npm run test:e2e` in finapp-admin-panel. Not run yet: `P17-TST-001`'s.
 ### 11.32 A refused image: signing, admission, and what to do when the cluster says no (`P15-TSK-007`)
 
 *(Written by `P15-TSK-007`, 2026-11-11, from `infra/scripts/admission-check.sh`, `deploy/admission` and
@@ -4109,7 +4111,15 @@ Deployments, Jobs and their pods, init containers included. A debug container ad
   SLSA provenance and the CycloneDX SBOM (`finapp-images-attested`);
 - *(`X-TSK-020`, 2026-11-14)* so must the Operator Console's `finapp-console` (and `finapp-<environment>-console`), under the same two
   policies. Nothing signs it yet: finapp-admin-panel builds it, and neither this repository's image job nor `admission-check.sh` does, so
-  until its release path signs and attests it every console pod is refused here - the safe direction;
+  until its release path signs and attests it every console pod is refused here - the safe direction *(`P17-TSK-104`, 2026-11-18: on
+  `kind`, `admission-check.sh` now signs and attests a console image it is given - `CONSOLE_IMAGE` with `CONSOLE_SBOM`, the console CI's
+  archive as `CONSOLE_ARCHIVE` with its `sbom.cdx.json` beside it, or `CONSOLE_REPOSITORY` at `CONSOLE_COMMIT`, built for `kind` -
+  under the run's key, verifies them before deploying, and holds three cases in `finapp-console`: signed admitted at its digest,
+  unsigned refused, signed without its SBOM attestation refused, each beside its control. Read `sbom-finapp-console.cdx.json`,
+  `provenance-finapp-console.json`, `console-build.log` and `digests.txt`'s `console.*` lines. With no console image named the
+  three cases are skipped and the result line is preceded by `SKIPPED:`, never passed silently. In a real environment the console
+  is still refused until the delivery's identity signs it - the owner's decision, `P17-TSK-105`. No such run has been made yet:
+  it is `P17-TST-001`'s.)*;
 - the edge's Traefik passes by its one pinned digest (`finapp-edge-traefik`), the only exception;
 - anything else is refused (`no-match-policy: deny`), and so is everything while the controller cannot answer
   (`failurePolicy: Fail`).
@@ -5007,6 +5017,8 @@ the network policy reached the pod, now the migrator's own bounded retry), one t
 conditions), and one red at reading the policies' health from `status.resources`, rescued by hand (metrics-server installed, the root
 synced) and not counted.
 
+
+**The Operator Console's promotion** *(`P17-TSK-105`, 2026-11-18)*. The console is a fifth Application (`finapp-console`, wave 4, the last, in project `finapp`), delivered from `deploy/console/overlays/<environment>`, whose `release.yaml` records the digest it serves. It is promoted by digest as the platform is, in a change of its own: `infra/scripts/promote.sh console <environment> <digest> <finapp-admin-panel commit>` checks the digest and the revision (`Promotion.java console-check`), verifies the image's signature and attestations in `finapp-<environment>-console` under the environment's authority, and writes the overlay and the record (`console-write`), printing the digest it replaces. Production takes only a digest and revision staging's own record already names, from a merged change - one change bringing both is refused, and CI judges it again (`recheck`). **Before every console build**, `promote.sh console-serving` prints each environment's serving digest: the build runs finapp-admin-panel's `scripts/collect-previous-assets.sh` against it, so the new image carries the assets a page from the old pods still asks for. When staging is ahead of production the two differ, and the build needs both. A rollback is promoting the older digest. An unhealthy console holds the root's own sync at wave 4 until it is fixed forward or that sync is ended. **Which identity signs the console in a real environment is the owner's open decision** (the proposal: keyless from CI's identity, as `THREAT_MODEL.md` §6 item 35 records for the platform); until then nothing signs it there, and admission refuses it.
 ### 11.37 Staff refused where staff are refused - `OperatorPasswordProvenOnPublic`, `StaffRefusedUnmarked`; a first role's sign-in again; a reporting pool that refuses its role (`P15-TSK-043`)
 
 *(Written by `P15-TSK-043`, 2026-11-12, from `infra/prometheus/rules/flows.yml`'s identity group and its promtool cases. Not rehearsed:
@@ -5895,6 +5907,70 @@ past 1,000 settled lines stores a new one in a savepoint that never fails it. Th
   `CREATE INDEX CONCURRENTLY journal_line_by_account_and_transaction ON ledger.journal_line (ledger_account_id, txid);` - the
   migration's `IF NOT EXISTS` then keeps it. A failed concurrent build leaves an `INVALID` index under that name: drop it and build
   again before the migration runs.
+- **Before platform `V017` runs on a large audit trail** (`P17-TSK-017`). Its two indexes serve the audit trail's operator read. Each
+  holds `SHARE` on `platform.audit_record` while it reads the table, and every audited act inserts there, so build them first, by
+  hand, outside a transaction, by these names. The migration's `IF NOT EXISTS` then keeps them:
+  `CREATE INDEX CONCURRENTLY audit_record_by_time ON platform.audit_record (occurred_at, audit_id);` and
+  `CREATE INDEX CONCURRENTLY audit_record_by_target_time ON platform.audit_record (target_type, target_id, occurred_at, audit_id);`.
+  A failed build leaves an `INVALID` index: drop it and build again. **The plans they give**, recorded by `AuditTrailDatabaseTest` on
+  sixty thousand records over a month (2026-11-18):
+  - **A ten-day window, newest first:** `Limit -> Index Only Scan Backward using audit_record_by_time`, the window the index
+    condition.
+  - **A target's history, the console's History tab:** `Index Only Scan Backward using audit_record_by_target_time`, the target and
+    the window the index condition.
+  - **A continued page:** the same scan, the keyset row comparison `ROW(occurred_at, audit_id) < ROW(...)` inside the index
+    condition.
+
+  No `Sort` and no `Seq Scan` in any of them, so a page costs its own rows. An actor filter rides `V009`'s `(actor_id, audit_id)`,
+  and the other filters narrow the window's range. The read stays on the application's pool, never a replica (ADR-0129): these plans
+  show no contention to move it for. **What a page promises**: each page is exact for what was committed when it was read. A record
+  committed later, stamped inside a range a walk already served, is in no later page of that walk, and a fresh walk shows it. No
+  instant after which a window is final is claimed. The archive's queue (`V015`) is the reader that never misses such a row.
+- **Before risk `V022` runs on a large assessment table** (`P17-TSK-020`). Its index serves the analyst's assessment search. It
+  holds `SHARE` on `risk.risk_assessment` while it reads the table, and every judged transfer, withdrawal and payment seals an
+  assessment there, so build it first, by hand, outside a transaction, by this name. The migration's `IF NOT EXISTS` then keeps it:
+  `CREATE INDEX CONCURRENTLY risk_assessment_by_time ON risk.risk_assessment (assessed_at, id);`. A failed build leaves an
+  `INVALID` index: drop it and build again. **The plans**, recorded by risk's `AssessmentSearchDatabaseTest` on sixty thousand
+  assessments over five hundred parties (2026-11-18), in a transaction it rolls back:
+  - **A window, newest first:** `Limit -> Index Scan Backward using risk_assessment_by_time`, the window the index condition and
+    the reader's own party a filter on the rows read.
+  - **A party's assessments:** `Limit -> Incremental Sort (Presorted Key: assessed_at) -> Index Scan Backward using
+    risk_assessment_by_party`, the party and the window the index condition: the stamp's order comes from `V007`'s index, and the
+    incremental sort orders only the rows that share an instant by id.
+  - **A continued page:** the window's scan, the keyset row comparison `ROW(assessed_at, id) < ROW(...)` inside the index
+    condition.
+
+  No full `Sort` and no `Seq Scan` in any of them, so a page costs its own rows. The operation and decision filters narrow the
+  window's range. The read stays on the application's pool, never a replica (ADR-0129).
+- **Before ledger `V039` runs on a large journal** (`P17-TSK-022`). Its index on `ledger.journal_entry` serves the journal entry
+  search by an economic event's reference. It holds `SHARE` on the journal while it reads the table, and every posting inserts
+  there, so build it first, by hand, outside a transaction, by this name. The migration's `IF NOT EXISTS` then keeps it:
+  `CREATE INDEX CONCURRENTLY journal_entry_by_reference ON ledger.journal_entry (reference, posting_date, id);`. On a large
+  chart, build the register's the same way: `CREATE INDEX CONCURRENTLY ledger_account_register ON ledger.ledger_account (purpose,
+  currency, id);`. A failed build leaves an `INVALID` index: drop it and build again. The two queues' partial indexes are on
+  tables people write a few rows a day to, and need no build ahead. **The plans**, recorded by app's
+  `LedgerCollectionsDatabaseTest` on forty thousand entries over twenty days, twenty thousand wallets and twenty thousand decided
+  proposals and rebuilds (2026-11-19), in a transaction it rolls back:
+  - **A window, newest first:** `Limit -> Index Only Scan Backward using journal_entry_by_posting_date` (`V029`), the window the
+    index condition.
+  - **A reference's entries:** `Limit -> Index Only Scan Backward using journal_entry_by_reference`, the reference and the window
+    the index condition.
+  - **A busy account's entries:** `Limit -> Nested Loop Semi Join`, the window walked backward on `journal_entry_by_posting_date`
+    and each entry's lines probed on their `(entry_id, seq)` key, so the page stops at its limit.
+  - **A rare account's entries:** the account's own lines through `V038`'s `journal_line_by_account_and_transaction`, their
+    entries on the primary key, and a `Sort` of those rows alone - its cost is the account's lines in the window, never the
+    window's entries.
+  - **A continued page:** the window's scan, the keyset row comparison `ROW(posting_date, id) < ROW(...)` inside the index
+    condition.
+  - **The register, whole, by a purpose, or continued:** `Index Only Scan using ledger_account_register`, the purpose and the
+    keyset row the index condition. A filter a large share of the chart matches - one wallet in three in one currency - may
+    walk the primary key with a filter instead, the order then the id's alone: no sort either way.
+  - **The two queues:** `Index Only Scan using adjustment_proposal_pending_manual` and `projection_rebuild_pending`, the decided
+    rows never read.
+
+  No `Seq Scan` in any of them, and no full `Sort` but the rare account's own rows, so a page costs its own rows. The reads run
+  on the GL's bounded snapshot (`GlSnapshots`, 10 s a statement): a statement past it answers `503`, nothing served and nothing
+  recorded - narrow the window or the filters. They stay on the application's pool, never a replica (ADR-0129).
 
 ### 11.49 The connection budget at ten replicas, the autoscaler's metric on `kind`, and a pooler refused (`P16-TSK-009`, ADR-0134)
 

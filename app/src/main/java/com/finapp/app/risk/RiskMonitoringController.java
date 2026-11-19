@@ -1,7 +1,9 @@
 package com.finapp.app.risk;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -37,6 +39,7 @@ public class RiskMonitoringController {
      * Orders the intake re-run from {@code fromSequence} - a millisecond of the journal's ids, the watermark's own
      * figure - which must lie at or before the watermark; the sweep re-reads from there and creates nothing new.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/reprocessing", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_POLICY_ADMINISTER)
     @RequiresIdempotencyKey

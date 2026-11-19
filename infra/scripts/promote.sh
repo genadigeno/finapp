@@ -22,6 +22,32 @@
 # again by the approver before approving (section 11.36). The manifest policy's `release-images` rule holds every image the overlay
 # renders to the record, wherever it is named.
 #
+# THE CONSOLE (P17-TSK-105). The Operator Console's static server (deploy/console, X-TSK-020) is finapp-admin-panel's build, released on
+# its own: one digest, never part of the platform's pair, its own Application (deploy/delivery/<environment>'s finapp-console, the root's
+# last wave), its own repository (finapp-<environment>-console) and its own record (deploy/console/overlays/<environment>/release.yaml).
+# `promote.sh console` promotes it as the platform's images are promoted - by digest alone, the placeholder and a tag refused, its
+# signature and both attestations verified in the environment's registry under the environment's authority, every statement's subject
+# its digest and the provenance's git source its revision - with three differences, each because it is another repository's build: its
+# revision is finapp-admin-panel's commit, so its form is checked here and its history never is (the provenance names it, and `verify`
+# reads the provenance); it holds no schema, so no contract marker bounds a rollback, which is the promotion of an older digest; and no
+# console smoke exists yet, so production asks that staging was given the same digest and revision, merged before the change, and no
+# smoke record of it. `recheck` judges the console's overlays against their records on every pull request, as the platform's.
+#
+# THE SERVING DIGEST. The record's `console` is the digest the environment serves once Argo CD has synced the merge. The next console
+# build reads it through `promote.sh console-serving` (one line per environment, `none` before the first) and hands each digest named
+# to finapp-admin-panel's scripts/collect-previous-assets.sh, so the new image also carries the hashed assets of the pods its rollout
+# replaces (P17-TSK-104's rollout fix; the asset window DISTRIBUTED_EXECUTION.md section 3 names). Staging and production can serve
+# different digests (staging ahead), and a build promoted to both must carry both. `promote.sh console` also says which digest its own
+# rollout replaces; that the promoted image carries that digest's assets is the build's, and nothing here can read it.
+#
+# OWNER'S DECISION, OPEN (P17-TSK-105): which identity signs the console in a real environment. As committed, the console is verified
+# under the environment's one authority (PROMOTE_KEY, or PROMOTE_IDENTITY with PROMOTE_ISSUER), the authority the admission policies
+# hold every image of ours to, finapp-*-console included (deploy/admission/clusterimagepolicies.yaml). The PROPOSAL, for the owner to
+# ratify or refuse: keyless signing from CI's identity, as THREAT_MODEL.md section 6 item 35 (a) decided for the platform's images - the
+# platform's pipeline signing the console's artefact, never finapp-admin-panel's own identity. Nothing here names an identity. If the
+# owner chooses another for the console, it is a second authority in both admission policies and a variable of its own here, decided
+# and changed together.
+#
 # WHAT IT NEVER DOES. It pushes nothing, signs nothing and holds no credential of its own: it reads the registry with the docker
 # configuration named (PROMOTE_DOCKER_CONFIG, mounted read-only) or none, and writes two files of this repository. A copy of the digest
 # and its signatures into the environment's own registry (C8: production and non-production are separate accounts) is the pipeline
@@ -33,13 +59,18 @@
 #   infra/scripts/promote.sh verify <repository>@<digest> <revision>
 #       the signature and both attestations of one image, every statement's subject its digest, the provenance's source the revision
 #   infra/scripts/promote.sh recheck <base-ref>
-#       CI's judgement of a pull request, with no registry, against what was merged at its merge base with <base-ref>
+#       CI's judgement of a pull request, with no registry, against what was merged at its merge base with <base-ref>; the console's too
+#   infra/scripts/promote.sh console <staging|production> <console-digest> <console-revision>
+#       the Operator Console (P17-TSK-105): check, verify its image in the environment's registry against its finapp-admin-panel
+#       revision, write deploy/console/overlays/<environment>/{kustomization,release}.yaml, and say what it serves and replaces
+#   infra/scripts/promote.sh console-serving
+#       each environment's serving console digest, as committed: the next console build's collect-previous-assets.sh arguments
 #
 # A ROLLBACK is a promotion of an older application with the migrator the schema already ran: the migrator stays the newest
 # release's, whose run on its own schema is a no-op, and is verified against the commit it was built from.
 #
 # Env:
-#   PROMOTE_REGISTRY    the environment's registry host; its repositories are finapp-<environment>-app and -migrator
+#   PROMOTE_REGISTRY    the environment's registry host; its repositories are finapp-<environment>-app, -migrator and -console
 #   PROMOTE_SIGNATURES  the environment's signature repository (cosign's COSIGN_REPOSITORY), finapp-<environment>-signatures
 #   PROMOTE_KEY         a public key file: the authority, as the environment's patched admission policy names it; or, keyless,
 #   PROMOTE_IDENTITY and PROMOTE_ISSUER, exactly the identity and issuer the environment's policy names (THREAT_MODEL.md item 35)
@@ -200,11 +231,31 @@ case ${1:-} in
         [ $# -eq 2 ] || cannot "usage: $0 recheck <base-ref>"
         exec java --source 21 "$(dpath "$TOOL")" recheck "$(dpath "$ROOT")" "$2"
         ;;
+    console-serving)
+        # P17-TSK-105: what each environment's console serves, as committed, for the next console build. Reads this repository alone.
+        [ $# -eq 1 ] || cannot "usage: $0 console-serving"
+        exec java --source 21 "$(dpath "$TOOL")" console-serving "$(dpath "$ROOT")"
+        ;;
+    console)
+        # P17-TSK-105: the Operator Console, by digest, as the platform's images are; the header's THE CONSOLE says how it differs.
+        [ $# -eq 4 ] || cannot "usage: $0 console <staging|production> <console-digest> <console-revision>"
+        ENVIRONMENT=$2 CONSOLE=$3 CONSOLE_REVISION=$4
+        checked=$(java --source 21 "$(dpath "$TOOL")" console-check "$(dpath "$ROOT")" "$ENVIRONMENT" "$CONSOLE" "$CONSOLE_REVISION") && check_status=0 || check_status=$?
+        printf '%s\n' "$checked"
+        [ "$check_status" -eq 0 ] || exit "$check_status"
+        REGISTRY=${PROMOTE_REGISTRY:-}
+        [ -n "$REGISTRY" ] || cannot "PROMOTE_REGISTRY names no registry, so the console's image cannot be verified"
+        # The environment's one authority, the admission policies' (the header's OWNER'S DECISION: which identity it is, for the console).
+        verify "$REGISTRY/finapp-$ENVIRONMENT-console@$CONSOLE" "$CONSOLE_REVISION"
+        java --source 21 "$(dpath "$TOOL")" console-write "$(dpath "$ROOT")" "$ENVIRONMENT" "$CONSOLE" "$CONSOLE_REVISION"
+        echo "Commit deploy/console/overlays/$ENVIRONMENT/kustomization.yaml and release.yaml together, in a pull request of their own."
+        exit 0
+        ;;
     staging | production)
         [ $# -eq 4 ] || cannot "usage: $0 <staging|production> <app-digest> <migrator-digest> <revision>"
         ;;
     *)
-        cannot "usage: $0 <staging|production> <app-digest> <migrator-digest> <revision> | verify <reference> <revision> | recheck <base-ref>"
+        cannot "usage: $0 <staging|production> <app-digest> <migrator-digest> <revision> | console <staging|production> <console-digest> <console-revision> | console-serving | verify <reference> <revision> | recheck <base-ref>"
         ;;
 esac
 

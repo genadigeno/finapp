@@ -1,8 +1,10 @@
 package com.finapp.app.bnpl;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.bnpl.BnplSpans;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -58,6 +60,7 @@ public class BnplOperatorDisputeController {
     }
 
     /** Resolves - or, above the threshold, proposes the resolution of - a dispute the merchant answered. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/resolution", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.BNPL_DISPUTE_RESOLVE)
     @RequiresIdempotencyKey
@@ -69,6 +72,7 @@ public class BnplOperatorDisputeController {
     }
 
     /** A second operator approves the proposal named - the resolution it proposed executed now. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/resolution/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.BNPL_DISPUTE_RESOLVE)
     @RequiresIdempotencyKey
@@ -80,6 +84,7 @@ public class BnplOperatorDisputeController {
     }
 
     /** An operator rejects - or its proposer withdraws - the proposal named. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/resolution/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.BNPL_DISPUTE_RESOLVE)
     @RequiresIdempotencyKey

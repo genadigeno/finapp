@@ -1130,7 +1130,10 @@ class LendingCapitalDatabaseTest {
                 .causing(CausationId.of("p11t4-cause"));
     }
 
-    /** A signed-in session holding {@code role}, or no role at all when it is {@code null}. */
+    /**
+     * A signed-in session holding {@code role} - stepped up to {@code MULTI_FACTOR}, which every operator act declares
+     * (`P17-TSK-102`) - or a password session with no role at all when it is {@code null}.
+     */
     private String sessionWith(RoleName role) throws Exception {
         String login = "lc." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(post("/v1/registrations",
@@ -1150,14 +1153,15 @@ class LendingCapitalDatabaseTest {
         }
         HttpResponse<String> session = post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, key());
-        return field(session.body(), "sessionToken");
+        String token = field(session.body(), "sessionToken");
+        return role == null ? token : com.finapp.app.session.OperatorStepUp.elevated(token, this::post);
     }
 
     private HttpResponse<String> post(String path, String body, String bearer, String key) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:" + port + path))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body));
+                .POST(body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         if (bearer != null) {
             request.header("Authorization", "Bearer " + bearer);
         }

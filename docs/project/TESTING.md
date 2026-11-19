@@ -128,6 +128,71 @@ never against a fixture constant. `SimulatedInstance` supplies all three.
 
 ---
 
+## 4a. The Operator Console's tests (Phase 17)
+
+*(Added 2026-11-17 by the Phase 16 → 17 transition, P17-INIT.)* The console is a client of the
+operator surface in its own repository, finapp-admin-panel, and so are its tiers: unit and
+component tests (Vitest), contract tests against fixtures generated from this repository's
+`docs/api/openapi.json`, a contract-drift check, and end-to-end tests (Playwright) against the
+real application - locally through a development proxy, and, for a milestone's gate, **on `kind`
+at three application replicas through the real operator edge** (its `PHASE_17_PLAN.md` §13). None
+of them is a tier of this build, and `TestTaxonomyTest` counts none. What this repository owes
+them:
+
+- the operator endpoints themselves, each with its negative authorization test in this build's
+  own tiers (`PHASE_GATES.md` §5 Phase 17 criterion 1);
+- test-only seeding that puts each milestone's scenario data in place on a test database and is
+  carried by no production image or route (`P17-TSK-106` and its milestone siblings);
+- the console's image on `kind`, signed and admitted as the platform's are (`P17-TSK-104`);
+- the battery's run there, the seven mandatory scenarios from a fresh run (`P17-TST-001`), which
+  is a cluster run like Phase 16's and is run or owed at the owner's word.
+
+*(2026-11-18, `P17-TSK-106`.)* **The seed** is `infra/scripts/e2e-seed.sh <scenario>`, M2's four:
+`abandoned-event`, `parked-record`, `parsed-file`, `fee-break`. It prints only `KEY=value` lines
+on stdout, and every run makes fresh rows, identities and references. Its targets are this
+checkout's compose stack and a kind rehearsal's cluster; it refuses anything else before it
+touches anything. A state no door reaches (an abandoned relay, a parked record) is one SQL
+statement per plant, written by the outbox's and inbox's own rules. Everything else goes
+through the platform's doors from `infra/scripts/e2e-seed/Seed.java`, a single source file with
+no route to the database. Locally no card provider is configured, so no door can create an
+expectation that an `AMOUNT_MISMATCH` needs. The break is therefore a `FEE_MISMATCH`, which the
+platform raises itself from an attested PSP report; ACKNOWLEDGE admits it, four-eyes. Three
+tiers hold it:
+- `E2eSeedPlantsDatabaseTest` (platform, `database`) runs the plants unchanged, as the migrator,
+  through the dead-letter operations, a relay poll and the retention sweep.
+- `E2eSeedDoorsDatabaseTest` (app, `own-container`) runs `Seed.java` itself against the
+  application, with the intake's and the matcher's real schedules on, and then `-011`'s
+  resolution flow on the break it found.
+- `E2eSeedStaysTestOnlyTest` (app, `architecture`) holds that the seed ships nowhere and
+  refuses any stack but a test one.
+
+*(2026-11-18, `P17-TSK-108`.)* M3's two join them: `factorless-holding` (an identity registered
+with no factor, holding `LEDGER_OPERATOR`) and `sod-conflict` (an identity with a factor holding
+`ACCOUNTANT`, granted through the door, and `FINANCIAL_CONTROLLER`). The grant door refuses both
+states today, so each is a third plant, `held-role.sql`: one live holding, written as one from
+before the rule, its values handed in as psql's quoted variables. `E2eSeedReviewsDatabaseTest`
+(app, `database`) runs `Seed.java` and that plant unchanged. It shows the door's refusal, then
+the factorless or SoD review naming what was planted, then the revocation door taking it away.
+The reviews serve the oldest 200 holdings, so a stack that keeps more than 200 unrevoked seeds
+serves a new one past the page.
+
+*(2026-11-18, `P17-TSK-110`.)* M4's four: `open-alert`, `investigated-case`,
+`overridable-assessment` and `proposed-policy`. No policy is active on a fresh stack, and under
+none the engine ALLOWs every movement and nothing can be overridden. So the first risk scenario has
+two of the seed's officers propose and activate a TRANSFER version through the doors. It ALLOWs
+everything a test stack does and REVIEWs only amounts above 10,000,000.00 EUR (the owner's decision).
+The alerts are a fourth plant, `risk-alert.sql`. The case is opened by hand and taken through the
+doors. The assessment is a fifth plant, `sealed-assessment.sql`: a judged movement needs a funded,
+KYC-approved customer, which locally only the database makes. It is the engine's own verdict for
+that version and amount, and its inputs' digest is recomputed by the table's CHECK.
+`E2eSeedRiskDatabaseTest` (app, `own-container`, since it activates a TRANSFER version) runs
+`Seed.java` and both plants unchanged. It then shows the console's four acts possible: an alert
+suppressed by two analysts, a case taken over and disposed by two, the assessment overridden by
+two officers (its seal holding, its replay IDENTICAL), and a proposed version activated by an
+officer other than its proposer.
+
+---
+
 ## 5. Shared test support
 
 Test support lives in `platform`'s `testFixtures`, so both `platform` and `app` reach one

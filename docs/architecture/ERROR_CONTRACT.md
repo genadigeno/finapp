@@ -139,6 +139,7 @@ visible rather than quietly approximated.
 | `identity.AuthenticationFailed` | 401 | Authentication failed. |
 | `identity.AssuranceRequired` | 403 | This operation requires a stronger authentication. |
 | `identity.FactorRequiredForRole` | 409 | This role cannot be granted until its holder has enrolled a second factor. |
+| `identity.RoleConflict` | 409 | This role cannot be held together with a role the identity already holds. |
 | `identity.LastRoleGranter` | 409 | This would leave no active identity that can grant roles. |
 | `identity.VerifiedChannelAlreadyExists` | 409 | The account already has a verified contact channel of this kind. |
 
@@ -187,6 +188,12 @@ confirmed factor. Nothing is granted; the subject enrols and the administrator
 retries. Only the administrator learns the subject has no factor, and `ROLE_ASSIGN` already answers whether the subject
 exists. A holding that predates the rule is named by `GET /v1/operator/access-review/factorless-holdings`, never revoked by
 it: the review revokes one, with a reason, through the door below.
+
+**`identity.RoleConflict`** (`P17-TSK-016`; `PRIVILEGED_ACCESS_REVIEW.md` §4): `POST /v1/identities/{id}/roles` for a role
+that conflicts with one the subject already holds, under the owner's segregation-of-duties pairs (`RoleConflicts`).
+Nothing is granted, and the refusal is recorded. The detail names the role already held. The check is made under the
+identity's lock, so two concurrent grants of a pair's halves cannot both succeed. A holding that predates the rule is named
+by `GET /v1/operator/access-review/sod-conflicts`, never revoked by it.
 
 **`identity.LastRoleGranter`** (`P15-TSK-032`): `DELETE /v1/identities/{id}/roles/{role}` for a role that can grant roles -
 today `ADMINISTRATOR`, read from what each role grants - from the last `ACTIVE` identity holding one, and `POST
@@ -1803,6 +1810,18 @@ describes, where two modules can disagree about whether the same failure is a 40
 status is part of what the code *means* — whether the caller did something wrong, and whether
 retrying could help — so it belongs with the code. It is an `int`, so nothing about this couples
 the platform to a web stack.
+
+**One control, two statuses: the proposer's own approval** *(noted 2026-11-17 by the Phase 16 →
+17 transition, P17-INIT, for the Operator Console)*. The four-eyes refusal of a proposer deciding
+their own proposal is `409` in five modules - `merchant`, `ledger` (both of its codes),
+`reconciliation`, `fx` and `crossborder`, which read it as a conflict with the proposal's state -
+and `403` in six - `deadletter`, `credit`, `lending`, `bnpl`, `risk` and `accounting`, which read
+it as a forbidden act, the credit precedent. Each code is right by its own module's reading, and
+§4 makes every one permanent: harmonising them would be a breaking change for every client, so
+they stay as catalogued. A client tells the refusal by its **code**, never by its status: the
+Operator Console handles both (finapp-admin-panel `PHASE_17_PLAN.md` §13, the workflow tier's
+"403 and 409 variants"). A single status, by new codes and the old ones deprecated, is optional
+debt that no task holds.
 
 ## 6. Where the pieces live
 

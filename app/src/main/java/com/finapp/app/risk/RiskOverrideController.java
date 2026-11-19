@@ -58,6 +58,7 @@ public class RiskOverrideController {
     }
 
     /** Proposes an override of the assessment's decision - its effect and C7's four eyes fixed now. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_OVERRIDE)
     @RequiresIdempotencyKey
@@ -87,6 +88,7 @@ public class RiskOverrideController {
     }
 
     /** Rejects a pending override - anyone, the proposer's withdrawal included; it issues nothing. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{overrideId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_OVERRIDE)
     @RequiresIdempotencyKey

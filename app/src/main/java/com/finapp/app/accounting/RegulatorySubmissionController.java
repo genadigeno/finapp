@@ -39,6 +39,7 @@ public class RegulatorySubmissionController {
     @NonNull private final RegulatorySubmissionDesk desk;
 
     /** Drafts a return of an obligation version in force for a CLOSED month, from its FINAL runs, each line traced. A correction names the concluded return it corrects. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.REGULATORY_REPORT_PREPARE)
     @RequiresIdempotencyKey
@@ -87,6 +88,7 @@ public class RegulatorySubmissionController {
     }
 
     /** Runs its rules: VALIDATED when all pass; a failure stays DRAFT, recorded once, the way on a withdrawal and a new draft. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping("/{submissionId}/validation")
     @RequiresPermission(PermissionName.REGULATORY_REPORT_PREPARE)
     @RequiresIdempotencyKey
@@ -97,6 +99,7 @@ public class RegulatorySubmissionController {
     }
 
     /** A preparer takes back a return not yet sent. Asks nothing of the month. A reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{submissionId}/withdrawal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.REGULATORY_REPORT_PREPARE)
     @RequiresIdempotencyKey
@@ -120,6 +123,7 @@ public class RegulatorySubmissionController {
     }
 
     /** A controller's refusal of a validated or approved return: nothing is sent. Never the provider's rejection. Asks nothing of the month. A reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{submissionId}/refusal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.REGULATORY_REPORT_APPROVE)
     @RequiresIdempotencyKey

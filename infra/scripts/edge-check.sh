@@ -123,9 +123,11 @@ plant_all() {
     # P15-TSK-043: the operator edge strips them too; a missing name and a null one (a key present with no value) each refused.
     edge_plant_on edge-trace-context-operator-forwarded edge/base/operator-edge.yaml '/^          tracestate: ""$/d'
     edge_plant_on edge-trace-context-operator-null edge/base/operator-edge.yaml 's/^          baggage: ""$/          baggage:/'
-    edge_plant_on edge-operator-no-allowlist "$OPERATOR_ROUTES" '1,/internal-only, body-cap/s/internal-only, //'
+    edge_plant_on edge-operator-no-allowlist "$OPERATOR_ROUTES" '1,/internal-only, operator-rate/s/internal-only, //'
     # Since X-TSK-020 the plant above lands on the first router, the console's: the application's operator router is planted on its own.
-    edge_plant_on edge-operator-default-no-allowlist "$OPERATOR_ROUTES" 's/middlewares: \[edge-headers, internal-only, body-cap\]/middlewares: [edge-headers, body-cap]/'
+    edge_plant_on edge-operator-no-rate "$OPERATOR_ROUTES" '1,/operator-rate, operator-hold, body-cap\]/s/operator-rate, //'
+    edge_plant_on edge-operator-hold-on-host "$OPERATOR_EDGE" '/amount: 10$/{n;s/sourceCriterion: .*/sourceCriterion: {requestHost: true}/}'
+    edge_plant_on edge-operator-default-no-allowlist "$OPERATOR_ROUTES" 's/middlewares: \[edge-headers, internal-only, operator-rate, operator-hold, body-cap\]/middlewares: [edge-headers, operator-rate, operator-hold, body-cap]/'
     # P15-TSK-042: each edge states its own surface on every router.
     edge_plant_on edge-surface-unstated "$PUBLIC_EDGE" '/^          X-Finapp-Surface: public$/d'
     edge_plant_on edge-surface-wrong-word edge/base/operator-edge.yaml 's/X-Finapp-Surface: operator$/X-Finapp-Surface: public/'
@@ -233,8 +235,8 @@ YAML
     # but for the operator controller; its workload hardened by the same reused rules as the controllers', and counted by the same quota rules.
     edge_plant_on edge-console-on-public "$PUBLIC_ROUTES" 's/^  routers:$/  routers:\n    planted-console:\n      entryPoints: [websecure]\n      rule: "Method(`GET`) \&\& PathPrefix(`\/console\/`)"\n      service: finapp-console\n      middlewares: [edge-headers, source-session, hold-session, body-cap]\n      tls: {}/'
     edge_plant_on edge-console-wider "$OPERATOR_ROUTES" 's/PathPrefix(`\/console\/`)/PathPrefix(`\/`)/'
-    edge_plant_on edge-console-api-headers "$OPERATOR_ROUTES" 's/middlewares: \[console-headers, internal-only, body-cap\]/middlewares: [edge-headers, internal-only, body-cap]/'
-    edge_plant_on edge-console-headers-on-api "$OPERATOR_ROUTES" '1,/middlewares: \[edge-headers, internal-only, body-cap\]/s/middlewares: \[edge-headers, internal-only, body-cap\]/middlewares: [console-headers, edge-headers, internal-only, body-cap]/'
+    edge_plant_on edge-console-api-headers "$OPERATOR_ROUTES" 's/middlewares: \[console-headers, internal-only, operator-rate, operator-hold, body-cap\]/middlewares: [edge-headers, internal-only, operator-rate, operator-hold, body-cap]/'
+    edge_plant_on edge-console-headers-on-api "$OPERATOR_ROUTES" '1,/middlewares: \[edge-headers, internal-only, operator-rate, operator-hold, body-cap\]/s/middlewares: \[edge-headers, internal-only, operator-rate, operator-hold, body-cap\]/middlewares: [console-headers, edge-headers, internal-only, operator-rate, operator-hold, body-cap]/'
     edge_plant_on edge-console-csp-loosened "$OPERATOR_EDGE" "s/script-src 'self';/script-src 'self' 'unsafe-inline';/"
     edge_plant_on edge-console-cache-control "$OPERATOR_EDGE" "s/^\\(        contentSecurityPolicy: \"default-src 'none'; script-src.*\\)\$/\\1\\n        customResponseHeaders:\\n          Cache-Control: no-store/"
     edge_plant_on edge-api-csp-loosened "$OPERATOR_EDGE" "s/contentSecurityPolicy: \"default-src 'none'; frame-ancestors 'none'\"/contentSecurityPolicy: \"default-src 'self'; frame-ancestors 'none'\"/"
@@ -406,6 +408,8 @@ edge_refused edge-public-operator edge-routes-public
 edge_refused edge-public-no-limit edge-routes-public
 edge_refused edge-public-no-hold edge-hold
 edge_refused edge-hold-on-host edge-hold
+edge_refused edge-operator-no-rate edge-operator-limits
+edge_refused edge-operator-hold-on-host edge-operator-limits
 edge_refused edge-spool-on-disk edge-spool
 edge_refused edge-spool-over-limit edge-spool
 edge_refused edge-no-backend-timeout edge-timeouts

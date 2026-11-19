@@ -363,7 +363,14 @@ public final class IdentityAdministration {
         // ended them at its first role, or around it (a script, break-glass, a grant before this release), which ended nothing:
         // the review asks after those (PRIVILEGED_ACCESS_REVIEW.md §5 question 6), and a session's absolute bound ends what they
         // left.
-        boolean firstRole = authorization.standingForChange(unitOfWork, subject).roles().isEmpty();
+        java.util.Set<RoleName> held = authorization.standingForChange(unitOfWork, subject).roles();
+        // P17-TSK-016: a role the holder's live roles conflict with (the owner's pairs, RoleConflicts) is refused here, after the
+        // identity's lock: two concurrent grants of a pair's two halves to one identity serialise on that lock, so the second reads
+        // the first's committed role and is refused - never a read in one transaction and a grant in another.
+        if (!held.contains(role) && RoleConflicts.conflictWith(role, held).isPresent()) {
+            return RoleGrant.CONFLICT;
+        }
+        boolean firstRole = held.isEmpty();
         return authorization.assign(unitOfWork, subject, role, actor, reason,
                         granted -> firstRole
                                 ? "firstRole=true, sessionsRevoked=" + sessions.revokeAll(granted, subject)
@@ -531,7 +538,9 @@ public final class IdentityAdministration {
         /** The administrator named themselves. */
         SELF,
         /** The role can redirect a merchant's money and its holder has enrolled no factor. Nothing was granted. */
-        FACTOR_REQUIRED
+        FACTOR_REQUIRED,
+        /** The holder holds a role this one conflicts with (`P17-TSK-016`, {@link RoleConflicts}). Nothing was granted. */
+        CONFLICT
     }
 
     /** What a role revocation did (`P15-TSK-032`). */
@@ -574,6 +583,40 @@ public final class IdentityAdministration {
 
     /** The holdings served and whether there were more than were. */
     public record FactorlessHoldings(List<RoleAssignmentStore.FactorlessHolding> holdings, boolean truncated) {}
+
+    /**
+     * The live holdings that conflict under the segregation-of-duties table (`P17-TSK-016`): those granted before the rule, which
+     * the grant now refuses. It revokes nothing - a role a person holds is theirs until someone decides otherwise, with a reason,
+     * through the revocation door - and is recorded in the read's own transaction, as the factorless review is.
+     */
+    public SodConflicts sodConflicts(Connection unitOfWork, int mostServed) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        List<RoleAssignmentStore.ConflictingHolding> found = authorization.conflictingHoldings(unitOfWork, mostServed + 1);
+        boolean truncated = found.size() > mostServed;
+        List<RoleAssignmentStore.ConflictingHolding> served = truncated ? found.subList(0, mostServed) : found;
+        auditWriter.append(
+                unitOfWork,
+                new AuditRecord(
+                        AuditId.next(ids),
+                        SecurityContext.require(),
+                        Instant.now(clock),
+                        IdentityAuditAction.SOD_CONFLICTS_READ,
+                        "identity.RoleAssignment",
+                        "sod-conflicts",
+                        Optional.empty(),
+                        AuditOutcome.SUCCEEDED,
+                        currentCorrelation().correlationId(),
+                        Optional.of("served=" + served.size() + ", truncated=" + truncated)));
+        return new SodConflicts(served, truncated);
+    }
+
+    /** The conflicting holdings served and whether there were more than were. */
+    public record SodConflicts(List<RoleAssignmentStore.ConflictingHolding> conflicts, boolean truncated) {}
+
+    /** A role of {@code subject}'s live roles that {@code role} conflicts with, read without a lock: for a refusal's words only. */
+    public Optional<RoleName> heldConflict(Connection unitOfWork, IdentityId subject, RoleName role) {
+        return RoleConflicts.conflictWith(role, authorization.standingOf(unitOfWork, subject).roles());
+    }
 
     private void audit(
             Connection unitOfWork,

@@ -50,7 +50,7 @@ public final class JdbcRiskPolicyStore implements RiskPolicyStore {
     static final String SHARE_ACTIVE_SQL =
             "SELECT id FROM risk.risk_policy_version WHERE operation = ? AND status = 'ACTIVE' FOR SHARE";
 
-    private static final String ROW_COLUMNS =
+    static final String ROW_COLUMNS =
             "id, operation, version, engine, status, proposed_by, proposed_at, decided_by, decided_at, effective_from,"
                     + " effective_to";
 
@@ -482,7 +482,7 @@ public final class JdbcRiskPolicyStore implements RiskPolicyStore {
         }
     }
 
-    private static VersionRow versionRow(ResultSet row) throws SQLException {
+    static VersionRow versionRow(ResultSet row) throws SQLException {
         return new VersionRow(
                 RiskPolicyVersionId.of(row.getObject("id", UUID.class)),
                 RiskOperation.valueOf(row.getString("operation")),

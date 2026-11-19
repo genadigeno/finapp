@@ -2057,7 +2057,9 @@ class CreditDecisionStormDatabaseTest {
         }
         HttpResponse<String> session = client.post("/v1/authentications", "{\"loginIdentifier\":\"" + login
                 + "\",\"password\":\"" + CreditTestClient.PASSWORD + "\"}", null, CreditTestClient.key());
-        String token = CreditTestClient.field(session.body(), "sessionToken");
+        // Stepped up: every operator act declares MULTI_FACTOR (P17-TSK-102).
+        String token = com.finapp.app.session.OperatorStepUp.elevated(CreditTestClient.field(session.body(),
+                "sessionToken"), client::post);
         identities.put(token, identity.toString());
         return token;
     }

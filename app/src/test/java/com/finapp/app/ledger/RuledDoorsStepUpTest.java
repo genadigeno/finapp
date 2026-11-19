@@ -96,9 +96,19 @@ class RuledDoorsStepUpTest {
         }
     }
 
+    /**
+     * The access review's second ruling (`P15-TSK-039`) kept these six off the step-up - "what stops a change stays quick". The
+     * owner's D-6 (finapp-admin-panel ADR-C131 decision 3) made every act on the operator surface ask for the factor, and
+     * `P17-TSK-102` applied it with no exemption: a stolen password-level session rejecting a colleague's proposal or switching a
+     * pair off is an act too, and a holder already stepped up in their session pays nothing more. Should the owner want a stop
+     * kept quick, {@code EveryOperatorActRequiresAFactorTest.EXEMPT} is where it is named, with its reason, and this test changes
+     * with it. <em>(Read the display name "what stops a change stays quick: ... need no step-up", and {@code isNull}, until
+     * `P17-TSK-102`, 2026-11-17.)</em>
+     */
     @Test
-    @DisplayName("what stops a change stays quick: a rejection, a withdrawal and the kill switch itself need no step-up")
-    void theFailSafeDoorsAreLeftAlone() {
+    @DisplayName("what stops a change asks for the factor too since the owner's D-6: a rejection, a withdrawal and the kill switch"
+            + " (P17-TSK-102)")
+    void theStoppingDoorsAskForTheFactorToo() {
         for (Door door : List.of(
                 door(PayoutDestinationController.class, "rejectPayoutDestination"),
                 door(PayoutDestinationController.class, "withdrawPayoutDestination"),
@@ -106,7 +116,8 @@ class RuledDoorsStepUpTest {
                 door(FxAdministrationController.class, "setFxPairAvailability"),
                 door(CorridorAdministrationController.class, "rejectCorridorPolicy"),
                 door(FxTradeReversalController.class, "rejectFxTradeReversal"))) {
-            assertThat(door.method().getAnnotation(RequiresAssurance.class)).as(door.method().getName()).isNull();
+            assertThat(door.method().getAnnotation(RequiresAssurance.class)).as(door.method().getName()).isNotNull()
+                    .extracting(RequiresAssurance::value).isEqualTo(AssuranceLevel.MULTI_FACTOR);
         }
         assertThat(door(FxAdministrationController.class, "setFxPairAvailability").method().getAnnotation(RequiresPermission.class).value())
                 .isEqualTo(PermissionName.FX_ADMINISTER);

@@ -98,7 +98,7 @@ class RiskOverrideApiTest {
                 + "\"verified by phone\"}", proposer.token());
         assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
         assertThat(proposed.body()).contains("\"status\":\"PROPOSED\"").contains("\"effect\":\"RESUBMISSION\"")
-                .contains("\"requiresSecondPerson\":true").doesNotContain("proposedBy");
+                .contains("\"requiresSecondPerson\":true").contains("\"proposedBy\":\"" + proposer.identity() + "\"");
         String overrideId = field(proposed.body(), "overrideId");
 
         HttpResponse<String> own = post(door(assessment) + "/" + overrideId + "/approval", "{\"reason\":\"mine\"}",
@@ -137,8 +137,8 @@ class RiskOverrideApiTest {
             + " recorded FAILED; an ALLOW 409 ActionNotProposable; a card-shaped reason 422 ReasonRequired; an unknown"
             + " assessment 404; a rejection 200 issuing nothing")
     void theRefusals() throws Exception {
-        Session officer = sessionWith(RoleName.RISK_OFFICER, false);
-        Session analyst = sessionWith(RoleName.RISK_ANALYST, false);
+        Session officer = sessionWith(RoleName.RISK_OFFICER, true);
+        Session analyst = sessionWith(RoleName.RISK_ANALYST, true);
         UUID review = sealed(RiskOperation.TRANSFER, RiskDecision.REVIEW, 100_00, IDS.next());
         String body = "{\"reasonCode\":\"FALSE_POSITIVE\",\"reason\":\"explained\"}";
 
@@ -175,7 +175,7 @@ class RiskOverrideApiTest {
 
     // ------------------------------------------------------------------ fixtures
 
-    private record Session(String token, UUID party) {}
+    private record Session(String token, UUID party, UUID identity) {}
 
     private static String door(UUID assessment) {
         return "/v1/operator/risk/assessments/" + assessment + "/overrides";
@@ -240,7 +240,7 @@ class RiskOverrideApiTest {
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null);
         String token = field(session.body(), "sessionToken");
         if (!multiFactor) {
-            return new Session(token, party);
+            return new Session(token, party, identity);
         }
         Matcher secret = Pattern.compile("secret=([A-Z2-7]+)").matcher(post("/v1/me/mfa", null, token).body());
         assertThat(secret.find()).as("the response must carry a base32 secret").isTrue();
@@ -261,7 +261,7 @@ class RiskOverrideApiTest {
             elevated = post("/v1/authentications/mfa", "{\"code\":\"" + codeAt(factor, confirmed + 2) + "\"}", token);
         }
         assertThat(elevated.statusCode()).as("the step-up: %s", elevated.body()).isEqualTo(200);
-        return new Session(field(elevated.body(), "sessionToken"), party);
+        return new Session(field(elevated.body(), "sessionToken"), party, identity);
     }
 
     private static String codeAt(Sensitive<String> secret, long step) {

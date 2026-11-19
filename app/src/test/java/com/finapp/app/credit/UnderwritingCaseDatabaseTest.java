@@ -506,7 +506,9 @@ class UnderwritingCaseDatabaseTest {
     void aCustomerUnderwriterCannotTakeTheirOwnReferralOverHttp() throws Exception {
         CreditTestClient.Customer customer = client.consentingCustomer();
         grant(customer.login(), RoleName.UNDERWRITER);
-        String insider = client.login(customer);
+        // The customer's own MULTI_FACTOR session, not a fresh password login: the assignment is MULTI_FACTOR (P17-TSK-102),
+        // the fixture's grant ends no session, and the standing is read with each request - so the session carries the role.
+        String insider = customer.token();
         UnderwritingCaseId id = caseOf(referred(customer.party(), eur(500_000), WEEK));
         String base = "/v1/operator/credit/review-cases/" + id.value();
         HttpResponse<String> refused = client.post(base + "/assignment", null, insider, CreditTestClient.key());
@@ -1450,7 +1452,10 @@ class UnderwritingCaseDatabaseTest {
         loanInForce = variant;
     }
 
-    /** A registered identity holding {@code role}, and its session. */
+    /**
+     * A registered identity holding {@code role}, and its session - stepped up to {@code MULTI_FACTOR}: every operator act
+     * declares it (`P17-TSK-102`).
+     */
     private String sessionWith(RoleName role) throws Exception {
         String login = "uw." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(client.post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Ada Lovelace\","
@@ -1460,7 +1465,8 @@ class UnderwritingCaseDatabaseTest {
         HttpResponse<String> session = client.post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + CreditTestClient.PASSWORD + "\"}", null,
                 CreditTestClient.key());
-        return CreditTestClient.field(session.body(), "sessionToken");
+        return com.finapp.app.session.OperatorStepUp.elevated(CreditTestClient.field(session.body(), "sessionToken"),
+                client::post);
     }
 
     /** Grants {@code role} to the identity registered as {@code login}. */

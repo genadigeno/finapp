@@ -48,7 +48,7 @@ import org.springframework.web.bind.annotation.GetMapping;
  * proof</strong>: two {@code CUSTOMER}-typed analysts - as the session establishes every identity - suppress through the
  * door; the proposer's approval {@code 403 risk.SelfApprovalRefused} and the analyst's own party {@code 403
  * risk.SelfDealingRefused}, each recorded {@code FAILED}; an attached alert {@code 409 risk.AlertNotOpen}; a card-shaped
- * reason {@code 422 risk.ReasonRequired}; an unknown or malformed id the uniform {@code 404}; the answer names no person.
+ * reason {@code 422 risk.ReasonRequired}; an unknown or malformed id the uniform {@code 404}; the answer names the proposer alone (`P17-TSK-109`).
  * Over HTTP the door is {@code AlertSuppressionApiTest}'s (written, owed - C5).
  */
 @DisplayName("the suppression door: two persons through RISK_INVESTIGATE / RISK_CASE_APPROVE, keyed, never the system"
@@ -64,9 +64,14 @@ class AlertSuppressionDeskTest {
     private final RiskAlertDesk desk = new RiskAlertDesk(alerts, world.executor, world.transactions,
             RiskFlowScope.NONE);
 
+    /**
+     * <em>(Read "the proposal RISK_INVESTIGATE (201), the approval RISK_CASE_APPROVE and MULTI_FACTOR, the rejection
+     * RISK_CASE_APPROVE - every act keyed", the approval the only act declaring an assurance, until `P17-TSK-102`,
+     * 2026-11-17.)</em>
+     */
     @Test
-    @DisplayName("the proposal RISK_INVESTIGATE (201), the approval RISK_CASE_APPROVE and MULTI_FACTOR, the rejection"
-            + " RISK_CASE_APPROVE - every act keyed; the queue a read, keyless")
+    @DisplayName("the proposal RISK_INVESTIGATE (201), the approval and the rejection RISK_CASE_APPROVE - every act keyed and,"
+            + " since the owner's D-6 (P17-TSK-102), MULTI_FACTOR; the queue a read, keyless, at a session's assurance")
     void everyRouteCarriesItsPermission() throws NoSuchMethodException {
         Map<Method, PermissionName> acts = Map.of(
                 RiskAlertController.class.getMethod("proposeRiskAlertSuppression", String.class, String.class,
@@ -79,22 +84,21 @@ class AlertSuppressionDeskTest {
             assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName())
                     .isEqualTo(permission);
             assertThat(method.getAnnotation(RequiresIdempotencyKey.class)).as(method.getName()).isNotNull();
-            boolean approval = method.getName().equals("approveRiskAlertSuppression");
-            assertThat(method.getAnnotation(RequiresAssurance.class) != null).as(method.getName()).isEqualTo(approval);
+            assertThat(method.getAnnotation(RequiresAssurance.class)).as(method.getName()).isNotNull()
+                    .extracting(RequiresAssurance::value).isEqualTo(AssuranceLevel.MULTI_FACTOR);
         });
-        assertThat(RiskAlertController.class.getMethod("approveRiskAlertSuppression", String.class, String.class,
-                RiskAlertController.RiskSuppressionDecisionRequest.class).getAnnotation(RequiresAssurance.class).value())
-                .isEqualTo(AssuranceLevel.MULTI_FACTOR);
         Method queue = RiskAlertController.class.getMethod("readRiskAlertQueue", String.class, String.class,
                 String.class, Integer.class);
         assertThat(queue.getAnnotation(GetMapping.class)).isNotNull();
+        assertThat(queue.getAnnotation(RequiresAssurance.class)).isNull();
         assertThat(queue.getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.RISK_INVESTIGATE);
         assertThat(queue.getAnnotation(RequiresIdempotencyKey.class)).isNull();
     }
 
     @Test
     @DisplayName("the routed defect's proof: a CUSTOMER-typed analyst proposes (PROPOSED), a second CUSTOMER-typed"
-            + " analyst approves (SUPPRESSED); the key replayed answers the alert as it stands; no person in the answer;"
+            + " analyst approves (SUPPRESSED); the key replayed answers the alert as it stands; of the persons only the"
+            + " proposer in the answer (P17-TSK-109);"
             + " audited risk.AlertSuppressionProposed and risk.AlertSuppressed")
     void twoPersonsSuppressThroughTheDoor() {
         RiskAlert alert = openAlert();
@@ -111,7 +115,10 @@ class AlertSuppressionDeskTest {
         assertThat(approved.status()).isEqualTo("SUPPRESSED");
         assertThat(approved.suppression().status()).isEqualTo("DECIDED");
         assertThat(approved.suppression().decisionReason()).isEqualTo("agreed: payroll");
-        assertThat(approved.toString()).doesNotContain(alice.id()).doesNotContain(bob.id());
+        // P17-TSK-109: the proposer named - the console disables their own approval - and no other person.
+        assertThat(approved.suppression().proposedBy()).isEqualTo(alice.id());
+        assertThat(approved.toString().replace("proposedBy=" + alice.id(), "")).doesNotContain(alice.id())
+                .doesNotContain(bob.id());
 
         RiskQueueDesk.RiskAlertView replayed = RiskActionWorld.as(alice, () -> desk.propose("k-propose", id(alert),
                 proposal("FALSE_POSITIVE", "the pattern is the customer's payroll")));

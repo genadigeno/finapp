@@ -688,8 +688,10 @@ class PaymentRiskSeamDatabaseTest {
             authorization.assign(app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
             app.commit();
         }
-        return HeldWithdrawalFixtures.tokenFrom(fixtures.post("/v1/authentications", "{\"loginIdentifier\":\""
-                + login + "\",\"password\":\"" + HeldWithdrawalFixtures.PASSWORD + "\"}", null, null).body());
+        // MULTI_FACTOR: every operator act steps up since `P17-TSK-102` - onboarding and pricing among them.
+        return com.finapp.app.session.OperatorStepUp.elevated(HeldWithdrawalFixtures.tokenFrom(fixtures.post(
+                "/v1/authentications", "{\"loginIdentifier\":\"" + login + "\",\"password\":\""
+                        + HeldWithdrawalFixtures.PASSWORD + "\"}", null, null).body()), fixtures::post);
     }
 
     private HttpResponse<String> put(String path, String body, String bearer) throws Exception {

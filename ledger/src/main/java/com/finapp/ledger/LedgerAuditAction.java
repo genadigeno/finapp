@@ -179,6 +179,34 @@ public enum LedgerAuditAction implements AuditableAction {
             "A proposer tried to approve their own projection rebuild or manual adjustment and was refused before anything"
                     + " was written; recorded FAILED in a transaction of its own after the act rolled back. The record"
                     + " names the rebuild or the proposal and the act, never an amount.",
+            false),
+
+    /**
+     * A holder of {@code ACCOUNTING_READ} was served a page of the ledger's account register (`P17-TSK-022`, gap G-110;
+     * finapp-admin-panel ADR-C132 decision 5: a list of customer-scoped data recorded per request with its filter, never per
+     * row). Recorded in a transaction of its own before the page is served, so nothing is served unrecorded.
+     *
+     * <p>No reason: a read is not a decision, the {@code accounting.GlRead} reasoning. Its target the register (the purpose
+     * named, or {@code all}); the summary the filters, whether the page continued a walk and how many accounts were served -
+     * never an owner reference.
+     */
+    ACCOUNTS_LISTED(
+            "ledger.AccountsListed",
+            "A page of the ledger's account register was served; the record names the filters and a count, never an owner.",
+            false),
+
+    /**
+     * A holder of {@code ACCOUNTING_READ} was served a page of the journal entry search (`P17-TSK-022`, gap G-111;
+     * finapp-admin-panel ADR-C132 decision 5). Recorded in a transaction of its own before the page is served.
+     *
+     * <p>No reason: a read is not a decision. Its target the search (the account named, or {@code all}); the summary the window,
+     * the filters - the reference an identifier the reader typed, the account an id - whether the page continued a walk and how
+     * many entries were served, never an amount.
+     */
+    ENTRIES_SEARCHED(
+            "ledger.EntriesSearched",
+            "A page of the journal entry search was served; the record names the window, the filters and a count, never an"
+                    + " amount.",
             false);
 
     private final String code;

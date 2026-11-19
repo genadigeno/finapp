@@ -208,6 +208,13 @@ class CredentialReachesNoEmittedSinkTest {
                 .as("the schemas a secret is permitted in, named so that widening is visible")
                 .containsExactlyInAnyOrder(
                         "AuthenticationRequest",
+                        // P17-TSK-014: the staff directory's lookup. A login identifier - a person's handle, never a
+                        // credential - in the body so that it is in no URL (ADR-C132 decision 4); nothing else.
+                        "IdentityLookupRequest",
+                        // P17-TSK-015: ending another identity's session. A reason, and nothing else.
+                        "SessionRevocationRequest",
+                        // P17-TSK-111: a ledger adjustment's rejection with a reason. A reason, and nothing else.
+                        "AdjustmentRejectionRequest",
                         // P14-TSK-021: the write-off's doors. A reason and the figures an approver names; no credential.
                         "LoanWriteOffProposalRequest",
                         "LoanWriteOffApprovalRequest",

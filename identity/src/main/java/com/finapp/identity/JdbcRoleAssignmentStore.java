@@ -158,6 +158,43 @@ public final class JdbcRoleAssignmentStore implements RoleAssignmentStore<Connec
     }
 
     @Override
+    public java.util.List<ConflictingHolding> conflictingHoldings(
+            Connection unitOfWork, java.util.List<RoleConflicts.Pair> pairs, int limit) {
+        Objects.requireNonNull(pairs, "pairs must not be null");
+        if (limit < 1) {
+            throw new IllegalArgumentException("a review serves at least one holding, not " + limit);
+        }
+        // Both directions of each pair are named, so a holding is found whichever role is in which column; the pair's first is
+        // the one reported first, so each conflict is one row.
+        String sql = "SELECT a.identity_id, a.role_name AS first_role, b.role_name AS second_role,"
+                + " greatest(a.assigned_at, b.assigned_at) AS since"
+                + " FROM " + TABLE + " a"
+                + " JOIN " + TABLE + " b ON b.identity_id = a.identity_id AND b.revoked_at IS NULL"
+                + " JOIN unnest(?::text[], ?::text[]) AS pair (first_role, second_role)"
+                + " ON pair.first_role = a.role_name AND pair.second_role = b.role_name"
+                + " WHERE a.revoked_at IS NULL"
+                + " ORDER BY since, a.identity_id, a.role_name, b.role_name LIMIT ?";
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            select.setArray(1, unitOfWork.createArrayOf("text", pairs.stream().map(pair -> pair.first().name()).toArray()));
+            select.setArray(2, unitOfWork.createArrayOf("text", pairs.stream().map(pair -> pair.second().name()).toArray()));
+            select.setInt(3, limit);
+            try (ResultSet rows = select.executeQuery()) {
+                java.util.List<ConflictingHolding> found = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    found.add(new ConflictingHolding(
+                            IdentityId.of(rows.getObject("identity_id", java.util.UUID.class)),
+                            RoleName.valueOf(rows.getString("first_role")),
+                            RoleName.valueOf(rows.getString("second_role")),
+                            rows.getTimestamp("since").toInstant()));
+                }
+                return found;
+            }
+        } catch (SQLException e) {
+            throw new IdentityStorageException(DatabaseFailure.describe("Could not read the conflicting holdings", e));
+        }
+    }
+
+    @Override
     public java.util.List<FactorlessHolding> holdingsWithoutFactor(Connection unitOfWork, Set<RoleName> roles, int limit) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(roles, "roles must not be null");

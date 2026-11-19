@@ -28,7 +28,7 @@ import java.util.UUID;
  */
 public final class JdbcValuationRateSetStore implements ValuationRateSetStore {
 
-    private static final String ROW = "SELECT s.id, s.period_id, p.period_start, s.as_of, s.max_age_hours, s.rate_count,"
+    static final String ROW = "SELECT s.id, s.period_id, p.period_start, s.as_of, s.max_age_hours, s.rate_count,"
             + " s.status, s.captured_by, s.captured_at, s.decided_by, s.decided_at, s.reference_gaps"
             + " FROM accounting.valuation_rate_set s"
             + " JOIN accounting.accounting_period p ON p.id = s.period_id";
@@ -206,7 +206,7 @@ public final class JdbcValuationRateSetStore implements ValuationRateSetStore {
         }
     }
 
-    private static SetRow row(ResultSet row) throws SQLException {
+    static SetRow row(ResultSet row) throws SQLException {
         Timestamp decidedAt = row.getTimestamp("decided_at");
         return new SetRow(
                 ValuationRateSetId.of(row.getObject("id", UUID.class)),

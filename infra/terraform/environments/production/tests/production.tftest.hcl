@@ -299,12 +299,22 @@ run "production_keeps_every_log_group_and_telemetry_bucket_under_its_logs_key" {
   }
 }
 
-run "production_has_a_repository_per_image_its_overlay_runs" {
+# The platform's overlay and (P17-TSK-105) the Operator Console's: one repository per image either names, and the console's by the
+# name the admission policies' finapp-*-console glob and infra/scripts/promote.sh console read.
+run "production_has_a_repository_per_image_its_overlays_run" {
   command = plan
 
   assert {
-    condition     = toset(keys(module.registry.repository_names)) == toset([for image in yamldecode(file("../../../../deploy/overlays/production/kustomization.yaml")).images : image.name])
-    error_message = "Production's repositories are not the images its overlay names."
+    condition = toset(keys(module.registry.repository_names)) == toset(concat(
+      [for image in yamldecode(file("../../../../deploy/overlays/production/kustomization.yaml")).images : image.name],
+      [for image in yamldecode(file("../../../../deploy/console/overlays/production/kustomization.yaml")).images : image.name],
+    ))
+    error_message = "Production's repositories are not the images its overlays name, the platform's and the console's."
+  }
+
+  assert {
+    condition     = lookup(module.registry.repository_names, "finapp-console", "absent") == "finapp-production-console"
+    error_message = "Production has no repository for the Operator Console named finapp-production-console."
   }
 }
 

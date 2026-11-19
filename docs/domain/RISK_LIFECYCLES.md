@@ -763,7 +763,10 @@ attachments' references. **The case's act** (D2): an investigator action `REPORT
 (no owning domain executes a report; `-017`'s D11 stands) - written in the draft's transaction, its ordinal past the
 case's last revision (a disposed case never steps: no revision, no case history row), its id the report's;
 `risk_case_action_report_drafted_coherent` and `_has_its_report` bind the two both ways, and the analyst's case file
-withholds it (`CaseWorklist.read`). **One live or accepted report per case** (D3): `UNIQUE (case_id) WHERE status <>
+withholds it (`CaseWorklist.read`). *(`P17-TSK-109`, 2026-11-18, the owner's tipping-off decision: the file lists the case's
+reports by reference - id, status, jurisdiction, drafting stamp, never the narrative - only to a reader who also holds
+`AML_REPORT_APPROVE`, judged from the standing that admitted the read; for everyone else it says nothing of a report, as
+before, and the `REPORT_DRAFTED` action stays withheld from every reader.)* **One live or accepted report per case** (D3): `UNIQUE (case_id) WHERE status <>
 'REJECTED'` - the heading's "open draft" widened, since a draft beside a `FILED` or `ACKNOWLEDGED` report would be a second
 filing; read "a live draft exists" as "the case has a report that is not `REJECTED`". **Immutable by both shapes** (D4):
 no content column in the application's `UPDATE` grant, and the trigger freezing the content and the drafter from birth

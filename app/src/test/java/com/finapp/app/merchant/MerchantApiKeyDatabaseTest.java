@@ -479,7 +479,7 @@ class MerchantApiKeyDatabaseTest {
         assertThat(issueKey(admin, merchant.id())).as("a scopeless key stays MERCHANT_ADMINISTER's alone").contains(".");
 
         String login = registered();
-        sessionWith(login, RoleName.MERCHANT_ADMINISTRATOR);
+        grant(login, RoleName.MERCHANT_ADMINISTRATOR);
         String both = sessionWith(login, RoleName.LEDGER_OPERATOR);
         HttpResponse<String> minted = post("/v1/operator/merchants/" + merchant.id()
                 + "/api-keys?scope=BNPL_REFUND", null, both, someKey());
@@ -628,8 +628,18 @@ class MerchantApiKeyDatabaseTest {
         return sessionWith(registered(), role);
     }
 
-    /** {@code role} granted to {@code login}'s identity - a second call grants a second role - and a fresh session. */
+    /**
+     * {@code role} granted to {@code login}'s identity and a fresh MULTI_FACTOR session - its first factor enrolled, so once
+     * per identity: every operator act steps up since `P17-TSK-102`. A second role is {@link #grant} before this call.
+     */
     private String sessionWith(String login, RoleName role) throws Exception {
+        grant(login, role);
+        return com.finapp.app.session.OperatorStepUp.elevated(
+                tokenFrom(authenticate(login).body()), this::post);
+    }
+
+    /** {@code role} granted to {@code login}'s identity - a second call grants a second role. */
+    private void grant(String login, RoleName role) throws Exception {
         UUID identity = identityOf(login);
         try (CorrelationContext.Scope flow =
                         CorrelationContext.enter(
@@ -641,7 +651,6 @@ class MerchantApiKeyDatabaseTest {
                     app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
             app.commit();
         }
-        return tokenFrom(authenticate(login).body());
     }
 
     private static UUID identityOf(String login) throws SQLException {

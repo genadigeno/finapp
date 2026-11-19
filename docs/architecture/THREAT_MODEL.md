@@ -111,7 +111,7 @@ A row in §4 has one of four states, and its evidence column must match its stat
   pinned or not: it states a control and builds none. A rehearsal's record is not evidence here, wherever it is kept:
   what a rehearsal asserts is held by its contract test, which a row cites as `Class.java#member` like any other test,
   and the run itself is recorded in the runbook (decided 2026-11-12, without widening this grammar).
-- **`PLANNED`**: a Phase 15 task builds it. The evidence is the task's id.
+- **`PLANNED`**: a Phase 15 task builds it. The evidence is the task's id. *(2026-11-17, P17-INIT: or a Phase 17 task, for the Operator Console's boundary B11 and what the console needs of the others; the guard holds both phases.)*
 - **`REMEDIATION`**: an earlier remediation entry (`P14-REM-*`) or a cross-cutting item (`X-TSK-*`) builds it, outside
   the Phase 15 milestones. The evidence is the entry's id. This is the honest answer where that entry is the only owner.
 - **`GAP`**: nothing builds it, and the row says so. The evidence is the postponed issue (`PI-NNN`) or the owner item
@@ -124,7 +124,7 @@ A row in §4 has one of four states, and its evidence column must match its stat
 
 - a line of §2, §3 or §4 that looks like a table row (its first character, spaces aside, is a pipe) does not parse,
   indented or malformed rows included;
-- one of the ten boundaries of §2 is missing or renamed, or any boundary leaves a STRIDE category unanswered;
+- one of the boundaries of §2 (the ten of `PHASE_15_PLAN.md` §9.1, and B11) is missing or renamed, or any boundary leaves a STRIDE category unanswered *(read "one of the ten boundaries of §2" until P17-INIT, 2026-11-17, which added B11)*;
 - the matrix of §2 and the register of §3 disagree about which threat sits at which boundary and category;
 - a rating is not the cell of §1.3's table, or the table itself has changed;
 - a threat has no disposition, a `CONTROL` threat has no row that is not a `GAP`, an acceptance names anyone but the
@@ -156,7 +156,7 @@ of a conflict, re-count the summary line, and run the guard: it says what the me
 ## 2. Trust boundaries
 
 The ten boundaries of `PHASE_15_PLAN.md` §9.1. Each is named for its direction: who is on the outside and what they
-reach.
+reach. *(2026-11-17, P17-INIT, the Phase 16 → 17 transition: an eleventh, B11, the Operator Console's; the ten are unchanged.)*
 
 ### B1 — Internet → edge
 
@@ -305,11 +305,33 @@ database's administrative access, the backups and the telemetry back ends.
 | Category | Threats | Note |
 |---|---|---|
 | Spoofing | T29 | |
-| Tampering | T11, T39 | |
+| Tampering | T11, T39, T56 | |
 | Repudiation | T10, T39 | |
 | Information disclosure | T6, T32, T34, T46 | |
 | Denial of service | T32, T34 | |
-| Elevation of privilege | T29 | |
+| Elevation of privilege | T29, T56 | |
+
+### B11 — Browser → operator edge
+
+*(Added 2026-11-17 by P17-INIT, the Phase 16 → 17 transition, from finapp-admin-panel `PHASE_17_PLAN.md` §20.)* The Operator
+Console is a single-page application, built in its own repository (finapp-admin-panel ADR-C130), that runs in an operator's
+browser. The operator edge serves it same-origin: `/console/**` from `finapp-console`, a static workload that holds and reaches
+nothing, beside every operator API route. The page holds the operator's bearer session token in script memory, steps it up for an
+act, and renders what the operator API answers, data that customers, merchants and providers supplied among it (finapp-admin-panel
+ADR-C131). So the browser is a boundary of its own, inside B3: what runs in that page, what it keeps and what can drive its clicks
+decide what a live session does. The console has run on no cluster yet: since P17-TSK-104 (2026-11-18) the admission check and the `kind` rehearsal load, sign
+and ask it, and their run is `P17-TST-001`'s *(read "P17-TSK-104 loads its image on kind" until then)*. Its threats are
+answered by the edge's committed headers, the admission of its image, the platform's session bounds and four-eyes, and Phase 17's
+planned tasks; what the console itself enforces is finapp-admin-panel's and is not evidence here (§5).
+
+| Category | Threats | Note |
+|---|---|---|
+| Spoofing | T50, T53 | A session taken from the browser and used elsewhere, or a compromised workstation acting through the live one |
+| Tampering | T54 | The console's own code altered before it reaches the browser |
+| Repudiation | N/A | The console records nothing and decides nothing: every act is decided and recorded past the edge under the operator's own actor, and an operator's repudiation is modelled at B3 (T38) |
+| Information disclosure | T48, T55 | |
+| Denial of service | T52 | |
+| Elevation of privilege | T49, T51, T54 | |
 
 ---
 
@@ -367,11 +389,20 @@ numbers `PHASE_15_PLAN.md` §9.2 gave them.
 | T45 | Injection through hand-written JDBC: a request value reaching a statement's text rather than a bind parameter, so a caller runs SQL as the application's role | B2:E, B4:T | MEDIUM | SEVERE | CRITICAL | CONTROL |
 | T46 | Restricted data or a secret leaking through logs, spans, metric labels, error bodies or the telemetry back ends, which have their own readers and retention | B2:I, B10:I | MEDIUM | SEVERE | CRITICAL | CONTROL |
 | T47 | Login identifier enumeration through registration, which answers a taken identifier distinctly by design | B1:I | HIGH | MEDIUM | MEDIUM | ACCEPTED by the owner on 2026-11-08 |
+| T48 | An operator's session token exfiltrated from the console's page by injected script, through an XSS defect or a hostile dependency, and replayed from elsewhere | B11:I | MEDIUM | SEVERE | CRITICAL | CONTROL |
+| T49 | An approval clickjacked: the console or an operator route framed by a hostile page, so an operator's click performs an act they did not intend | B11:E | MEDIUM | HIGH | HIGH | CONTROL |
+| T50 | A stolen operator session used for a money act | B11:S | MEDIUM | SEVERE | CRITICAL | CONTROL |
+| T51 | A file a customer, merchant or provider uploaded, rendered in the operator's browser as active content and running script with the operator's session | B11:E | HIGH | SEVERE | CRITICAL | CONTROL |
+| T52 | A request storm from a faulty console client exhausting the operator surface | B11:D | MEDIUM | MEDIUM | MEDIUM | CONTROL |
+| T53 | A compromised operator workstation acting through a live, stepped-up session | B11:S | MEDIUM | SEVERE | CRITICAL | CONTROL |
+| T54 | A malicious or vulnerable dependency in the console's build reaching the operator's browser | B11:T, B11:E | MEDIUM | SEVERE | CRITICAL | CONTROL |
+| T55 | Operator data kept after the session that read it has ended: an operator answer's identifiers, amounts, statuses and restricted fields stored by the browser, a shared workstation's disk cache or an intermediary, because nothing forbade it | B11:I | MEDIUM | HIGH | HIGH | CONTROL |
+| T56 | A test-only seed run against a deployed environment's database: an administrator nobody chose granted by its break-glass step, rows planted in the outbox and the inbox that no relay or consumer wrote, simulated settlement evidence uploaded and attested under the seed's own operators, role holdings the grant door refuses - a factor-requiring role held with no factor, both halves of a segregation-of-duties pair - planted as if from before the rules, and a TRANSFER risk policy activated by the seed's own officers with alerts and a sealed REVIEW assessment planted under it, because nothing told a test stack from a real one | B10:T, B10:E | MEDIUM | HIGH | HIGH | CONTROL |
 
-**Summary.** 47 threats: 25 CRITICAL, 13 HIGH, 8 MEDIUM, 1 LOW. 45 are `CONTROL`. Two, T42 and T47 (both MEDIUM),
+**Summary.** 56 threats: 30 CRITICAL, 16 HIGH, 9 MEDIUM, 1 LOW. 54 are `CONTROL`. Two, T42 and T47 (both MEDIUM),
 are accepted by the owner (2026-11-08; T42 until 2027-06-30; §6 items 1 and 6). None is `PROPOSED ACCEPTANCE`.
 *(Read "are `PROPOSED ACCEPTANCE` awaiting the owner (§6). No threat is `ACCEPTED`." until the owner's decisions of
-2026-11-08.)*
+2026-11-08.)* *(Read "55 threats: 30 CRITICAL, 15 HIGH, 9 MEDIUM, 1 LOW. 53 are `CONTROL`." until P17-TSK-106's gate, 2026-11-18, which added T56 at B10: the console's end-to-end seed.)* *(Read "47 threats: 25 CRITICAL, 13 HIGH, 8 MEDIUM, 1 LOW. 45 are `CONTROL`." until P17-INIT, 2026-11-17, which added T48-T54 at B11. A browser-cache threat, rated HIGH, waits for its control: §6 item 73 (b).)* *(Read "54 threats: 30 CRITICAL, 14 HIGH, 9 MEDIUM, 1 LOW. 52 are `CONTROL`." until P17-TSK-101's gate, 2026-11-17, which registered T55 with its evidence.)*
 
 *(The fix round of 2026-11-08 re-read every rating against §1.3's words. T10, T19, T22, T32, T33, T34 and T36 rose to
 CRITICAL; T35, T38, T43 and T44 to HIGH. Each had understated a likelihood the definitions call one foothold, or an
@@ -938,6 +969,27 @@ One row per control claim. The claim says exactly what the evidence holds, and n
 | T46 | A 5xx the edge counted joined to the replica's records by the answer's correlation id, with no caller's text in any line: the pinned proxy keeps a header's three copies under one mode, so keeping the answer's keeps the caller's beside it (measured) | GAP | `owner item 68`; owner: the owner, since 2026-11-13 |
 | T47 | A cluster-safe registration throttle bounds how fast identifiers can be tested, at the same rate whatever the identifier: 10 an hour per IPv4 address or IPv6 /64, 100 an hour per IPv6 /48, and at most 65,536 buckets of 10 on the door whatever a holder has. It decides before the body is read, so a refusal says nothing of any identifier | EXISTS | `app/src/test/java/com/finapp/app/abuse/SourceLimitClusterDatabaseTest.java#exactlyTheLimitAcrossThreeContexts`; `app/src/test/java/com/finapp/app/abuse/SourceLimitInterceptorTest.java#aSiteIsCountedAfterItsSource`; `app/src/test/java/com/finapp/app/abuse/SourceLimitInterceptorTest.java#theDecisionReadsNoBody` |
 | T47 | Registration answers a taken identifier `422` by design (accepted); verify-then-tell, the alternative, waits for the first real customer launch | GAP | `PI-017`; owner: the owner, since 2026-11-08 |
+| T48 | On `/console/**` the operator edge serves the console's own policy, exactly: script from the console's own origin only and none inline, connections to its own origin only, `base-uri 'none'`, and Trusted Types required of every DOM sink, so an injected string does not run as script in the page that holds the token; every API route keeps `default-src 'none'` on both hosts | EXISTS | `app/src/test/java/com/finapp/app/architecture/ConsoleHostingManifestsTest.java#theConsoleHeadersAreTheConsolesOwnDefinition`; `app/src/test/java/com/finapp/app/architecture/ConsoleHostingManifestsTest.java#theApiRoutesKeepTheStrictPolicy` |
+| T48 | The token held in script memory alone, never in storage, a cookie or a URL, across sign-in, step-up and logout, asserted end to end through the operator edge on `kind` | PLANNED | `P17-TST-001` |
+| T49 | Neither the console nor an operator API route can be framed: `console-headers` sends `frameDeny` and `frame-ancestors 'none'`, and every API route's policy `frame-ancestors 'none'` | EXISTS | `app/src/test/java/com/finapp/app/architecture/ConsoleHostingManifestsTest.java#theConsoleHeadersAreTheConsolesOwnDefinition`; `app/src/test/java/com/finapp/app/architecture/ConsoleHostingManifestsTest.java#theApiRoutesKeepTheStrictPolicy` |
+| T50 | Where an act's proposal and approval are two permissions, no role holds both, so one session, stolen or not, completes no four-eyes act alone | EXISTS | `identity/src/test/java/com/finapp/identity/RoleNameTest.java#noRoleProposesAndApprovesTheSameAct` |
+| T50 | A session's life is bounded: its idle bound never outlasts its absolute one, and a step-up's replacement inherits its predecessor's absolute bound, so a stolen session cannot be stepped up into a longer one | EXISTS | `identity/src/test/java/com/finapp/identity/SessionTest.java#theIdleBoundMayNotOutlastTheAbsoluteOne`; `identity/src/test/java/com/finapp/identity/SessionTest.java#aReplacementInheritsTheAbsoluteBound` |
+| T50 | `MULTI_FACTOR` required by every act on the operator surface - every `POST`, `PUT`, `PATCH` or `DELETE` handler declaring a permission, wherever its route lives - derived from the dispatcher and knocked on through the real interceptor: a password session holding the permission refused `403 identity.AssuranceRequired`, its refusal recorded, before the handler (finapp-admin-panel ADR-C131 decision 3; the owner's D-6) | EXISTS | `app/src/test/java/com/finapp/app/session/EveryOperatorActRequiresAFactorTest.java#everyActDeclaresAFactor`; `app/src/test/java/com/finapp/app/session/EveryOperatorActRequiresAFactorTest.java#aPasswordSessionIsRefusedAtEveryAct` |
+| T50 | Every role that can act is refused to an identity with no enrolled factor, so a stolen password-level session of a holder who never enrolled one cannot enrol the thief's factor and step up into the role's acts; the domain's read-only permissions held to the routes' both ways | EXISTS | `app/src/test/java/com/finapp/app/session/EveryOperatorActRequiresAFactorTest.java#everyRoleThatCanActNeedsAFactor`; `app/src/test/java/com/finapp/app/session/EveryOperatorActRequiresAFactorTest.java#everyPermissionSaysWhetherItGuardsAnAct`; `identity/src/test/java/com/finapp/identity/RoleGrantNeedsAFactorTest.java#aGrantWithNoFactorIsRefused` |
+| T50 | The single-actor money acts - transfer reversal, refund and void, fee schedule versions, merchant closure, the operator payout - put under finapp-admin-panel ADR-C135's step-up, idempotency and four-eyes thresholds | PLANNED | `P17-TSK-031` |
+| T51 | A file served back by any application route arrives under `default-src 'none'`, so a hostile HTML or SVG upload opened on the operator origin runs no script; the console's own pages run the console's own script alone | EXISTS | `app/src/test/java/com/finapp/app/architecture/ConsoleHostingManifestsTest.java#theApiRoutesKeepTheStrictPolicy`; `app/src/test/java/com/finapp/app/architecture/ConsoleHostingManifestsTest.java#theConsoleHeadersAreTheConsolesOwnDefinition` |
+| T52 | Every operator router - the console's, every API route's, the settlement upload's - names one source's rate limit (20 a second, a burst of 50) and in-flight bound (10; the upload's own 2 at its 25 MiB cap), each keyed on the connection's address and never the Host header, after the private ranges; what one source can hold across them fits the operator controller's spool. Per router and per controller replica, as the pinned proxy counts: no global limit is claimed. The application's shedding exempts the operator surface by design (T14), so this is the surface's first bound | EXISTS | `app/src/test/java/com/finapp/app/api/EdgeAllowListTest.java#theOperatorRoutersAreBoundedPerSource`; `app/src/test/java/com/finapp/app/api/EdgeAllowListTest.java#theRouteFilesAreGenerated` |
+| T53 | No role holds both halves of a four-eyes act, so a workstation acting through one live session completes none alone | EXISTS | `identity/src/test/java/com/finapp/identity/RoleNameTest.java#noRoleProposesAndApprovesTheSameAct` |
+| T53 | A live session ends at its idle and absolute bounds, and a step-up never extends the absolute one | EXISTS | `identity/src/test/java/com/finapp/identity/SessionTest.java#theIdleBoundMayNotOutlastTheAbsoluteOne`; `identity/src/test/java/com/finapp/identity/SessionTest.java#aReplacementInheritsTheAbsoluteBound` |
+| T53 | `MULTI_FACTOR` asked again of every operator act, so a session left at password assurance acts on nothing, and every role that can act held only by an identity with a factor | EXISTS | `app/src/test/java/com/finapp/app/session/EveryOperatorActRequiresAFactorTest.java#everyActDeclaresAFactor`; `app/src/test/java/com/finapp/app/session/EveryOperatorActRequiresAFactorTest.java#aPasswordSessionIsRefusedAtEveryAct`; `app/src/test/java/com/finapp/app/session/EveryOperatorActRequiresAFactorTest.java#everyRoleThatCanActNeedsAFactor` |
+| T53 | The workstation itself: nothing the console or the platform does detects or contains a compromised machine acting within a live, stepped-up session's bounds and its holder's permissions | GAP | `owner item 73`; owner: the owner, since 2026-11-17 |
+| T54 | The console's image is admitted only signed and attested, provenance and SBOM, under the platform's two policies in every name it goes by, and a look-alike name meets no policy and is refused | EXISTS | `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#theConsolesImageIsHeldToBothPlatformPolicies` |
+| T54 | The admission check, given the console's image - a named commit built for `kind`, the console CI's archive, or a local image - signs it and gives it its provenance and its own CycloneDX SBOM under the run's key, verifies them before deploying, and holds three cases in `finapp-console`: signed admitted at its digest, unsigned refused, signed with provenance and no SBOM attestation refused, each beside a control; with no console image named the cases are skipped and said so beside the result | EXISTS | `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#theConsolesImageIsSignedAttestedAndAdmittedOnKind`; `app/src/test/java/com/finapp/app/architecture/ImageAdmissionTest.java#ciProvesItOnKindWithNoCredential` |
+| T54 | The kind rehearsal loads the console into every node, puts its digest into its own rendered copy of the kind overlay (never the committed file), applies it after the edge and asks through the real edge: `/console/` 200 under the console's policy exactly once, an API route keeping `default-src 'none'`, nothing on the public host; `kubeconform -strict` reads every console overlay | EXISTS | `app/src/test/java/com/finapp/app/architecture/KindRehearsalContractTest.java#theConsoleIsLoadedAppliedAndAskedAfterTheEdge`; `app/src/test/java/com/finapp/app/architecture/ConsoleHostingManifestsTest.java#kubeconformReadsEveryConsoleOverlay` |
+| T54 | The above shown on a cluster: the admission check and the rehearsal green with a console image named, and the console's `kind` end-to-end run | PLANNED | `P17-TST-001` |
+| T55 | Every answer of the operator surface carries `Cache-Control: no-store` - a handler's, the session interceptor's refusals, and each answer nobody wrote a handler for (an unknown route, an unsupported method, a body that never parsed, a media type nobody reads, an unexpected failure, a body over the size bound) - set before the chain runs and again on the container's error dispatch; the public surface is left as it was; nothing else in the application sets the header or resets a response, so nothing undoes it. The console's own files are served by its own server, which sets their caching per path | EXISTS | `app/src/test/java/com/finapp/app/surface/OperatorResponsesAreNotStoredTest.java#everyOperatorAnswerIsNoStore`; `app/src/test/java/com/finapp/app/surface/OperatorResponsesAreNotStoredTest.java#nothingElseSetsItOrResetsAResponse` |
+| T56 | The seed refuses any stack but a test one before it touches anything: its compose target reaches only this checkout's own compose service and an application on this machine's loopback (an anchored check, so no look-alike host passes), its kind target only a node container carrying the label kind gives its nodes, and an unknown target is refused rather than defaulted; what the shell puts into SQL is a login whose shape it checked first, and a plant's values are the database client's quoted variables, ids checked first and roles the script's own words; the HTTP half has no route to the database and keeps the test identities' secrets in the run's own directory, removed with the run | EXISTS | `app/src/test/java/com/finapp/app/architecture/E2eSeedStaysTestOnlyTest.java#theScriptRefusesAnythingButATestStack`; `app/src/test/java/com/finapp/app/architecture/E2eSeedStaysTestOnlyTest.java#theHttpHalfHasNoDatabaseRoute`; `app/src/test/java/com/finapp/app/architecture/E2eSeedStaysTestOnlyTest.java#aPlantsValuesAreQuotedVariables` |
+| T56 | No image and nothing deployed carries the seed: named by no module's main source set - the application image's only input is the boot jar, the migrator's only the modules' migrations - nor by any manifest, delivery root or Terraform; every plant is one statement that inserts and nothing else | EXISTS | `app/src/test/java/com/finapp/app/architecture/E2eSeedStaysTestOnlyTest.java#noImageCarriesTheSeed`; `app/src/test/java/com/finapp/app/architecture/E2eSeedStaysTestOnlyTest.java#nothingDeployedRunsTheSeed`; `app/src/test/java/com/finapp/app/architecture/E2eSeedStaysTestOnlyTest.java#everyPlantIsOneMarkedStatement` |
 
 **Where the evidence is a database test.** Many `EXISTS` rows cite tests in the `database` tier. Phase 15's standing
 deviation (C14) deferred those tiers to one pass at the phase exit, which the owner postponed past the project's phases on
@@ -1148,6 +1200,16 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   too: a stamp it wrote never decides which of two facts came first, and a stamp follows the facts it must follow.
   Outside the close and the terms, a census guard holds every such read, the deciding ones ranked by the rows, the rest recorded with why; its cases on a stepped clock run in the database pass, and the shapes it cannot read are named in `DISTRIBUTED_EXECUTION.md` section 3 (owner item 8, decided 2026-11-08, built).
 
+- **T48-T54, the Operator Console's boundary** *(added 2026-11-17, P17-INIT)*. What this repository holds against them is
+  the edge's committed headers, the admission of the console's image, and the platform's own session bounds and four-eyes. The
+  rest of the console's controls are finapp-admin-panel's and are not evidence here: its memory-only token and the lint bans that
+  hold it (ADR-C131), its rule never to render an uploaded file beyond its type and size and to hand it over as a download (its
+  P17-TSK-021 and P17-TSK-034), and its pinned, licence-checked, audited npm dependencies (ADR-C136). `P17-TST-001` asserts the
+  first on `kind`. The operator edge's routes are not shed by the application (T14's exemption); since P17-TSK-103 (2026-11-18) a
+  faulty console's storm meets the operator edge's per-source rate limit and in-flight bound first (T52) *(read "so until
+  P17-TSK-103 a faulty console's storm meets only the pool's own wait" until then)*. A workstation compromised while its session is live is answered by none of them
+  (owner item 73).
+
 ---
 
 ## 6. Owner items
@@ -1178,6 +1240,7 @@ tier's availability task, and the owner decided it on 2026-11-14, accepting its 
 options. **Item 67 was added on 2026-11-13 by the capacity calibration and awaits the owner.** **Items 68 and 69 were added on 2026-11-13, by the instance and node failures' build and by security under scale and failure, and await the owner** *(missing from this list until the Phase 16 exit review, 2026-11-16)*. **Item 70 was added on 2026-11-13 by the objectives' validation under load and awaits the owner.**
 **Item 71 was added on 2026-11-13 by the disaster-recovery plan and awaits the owner.**
 **Item 72 was added on 2026-11-14 by the multi-region assessment and awaits the owner.**
+**Item 73 was added on 2026-11-17 by P17-INIT, the Phase 16 → 17 transition, and awaits the owner.**
 
 1. **T42, a proposed acceptance (MEDIUM).** The registry is unavailable when a replica must start, so the rescheduled
    replica cannot pull its image. *Recommendation*: accept it for Phase 15 and re-own it to Phase 16, where registry
@@ -1667,6 +1730,8 @@ options. **Item 67 was added on 2026-11-13 by the capacity calibration and await
     namespace opted in; (c) (i), overlapping authorities, every digest running or kept for rollback signed again before the old one goes;
     (d) (i), the signing role alone writes the signature repository, and a revocation is an authority change; (e) (i), a trust root of
     our own when keyless is applied; (f) (i), a read-only workload identity for the controller.
+
+    *(Dated note, 2026-11-18, P17-TSK-105: the Operator Console's image joins this item. Its repository (`finapp-<environment>-console`), its Application and its promotion by digest are built; which identity signs it in a real environment is open - the proposal is keyless from CI's identity, as (a) for the platform, the platform's pipeline signing the console's build and never finapp-admin-panel's own identity. Another identity means a second authority in both admission policies and in `promote.sh`, changed together. Until decided, admission refuses the console in a real environment.)*
 
 36. **T6's, T7's, T9's, T22's, T34's, T36's and T44's residuals: what the rotation rehearsal leaves** *(added 2026-11-11 by the rotation rehearsal; (e) to (g) by its review's fix round)*. Seven things.
 
@@ -2971,6 +3036,29 @@ options. **Item 67 was added on 2026-11-13 by the capacity calibration and await
     because it keeps one root for production in both regions and the state's loss is what makes every other option guess; (iii) until then.
 
     Until decided: §4's T32 `GAP` row naming this item; tier 4's recovery point and rings stand as built. *Awaiting the owner* (2026-11-14).
+
+73. **T53's residual, and the browser-cache threat: the Operator Console's boundary** *(added 2026-11-17 by P17-INIT, the
+    Phase 16 → 17 transition; finapp-admin-panel `PHASE_17_PLAN.md` §20)*. Two questions.
+
+    **(a) A compromised operator workstation.** A machine taken over while its operator holds a live, stepped-up session acts as
+    that operator, within the session's bounds and the holder's permissions. The console cannot see it. The platform bounds it - no
+    role completes a four-eyes act alone, a session ends at its idle and absolute bounds, and since P17-TSK-102 (2026-11-17) every act asks
+    for the second factor - but nothing detects or contains the machine. The options: **(i)** accept the residual as bounded by those
+    controls until a workforce identity provider with device posture exists (C13); **(ii)** give the operator surface its own,
+    shorter idle and absolute bounds for stepped-up sessions, a change to `SessionPolicy` in a task of its own; **(iii)** require
+    managed, attested workstations for the operator surface, which the platform cannot check without C13. *Recommendation*: **(i)**
+    until C13, with (ii) considered if Phase 17's exit review finds operator sessions longer than the console's work needs.
+
+    **(b) Operator data kept in the browser's cache.** Operator answers carry identifiers, amounts, statuses and restricted fields,
+    and none says `Cache-Control: no-store`, so a browser may keep them on disk after the session ends (impact HIGH, likelihood
+    MEDIUM: HIGH). A HIGH threat registered after Phase 15's exit needs built evidence or the owner's acceptance (§1.5), and nothing
+    is built yet, so it is held out of §3: P17-TSK-101, which builds the control, registers it at the next free number with its
+    evidence. The options: **(i)** as written, registered by that task; **(ii)** the owner accepts it until that task's gate, and it
+    is registered now. *Recommendation*: **(i)**: the task is the phase's first.
+    *(Settled 2026-11-17 by P17-TSK-101's gate, as (i) recommended: registered as T55, its control `EXISTS` with its evidence. Nothing awaits
+    the owner on (b); (a) stands.)*
+
+    Until decided: §4's T53 `GAP` row naming this item. *Awaiting the owner* (2026-11-17).
 
 ## 7. Decided against
 

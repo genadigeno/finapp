@@ -274,7 +274,7 @@ class AccountingVocabulariesTest {
                         // P14-TSK-010: the raise (the run's) unreasoned; the acknowledgement's two acts and the
                         // resolution reasoned.
                         "accounting.BreakRaised=false", "accounting.BreakAcknowledgementProposed=true",
-                        "accounting.BreakAcknowledged=true", "accounting.BreakResolved=true",
+                        "accounting.BreakAcknowledgementRejected=true", "accounting.BreakAcknowledged=true", "accounting.BreakResolved=true",
                         // The independent review's M-5: the break reads, audited like the GL's and the reports'.
                         "accounting.BreakRead=false",
                         // P14-TSK-011: the re-run, reasoned; the read of a close run, audited like the others.
@@ -295,7 +295,9 @@ class AccountingVocabulariesTest {
                         "regulatory.SubmissionDrafted=true", "regulatory.SubmissionValidated=false", "regulatory.SubmissionApproved=true", "regulatory.SubmissionRefused=true", "regulatory.SubmissionWithdrawn=true",
                         "regulatory.SubmissionSubmitted=true", "regulatory.SubmissionAcknowledged=false", "regulatory.SubmissionRejected=false", "regulatory.SubmissionUndelivered=true",
                         "regulatory.SubmissionContraryAnswer=false", "regulatory.SubmissionRead=false", "regulatory.SubmissionResent=false",
-                        "accounting.FinalStatementRead=false");
+                        "accounting.FinalStatementRead=false",
+                        // P17-TSK-023: the accounting lists' two recorded reads, no reason owed - a read is not an act.
+                        "accounting.ReportRunsListed=false", "accounting.FinalStatementsListed=false");
     }
 
     // ------------------------------------------------------------------

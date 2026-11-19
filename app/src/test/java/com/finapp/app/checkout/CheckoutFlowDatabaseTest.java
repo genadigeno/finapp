@@ -3806,7 +3806,10 @@ class CheckoutFlowDatabaseTest {
         return operatorSession(RoleName.MERCHANT_ADMINISTRATOR);
     }
 
-    /** A signed-in staff member holding exactly {@code role}. */
+    /**
+     * A signed-in staff member holding exactly {@code role}, stepped up to {@code MULTI_FACTOR}
+     * - which every operator act declares (P17-TSK-102).
+     */
     private String operatorSession(RoleName role) throws Exception {
         String login = "ops." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(register(login).statusCode()).isEqualTo(201);
@@ -3835,7 +3838,8 @@ class CheckoutFlowDatabaseTest {
                     "test fixture");
             app.commit();
         }
-        return tokenFrom(authenticate(login).body());
+        return com.finapp.app.session.OperatorStepUp.elevated(
+                tokenFrom(authenticate(login).body()), this::post);
     }
 
     // ----------------------------------------------------------------- calls

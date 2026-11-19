@@ -1,6 +1,8 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -45,6 +47,7 @@ public class FeeScheduleController {
     @NonNull private final FeeScheduleOperations feeSchedules;
 
     /** Creates a named pricing identity. It carries no price until a version is added. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.FEE_ADMINISTER)
     @ResponseStatus(HttpStatus.CREATED)
@@ -73,6 +76,7 @@ public class FeeScheduleController {
      * {@code 422}: it would reprice captures that already happened, which is the one thing
      * {@code INV-MER-03} exists to forbid.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/versions", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.FEE_ADMINISTER)
     @ResponseStatus(HttpStatus.CREATED)

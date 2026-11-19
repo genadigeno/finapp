@@ -7,6 +7,8 @@ import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -54,6 +57,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdjustmentController {
 
     @NonNull private final LedgerAdjustments adjustments;
+    @NonNull private final LedgerCollectionDesk collections;
 
     /**
      * Proposes the adjustment, or replays the recorded outcome for a retried key
@@ -62,6 +66,7 @@ public class AdjustmentController {
      * (`X-TSK-003`): another operator's equal value is their own proposal, never a conflict.
      * Nothing posts: the entry is the approval's, by a second person.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LEDGER_ADJUST)
     @RequiresIdempotencyKey
@@ -70,6 +75,21 @@ public class AdjustmentController {
             @Valid @RequestBody AdjustmentRequest body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey) {
         return adjustments.propose(body, idempotencyKey);
+    }
+
+    /**
+     * The approver's queue (`P17-TSK-022`, gap G-112; finapp-admin-panel ADR-C133 decision 3): a §7 collection - {@code limit} 50
+     * unless named, 200 at most, the opaque {@code cursor} of the page before - of the manual adjustments awaiting a second
+     * person, oldest first, in the pending-decision shape, each marked when the caller proposed it. {@code status} is
+     * {@code PROPOSED} or absent. Only {@code MANUAL} proposals: this door decides no other origin's.
+     */
+    @GetMapping
+    @RequiresPermission(PermissionName.LEDGER_ADJUST)
+    public LedgerCollectionDesk.PendingLedgerAdjustmentPage listPendingLedgerAdjustments(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return collections.pendingAdjustments(status, cursor, limit);
     }
 
     /**
@@ -104,10 +124,28 @@ public class AdjustmentController {
      * converges on this same {@code 204}; an {@code APPROVED} proposal is a {@code 409},
      * corrected by a reversal rather than by un-deciding.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @DeleteMapping("/{id}")
     @RequiresPermission(PermissionName.LEDGER_ADJUST)
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void reject(@PathVariable("id") String id) {
         adjustments.reject(id);
     }
+
+    /**
+     * Rejects the proposal with a reason (`P17-TSK-111`), which the rejection's audit record keeps - the {@code DELETE} above,
+     * unchanged for its clients, records none. Otherwise the same act: the initiator's withdrawal included, a repeat converging
+     * on this {@code 204} with the first reason standing, an {@code APPROVED} proposal a {@code 409}. Unkeyed as the approval
+     * and the {@code DELETE} are: the proposal's one-way machine is the idempotency.
+     */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+    @PostMapping(path = "/{id}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.LEDGER_ADJUST)
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void rejectWithReason(@PathVariable("id") String id, @Valid @RequestBody AdjustmentRejectionRequest body) {
+        adjustments.reject(id, body.reason());
+    }
+
+    /** Why the proposal is rejected - the rejecter's prose, at most 1000 characters, screened before it is recorded. */
+    public record AdjustmentRejectionRequest(@NotBlank @Size(max = 1000) String reason) {}
 }

@@ -69,12 +69,13 @@ public final class RiskOverrideDesk {
     /**
      * One override as the officer reads it: its state, the effect proposed and what it targets, the reason code and the
      * proposer's text, whether a second holder is required, the decision's reason, and the action issued with its
-     * outcome, permit and attempts. Instants ISO-8601 UTC; no person.
+     * outcome, permit and attempts, and who proposed it (`P17-TSK-109`: the proposer's actor id, so the console disables
+     * their own approval; {@code risk.SelfApprovalRefused} stays the control). Instants ISO-8601 UTC; no other person.
      */
     public record RiskOverrideView(String overrideId, String assessmentId, String status, String effect,
             String targetKind, String targetId, String reasonCode, String reason, boolean requiresSecondPerson,
             String proposedAt, String decidedAt, String decisionReason, String action, String actionOutcome,
-            String actionDueAt, int actionAttempts, String actionConcludedAt) {}
+            String actionDueAt, int actionAttempts, String actionConcludedAt, String proposedBy) {}
 
     /** The overridden assessment, whole, and its overrides, oldest first. */
     public record RiskOverriddenView(RiskAssessmentDesk.RiskAssessmentView assessment,
@@ -255,7 +256,8 @@ public final class RiskOverrideDesk {
                 override.actionOutcome().map(Enum::name).orElse(null),
                 override.actionDueAt().map(Instant::toString).orElse(null),
                 override.actionAttempts(),
-                override.actionConcludedAt().map(Instant::toString).orElse(null));
+                override.actionConcludedAt().map(Instant::toString).orElse(null),
+                override.proposedBy());
     }
 
     private static ApiException refused(RiskErrorCode code, RuntimeException cause) {

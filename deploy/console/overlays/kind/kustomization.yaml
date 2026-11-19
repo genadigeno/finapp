@@ -1,7 +1,9 @@
 # The kind rehearsal's console (X-TSK-020), as deploy/overlays/kind names the application's images: sixty-four zeros, which a rehearsal replaces
-# in its own rendered copy with the digest of the image it loaded into the node. NOT YET TAUGHT: infra/scripts/kind-rehearsal.sh renders and
-# applies the application and the edge, never this root, so until it loads a finapp-console image (built from finapp-admin-panel) and applies
-# this overlay, /console on the operator host answers the proxy's 502. Nothing here is test-only: kind runs the same Deployment as staging.
+# in its own rendered copy with the digest of the image it loaded into the node. Since P17-TSK-104 infra/scripts/kind-rehearsal.sh's step
+# console does exactly that, after the edge, when a finapp-console image (built from finapp-admin-panel) is named - and refuses to go on if
+# this file has stopped naming zeros; infra/scripts/admission-check.sh renders this Deployment for the console's admission cases. With no
+# image named the step is skipped, said so, and /console on the operator host answers the proxy's 502. Nothing here is test-only: kind runs
+# the same Deployment as staging.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 

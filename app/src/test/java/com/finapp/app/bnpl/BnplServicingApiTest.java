@@ -237,8 +237,7 @@ class BnplServicingApiTest {
             + " waiver of theirs and no decision written")
     void anInsidersWaiverIsSelfDealing() throws Exception {
         Owing owing = owing();
-        String insider = world.client.sessionWithRole(authorization, owing.owner().login(),
-                RoleName.BNPL_SERVICING_AGENT);
+        String insider = world.client.insiderSession(authorization, owing.owner(), RoleName.BNPL_SERVICING_AGENT);
         HttpResponse<String> proposed = world.client.post(owing.waivers(), waiverOf(owing), insider,
                 BnplApplicationClient.key());
         assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(403);

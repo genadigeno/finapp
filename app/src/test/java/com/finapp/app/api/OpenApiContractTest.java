@@ -559,6 +559,8 @@ class OpenApiContractTest {
                         // P14-TSK-005: the periods - listed (ACCOUNTING_READ), locked and an unlock proposed
                         // (ACCOUNTING_CLOSE_PROPOSE), the unlock approved (ACCOUNTING_CLOSE_APPROVE), each keyed.
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods",
+                        // P17-TSK-111: one period by its id (ACCOUNTING_READ).
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/lock",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-proposal",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/periods/{periodId}/unlock-approval",
@@ -612,12 +614,22 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks/{breakId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks/{breakId}/acknowledgement-proposal",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks/{breakId}/acknowledgement-approval",
+                        // P17-TSK-111: a pending acknowledgement's rejection (ACCOUNTING_ADJUST_APPROVE, keyed, reasoned).
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks/{breakId}/acknowledgement-rejection",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/breaks/{breakId}/resolution",
                         // P14-TSK-007: the GL read model - balances, an account's activity (keyset paged) and an
                         // entry's GL view; ACCOUNTING_READ, read-only snapshots, audited accounting.GlRead.
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/balances",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/accounts/{code}/activity",
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/gl/entries/{entryId}",
+                        // P17-TSK-022: the ledger as an accountant browses it (ACCOUNTING_READ, every page recorded) - the
+                        // account register and the journal entry search; the approvers' queues are GETs on existing paths.
+                        ApiVersion.CURRENT_PREFIX + "/operator/ledger/accounts",
+                        ApiVersion.CURRENT_PREFIX + "/operator/ledger/entries",
+                        // P17-TSK-023: the controller's FINAL statements (ACCOUNTING_CLOSE_APPROVE, every page recorded) and a
+                        // proposer's own rate sets (ACCOUNTING_CLOSE_PROPOSE); the other lists are GETs on existing paths.
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs/final-statements",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounting/valuation-rate-sets/mine",
                         // P14-TSK-008: the report runs - generated and regenerated (ACCOUNTING_REPORT_GENERATE, keyed),
                         // read with their content (ACCOUNTING_READ, audited).
                         ApiVersion.CURRENT_PREFIX + "/operator/accounting/report-runs",
@@ -698,6 +710,8 @@ class OpenApiContractTest {
                         // second person's approval, and the rejection/withdrawal.
                         ApiVersion.CURRENT_PREFIX + "/ledger/adjustments/{id}",
                         ApiVersion.CURRENT_PREFIX + "/ledger/adjustments/{id}/approval",
+                        // P17-TSK-111: the rejection with a reason (LEDGER_ADJUST, MULTI_FACTOR, unkeyed as the DELETE is).
+                        ApiVersion.CURRENT_PREFIX + "/ledger/adjustments/{id}/rejection",
                         // P14-TSK-026: the ledger's second surface - the four-eyes projection rebuild, behind
                         // LEDGER_ADJUST, every door keyed, the approval MULTI_FACTOR.
                         ApiVersion.CURRENT_PREFIX + "/ledger/projection-rebuilds",
@@ -874,6 +888,8 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/settlement/files/{id}/readmission",
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/settlement/files/{id}/verification",
+                        // P17-TSK-107: the batch browse, a section 7 collection (RECONCILIATION_INVESTIGATE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/settlement/batches",
                         ApiVersion.CURRENT_PREFIX + "/operator/settlement/batches/{id}",
                         // P8-TSK-021: an operator's pull (SETTLEMENT_INGEST) - the ingest
                         // permission's other channel, idempotent by the content address.
@@ -933,6 +949,8 @@ class OpenApiContractTest {
                                 + "/operator/reconciliation/resolutions/{id}/approval",
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/reconciliation/resolutions/{id}/rejection",
+                        // P17-TSK-107: the approver's queue, ADR-C133's pending-decision shape (RECONCILIATION_RESOLVE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/resolutions",
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/resolutions/{id}",
                         // P9-TSK-007: the FX controller's doors - the pricing policy under
                         // four-eyes and the kill switch (FX_ADMINISTER).
@@ -1041,6 +1059,26 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/identities/{id}/roles/{role}",
                         // P15-TSK-039: the check of the holdings the factor rule found standing.
                         ApiVersion.CURRENT_PREFIX + "/operator/access-review/factorless-holdings",
+                        // P17-TSK-016: the segregation-of-duties review (ROLE_ASSIGN).
+                        ApiVersion.CURRENT_PREFIX + "/operator/access-review/sod-conflicts",
+                        // P17-TSK-017: the audit trail's read (AUDIT_READ).
+                        ApiVersion.CURRENT_PREFIX + "/operator/audit-records",
+                        ApiVersion.CURRENT_PREFIX + "/operator/audit-records/{id}",
+                        // P17-TSK-020: one alert (RISK_INVESTIGATE), the assessment search (RISK_INVESTIGATE), the policy
+                        // versions and one screening list version (RISK_POLICY_ADMINISTER); the list versions are a GET on the
+                        // recording door's path.
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/alerts/{alertId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/assessments",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/policies/versions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/risk/screening-lists/{listVersionId}",
+                        // P17-TSK-014: the staff directory, its detail, the lookup and the role catalogue (IDENTITY_READ).
+                        ApiVersion.CURRENT_PREFIX + "/operator/identities",
+                        ApiVersion.CURRENT_PREFIX + "/operator/identities/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/identities/lookup",
+                        ApiVersion.CURRENT_PREFIX + "/operator/roles",
+                        // P17-TSK-015: another identity's sessions (SESSION_ADMINISTER).
+                        ApiVersion.CURRENT_PREFIX + "/operator/identities/{id}/sessions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/identities/{id}/sessions/{session}",
                         // X-TSK-019: an operator's own identity, roles, permissions and session (any live role).
                         ApiVersion.CURRENT_PREFIX + "/operator/me",
                         // P1-TSK-030. Declared by the plan for the whole phase and owned by no

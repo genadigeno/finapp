@@ -1,6 +1,8 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -40,6 +42,7 @@ public class OperatorMerchantPayoutController {
      * Initiates a payout of the merchant's payable, keyed, reasoned. {@code 201} with the honest
      * status; an unknown or malformed merchant is one 404.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.MERCHANT_PAYOUT)
     @RequiresIdempotencyKey

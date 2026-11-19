@@ -81,7 +81,7 @@ public final class AccountingPeriodDesk {
             String id, String period, String status, int revision, Integer mappingVersion, boolean unlockPending) {}
 
     /**
-     * A period as the operator reads it - no person, no reason.
+     * A period as the operator reads it - no reason; a pending request's proposer by identifier, never a name (`P17-TSK-111`).
      *
      * @param unlockProposedAt when the pending unlock was proposed, the database's clock - its identity, which its withdrawal names; null when none is pending
      * @param reopenPending a reopen of the {@code CLOSED} period is pending (`P14-TSK-024`)
@@ -103,7 +103,9 @@ public final class AccountingPeriodDesk {
             String unlockProposedAt,
             boolean reopenPending,
             String reopenId,
-            String reopenProposedAt) {}
+            String reopenProposedAt,
+            String unlockProposedBy,
+            String reopenProposedBy) {}
 
     public AccountingPeriodReceipt lock(String idempotencyKey, String rawId, String reason) {
         AccountingPeriodId id = periodId(rawId);
@@ -161,6 +163,17 @@ public final class AccountingPeriodDesk {
                 uow -> periods.recent(uow, page).stream().map(row -> view(row, pendingReopens.of(uow, row))).toList()));
     }
 
+    /**
+     * One period by its id, however old (`P17-TSK-111`): the list serves the latest 120 at most, so an older month was reached only by
+     * a controller through its requests. The list's view, read as the list reads it - unkeyed, unrecorded, in one transaction; an
+     * unknown or malformed id is the one {@code 404 accounting.NotFound}.
+     */
+    public AccountingPeriodView one(String rawId) {
+        AccountingPeriodId id = periodId(rawId);
+        return flow.door(READ_SPAN, () -> transactions.inTransaction(uow -> periods.find(uow, id)
+                .map(row -> view(row, pendingReopens.of(uow, row))).orElseThrow(AccountingPeriodDesk::notFound)));
+    }
+
     // ------------------------------------------------------------------ views
 
     AccountingPeriodView view(AccountingPeriodStore.PeriodRow row, Optional<PeriodCloseStore.ReopenRow> reopen) {
@@ -179,7 +192,9 @@ public final class AccountingPeriodDesk {
                 row.unlockPending() ? row.unlockProposedAt().map(Instant::toString).orElse(null) : null,
                 reopen.isPresent(),
                 reopen.map(pending -> pending.id().value().toString()).orElse(null),
-                reopen.map(pending -> pending.proposedAt().toString()).orElse(null));
+                reopen.map(pending -> pending.proposedAt().toString()).orElse(null),
+                row.unlockPending() ? row.unlockProposedBy().orElse(null) : null,
+                reopen.map(PeriodCloseStore.ReopenRow::proposedBy).orElse(null));
     }
 
     private static AccountingPeriodReceipt receipt(AccountingPeriods.Acted acted) {

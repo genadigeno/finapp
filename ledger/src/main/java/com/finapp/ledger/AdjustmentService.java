@@ -16,6 +16,7 @@ import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.CausationId;
 import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.id.IdGenerator;
+import com.finapp.sharedkernel.security.InstrumentShapes;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.time.Clock;
@@ -453,11 +454,47 @@ public final class AdjustmentService {
      *     approved adjustment is corrected by a reversal, never by un-deciding the proposal
      */
     public boolean reject(Connection unitOfWork, AdjustmentProposalId id) {
-        return doReject(unitOfWork, id, AdjustmentOrigin.MANUAL);
+        return doReject(unitOfWork, id, AdjustmentOrigin.MANUAL, Optional.empty());
+    }
+
+    /**
+     * {@link #reject(Connection, AdjustmentProposalId)} with the rejecter's reason (`P17-TSK-111`), recorded on the
+     * rejection's audit record - the one act it records: a repeat converges on the standing rejection, its reason
+     * unread, and the first reason stays the record's. Screened as a proposal's reason is: never blank, at most
+     * {@value #MAXIMUM_REJECTION_REASON} characters, no card-number or bank-account shape.
+     *
+     * @throws AdjustmentReasonRefusedException for a blank, over-long or instrument-bearing reason - nothing read or written
+     */
+    public boolean reject(Connection unitOfWork, AdjustmentProposalId id, String reason) {
+        return doReject(unitOfWork, id, AdjustmentOrigin.MANUAL, Optional.of(rejectionReason(reason)));
+    }
+
+    /** The longest rejection reason recorded - a proposal's reason's bound ({@code V010}). */
+    public static final int MAXIMUM_REJECTION_REASON = 1000;
+
+    /** The screen alone, for a boundary that refuses before it opens a transaction. */
+    public static void rejectionReasonChecked(String reason) {
+        rejectionReason(reason);
+    }
+
+    /** A rejection's reason as the record keeps it, or the refusal - whose message never repeats the text. */
+    static String rejectionReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            throw new AdjustmentReasonRefusedException("a reasoned rejection records its reason: it is not blank");
+        }
+        if (reason.length() > MAXIMUM_REJECTION_REASON) {
+            throw new AdjustmentReasonRefusedException(
+                    "a rejection's reason holds at most " + MAXIMUM_REJECTION_REASON + " characters");
+        }
+        if (InstrumentShapes.holdsAny(reason)) {
+            throw new AdjustmentReasonRefusedException(
+                    "a rejection's reason must not hold a card-number or bank-account shape");
+        }
+        return reason;
     }
 
     private boolean doReject(
-            Connection unitOfWork, AdjustmentProposalId id, AdjustmentOrigin door) {
+            Connection unitOfWork, AdjustmentProposalId id, AdjustmentOrigin door, Optional<String> reason) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(id, "id must not be null");
         Actor actor = SecurityContext.require();
@@ -495,7 +532,8 @@ public final class AdjustmentService {
                             + " FOR UPDATE protocol was bypassed");
         }
         // The rejection is an act and is audited (INV-AUD-01); no reason is demanded -
-        // declining to move value needs no justification, and the record names who.
+        // declining to move value needs no justification, and the record names who. One given
+        // at the reasoned door (P17-TSK-111) is the record's reason.
         audit.append(
                 unitOfWork,
                 new AuditRecord(
@@ -505,7 +543,7 @@ public final class AdjustmentService {
                         LedgerAuditAction.ADJUSTMENT_REJECTED,
                         PROPOSAL_TARGET_TYPE,
                         proposal.id().value().toString(),
-                        Optional.empty(),
+                        reason,
                         AuditOutcome.SUCCEEDED,
                         correlation.correlationId(),
                         Optional.of(
@@ -575,7 +613,7 @@ public final class AdjustmentService {
      * {@code ACCOUNTING} proposal.
      */
     public boolean rejectOwned(Connection unitOfWork, AdjustmentProposalId id) {
-        return doReject(unitOfWork, id, AdjustmentOrigin.RECONCILIATION);
+        return doReject(unitOfWork, id, AdjustmentOrigin.RECONCILIATION, Optional.empty());
     }
 
     // -----------------------------------------------------------------
@@ -642,7 +680,7 @@ public final class AdjustmentService {
 
     /** Rejects an accounting-owned proposal in the caller's transaction; converges on one already rejected. Refuses every other origin. */
     public boolean rejectPriorPeriod(Connection unitOfWork, AdjustmentProposalId id) {
-        return doReject(unitOfWork, id, AdjustmentOrigin.ACCOUNTING);
+        return doReject(unitOfWork, id, AdjustmentOrigin.ACCOUNTING, Optional.empty());
     }
 
     /** The flow's correlation with the cause resolved — the {@code PostingService} idiom. */

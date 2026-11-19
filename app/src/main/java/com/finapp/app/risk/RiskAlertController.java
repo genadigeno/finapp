@@ -55,7 +55,18 @@ public class RiskAlertController {
         return queue.alerts(status, kind, after, limit);
     }
 
+    /**
+     * One alert, as the queue shows it (`P17-TSK-020`, gap G-90): recorded {@code risk.AlertRead}; the reader's own party's
+     * {@code 403 risk.SelfDealingRefused}, recorded {@code FAILED}; an unknown alert {@code 404 risk.NotFound}.
+     */
+    @GetMapping(path = "/{alertId}")
+    @RequiresPermission(PermissionName.RISK_INVESTIGATE)
+    public RiskQueueDesk.RiskAlertView readRiskAlert(@PathVariable("alertId") String alertId) {
+        return queue.alert(alertId);
+    }
+
     /** Proposes an open alert's suppression - with a reason code and a text; a second holder decides it. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{alertId}/suppression", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_INVESTIGATE)
     @RequiresIdempotencyKey
@@ -80,6 +91,7 @@ public class RiskAlertController {
     }
 
     /** Rejects a standing suppression - anyone, the proposer's withdrawal included; the alert stays open. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{alertId}/suppression/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_CASE_APPROVE)
     @RequiresIdempotencyKey

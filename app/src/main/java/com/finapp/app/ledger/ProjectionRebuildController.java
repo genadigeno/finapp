@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -45,6 +46,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProjectionRebuildController {
 
     @NonNull private final LedgerProjectionRebuilds rebuilds;
+    @NonNull private final LedgerCollectionDesk collections;
 
     /**
      * Proposes rebuilding the account's projection, recording the drift observed - refused when it agrees with its journal
@@ -52,6 +54,7 @@ public class ProjectionRebuildController {
      * ledger.ProjectionRebuildStanding}) or when its history or its row's scale is the migrator's ({@code 409
      * ledger.ProjectionNotRebuildable}). Nothing is written to the projection.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LEDGER_ADJUST)
     @RequiresIdempotencyKey
@@ -60,6 +63,21 @@ public class ProjectionRebuildController {
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @Valid @RequestBody ProjectionRebuildRequest body) {
         return rebuilds.propose(body.ledgerAccountId(), body.reason(), idempotencyKey);
+    }
+
+    /**
+     * The approver's queue (`P17-TSK-022`, gap G-112; finapp-admin-panel ADR-C133 decision 3): a §7 collection - {@code limit} 50
+     * unless named, 200 at most, the opaque {@code cursor} of the page before - of the projection rebuilds awaiting a second
+     * person, oldest first, in the pending-decision shape, each marked when the caller proposed it and summarised by which figures
+     * drifted, never by the proposer's reason. {@code status} is {@code PROPOSED} or absent.
+     */
+    @GetMapping
+    @RequiresPermission(PermissionName.LEDGER_ADJUST)
+    public LedgerCollectionDesk.PendingProjectionRebuildPage listPendingProjectionRebuilds(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return collections.pendingRebuilds(status, cursor, limit);
     }
 
     /** The rebuild in full: what the proposer observed, and, once decided, what the approval found and wrote. */
@@ -86,6 +104,7 @@ public class ProjectionRebuildController {
     }
 
     /** Rejects - or, for its proposer, withdraws - a standing rebuild; a repeat converges. An approved one is a {@code 409}. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/rejection")
     @RequiresPermission(PermissionName.LEDGER_ADJUST)
     @RequiresIdempotencyKey

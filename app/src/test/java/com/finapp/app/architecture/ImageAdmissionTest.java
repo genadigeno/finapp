@@ -41,7 +41,9 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  *   <li>every policy enforces; the platform images need the signature and both attestations; nothing real is committed;
  *   <li>the controller refuses what no policy names and refuses when it cannot answer, at the pinned digest;
  *   <li>CI runs the check with no credential and no {@code id-token}; the script verifies before it deploys, keeps its keys
- *       outside the repository, and refuses every case beside a control; every tool is pinned and watched.
+ *       outside the repository, and refuses every case beside a control; every tool is pinned and watched;
+ *   <li>the Operator Console's image, which another repository builds, is signed, attested and admitted on kind as the platform's are,
+ *       and its cases are skipped, and said to be, when no console image is named ({@code P17-TSK-104}).
  * </ul>
  */
 @Tag("architecture")
@@ -409,10 +411,13 @@ class ImageAdmissionTest {
                 "refused \"an image no policy names\"", "refused \"edge running another image\"", "admitted \"app signed\"",
                 "admitted \"app under an environment's name, signed\"", "refused \"app under an environment's name, unsigned\"",
                 "admitted \"migrator signed\"", "admitted \"init container signed\"", "admitted \"edge at Traefik's pinned digest\"",
-                "fail \"controller down: ADMITTED while no webhook could answer, so admission fails open\"")) {
+                "fail \"controller down: ADMITTED while no webhook could answer, so admission fails open\"",
+                // P17-TSK-104: the Operator Console's three, run when a console image is named (theConsolesImageIsSignedAttestedAndAdmittedOnKind).
+                "admitted \"console signed\"", "refused \"console unsigned\"", "refused \"console signed, no SBOM attestation\"")) {
             assertThat(script).as("the case %s", refusal).contains(refusal);
         }
-        for (String plant : List.of("refused_by_verify unsigned", "refused_by_verify other-key", "refused_by_verify unattested")) {
+        for (String plant : List.of("refused_by_verify unsigned", "refused_by_verify other-key", "refused_by_verify unattested",
+                "refused_by_verify console-unsigned")) {
             assertThat(script).as("cosign's own refusal, %s", plant).contains(plant);
         }
         assertThat(script).as("the probes it carries")
@@ -422,6 +427,124 @@ class ImageAdmissionTest {
                 .contains("kube apply -f - < \"$WORK/render/admission/applied.yaml\"")
                 .doesNotContain("cp \"$ROOT/deploy/admission/clusterimagepolicies.yaml\"")
                 .contains("-f /values/values.yaml").contains("--set webhook.extraArgs.disable-tuf=true").contains("--no-hooks");
+    }
+
+    /**
+     * The Operator Console's image on the admission check ({@code P17-TSK-104}; {@code THREAT_MODEL.md} T54). The console repository's CI keeps
+     * its image unsigned and unpushed by design - admission trusts an environment's authority, never the console repository's - so on kind
+     * the check is that authority: it has the image one of three ways, pushes, signs and attests it as the platform's two, verifies it before
+     * anything deploys it, and runs three cases in the console's own namespace, each refusal beside its control. CI names no console image,
+     * so every CI run skips the three, and says so beside its result.
+     *
+     * <p>What is held here is the script, never the run: the cluster half is owed to the owner's run, and nothing here claims it. The probe
+     * the entry names - an unsigned console, or one without its SBOM attestation, admitted turns the check red - is {@code refused}'s own
+     * {@code ADMITTED, and it must be refused}, which {@link #ciProvesItOnKindWithNoCredential} holds for every refusal.
+     */
+    @Test
+    @DisplayName("the console's image is had one of three ways, signed and attested as the platform's are, verified before anything deploys it, and its"
+            + " three cases run in its own namespace beside controls; with no console image named they are skipped and said so beside the result (P17-TSK-104)")
+    void theConsolesImageIsSignedAttestedAndAdmittedOnKind() {
+        String script = EvidenceCitations.read(root.resolve(SCRIPT));
+        for (String row : List.of("console signed", "console unsigned", "console unattested")) {
+            assertThat(script).as("the header's table of cases names %s", row).containsPattern("(?m)^#   " + Pattern.quote(row) + " {2,}\\S");
+        }
+        assertThat(script).as("the header says the cluster run is owed, and names the variables").contains("THE CLUSTER RUN IS OWED (the owner's postponement)")
+                .contains("CONSOLE_IMAGE, a local image").contains("CONSOLE_ARCHIVE, the console CI's finapp-console.oci.tar")
+                .contains("CONSOLE_REPOSITORY, a finapp-admin-panel checkout, built at\n#          CONSOLE_COMMIT").contains("CONSOLE_SBOM names its CycloneDX SBOM");
+
+        // Which of the three, refused before anything is built.
+        for (String name : List.of("CONSOLE_IMAGE", "CONSOLE_ARCHIVE", "CONSOLE_REPOSITORY", "CONSOLE_COMMIT", "CONSOLE_SBOM")) {
+            assertThat(script).as("%s is read", name).contains(name + "=${" + name + ":-}");
+        }
+        int resolved = script.indexOf("*) echo \"?? one console image at a time: $CONSOLE_FROM are all named\" >&2; exit 2 ;;");
+        assertThat(resolved).as("two at once refused, before anything is built").isPositive().isLessThan(script.indexOf("step \"the images\""));
+        assertThat(script).as("half of one refused too: a build needs its commit, a given image its SBOM")
+                .contains("CONSOLE_REPOSITORY is built at a named commit, and CONSOLE_COMMIT names none")
+                .contains("a console image named by CONSOLE_IMAGE brings no SBOM: name its CycloneDX file in CONSOLE_SBOM");
+
+        String obtain = function(script, "console_obtain");
+        assertThat(obtain).as("a given image tagged, never rebuilt").contains("dock tag \"$CONSOLE_IMAGE\" \"$1\"");
+        assertThat(obtain).as("the CI artefact loaded, by name or by id").contains("dock load --input \"$(dpath \"$CONSOLE_ARCHIVE\")\"")
+                .contains("s/^Loaded image ID: \\(sha256:[0-9a-f]\\{64\\}\\)$/\\1/p");
+        assertThat(obtain).as("a build: the named commit exported, the first release's assets, the console CI's own build for kind")
+                .contains("rev-parse --verify \"$CONSOLE_COMMIT^{commit}\"").contains("archive --format=tar")
+                .contains("sh \"$CONSOLE_TREE/scripts/collect-previous-assets.sh\" >>")
+                .contains("dock build --build-arg VITE_CONSOLE_ENVIRONMENT=kind --label \"org.opencontainers.image.revision=$CONSOLE_REVISION\"")
+                .as("the checkout is read and never changed: no worktree, no checkout").doesNotContain("worktree").doesNotContain("git checkout");
+        assertThat(script).as("one tag of this run's, removed at exit with the platform's").contains("CONSOLE_LOCAL=\"finapp-console:admission-$RUN\"")
+                .contains("finapp-(app|migrator|console):admission-$RUN\\$");
+
+        String sbom = function(script, "console_sbom");
+        assertThat(sbom).as("the console's own SBOM: named, the archive's, or what its npm lists from the built commit's lockfile")
+                .contains("co_sbom=$CONSOLE_SBOM").contains("co_sbom=\"$(dirname \"$CONSOLE_ARCHIVE\")/sbom.cdx.json\"")
+                .contains("dock run --rm --network none").contains("npm sbom --sbom-format cyclonedx --omit dev --package-lock-only")
+                .contains("s/^FROM \\(node:[^ ]*@sha256:[0-9a-f]\\{64\\}\\) AS build$/\\1/p")
+                .as("never one this run writes from the image").doesNotContain("trivy");
+        assertThat(sbom).as("CycloneDX, and the console's: npm packages").contains("grep -q '\"bomFormat\": *\"CycloneDX\"' \"$WORK/att/finapp-console.cdx.json\"")
+                .contains("grep -q '\"pkg:npm/' \"$WORK/att/finapp-console.cdx.json\"");
+        assertThat(function(script, "console_provenance")).as("a given image says it was given, and names no builder")
+                .contains("co_builder=\"urn:finapp:builder:none-images-supplied\"").contains("\"imagesSuppliedNotBuilt\": %s")
+                .contains("> \"$WORK/att/finapp-console.provenance.json\"");
+
+        // Pushed, signed and attested as the platform's; the unattested variant is signed and given its provenance alone.
+        assertThat(script).contains("CONSOLE=$(push \"$CONSOLE_LOCAL\" finapp-console signed)")
+                .contains("CONSOLE_UNSIGNED=$(push \"$(variant console unsigned \"$CONSOLE_LOCAL\")\" finapp-console unsigned)")
+                .contains("CONSOLE_UNATTESTED=$(push \"$(variant console unattested \"$CONSOLE_LOCAL\")\" finapp-console unattested)")
+                .contains("sign_and_attest ci \"$CONSOLE\" finapp-console")
+                .contains("cosign sign --key /keys/ci.key $SIGNING \"$CONSOLE_UNATTESTED\"")
+                .contains("--type slsaprovenance1 --predicate /att/finapp-console.provenance.json \"$CONSOLE_UNATTESTED\"");
+        assertThat(script).as("the unattested console is never given its SBOM, and the unsigned one nothing")
+                .doesNotContain("--predicate /att/finapp-console.cdx.json \"$CONSOLE_UNATTESTED\"")
+                .doesNotContain("sign_and_attest ci \"$CONSOLE_UNATTESTED\"").doesNotContain("sign_and_attest ci \"$CONSOLE_UNSIGNED\"")
+                .doesNotContain("$SIGNING \"$CONSOLE_UNSIGNED\"");
+        int verified = script.indexOf("verified \"$CONSOLE\" \"the console image\"");
+        assertThat(verified).as("verified before the controller, the policies or any workload").isPositive()
+                .isLessThan(script.indexOf("step \"the policy controller\""));
+        assertThat(script).contains("refused_by_verify console-unsigned \"no signatures found\" cosign verify --key /keys/ci.pub $VERIFYING \"$CONSOLE_UNSIGNED\"");
+
+        // The three cases: the console overlay's own Deployment, in its own namespace, opted in; each refusal beside its control.
+        assertThat(script).contains("for namespace in finapp finapp-edge finapp-console; do")
+                .contains("render console/overlays/kind \"$WORK/render/console/all.yaml\"");
+        assertThat(function(script, "console_deployment")).contains("s/^  namespace: finapp-console$/  namespace: $2/")
+                .contains("s#image: finapp-console@sha256:[0-9a-f]*#image: $3#").contains("\"$WORK/render/console/Deployment.finapp-console.yaml\"");
+        int cases = script.indexOf("step \"the cases\"");
+        int down = script.indexOf("step \"the controller down\"");
+        for (String line : List.of(
+                "admitted \"console signed\" \"$C/console-signed.yaml\" finapp-console app.kubernetes.io/name=finapp-console \"$CONSOLE\"",
+                "console_deployment case-console-unsigned \"$CONTROL\" \"$CONSOLE_UNSIGNED\" > \"$C/console-unsigned-control.yaml\"",
+                "refused \"console unsigned\" \"$C/console-unsigned.yaml\" \"$UNSIGNED_REASON\" \"$C/console-unsigned-control.yaml\"",
+                "console_deployment case-console-unattested \"$CONTROL\" \"$CONSOLE_UNATTESTED\" > \"$C/console-unattested-control.yaml\"",
+                "refused \"console signed, no SBOM attestation\" \"$C/console-unattested.yaml\" \"$UNATTESTED\" \"$C/console-unattested-control.yaml\"")) {
+            assertThat(script.indexOf(line)).as("among the cases, before the controller goes down: %s", line).isGreaterThan(cases).isLessThan(down);
+        }
+        assertThat(script).as("the console's admission case is the console's namespace").contains("console_deployment case-console-signed finapp-console \"$CONSOLE\"");
+
+        // The loud skip: at the cases, and again beside the result, whatever it is.
+        assertThat(script).contains("if [ -n \"$CONSOLE_FROM\" ]; then\n    console_deployment case-console-signed")
+                .contains("log \"THE CONSOLE'S CASES SKIPPED: no console image was named")
+                .contains("the console's three cases (P17-TSK-104) - no console image was named").contains(": > \"$ART/skipped.txt\"");
+        String finish = function(script, "finish");
+        assertThat(finish.indexOf("log \"SKIPPED: $skipped\"")).as("said beside the result").isPositive()
+                .isLessThan(finish.indexOf("log \"RESULT: COULD NOT RUN\"")).isLessThan(finish.indexOf("log \"RESULT: RED\""))
+                .isLessThan(finish.indexOf("log \"RESULT: GREEN\""));
+
+        // The same three ways in the kind rehearsal, by the same names.
+        String rehearsal = EvidenceCitations.read(root.resolve("infra/scripts/kind-rehearsal.sh"));
+        for (String name : List.of("CONSOLE_IMAGE", "CONSOLE_ARCHIVE", "CONSOLE_REPOSITORY", "CONSOLE_COMMIT")) {
+            assertThat(rehearsal).as("the kind rehearsal reads %s too", name).contains(name + "=${" + name + ":-}");
+        }
+        assertThat(function(rehearsal, "console_obtain")).as("and builds the console as this check does")
+                .contains("dock build --build-arg VITE_CONSOLE_ENVIRONMENT=kind --label \"org.opencontainers.image.revision=$co_revision\"")
+                .contains("dock load --input \"$(dpath \"$CONSOLE_ARCHIVE\")\"").contains("sh \"$CONSOLE_TREE/scripts/collect-previous-assets.sh\" >>");
+    }
+
+    /** The body of one shell function of {@code text}, so an assertion cannot be satisfied by another function's text. */
+    private static String function(String text, String name) {
+        Matcher start = Pattern.compile("(?m)^" + Pattern.quote(name) + "\\(\\) \\{$").matcher(text);
+        assertThat(start.find()).as("the script defines %s", name).isTrue();
+        Matcher end = Pattern.compile("(?m)^}$").matcher(text);
+        assertThat(end.find(start.end())).as("%s ends", name).isTrue();
+        return text.substring(start.end(), end.start());
     }
 
     @Test

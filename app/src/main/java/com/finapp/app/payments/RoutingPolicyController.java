@@ -1,6 +1,8 @@
 package com.finapp.app.payments;
 
 import com.finapp.app.session.RecordsRefusals;
+import com.finapp.app.session.RequiresAssurance;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import com.finapp.app.session.RequiresPermission;
@@ -44,6 +46,7 @@ public class RoutingPolicyController {
     @NonNull private final RoutingPolicyOperations routing;
 
     /** Adds an immutable version, effective forward. Backdated is a 422 (`INV-HIST-04`). */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(
             path = "/operator/routing-policy/versions",
             consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -63,6 +66,7 @@ public class RoutingPolicyController {
      * Records a rail as in or out of service (ADR-0060 §4) — the fact every instance routes
      * by, reasoned and audited. Setting the state a rail already has converges on it.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(
             path = "/operator/rails/{rail}/availability",
             consumes = MediaType.APPLICATION_JSON_VALUE)

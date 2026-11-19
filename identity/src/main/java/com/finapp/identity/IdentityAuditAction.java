@@ -264,6 +264,60 @@ public enum IdentityAuditAction implements AuditableAction {
             "An administrator read the live holdings of a money-redirecting role with no enrolled factor.",
             false),
 
+    /**
+     * A page of the staff directory was read (`P17-TSK-014`): once per request, its filter and how many it served as the summary,
+     * never the rows. No reason: a read harms nobody, and who read the list of privileged holders, when, is the record.
+     */
+    IDENTITY_DIRECTORY_READ(
+            "identity.IdentityDirectoryRead",
+            "A holder of IDENTITY_READ read a page of the staff directory.",
+            false),
+
+    /** One identity's detail was read (`P17-TSK-014`): its status, factor state and live roles; the identity is the target. */
+    IDENTITY_READ(
+            "identity.IdentityRead",
+            "A holder of IDENTITY_READ read one identity's status, factor state and roles.",
+            false),
+
+    /**
+     * An identity was looked up by its exact login identifier (`P17-TSK-014`; ADR-C132 decision 4): recorded whether it matched
+     * or not, the matched identity the target. <strong>Never the login identifier</strong>: it may be a person's own handle,
+     * which is why it travels in a body and why the trail names only what it resolved to.
+     */
+    IDENTITY_LOOKED_UP(
+            "identity.IdentityLookedUp",
+            "A holder of IDENTITY_READ looked an identity up by its exact login identifier.",
+            false),
+
+    /**
+     * An administrator listed another identity's live sessions (`P17-TSK-015`): the identity the target, the count served the
+     * summary. No token and no hash is served, so none can be recorded.
+     */
+    SESSIONS_READ(
+            "identity.SessionsRead",
+            "A holder of SESSION_ADMINISTER listed another identity's live sessions.",
+            false),
+
+    /**
+     * An administrator ended another identity's session - one, or all of them - without suspending the person (`P17-TSK-015`).
+     * A reason is required: it is an act against somebody else's access, and "why was this person signed out?" is the question an
+     * incident's review asks. Recorded only when a session actually ended, or for "all" with the count however small, so the
+     * trail never holds a guessed session identifier.
+     */
+    SESSION_REVOKED_BY_ADMINISTRATOR(
+            "identity.SessionRevokedByAdministrator",
+            "An administrator ended another identity's session, or all of them, without suspending the identity.",
+            true),
+
+    /**
+     * An administrator read the live holdings that conflict under the segregation-of-duties table (`P17-TSK-016`): the check of
+     * holdings granted before the rule, which grants nothing and revokes nothing. Written in the read's own transaction.
+     */
+    SOD_CONFLICTS_READ(
+            "identity.SodConflictsRead",
+            "An administrator read the live holdings that conflict under the segregation-of-duties table.",
+            false),
+
     IDENTITY_SUSPENDED(
             "identity.IdentitySuspended",
             "An identity was suspended by an administrator and can no longer authenticate.",

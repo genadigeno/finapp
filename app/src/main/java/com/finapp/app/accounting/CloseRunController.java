@@ -1,7 +1,9 @@
 package com.finapp.app.accounting;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -42,6 +44,7 @@ public class CloseRunController {
     }
 
     /** Asks a check's next attempt - a new row, the earlier ones frozen; a reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{periodId}/close-run/checks/{check}/rerun", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_PROPOSE)
     @RequiresIdempotencyKey

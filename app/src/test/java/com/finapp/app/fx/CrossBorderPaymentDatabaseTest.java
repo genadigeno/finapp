@@ -669,21 +669,6 @@ class CrossBorderPaymentDatabaseTest {
                 .isEqualTo("IN_REVIEW");
     }
 
-    /**
-     * A role holder on a MULTI_FACTOR session: the corridor policy's approval steps up since `P15-TSK-039` (2026-11-09), and a
-     * password session's is {@code 403 identity.AssuranceRequired} - the fixture's red until `X-TSK-002` ran it. The factor is
-     * enrolled and proven over the real doors, as {@code PayoutDestinationEndpointDatabaseTest} does.
-     */
-    private String multiFactorSessionWith(RoleName role) throws Exception {
-        String password = sessionWith(role);
-        Sensitive<String> secret = enrolAndConfirm(password);
-        HttpResponse<String> elevated = client().post("/v1/authentications/mfa",
-                "{\"code\":\"" + Authenticator.codeNow(secret, TotpParameters.current(), java.time.Clock.systemUTC()) + "\"}",
-                password, null);
-        assertThat(elevated.body()).as("the factor proven: a MULTI_FACTOR session").contains("sessionToken");
-        return field(elevated.body(), "sessionToken");
-    }
-
     /** Enrols and confirms a TOTP factor on the session's identity; the session itself stays password-only. */
     private Sensitive<String> enrolAndConfirm(String sessionToken) throws Exception {
         Matcher matcher = Pattern.compile("secret=([A-Z2-7]+)").matcher(client().post("/v1/me/mfa", null, sessionToken, null).body());
@@ -796,7 +781,7 @@ class CrossBorderPaymentDatabaseTest {
 
     private void activateCorridorPolicy() throws Exception {
         String first = sessionWith(RoleName.FX_CONTROLLER);
-        String second = multiFactorSessionWith(RoleName.FX_CONTROLLER);
+        String second = sessionWith(RoleName.FX_CONTROLLER);
         try (Connection app = DatabaseRoles.application();
                 PreparedStatement select = app.prepareStatement(
                         "SELECT id FROM crossborder.corridor_policy_version WHERE status = 'PROPOSED'");
@@ -828,7 +813,7 @@ class CrossBorderPaymentDatabaseTest {
         }
         HttpResponse<String> session = client().post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + FxTestClient.PASSWORD + "\"}", null, FxTestClient.key());
-        return field(session.body(), "sessionToken");
+        return com.finapp.app.session.OperatorStepUp.elevated(field(session.body(), "sessionToken"), client()::post);
     }
 
     @TestConfiguration

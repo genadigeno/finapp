@@ -167,6 +167,7 @@ class IdentityAdministrationDatabaseTest {
     void aReviewerIsRefusedByBothAdministrativeEndpoints() throws Exception {
         IdentityId admin = givenAnAdministrator();
         IdentityId reviewer = givenAnIdentity();
+        givenAConfirmedFactorFor(reviewer); // every role guards an act, so every grant needs one (P17-TSK-102)
 
         // Granted through the REAL endpoint rather than a fixture row, so the whole path is
         // exercised: the request enum admits the new value at the boundary, V013's regenerated
@@ -217,6 +218,7 @@ class IdentityAdministrationDatabaseTest {
         IdentityId admin = givenAnAdministrator();
         for (String role : java.util.List.of("CREDIT_POLICY_OFFICER", "UNDERWRITER")) {
             IdentityId holder = givenAnIdentity();
+            givenAConfirmedFactorFor(holder); // every role guards an act, so every grant needs one (P17-TSK-102)
 
             // Granted through the REAL endpoint (the P2-TSK-004 precedent): the request enum admits
             // the value at the boundary, V020's regenerated constraint admits the row, and the grant
@@ -245,6 +247,7 @@ class IdentityAdministrationDatabaseTest {
         IdentityId admin = givenAnAdministrator();
         for (String role : java.util.List.of("LENDING_OFFICER", "LENDING_TREASURY_OFFICER", "LOAN_SERVICING_AGENT")) {
             IdentityId holder = givenAnIdentity();
+            givenAConfirmedFactorFor(holder); // every role guards an act, so every grant needs one (P17-TSK-102)
 
             // Granted through the REAL endpoint (the P2-TSK-004 precedent): the request enum admits
             // the value at the boundary, V021's regenerated constraint admits the row, and the grant
@@ -273,6 +276,7 @@ class IdentityAdministrationDatabaseTest {
         IdentityId admin = givenAnAdministrator();
         for (String role : java.util.List.of("BNPL_OFFICER", "BNPL_SERVICING_AGENT")) {
             IdentityId holder = givenAnIdentity();
+            givenAConfirmedFactorFor(holder); // every role guards an act, so every grant needs one (P17-TSK-102)
 
             // Granted through the REAL endpoint (the P2-TSK-004 precedent): the request enum admits the value at the
             // boundary, identity V022's regenerated constraint admits the row, and the grant is audited like any other.
@@ -300,12 +304,11 @@ class IdentityAdministrationDatabaseTest {
         IdentityId admin = givenAnAdministrator();
         for (String role : java.util.List.of("RISK_ANALYST", "RISK_OFFICER", "AML_OFFICER")) {
             IdentityId holder = givenAnIdentity();
-            if (role.equals("RISK_ANALYST")) {
-                // P15-TSK-032: the risk approver needs an enrolled factor first - refused without one, granted with it.
-                assertThat(post(rolesOf(holder), givenASessionFor(admin), "{\"role\":\"RISK_ANALYST\",\"reason\":\"OPS-6101 risk desk\"}")
-                        .body()).contains("identity.FactorRequiredForRole");
-                givenAConfirmedFactorFor(holder);
-            }
+            // P15-TSK-032 for the risk approver, P17-TSK-102 for every role: an enrolled factor first - refused without one,
+            // granted with it.
+            assertThat(post(rolesOf(holder), givenASessionFor(admin), "{\"role\":\"" + role + "\",\"reason\":\"OPS-6101 risk desk\"}")
+                    .body()).as(role).contains("identity.FactorRequiredForRole");
+            givenAConfirmedFactorFor(holder);
 
             // Granted through the REAL endpoint (the P2-TSK-004 precedent): the request enum admits the value at the
             // boundary, identity V023's regenerated constraint admits the row, and the grant is audited like any other.
@@ -335,6 +338,7 @@ class IdentityAdministrationDatabaseTest {
         IdentityId admin = givenAnAdministrator();
         for (String role : java.util.List.of("ACCOUNTANT", "FINANCIAL_CONTROLLER", "REGULATORY_REPORTER")) {
             IdentityId holder = givenAnIdentity();
+            givenAConfirmedFactorFor(holder); // every role guards an act, so every grant needs one (P17-TSK-102)
 
             // Granted through the REAL endpoint: the request enum admits the value at the boundary, identity V025's
             // regenerated constraint admits the row, and the grant is audited like any other.
@@ -359,6 +363,7 @@ class IdentityAdministrationDatabaseTest {
         // second accounting role on the same identity is admitted - which is why approver <> proposer is a CHECK on every
         // four-eyes row and a refusal at the domain (accounting.SelfApprovalRefused, INV-AUD-04), never the roles alone.
         IdentityId both = givenAnIdentity();
+        givenAConfirmedFactorFor(both);
         for (String role : java.util.List.of("ACCOUNTANT", "FINANCIAL_CONTROLLER")) {
             assertThat(post(rolesOf(both), givenASessionFor(admin),
                                     "{\"role\":\"" + role + "\",\"reason\":\"OPS-6202 two desks\"}")
@@ -428,6 +433,7 @@ class IdentityAdministrationDatabaseTest {
     void aFirstRoleEndsTheGranteesSessions() throws Exception {
         IdentityId admin = givenAnAdministrator();
         IdentityId subject = givenAnIdentity();
+        givenAConfirmedFactorFor(subject); // every role guards an act, so every grant needs one (P17-TSK-102)
         String asACustomer = givenAPasswordSessionFor(subject);
         String steppedUp = givenASessionAt(subject, AssuranceLevel.MULTI_FACTOR);
         assertThat(get("/sessions", asACustomer).statusCode()).as("precondition: the customer's session serves").isEqualTo(200);
@@ -452,6 +458,7 @@ class IdentityAdministrationDatabaseTest {
         IdentityId admin = givenAnAdministrator();
         String adminSession = givenASessionFor(admin);
         IdentityId subject = givenAnIdentity();
+        givenAConfirmedFactorFor(subject); // every role guards an act, so every grant needs one (P17-TSK-102)
         assertThat(post(rolesOf(subject), adminSession, reviewerRole()).statusCode()).isEqualTo(204);
         String asStaff = givenASessionFor(subject);
 
@@ -474,6 +481,7 @@ class IdentityAdministrationDatabaseTest {
         IdentityId admin = givenAnAdministrator();
         String steppedUp = givenASessionAt(admin, AssuranceLevel.MULTI_FACTOR);
         IdentityId subject = givenAnIdentity();
+        givenAConfirmedFactorFor(subject); // every role guards an act, so every grant needs one (P17-TSK-102)
         assertThat(post(rolesOf(subject), givenASessionFor(admin), reviewerRole()).statusCode()).isEqualTo(204);
         String asStaff = givenASessionAt(subject, AssuranceLevel.MULTI_FACTOR);
         assertThat(get("/sessions", asStaff).statusCode()).as("precondition: the staff session serves").isEqualTo(200);
@@ -503,6 +511,7 @@ class IdentityAdministrationDatabaseTest {
         IdentityId admin = givenAnAdministrator();
         String steppedUp = givenASessionAt(admin, AssuranceLevel.MULTI_FACTOR);
         IdentityId subject = givenAnIdentity();
+        givenAConfirmedFactorFor(subject); // every role guards an act, so every grant needs one (P17-TSK-102)
         assertThat(post(rolesOf(subject), givenASessionFor(admin), reviewerRole()).statusCode()).isEqualTo(204);
         assertThat(post(rolesOf(subject), givenASessionFor(admin), "{\"role\":\"ACCOUNTANT\",\"reason\":\"OPS-6203 finance desk\"}")
                 .statusCode()).isEqualTo(204);
@@ -522,6 +531,7 @@ class IdentityAdministrationDatabaseTest {
         IdentityId admin = givenAnAdministrator();
         String steppedUp = givenASessionAt(admin, AssuranceLevel.MULTI_FACTOR);
         IdentityId subject = givenAnIdentity();
+        givenAConfirmedFactorFor(subject); // every role guards an act, so every grant needs one (P17-TSK-102)
         assertThat(post(rolesOf(subject), givenASessionFor(admin), reviewerRole()).statusCode()).isEqualTo(204);
 
         String onAPassword = givenAPasswordSessionFor(admin);
@@ -610,6 +620,7 @@ class IdentityAdministrationDatabaseTest {
         IdentityId admin = givenAnAdministrator();
         IdentityId subject = givenAnIdentity();
         grantBypassingTheRule(subject, admin, RoleName.KYC_REVIEWER);
+        givenAConfirmedFactorFor(subject); // the grant below needs one, as every grant does (P17-TSK-102)
         String asStaff = givenASessionFor(subject);
 
         java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor();
@@ -956,25 +967,47 @@ class IdentityAdministrationDatabaseTest {
     }
 
     @Test
-    @DisplayName("the check names a standing holding with no factor, and stops naming it once the holder enrols (P15-TSK-039)")
+    @DisplayName("the check names a standing holding with no factor - of any role since P17-TSK-102, every role guarding an act -"
+            + " never one whose holder has a factor, and stops naming it once the holder enrols (P15-TSK-039)")
     void theCheckNamesStandingHoldings() throws Exception {
         IdentityId admin = givenAnAdministrator();
         IdentityId standing = givenAnIdentity();
         grantBypassingTheRule(standing, admin, RoleName.LEDGER_OPERATOR);
+        IdentityId reviewer = givenAnIdentity();
+        grantBypassingTheRule(reviewer, admin, RoleName.KYC_REVIEWER);
         IdentityId notNamed = givenAnIdentity();
+        givenAConfirmedFactorFor(notNamed);
         grantBypassingTheRule(notNamed, admin, RoleName.KYC_REVIEWER);
+        // The check serves the oldest first, at most a page, and the shared database holds every suite's factorless fixture
+        // holding: these three are back-dated ahead of them, so the page is sure to reach them.
+        backDateTheHoldingsOf(standing, reviewer, notNamed);
         String session = givenASessionAt(admin, AssuranceLevel.MULTI_FACTOR);
 
         assertThat(get("/operator/access-review/factorless-holdings", givenAPasswordSessionFor(admin)).statusCode())
-                .as("a list of money-role holders with no second factor is not served on a password alone")
+                .as("a list of privileged holders with no second factor is not served on a password alone")
                 .isEqualTo(403);
         String before = get("/operator/access-review/factorless-holdings", session).body();
         assertThat(before).contains(standing.value().toString()).contains("LEDGER_OPERATOR");
-        assertThat(before).doesNotContain(notNamed.value().toString());
+        assertThat(before).as("every role guards an act now, the reviewer's too").contains(reviewer.value().toString())
+                .contains("KYC_REVIEWER");
+        assertThat(before).as("a holder with a factor is not named").doesNotContain(notNamed.value().toString());
 
         givenAConfirmedFactorFor(standing);
+        givenAConfirmedFactorFor(reviewer);
         assertThat(get("/operator/access-review/factorless-holdings", session).body())
-                .doesNotContain(standing.value().toString());
+                .doesNotContain(standing.value().toString()).doesNotContain(reviewer.value().toString());
+    }
+
+    /** The live holdings of {@code holders}, moved a century back, ahead of every fixture holding of the shared database. */
+    private static void backDateTheHoldingsOf(IdentityId... holders) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement update = app.prepareStatement("UPDATE identity.role_assignment"
+                        + " SET assigned_at = assigned_at - interval '100 years' WHERE identity_id = ? AND revoked_at IS NULL")) {
+            for (IdentityId holder : holders) {
+                update.setObject(1, holder.value());
+                assertThat(update.executeUpdate()).as("one live holding").isEqualTo(1);
+            }
+        }
     }
 
     private static long liveHoldingsOf(IdentityId subject) throws SQLException {

@@ -90,6 +90,7 @@ public final class Rehearsal {
             case "workload" -> rehearsal.workload(args[2]);
             case "replay" -> rehearsal.replay(args[2], args[3], args[4], args[5]);
             case "edge" -> rehearsal.edge();
+            case "console" -> rehearsal.console();
             case "surface" -> rehearsal.surface();
             case "forged" -> rehearsal.forged(args[2], Integer.parseInt(args[3]));
             case "report-token" -> System.out.println("token " + rehearsal.fresh("operator"));
@@ -734,6 +735,28 @@ public final class Rehearsal {
         System.out.println("edge operator-route-on-operator status=" + operator.status() + " body=" + operator.body().replaceAll("\\s+", " "));
         Answer actuator = get(publicBase, "/actuator/health", null);
         System.out.println("edge actuator-on-public status=" + actuator.status());
+    }
+
+    /**
+     * The Operator Console through the real edge (P17-TSK-104): its page on the operator host, every Content-Security-Policy line of the
+     * answer counted - the edge's console-headers sets one, and a second would be a second policy the browser enforces as well; an API
+     * route on the same host, whose policy must stay the API's own; and the page asked of the public host, which must not serve it. Each
+     * policy is printed as received, its lines joined, so the shell compares the whole of it. No request carries a credential, and no body
+     * is printed: the page is the console's public bytes, and the API's answer is a refusal.
+     */
+    private void console() throws Exception {
+        Answer page = get(operatorBase, "/console/", null);
+        List<String> pagePolicies = page.raw().headers().allValues("content-security-policy");
+        System.out.println("console page-on-operator status=" + page.status() + " csp-count=" + pagePolicies.size()
+                + " csp=" + String.join(" | ", pagePolicies));
+        Answer api = get(operatorBase, "/v1/operator/events/dead-letters", null);
+        List<String> apiPolicies = api.raw().headers().allValues("content-security-policy");
+        System.out.println("console api-on-operator status=" + api.status() + " csp-count=" + apiPolicies.size()
+                + " csp=" + String.join(" | ", apiPolicies));
+        for (String path : List.of("/console/", "/console")) {
+            Answer onPublic = get(publicBase, path, null);
+            System.out.println("console page-on-public path=" + path + " status=" + onPublic.status());
+        }
     }
 
     // ---------------------------------------------------------------------------------------------- the telemetry pipeline (P15-TSK-023)

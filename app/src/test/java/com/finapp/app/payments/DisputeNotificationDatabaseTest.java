@@ -985,7 +985,10 @@ class DisputeNotificationDatabaseTest {
                         "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD
                                 + "\"}",
                         null, true);
-        String token = field(authenticated.body(), "sessionToken");
+        // MULTI_FACTOR: every operator act steps up since `P17-TSK-102` - the key issuance among them.
+        String token = com.finapp.app.session.OperatorStepUp.elevated(
+                field(authenticated.body(), "sessionToken"),
+                (path, body, bearer, key) -> post(path, body, bearer, key != null));
         sessions.put(role, token);
         return token;
     }

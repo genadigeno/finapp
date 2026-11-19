@@ -174,14 +174,15 @@ class RiskMonitoringEndpointDatabaseTest {
         }
         HttpResponse<String> session = post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, someKey());
-        return field(session.body(), "sessionToken");
+        // Every operator act is MULTI_FACTOR (P17-TSK-102), the reprocessing order included: the holder steps up.
+        return com.finapp.app.session.OperatorStepUp.elevated(field(session.body(), "sessionToken"), this::post);
     }
 
     private HttpResponse<String> post(String path, String body, String bearer, String key) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:" + port + path))
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body));
+                .POST(body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         if (bearer != null) {
             request.header("Authorization", "Bearer " + bearer);
         }

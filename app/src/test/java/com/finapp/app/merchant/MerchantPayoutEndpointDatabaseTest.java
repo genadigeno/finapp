@@ -475,7 +475,8 @@ class MerchantPayoutEndpointDatabaseTest {
     }
 
     private String sessionWith(RoleName role) throws Exception {
-        return tokenFrom(authenticate(operatorLogin(role)).body());
+        return com.finapp.app.session.OperatorStepUp.elevated(
+                tokenFrom(authenticate(operatorLogin(role)).body()), this::post);
     }
 
     private String operatorLogin(RoleName role) throws Exception {

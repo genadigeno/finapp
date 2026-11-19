@@ -257,6 +257,15 @@ public enum AccountingAuditAction implements AuditableAction {
             true),
 
     /** A second person approved a break's acknowledgement (`P14-TSK-010`, ACCOUNTING_ADJUST_APPROVE). */
+    /** A pending acknowledgement rejected (`P17-TSK-111`), the break staying OPEN - reasoned. */
+    BREAK_ACKNOWLEDGEMENT_REJECTED(
+            "accounting.BreakAcknowledgementRejected",
+            "A holder of ACCOUNTING_ADJUST_APPROVE rejected an accounting break's pending acknowledgement: the proposal cleared from"
+                    + " the break, which stays OPEN for a new one, the case file keeping what was proposed and why it was rejected"
+                    + " (P17-TSK-111, accounting V018; POST .../breaks/{breakId}/acknowledgement-rejection). Reasoned; may be the"
+                    + " proposer's own, as every rejection here may. Its target the break; the summary its period, check and type and"
+                    + " whether the rejecter proposed it.",
+            true),
     BREAK_ACKNOWLEDGED(
             "accounting.BreakAcknowledged",
             "A person other than its proposer approved an accounting break's acknowledgement: OPEN -> ACKNOWLEDGED, its"
@@ -546,6 +555,25 @@ public enum AccountingAuditAction implements AuditableAction {
                     + " Recorded before it is served, in a transaction of its own; a failed record fails the read. No other definition or status"
                     + " is served, so nothing is recorded for one. Its target the run; the summary the definition, the period, its revision and"
                     + " status as read, the run's revision and its issued hash - never a figure.",
+            false),
+    /** An accountant listed report runs (`P17-TSK-023`, ACCOUNTING_READ) - every page recorded. */
+    REPORT_RUNS_LISTED(
+            "accounting.ReportRunsListed",
+            "A holder of ACCOUNTING_READ read a page of report runs (P17-TSK-023, gap G-113; GET /v1/operator/accounting/report-runs) -"
+                    + " each run's head as its own read serves it, never its content. Recorded SUCCEEDED in a transaction of its own after"
+                    + " the read and before the answer, so nothing is served unrecorded; a refused request records nothing. Its target the"
+                    + " period asked, or all; the summary the period, the status asked, whether the page continued a walk and how many rows"
+                    + " it served - never a figure or a parameter.",
+            false),
+    /** A controller listed the FINAL statements (`P17-TSK-023`, ACCOUNTING_CLOSE_APPROVE) - every page recorded. */
+    FINAL_STATEMENTS_LISTED(
+            "accounting.FinalStatementsListed",
+            "A holder of ACCOUNTING_CLOSE_APPROVE read a page of the FINAL BALANCE_SHEET and INCOME_STATEMENT runs - exactly the runs"
+                    + " .../report-runs/{runId}/final-statement serves, so a controller finds the statement of a close it approved (P17-TSK-023,"
+                    + " the owner's answer to the finance roles' read question: no ACCOUNTING_READ; GET .../report-runs/final-statements)."
+                    + " Recorded SUCCEEDED in a transaction of its own after the read and before the answer; a refused request records"
+                    + " nothing. Its target the period asked, or all; the summary the period, whether the page continued a walk and how"
+                    + " many rows it served - never a figure.",
             false);
 
     private final String code;

@@ -30,6 +30,12 @@ import java.lang.annotation.Target;
  * own and do not use it. <strong>36</strong> since `P15-TSK-039`, with the dead-letter doors, a payout destination's
  * proposal and approval, Phase 9's approvals, restarts and reversals, and the check of factorless holdings.
  *
+ * <p><strong>Every act since `P17-TSK-102`</strong> (2026-11-17; the owner's D-6; finapp-admin-panel ADR-C131 decision 3): every
+ * {@code POST}, {@code PUT}, {@code PATCH} or {@code DELETE} handler that declares {@link RequiresPermission} declares this at
+ * {@code MULTI_FACTOR}, proposals and rejections included, held by {@code EveryOperatorActRequiresAFactorTest}; and every role that
+ * can act needs an enrolled factor before it is granted ({@code RoleName.requiresEnrolledFactor}), since a password may enrol a
+ * first factor. The counts above are the ones before it.
+ *
  * <h2>A refusal is recorded</h2>
  *
  * <p>Since `P15-TSK-021` a session below the level is refused <em>and recorded</em>

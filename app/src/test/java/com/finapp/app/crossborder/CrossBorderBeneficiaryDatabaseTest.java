@@ -127,7 +127,7 @@ class CrossBorderBeneficiaryDatabaseTest {
     void anActiveCorridorPolicy() throws Exception {
         if (!activeExists()) {
             String first = sessionWith(RoleName.FX_CONTROLLER);
-            String second = multiFactorSessionWith(RoleName.FX_CONTROLLER);
+            String second = sessionWith(RoleName.FX_CONTROLLER);
             withdrawPending(first);
             HttpResponse<String> proposed = post(POLICIES, CorridorPolicyV1.json("v1 for the beneficiary suite"), first, key());
             assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
@@ -646,7 +646,10 @@ class CrossBorderBeneficiaryDatabaseTest {
         }
     }
 
-    /** A signed-in session holding {@code role}, or a plain registered customer when it is null. */
+    /**
+     * A signed-in session holding {@code role} - a MULTI_FACTOR one, stepped up over the real doors: every operator act
+     * steps up since `P17-TSK-102` - or a plain registered customer on a password session when it is null.
+     */
     private String sessionWith(RoleName role) throws Exception {
         String login = "bn." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(post("/v1/registrations",
@@ -674,24 +677,11 @@ class CrossBorderBeneficiaryDatabaseTest {
         }
         HttpResponse<String> session = post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD + "\"}", null, key());
-        return field(session.body(), "sessionToken");
+        String token = field(session.body(), "sessionToken");
+        return role == null ? token : com.finapp.app.session.OperatorStepUp.elevated(token, this::post);
     }
 
     /** Enrols and confirms a TOTP factor over the real endpoints - the PayoutDestinationEndpointDatabaseTest helper. */
-    /**
-     * A role holder on a MULTI_FACTOR session: the corridor policy's approval steps up since `P15-TSK-039` (2026-11-09), and a
-     * password session's is {@code 403 identity.AssuranceRequired} - the fixture's red until `X-TSK-002` ran it. The factor is
-     * enrolled and proven over the real doors, as {@code PayoutDestinationEndpointDatabaseTest} does.
-     */
-    private String multiFactorSessionWith(RoleName role) throws Exception {
-        String password = sessionWith(role);
-        Sensitive<String> secret = enrolAndConfirm(password);
-        HttpResponse<String> elevated = post("/v1/authentications/mfa",
-                "{\"code\":\"" + Authenticator.codeNow(secret, TotpParameters.current(), CLOCK) + "\"}", password, null);
-        assertThat(elevated.body()).as("the factor proven: a MULTI_FACTOR session").contains("sessionToken");
-        return field(elevated.body(), "sessionToken");
-    }
-
     private Sensitive<String> enrolAndConfirm(String sessionToken) throws Exception {
         Matcher matcher = Pattern.compile("secret=([A-Z2-7]+)").matcher(post("/v1/me/mfa", null, sessionToken, null).body());
         assertThat(matcher.find()).as("the response must carry a base32 secret").isTrue();

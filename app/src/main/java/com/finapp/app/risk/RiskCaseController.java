@@ -3,10 +3,13 @@ package com.finapp.app.risk;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.app.session.SessionAuthenticationInterceptor;
+import com.finapp.identity.Authorization;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -80,14 +83,18 @@ public class RiskCaseController {
     /**
      * One case's file (`P13-TSK-018`): its head, its alerts, its investigator actions and history, its downstream
      * actions and its evidence by reference; never the analyst's own party's (fail closed); audited {@code risk.CaseRead}.
+     * Its regulatory reports' heads only to a reader who also holds {@code AML_REPORT_APPROVE} (`P17-TSK-109`, the owner's
+     * tipping-off decision of 2026-11-18), judged from the standing that admitted this request: absent for everyone else.
      */
     @GetMapping(path = "/{caseId}")
     @RequiresPermission(PermissionName.RISK_INVESTIGATE)
-    public RiskQueueDesk.RiskCaseFileView readRiskCase(@PathVariable("caseId") String caseId) {
-        return queue.file(caseId);
+    public RiskQueueDesk.RiskCaseFileView readRiskCase(@PathVariable("caseId") String caseId, HttpServletRequest request) {
+        return queue.file(caseId, request.getAttribute(SessionAuthenticationInterceptor.CURRENT_STANDING)
+                instanceof Authorization.Standing standing && standing.permits(PermissionName.AML_REPORT_APPROVE));
     }
 
     /** Opens a case by hand - or answers the subject's open case of the kind; never on the analyst's own party. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_INVESTIGATE)
     @RequiresIdempotencyKey
@@ -99,6 +106,7 @@ public class RiskCaseController {
     }
 
     /** An investigator's act on the case: take, note, attach evidence by reference, escalate. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{caseId}/actions", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_INVESTIGATE)
     @RequiresIdempotencyKey
@@ -110,6 +118,7 @@ public class RiskCaseController {
     }
 
     /** Proposes the case's disposition - a one-person close decided at once, a two persons' one standing. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{caseId}/dispositions", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_INVESTIGATE)
     @RequiresIdempotencyKey
@@ -139,6 +148,7 @@ public class RiskCaseController {
     }
 
     /** Rejects a standing disposition - anyone, the proposer's withdrawal included; the case stays open. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{caseId}/dispositions/{dispositionId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_CASE_APPROVE)
     @RequiresIdempotencyKey

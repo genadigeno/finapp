@@ -563,7 +563,9 @@ class ReportRunDeskTest {
         Map<String, PermissionName> expected = Map.of(
                 "generateReportRun", PermissionName.ACCOUNTING_REPORT_GENERATE,
                 "regenerateReportRun", PermissionName.ACCOUNTING_REPORT_GENERATE,
-                "readReportRun", PermissionName.ACCOUNTING_READ);
+                "readReportRun", PermissionName.ACCOUNTING_READ,
+                // P17-TSK-023: the list of runs, the read's permission, unkeyed as a read is.
+                "listReportRuns", PermissionName.ACCOUNTING_READ);
         int doors = 0;
         for (Method method : ReportRunController.class.getDeclaredMethods()) {
             if (method.isAnnotationPresent(RequiresPermission.class)) {
@@ -571,7 +573,7 @@ class ReportRunDeskTest {
                 assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName())
                         .isEqualTo(expected.get(method.getName()));
                 assertThat(method.isAnnotationPresent(RequiresIdempotencyKey.class)).as(method.getName())
-                        .isEqualTo(!method.getName().startsWith("read"));
+                        .isEqualTo(!method.getName().startsWith("read") && !method.getName().startsWith("list"));
             }
         }
         assertThat(doors).isEqualTo(expected.size());

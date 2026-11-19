@@ -2,6 +2,7 @@ package com.finapp.app.accounting;
 
 import com.finapp.accounting.AccountingPeriodStore;
 import com.finapp.accounting.AccountingPeriods;
+import com.finapp.accounting.BooksOpening;
 import com.finapp.accounting.GlMappingAdministration;
 import com.finapp.accounting.GlMappingStore;
 import com.finapp.accounting.GlMappings;
@@ -134,6 +135,17 @@ public class AccountingBeans {
         return new LockGrace(businessDays);
     }
 
+    /**
+     * The books' first month (`P17-TSK-113`, ADR-0152): how many months before today's the first period opens, read only while no
+     * period exists - 0 by default, 0 to 24. A test stack sets it (FINAPP_ACCOUNTING_PERIOD_BOOKSOPENMONTHSBACK) so a fresh
+     * database holds past months for the console's end-to-end seed.
+     */
+    @Bean
+    BooksOpening booksOpening(
+            @Value("${finapp.accounting.period.books-open-months-back:" + BooksOpening.DEFAULT_MONTHS_BACK + "}") int monthsBack) {
+        return new BooksOpening(monthsBack);
+    }
+
     @Bean
     AccountingPeriods accountingPeriods(
             AccountingPeriodStore accountingPeriodStore,
@@ -144,10 +156,11 @@ public class AccountingBeans {
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
             Clock clock,
-            com.finapp.accounting.ReportRuns reportRuns) {
+            com.finapp.accounting.ReportRuns reportRuns,
+            BooksOpening booksOpening) {
         // P14-TSK-008: the unlock supersedes the period's FINAL report runs in its own transaction.
         return new AccountingPeriods(accountingPeriodStore, glMappingStore, postingCutoff, lockGrace, auditWriter,
-                outboxWriter, idGenerator, clock, reportRuns);
+                outboxWriter, idGenerator, clock, reportRuns, booksOpening);
     }
 
     @Bean

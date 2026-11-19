@@ -80,6 +80,43 @@ class AdministrationBeans {
         return template;
     }
 
+    /** The staff directory (`P17-TSK-014`): its reads, each recorded in the read's own unit of work. */
+    @Bean
+    com.finapp.identity.IdentityDirectory identityDirectory(
+            AuditWriter<Connection> auditWriter, IdGenerator idGenerator, Clock clock) {
+        return new com.finapp.identity.IdentityDirectory(
+                new com.finapp.identity.JdbcIdentityDirectoryStore(), auditWriter, idGenerator, clock);
+    }
+
+    /** The directory's boundary, on the administrative template: each read and its audit record commit together. */
+    @Bean
+    StaffDirectoryService staffDirectoryService(
+            com.finapp.identity.IdentityDirectory identityDirectory,
+            TransactionTemplate administrationTransactions,
+            DataSource dataSource) {
+        return new StaffDirectoryService(identityDirectory, administrationTransactions, dataSource);
+    }
+
+    /** Another identity's sessions (`P17-TSK-015`): the session store's own predicates, recorded in the act's unit of work. */
+    @Bean
+    com.finapp.identity.SessionAdministration sessionAdministration(
+            IdentityStore<Connection> identityStore,
+            com.finapp.identity.SessionStore<Connection> sessionStore,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new com.finapp.identity.SessionAdministration(identityStore, sessionStore, auditWriter, idGenerator, clock);
+    }
+
+    /** Its boundary, on the administrative template: an act, its revocation and its record commit together. */
+    @Bean
+    SessionAdministrationService sessionAdministrationService(
+            com.finapp.identity.SessionAdministration sessionAdministration,
+            TransactionTemplate administrationTransactions,
+            DataSource dataSource) {
+        return new SessionAdministrationService(sessionAdministration, administrationTransactions, dataSource);
+    }
+
     @Bean
     IdentityAdministrationService identityAdministrationService(
             IdentityAdministration identityAdministration,

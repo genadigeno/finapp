@@ -487,7 +487,8 @@ class CrossBorderOfferDatabaseTest {
         }
         HttpResponse<String> session = client().post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + FxTestClient.PASSWORD + "\"}", null, FxTestClient.key());
-        return FxTestClient.field(session.body(), "sessionToken");
+        return com.finapp.app.session.OperatorStepUp.elevated(FxTestClient.field(session.body(), "sessionToken"),
+                client()::post);
     }
 
     @TestConfiguration

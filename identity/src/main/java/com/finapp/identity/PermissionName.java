@@ -63,6 +63,36 @@ public enum PermissionName {
     ROLE_ASSIGN,
 
     /**
+     * Read the staff directory: which identities hold or held an operator role, one identity's status, factor state and live
+     * roles, an identity found by its exact login identifier, and the role catalogue (`P17-TSK-014`; finapp-admin-panel
+     * ADR-C132 decisions 2 to 4).
+     *
+     * <p><strong>Identifier-first</strong>: what it serves names nobody - no display name, no login identifier, no contact
+     * detail. The lookup takes a login identifier in a request body and answers only the identity's id. Held by
+     * {@code ADMINISTRATOR}, who acts on the answer, and by the auditor when one exists. It guards an act in the step-up rule's
+     * sense: the lookup is a {@code POST}, and every route under it asks for a second factor, because a list of who holds
+     * the privileged roles is the map a stolen password should not buy.
+     */
+    IDENTITY_READ,
+
+    /**
+     * See another identity's live sessions and end one of them, or all, without suspending the person (`P17-TSK-015`;
+     * finapp-admin-panel ADR-C132 decision 2): during an incident - a lost laptop - one session ends and its holder keeps the rest
+     * of their access. Never the administrator's own sessions, which their own doors end; never a token or its hash served.
+     * Held by {@code ADMINISTRATOR}; each act on a {@code MULTI_FACTOR} session, with a reason, recorded.
+     */
+    SESSION_ADMINISTER,
+
+    /**
+     * Read the audit trail: a window of its records with their filters, and one record by its id (`P17-TSK-017`, gap G-20;
+     * finapp-admin-panel ADR-C134). Read-only - there is no door that updates or deletes a record, and the application role holds
+     * neither privilege - and every read is itself recorded. The {@code AUDITOR}'s alone: never {@code ADMINISTRATOR}'s (the
+     * owner's decision of 2026-11-18, ADR-C134 decision 2's default), so whoever grants roles does not also read the record of what
+     * was done with them. It only reads, but every read is behind a second factor: {@link #readsBehindAFactor}.
+     */
+    AUDIT_READ,
+
+    /**
      * Review KYC/KYB cases: read a case with its evidence, resolve screening hits, record
      * decisions (`P2-TSK-004`).
      *
@@ -777,5 +807,38 @@ public enum PermissionName {
      * one permission are the two persons (the {@link #LEDGER_ADJUST} shape). Every act on a {@code MULTI_FACTOR} session, keyed and
      * reasoned. Moves no money, and reads no payload. <strong>Held by {@code EVENT_OPERATOR} alone.</strong>
      */
-    EVENT_OPERATE
+    EVENT_OPERATE;
+
+    /**
+     * Whether this permission guards an act - a {@code POST}, {@code PUT}, {@code PATCH} or {@code DELETE} handler - and not only
+     * reads (`P17-TSK-102`; the owner's D-6; finapp-admin-panel ADR-C131 decision 3).
+     *
+     * <p><strong>Why the domain knows it.</strong> Every act on the operator surface asks for a {@code MULTI_FACTOR} session, and a
+     * password alone may enrol an identity's <em>first</em> factor. So a role that can act must be refused to an identity with no
+     * factor ({@link RoleName#requiresEnrolledFactor}): otherwise a stolen password, or a stolen password-level session, of a
+     * holder who never enrolled one enrols the thief's own factor and steps up into every act the role grants. The grant is
+     * decided here, in {@code identity}, which cannot see the routes; {@code EveryOperatorActRequiresAFactorTest} reads them and
+     * holds this answer to theirs both ways.
+     *
+     * <p><strong>Written as the reads, so a permission added later guards an act until somebody decides otherwise</strong> - the
+     * {@code Surface#admitsRoleHolders} shape: forgetting this method costs a factor at grant, never a factor-free act.
+     */
+    public boolean guardsAnAct() {
+        return switch (this) {
+            case ACCOUNTING_READ, FX_INVESTIGATE, AUDIT_READ -> false;
+            default -> true;
+        };
+    }
+
+    /**
+     * Whether this permission guards no act but every read it guards asks for a {@code MULTI_FACTOR} session (`P17-TSK-017`). Such
+     * a read is hollow without a factor at grant for {@link #guardsAnAct}'s own reason: a password alone may enrol an identity's
+     * first factor, so a factorless holder's stolen password enrols the thief's factor and steps up into the read. So a role holding
+     * one needs an enrolled factor too ({@link RoleName#requiresEnrolledFactor}). {@code EveryOperatorActRequiresAFactorTest}
+     * holds this answer to the routes both ways: true exactly when every route under the permission is a read and declares
+     * {@code MULTI_FACTOR}.
+     */
+    public boolean readsBehindAFactor() {
+        return this == AUDIT_READ;
+    }
 }

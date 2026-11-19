@@ -43,9 +43,14 @@ class LoanWriteOffDeskTest {
     private static final IdGenerator IDS = new IdGenerator(Clock.systemUTC(), new SecureRandom());
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
 
+    /**
+     * <em>(Read "only the approval is MULTI_FACTOR", and {@code isNull} on the proposal and the rejection, until `P17-TSK-102`,
+     * 2026-11-17.)</em>
+     */
     @Test
     @DisplayName("the proposal carries the propose permission; the read, the list and both decisions the approve permission (each door serves"
-            + " what it decides under its own); only the approval is MULTI_FACTOR; every act keyed and the reads not")
+            + " what it decides under its own); every act MULTI_FACTOR since the owner's D-6 (P17-TSK-102) and keyed, the reads"
+            + " neither")
     void theRoutesPermissionsAndAssurance() throws NoSuchMethodException {
         Method propose = LoanWriteOffController.class.getMethod("proposeLoanWriteOff", String.class, String.class, LoanWriteOffController.LoanWriteOffProposalRequest.class);
         Method approve = LoanWriteOffController.class.getMethod("approveLoanWriteOff", String.class, String.class, String.class,
@@ -59,15 +64,14 @@ class LoanWriteOffDeskTest {
             assertThat(approver.getAnnotation(RequiresPermission.class).value()).as(approver.getName())
                     .isEqualTo(PermissionName.LOAN_WRITE_OFF_APPROVE);
         }
-        assertThat(approve.getAnnotation(RequiresAssurance.class).value()).isEqualTo(AssuranceLevel.MULTI_FACTOR);
-        for (Method lower : List.of(propose, reject, read, list)) {
-            assertThat(lower.getAnnotation(RequiresAssurance.class)).as(lower.getName()).isNull();
-        }
         for (Method act : List.of(propose, approve, reject)) {
+            assertThat(act.getAnnotation(RequiresAssurance.class)).as(act.getName()).isNotNull()
+                    .extracting(RequiresAssurance::value).isEqualTo(AssuranceLevel.MULTI_FACTOR);
             assertThat(act.getAnnotation(RequiresIdempotencyKey.class)).as(act.getName()).isNotNull();
         }
         for (Method seen : List.of(read, list)) {
             assertThat(seen.getAnnotation(GetMapping.class)).as(seen.getName()).isNotNull();
+            assertThat(seen.getAnnotation(RequiresAssurance.class)).as(seen.getName()).isNull();
             assertThat(seen.getAnnotation(RequiresIdempotencyKey.class)).as(seen.getName()).isNull();
         }
     }

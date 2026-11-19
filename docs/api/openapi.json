@@ -6818,6 +6818,41 @@
           }
         }
       },
+      "identity.RoleConflict": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "identity.RoleConflict"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/identity.RoleConflict"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] This role cannot be held together with a role the identity already holds.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "identity.VerifiedChannelAlreadyExists": {
         "content": {
           "application/problem+json": {
@@ -13037,6 +13072,9 @@
           "acknowledgementProposedAt": {
             "type": "string"
           },
+          "acknowledgementProposedBy": {
+            "type": "string"
+          },
           "check": {
             "type": "string"
           },
@@ -13148,6 +13186,9 @@
           "reopenProposedAt": {
             "type": "string"
           },
+          "reopenProposedBy": {
+            "type": "string"
+          },
           "revision": {
             "format": "int32",
             "type": "integer"
@@ -13163,6 +13204,9 @@
           },
           "unlockProposedAt": {
             "type": "string"
+          },
+          "unlockProposedBy": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -13176,6 +13220,19 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "AdjustmentRejectionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
         "type": "object"
       },
       "AdjustmentRequest": {
@@ -13549,6 +13606,92 @@
           "bands",
           "code"
         ],
+        "type": "object"
+      },
+      "AuditRecordPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditRecordSummary"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AuditRecordSummary": {
+        "properties": {
+          "actorId": {
+            "type": "string"
+          },
+          "auditId": {
+            "type": "string"
+          },
+          "changeSummary": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "targetType": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AuditRecordView": {
+        "properties": {
+          "actorId": {
+            "type": "string"
+          },
+          "actorType": {
+            "type": "string"
+          },
+          "auditId": {
+            "type": "string"
+          },
+          "changeSummary": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "targetType": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "AuthenticatedSession": {
@@ -17757,6 +17900,9 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "reopenId": {
             "type": "string"
           },
@@ -17764,6 +17910,9 @@
             "type": "boolean"
           },
           "reopenProposedAt": {
+            "type": "string"
+          },
+          "reopenProposedBy": {
             "type": "string"
           },
           "revision": {
@@ -19779,6 +19928,17 @@
         },
         "type": "object"
       },
+      "EntryAmountView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "EvidenceContentView": {
         "properties": {
           "content": {
@@ -20991,6 +21151,52 @@
         },
         "type": "object"
       },
+      "FinalStatementHead": {
+        "properties": {
+          "completedAt": {
+            "type": "string"
+          },
+          "definition": {
+            "type": "string"
+          },
+          "definitionVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodId": {
+            "type": "string"
+          },
+          "periodRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "revision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "runId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FinalStatementPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FinalStatementHead"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "FinalStatementView": {
         "properties": {
           "completedAt": {
@@ -21780,6 +21986,9 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "retiredAt": {
             "type": "string"
           },
@@ -21846,6 +22055,106 @@
           "seq": {
             "format": "int64",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "IdentityDetailView": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "factorEnrolled": {
+            "type": "boolean"
+          },
+          "identityId": {
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/IdentityRoleView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "suspendedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "suspensionCause": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "IdentityDirectoryEntry": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "identityId": {
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "IdentityDirectoryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IdentityDirectoryEntry"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "IdentityLookupAnswer": {
+        "properties": {
+          "identityId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "IdentityLookupRequest": {
+        "properties": {
+          "loginIdentifier": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "loginIdentifier"
+        ],
+        "type": "object"
+      },
+      "IdentityRoleView": {
+        "properties": {
+          "assignedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "assignedBy": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -21953,6 +22262,53 @@
         },
         "type": "object"
       },
+      "JournalEntryHeadView": {
+        "properties": {
+          "amounts": {
+            "items": {
+              "$ref": "#/components/schemas/EntryAmountView"
+            },
+            "type": "array"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "entryType": {
+            "type": "string"
+          },
+          "lineCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "postedAt": {
+            "type": "string"
+          },
+          "postingDate": {
+            "type": "string"
+          },
+          "reversesEntryId": {
+            "type": "string"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "JournalEntryPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JournalEntryHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "KeyView": {
         "properties": {
           "issuedAt": {
@@ -21992,6 +22348,52 @@
       },
       "KycCaseResponse": {
         "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LedgerAccountPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerAccountView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LedgerAccountView": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "accountType": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "normalBalance": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "ownerKind": {
+            "type": "string"
+          },
+          "ownerRef": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
           "status": {
             "type": "string"
           }
@@ -22434,6 +22836,40 @@
           },
           "targetRef": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LiveSessionView": {
+        "properties": {
+          "absoluteExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "assurance": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "issuedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LiveSessionsView": {
+        "properties": {
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/LiveSessionView"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -23547,6 +23983,56 @@
           "reason": {
             "maxLength": 1000,
             "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MappingVersionItem": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "retiredAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MappingVersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MappingVersionItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -25108,6 +25594,52 @@
         },
         "type": "object"
       },
+      "PendingLedgerAdjustment": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "postingDate": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reasonSummary": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PendingLedgerAdjustmentPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingLedgerAdjustment"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "PendingPriorPeriodAdjustmentView": {
         "properties": {
           "correctedPeriod": {
@@ -25126,7 +25658,99 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "targetPeriod": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PendingProjectionRebuild": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reasonSummary": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PendingProjectionRebuildPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingProjectionRebuild"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PendingReconciliationResolution": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reasonSummary": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PendingReconciliationResolutionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingReconciliationResolution"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -25197,6 +25821,12 @@
       },
       "PeriodRequestsView": {
         "properties": {
+          "closeProposalId": {
+            "type": "string"
+          },
+          "closeProposalStatus": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -25212,6 +25842,9 @@
           "reopenProposedAt": {
             "type": "string"
           },
+          "reopenProposedBy": {
+            "type": "string"
+          },
           "revision": {
             "format": "int32",
             "type": "integer"
@@ -25223,6 +25856,9 @@
             "type": "boolean"
           },
           "unlockProposedAt": {
+            "type": "string"
+          },
+          "unlockProposedBy": {
             "type": "string"
           }
         },
@@ -25701,6 +26337,9 @@
             "type": "string"
           },
           "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
             "type": "string"
           },
           "reason": {
@@ -26241,6 +26880,64 @@
           "fixedSide",
           "sourceCurrency"
         ],
+        "type": "object"
+      },
+      "RateSetItem": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "capturedAt": {
+            "type": "string"
+          },
+          "capturedBy": {
+            "type": "string"
+          },
+          "capturedByCaller": {
+            "type": "boolean"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "maxAgeHours": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "period": {
+            "type": "string"
+          },
+          "periodId": {
+            "type": "string"
+          },
+          "rateCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "referenceGaps": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "setId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RateSetPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RateSetItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "ReadmissionAnswer": {
@@ -26901,6 +27598,9 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "standing": {
             "type": "string"
           },
@@ -26953,6 +27653,9 @@
             "type": "string"
           },
           "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
             "type": "string"
           },
           "retiredAt": {
@@ -27186,6 +27889,9 @@
           "period": {
             "type": "string"
           },
+          "periodId": {
+            "type": "string"
+          },
           "periodRevision": {
             "format": "int32",
             "type": "integer"
@@ -27195,6 +27901,9 @@
             "type": "integer"
           },
           "preparedAt": {
+            "type": "string"
+          },
+          "preparedBy": {
             "type": "string"
           },
           "resendsExhausted": {
@@ -27308,6 +28017,9 @@
           "period": {
             "type": "string"
           },
+          "periodId": {
+            "type": "string"
+          },
           "periodRevision": {
             "format": "int32",
             "type": "integer"
@@ -27323,6 +28035,9 @@
             "type": "string"
           },
           "preparedAt": {
+            "type": "string"
+          },
+          "preparedBy": {
             "type": "string"
           },
           "providerReference": {
@@ -27637,6 +28352,20 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReportRunPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReportRunView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -28420,6 +29149,9 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "status": {
             "type": "string"
           },
@@ -28633,6 +29365,51 @@
             "type": "array"
           },
           "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskAssessmentHeadView": {
+        "properties": {
+          "assessedAt": {
+            "type": "string"
+          },
+          "assessmentId": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "policyVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "policyVersionId": {
+            "type": "string"
+          },
+          "score": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskAssessmentPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RiskAssessmentHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -29041,6 +29818,12 @@
             },
             "type": "array"
           },
+          "reports": {
+            "items": {
+              "$ref": "#/components/schemas/RiskCaseReportView"
+            },
+            "type": "array"
+          },
           "riskActions": {
             "items": {
               "$ref": "#/components/schemas/RiskActionView"
@@ -29090,6 +29873,23 @@
             "type": "array"
           },
           "next": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskCaseReportView": {
+        "properties": {
+          "draftedAt": {
+            "type": "string"
+          },
+          "jurisdiction": {
+            "type": "string"
+          },
+          "reportId": {
+            "type": "string"
+          },
+          "status": {
             "type": "string"
           }
         },
@@ -29378,6 +30178,9 @@
             "type": "boolean"
           },
           "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
             "type": "string"
           },
           "requiresSecondPerson": {
@@ -29739,6 +30542,9 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "reason": {
             "type": "string"
           },
@@ -29863,6 +30669,53 @@
           "version": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "RiskPolicyVersionHeadView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": "string"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RiskPolicyVersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RiskPolicyVersionHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -30346,6 +31199,20 @@
         },
         "type": "object"
       },
+      "RiskScreeningListPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RiskScreeningListVersionView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskScreeningListReceipt": {
         "properties": {
           "id": {
@@ -30393,6 +31260,36 @@
           "list",
           "version"
         ],
+        "type": "object"
+      },
+      "RiskScreeningListVersionView": {
+        "properties": {
+          "activatedAt": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "list": {
+            "type": "string"
+          },
+          "ordinal": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "recordedAt": {
+            "type": "string"
+          },
+          "retiredAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "RiskSignalEvidenceView": {
@@ -30465,6 +31362,9 @@
             "type": "string"
           },
           "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
             "type": "string"
           },
           "reason": {
@@ -30709,7 +31609,8 @@
               "ACCOUNTANT",
               "FINANCIAL_CONTROLLER",
               "REGULATORY_REPORTER",
-              "EVENT_OPERATOR"
+              "EVENT_OPERATOR",
+              "AUDITOR"
             ],
             "type": "string"
           }
@@ -30718,6 +31619,23 @@
           "reason",
           "role"
         ],
+        "type": "object"
+      },
+      "RoleCatalogueEntry": {
+        "properties": {
+          "permissions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "requiresEnrolledFactor": {
+            "type": "boolean"
+          },
+          "role": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "RoleRevocationRequest": {
@@ -31438,6 +32356,20 @@
         },
         "type": "object"
       },
+      "SessionRevocationRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "pattern": "[^\\p{Cc}\\p{Cf}\\p{Cs}\\p{Co}\\p{Cn}]+",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
       "SessionSummary": {
         "properties": {
           "absoluteExpiresAt": {
@@ -31505,6 +32437,15 @@
         },
         "type": "object"
       },
+      "SessionsRevokedView": {
+        "properties": {
+          "sessionsRevoked": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "SetRailAvailabilityRequest": {
         "properties": {
           "available": {
@@ -31520,6 +32461,63 @@
           "available",
           "reason"
         ],
+        "type": "object"
+      },
+      "SettlementBatchPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SettlementBatchSummary"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SettlementBatchSummary": {
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "businessDate": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "declaredNet": {
+            "type": "string"
+          },
+          "externalBatchRef": {
+            "type": "string"
+          },
+          "fileId": {
+            "type": "string"
+          },
+          "formatId": {
+            "type": "string"
+          },
+          "formatVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "lineCount": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "sourceCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "SettlementContentReadRequest": {
@@ -31659,6 +32657,38 @@
         "required": [
           "reason"
         ],
+        "type": "object"
+      },
+      "SodConflictView": {
+        "properties": {
+          "identityId": {
+            "type": "string"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "since": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SodConflictsView": {
+        "properties": {
+          "conflicts": {
+            "items": {
+              "$ref": "#/components/schemas/SodConflictView"
+            },
+            "type": "array"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "SourceList": {
@@ -32597,6 +33627,9 @@
           "capturedAt": {
             "type": "string"
           },
+          "capturedBy": {
+            "type": "string"
+          },
           "decidedAt": {
             "type": "string"
           },
@@ -33217,7 +34250,8 @@
                 "ACCOUNTANT",
                 "FINANCIAL_CONTROLLER",
                 "REGULATORY_REPORTER",
-                "EVENT_OPERATOR"
+                "EVENT_OPERATOR",
+                "AUDITOR"
               ],
               "type": "string"
             }
@@ -33394,6 +34428,47 @@
       }
     },
     "/v1/ledger/adjustments": {
+      "get": {
+        "operationId": "listPendingLedgerAdjustments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingLedgerAdjustmentPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "propose",
         "parameters": [
@@ -33502,7 +34577,78 @@
         }
       }
     },
+    "/v1/ledger/adjustments/{id}/rejection": {
+      "post": {
+        "operationId": "rejectWithReason",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustmentRejectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
     "/v1/ledger/projection-rebuilds": {
+      "get": {
+        "operationId": "listPendingProjectionRebuilds",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingProjectionRebuildPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "proposeProjectionRebuild",
         "parameters": [
@@ -36622,6 +37768,23 @@
         }
       }
     },
+    "/v1/operator/access-review/sod-conflicts": {
+      "get": {
+        "operationId": "listSodConflicts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SodConflictsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/accounting/breaks": {
       "get": {
         "operationId": "listAccountingBreaks",
@@ -36772,6 +37935,51 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/BreakAcknowledgementProposal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountingBreakReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/breaks/{breakId}/acknowledgement-rejection": {
+      "post": {
+        "operationId": "rejectAccountingBreakAcknowledgement",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "breakId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BreakActRequest"
               }
             }
           },
@@ -36959,6 +38167,47 @@
       }
     },
     "/v1/operator/accounting/mapping-versions": {
+      "get": {
+        "operationId": "listGlMappingVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingVersionPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "proposeGlMappingVersion",
         "parameters": [
@@ -37170,6 +38419,33 @@
                     "$ref": "#/components/schemas/AccountingPeriodView"
                   },
                   "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/periods/{periodId}": {
+      "get": {
+        "operationId": "readAccountingPeriod",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "periodId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountingPeriodView"
                 }
               }
             },
@@ -38105,6 +39381,55 @@
       }
     },
     "/v1/operator/accounting/report-runs": {
+      "get": {
+        "operationId": "listReportRuns",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "periodId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportRunPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "generateReportRun",
         "parameters": [
@@ -38133,6 +39458,49 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReportRunView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/report-runs/final-statements": {
+      "get": {
+        "operationId": "listFinalStatements",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "periodId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinalStatementPage"
                 }
               }
             },
@@ -38299,6 +39667,55 @@
       }
     },
     "/v1/operator/accounting/valuation-rate-sets": {
+      "get": {
+        "operationId": "listValuationRateSets",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "periodId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateSetPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "captureValuationRateSet",
         "parameters": [
@@ -38331,6 +39748,49 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounting/valuation-rate-sets/mine": {
+      "get": {
+        "operationId": "listOwnValuationRateSets",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateSetPage"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }
@@ -38526,6 +39986,132 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ValuationRateSetReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/audit-records": {
+      "get": {
+        "operationId": "listAuditRecords",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "operation",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "targetType",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "targetId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "correlationId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "outcome",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditRecordPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/audit-records/{id}": {
+      "get": {
+        "operationId": "readAuditRecord",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditRecordView"
                 }
               }
             },
@@ -41441,6 +43027,211 @@
         }
       }
     },
+    "/v1/operator/identities": {
+      "get": {
+        "operationId": "listStaffIdentities",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityDirectoryPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/identities/lookup": {
+      "post": {
+        "operationId": "lookUpStaffIdentity",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IdentityLookupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityLookupAnswer"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/identities/{id}": {
+      "get": {
+        "operationId": "readStaffIdentity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityDetailView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/identities/{id}/sessions": {
+      "delete": {
+        "operationId": "revokeIdentitySessions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionRevocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionsRevokedView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
+      "get": {
+        "operationId": "listIdentitySessions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveSessionsView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/identities/{id}/sessions/{session}": {
+      "delete": {
+        "operationId": "revokeIdentitySession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionRevocationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
     "/v1/operator/kyc/counterparty-screenings/{id}/decision": {
       "post": {
         "operationId": "decideCounterpartyScreening",
@@ -41478,6 +43269,124 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScreeningDecisionReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/ledger/accounts": {
+      "get": {
+        "operationId": "listLedgerAccounts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "purpose",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "currency",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerAccountPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/ledger/entries": {
+      "get": {
+        "operationId": "searchJournalEntries",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reference",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "accountId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntryPage"
                 }
               }
             },
@@ -44041,6 +45950,49 @@
         }
       }
     },
+    "/v1/operator/reconciliation/resolutions": {
+      "get": {
+        "operationId": "listPendingReconciliationResolutions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingReconciliationResolutionPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/reconciliation/resolutions/{id}": {
       "delete": {
         "operationId": "withdrawReconciliationResolution",
@@ -45801,6 +47753,33 @@
         }
       }
     },
+    "/v1/operator/risk/alerts/{alertId}": {
+      "get": {
+        "operationId": "readRiskAlert",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alertId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskAlertView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/risk/alerts/{alertId}/suppression": {
       "post": {
         "operationId": "proposeRiskAlertSuppression",
@@ -45928,6 +47907,81 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RiskAlertView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/assessments": {
+      "get": {
+        "operationId": "searchRiskAssessments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "partyId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "operation",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "decision",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskAssessmentPage"
                 }
               }
             },
@@ -47080,6 +49134,57 @@
         }
       }
     },
+    "/v1/operator/risk/policies/versions": {
+      "get": {
+        "operationId": "listRiskPolicyVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "operation",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskPolicyVersionPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/risk/policies/{versionId}": {
       "get": {
         "operationId": "readRiskPolicyVersion",
@@ -47198,6 +49303,47 @@
       }
     },
     "/v1/operator/risk/screening-lists": {
+      "get": {
+        "operationId": "listScreeningListVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "list",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskScreeningListPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "recordScreeningListVersion",
         "parameters": [
@@ -47230,6 +49376,33 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/risk/screening-lists/{listVersionId}": {
+      "get": {
+        "operationId": "readScreeningListVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "listVersionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RiskScreeningListVersionView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }
@@ -47279,6 +49452,26 @@
         }
       }
     },
+    "/v1/operator/roles": {
+      "get": {
+        "operationId": "listOperatorRoles",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RoleCatalogueEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/routing-policy/versions": {
       "post": {
         "operationId": "createRoutingPolicyVersion",
@@ -47312,6 +49505,65 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/settlement/batches": {
+      "get": {
+        "operationId": "listSettlementBatches",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementBatchPage"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

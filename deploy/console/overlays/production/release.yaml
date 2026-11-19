@@ -1,0 +1,10 @@
+# The console this environment serves (P17-TSK-105; OPERATIONS_RUNBOOK.md section 11.36). Not rendered: Kustomize never reads it.
+# infra/scripts/promote.sh console writes it in the same commit as the digest in kustomization.yaml, which DeliveryManifestsTest and
+# promote.sh recheck hold equal. `console` is THE SERVING DIGEST once Argo CD has synced that commit: the one the next console build
+# collects the hashed assets of (finapp-admin-panel scripts/collect-previous-assets.sh, P17-TSK-104's rollout fix), read through
+# infra/scripts/promote.sh console-serving. `revision` is the finapp-admin-panel commit the image was built from, as its provenance
+# names it: another repository's, so the promotion checks its form and the provenance, never its history. Its history here is what a
+# production promotion reads: staging given the same digest and revision first. `none` and sixty-four zeros until the first promotion,
+# as the overlay's digest is: nothing real is committed.
+revision: "none"
+console: "sha256:0000000000000000000000000000000000000000000000000000000000000000"

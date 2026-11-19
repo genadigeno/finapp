@@ -27,6 +27,8 @@ import org.junit.jupiter.api.Test;
 class AccountingBreakMigrationTest {
 
     private static final String RESOURCE = "db/migration/accounting/V006__accounting_breaks.sql";
+    /** The act list's latest definition: {@code V018} replaced {@code V006}'s, admitting the rejection (`P17-TSK-111`). */
+    private static final String LATEST_ACTS = "db/migration/accounting/V018__a_break_acknowledgement_is_rejected.sql";
     private static final List<String> EARLIER = List.of(
             "db/migration/accounting/V001__initialise_accounting_schema.sql",
             "db/migration/accounting/V002__the_gl_chart_and_mapping_as_versioned_data.sql",
@@ -59,9 +61,12 @@ class AccountingBreakMigrationTest {
                     .contains("(check_code = '" + check.name() + "' AND break_type IN (" + types + "))");
         }
         assertThat(sql).contains("CHECK (status IN (" + list(BreakStatus.values()) + "))");
+        String acts = collapsed(LATEST_ACTS);
         for (AccountingBreakStore.Act act : AccountingBreakStore.Act.values()) {
-            assertThat(sql).as("the act %s is on its edge", act).contains("(act = '" + act.name() + "' AND from_status");
+            assertThat(acts).as("the act %s is on its edge", act).contains("(act = '" + act.name() + "' AND from_status");
         }
+        assertThat(sql).as("V006's list, every act but the rejection V018 added").contains("(act = 'ACKNOWLEDGED' AND from_status")
+                .doesNotContain("ACKNOWLEDGEMENT_REJECTED");
         assertThat(sql).contains("judged_by ~ '^(posting-rules|gl-mapping|source-proofs):v[1-9][0-9]{0,8}$'");
         assertThat(BreakFinding.JUDGED_BY.pattern()).isEqualTo("(posting-rules|gl-mapping|source-proofs):v[1-9][0-9]{0,8}");
         assertThat(BreakStatus.OPEN.canMoveTo(BreakStatus.ACKNOWLEDGED)).isTrue();

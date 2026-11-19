@@ -1990,15 +1990,19 @@ class LoanAccountDatabaseTest {
         }
     }
 
-    /** A signed-in operator session holding {@code role}. */
+    /**
+     * A signed-in operator session holding {@code role}, stepped up to {@code MULTI_FACTOR}: every operator act declares it
+     * (`P17-TSK-102`).
+     */
     private String sessionWith(RoleName role) throws Exception {
         String login = "la." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         String password = "a-perfectly-fine-pw-7";
         assertThat(client.post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Grace"
                 + " Hopper\",\"password\":\"" + password + "\"}", null, key()).statusCode()).isEqualTo(201);
         assign(UUID.fromString(scalar("SELECT id::text FROM identity.identity WHERE login_identifier = ?", login)), role);
-        return field(client.post("/v1/authentications", "{\"loginIdentifier\":\"" + login + "\",\"password\":\""
-                + password + "\"}", null, key()).body(), "sessionToken");
+        return com.finapp.app.session.OperatorStepUp.elevated(field(client.post("/v1/authentications",
+                "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + password + "\"}", null, key()).body(),
+                "sessionToken"), client::post);
     }
 
     /** The fixture's clock: the loan's dated facts moved back until its first due date is today (never a path). */

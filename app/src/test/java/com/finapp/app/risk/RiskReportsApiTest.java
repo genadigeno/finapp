@@ -106,7 +106,7 @@ class RiskReportsApiTest {
     @DisplayName("the day's replay: two seals of today replay IDENTICAL, recorded risk.Replayed against the day with the"
             + " reason; a blank reason 422 risk.ReasonRequired")
     void theDayReplay() throws Exception {
-        RiskOperatorSessions.Session analyst = http.sessionWith(RoleName.RISK_ANALYST, false);
+        RiskOperatorSessions.Session analyst = http.sessionWith(RoleName.RISK_ANALYST, true);
         seal(RiskOperatorSessions.IDS.next());
         seal(RiskOperatorSessions.IDS.next());
         String today = LocalDate.now(ZoneOffset.UTC).toString();
@@ -149,7 +149,7 @@ class RiskReportsApiTest {
             + " recorded risk.CaseRead (act=evidence); an unheld reference 404; the analyst's own party's case 403")
     void theEvidenceDoor() throws Exception {
         RiskOperatorSessions.Session analyst = http.sessionWith(RoleName.RISK_ANALYST, false);
-        RiskOperatorSessions.Session colleague = http.sessionWith(RoleName.RISK_ANALYST, false);
+        RiskOperatorSessions.Session colleague = http.sessionWith(RoleName.RISK_ANALYST, true);
         UUID customer = RiskOperatorSessions.IDS.next();
         UUID journalEntry = monitored(account(customer), account(RiskOperatorSessions.IDS.next()));
         String caseId = caseHolding(colleague, customer, journalEntry);
@@ -197,7 +197,8 @@ class RiskReportsApiTest {
     @Test
     @DisplayName("another desk is 403 and no session 401 on every proof door")
     void theNegatives() throws Exception {
-        RiskOperatorSessions.Session officer = http.sessionWith(RoleName.RISK_OFFICER, false);
+        // Stepped up, so the replay's POST reaches the permission it lacks (P17-TSK-102), not the assurance it lacks.
+        RiskOperatorSessions.Session officer = http.sessionWith(RoleName.RISK_OFFICER, true);
         String today = LocalDate.now(ZoneOffset.UTC).toString();
         for (String report : REPORTS) {
             String path = "/v1/operator/reports/risk/" + report + "?date=" + today;

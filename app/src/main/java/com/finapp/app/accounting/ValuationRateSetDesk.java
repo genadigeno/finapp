@@ -92,7 +92,7 @@ public final class ValuationRateSetDesk {
             List<ValuationRateView> rates,
             int referenceGaps) {}
 
-    /** A set as the reviewer reads it: the receipt's facts and its two instants. No person, no reason. */
+    /** A set as the reviewer reads it: the receipt's facts, its two instants and its capturer by identifier, never a name (`P17-TSK-111`). No reason. */
     public record ValuationRateSetView(
             String id,
             String periodId,
@@ -103,7 +103,8 @@ public final class ValuationRateSetDesk {
             String capturedAt,
             String decidedAt,
             List<ValuationRateView> rates,
-            int referenceGaps) {}
+            int referenceGaps,
+            String capturedBy) {}
 
     /** One pair a reference-gap exception names: {@code EUR/JPY} and the snapshot id of the observation meant. */
     public record ReferenceGapRequest(String pair, String snapshotId) {}
@@ -239,7 +240,7 @@ public final class ValuationRateSetDesk {
         return new ValuationRateSetView(set.id().value().toString(), set.period().value().toString(),
                 set.month().toString(), set.status().name(), set.asOf().toString(), set.maxAgeHours(),
                 read.capturedAt().toString(), read.decidedAt().map(Instant::toString).orElse(null),
-                set.rates().stream().map(rate -> ValuationRateView.of(rate, set.asOf())).toList(), gapsOf(set));
+                set.rates().stream().map(rate -> ValuationRateView.of(rate, set.asOf())).toList(), gapsOf(set), read.capturedBy());
     }
 
     private static int gapsOf(ValuationRateSets.Valued set) {

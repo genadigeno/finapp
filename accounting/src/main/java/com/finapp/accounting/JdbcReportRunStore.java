@@ -63,7 +63,7 @@ public final class JdbcReportRunStore implements ReportRunStore {
             + " 'GENERATING', 1, clock_timestamp() + ? * interval '1 millisecond', ?)"
             + " ON CONFLICT ON CONSTRAINT report_run_key DO NOTHING";
 
-    private static final String ROW = "SELECT r.id, r.definition, r.definition_version, r.period_id, r.revision,"
+    static final String ROW = "SELECT r.id, r.definition, r.definition_version, r.period_id, r.revision,"
             + " r.parameters, r.parameters_hash, r.period_revision, r.basis, r.status, r.period_locked_at,"
             + " r.mapping_version_id, v.version AS mapping_version, r.valuation_rate_set_id, r.cut_at, r.requested_by,"
             + " r.requested_by_type, r.claimed_at, r.attempt, r.lease_until, r.content_sha256, r.completed_at,"
@@ -257,7 +257,7 @@ public final class JdbcReportRunStore implements ReportRunStore {
         }
     }
 
-    private static RunRow row(ResultSet row) throws SQLException {
+    static RunRow row(ResultSet row) throws SQLException {
         UUID mapping = row.getObject("mapping_version_id", UUID.class);
         UUID rateSet = row.getObject("valuation_rate_set_id", UUID.class);
         RunParameters parameters = parameters(row, Optional.ofNullable(rateSet));

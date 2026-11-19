@@ -2,7 +2,9 @@ package com.finapp.app.reconciliation;
 
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RecordsRefusals;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -79,6 +82,7 @@ public class ReconciliationResolutionController {
     public record BatchRepudiationRequest(@NotNull String reasonCode, @NotNull String narrative) {}
 
     /** Proposes a template-bound resolution, keyed per principal; one live per break. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/breaks/{id}/resolutions", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RECONCILIATION_RESOLVE)
     @RequiresIdempotencyKey
@@ -97,6 +101,7 @@ public class ReconciliationResolutionController {
      * principal, one live per batch; a second person approves it through the resolution
      * doors below.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(
             path = "/batches/{settlementBatchId}/repudiation",
             consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -117,6 +122,21 @@ public class ReconciliationResolutionController {
      * manual match's chosen candidate - and the frozen ledger lines, account by account. One
      * snapshot, recording nothing.
      */
+    /**
+     * The approver's queue (`P17-TSK-107`, gap G-122; finapp-admin-panel ADR-C133 decision 3): a §7 collection - {@code limit} 50
+     * unless named, 200 at most, the opaque {@code cursor} of the page before - of the resolutions awaiting a second person, oldest
+     * first, in the pending-decision shape, each marked when the caller proposed it. {@code status} is {@code PROPOSED} or absent.
+     * The permission the resolution's own read and its approval use, so a queue is read only by someone who may decide it.
+     */
+    @GetMapping("/resolutions")
+    @RequiresPermission(PermissionName.RECONCILIATION_RESOLVE)
+    public BreakResolutionDesk.PendingReconciliationResolutionPage listPendingReconciliationResolutions(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.pendingResolutions(status, cursor, limit);
+    }
+
     @GetMapping("/resolutions/{id}")
     @RequiresPermission(PermissionName.RECONCILIATION_RESOLVE)
     public BreakResolutionDesk.ResolutionDetail viewReconciliationResolution(
@@ -128,6 +148,7 @@ public class ReconciliationResolutionController {
      * Approves a pending resolution — a second person's act; synchronous, one transaction. The
      * optional body echoes the operand the approver read; a different one is refused.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping("/resolutions/{id}/approval")
     @RequiresPermission(PermissionName.RECONCILIATION_RESOLVE)
     public BreakResolutionDesk.ResolutionDecision approveReconciliationResolution(
@@ -141,6 +162,7 @@ public class ReconciliationResolutionController {
     }
 
     /** Rejects a pending resolution — another person's reasoned act. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(
             path = "/resolutions/{id}/rejection",
             consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -152,6 +174,7 @@ public class ReconciliationResolutionController {
     }
 
     /** Withdraws a pending resolution — its proposer's act; the row moves, nothing is deleted. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @DeleteMapping("/resolutions/{id}")
     @RequiresPermission(PermissionName.RECONCILIATION_RESOLVE)
     public BreakResolutionDesk.ResolutionDecision withdrawReconciliationResolution(

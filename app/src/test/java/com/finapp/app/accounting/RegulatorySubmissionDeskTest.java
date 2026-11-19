@@ -141,8 +141,14 @@ class RegulatorySubmissionDeskTest {
 
     // ------------------------------------------------------------------ the routes
 
+    /**
+     * <em>(Read "MULTI_FACTOR on the attestation, the sending and the non-delivery, and nowhere else" until `P17-TSK-102`,
+     * 2026-11-17.)</em>
+     */
     @Test
-    @DisplayName("the routes are the partition: each role's read its own door; MULTI_FACTOR on the attestation, the sending and the non-delivery, and nowhere else; every POST keyed; no route asks ACCOUNTING_READ")
+    @DisplayName("the routes are the partition: each role's read its own door; MULTI_FACTOR on every act since the owner's D-6"
+            + " (P17-TSK-102) - the draft, the validation, the withdrawal, the attestation, the refusal, the sending and the"
+            + " non-delivery - and on no read; every POST keyed; no route asks ACCOUNTING_READ")
     void theRoutesAreThePartition() {
         Map<String, PermissionName> expected = Map.ofEntries(
                 Map.entry("draftRegulatorySubmission", PermissionName.REGULATORY_REPORT_PREPARE),
@@ -157,7 +163,8 @@ class RegulatorySubmissionDeskTest {
                 Map.entry("refuseRegulatorySubmission", PermissionName.REGULATORY_REPORT_APPROVE),
                 Map.entry("sendRegulatorySubmission", PermissionName.REGULATORY_REPORT_SUBMIT),
                 Map.entry("declareRegulatorySubmissionUndelivered", PermissionName.REGULATORY_REPORT_SUBMIT));
-        List<String> stepped = List.of("approveRegulatorySubmission", "sendRegulatorySubmission", "declareRegulatorySubmissionUndelivered");
+        List<String> stepped = List.of("draftRegulatorySubmission", "validateRegulatorySubmission", "withdrawRegulatorySubmission",
+                "approveRegulatorySubmission", "refuseRegulatorySubmission", "sendRegulatorySubmission", "declareRegulatorySubmissionUndelivered");
         int seen = 0;
         for (Method method : RegulatorySubmissionController.class.getDeclaredMethods()) {
             if (method.isAnnotationPresent(RequiresPermission.class)) {
@@ -465,6 +472,8 @@ class RegulatorySubmissionDeskTest {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt drafted = draft("d-1");
         world.audit.clear();
         RegulatorySubmissionDesk.RegulatorySubmissionView view = as(PREPARER, () -> desk.read(drafted.submissionId()));
+        assertThat(view.preparedBy()).as("P17-TSK-111: the preparer named, by identifier").isEqualTo(PREPARER.id());
+        assertThat(view.periodId()).as("P17-TSK-111: the return's period by its id, which a correction's draft names").isEqualTo(january);
 
         assertThat(view.standing()).isEqualTo("REFERENCE");
         assertThat(view.notice()).contains("reference").doesNotContainIgnoringCase("complian");

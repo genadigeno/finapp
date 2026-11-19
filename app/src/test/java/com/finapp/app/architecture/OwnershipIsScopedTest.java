@@ -4173,6 +4173,13 @@ class OwnershipIsScopedTest {
                                         + " UPDATE, the edge conditional on OPEN and a pending proposal; four eyes by"
                                         + " CHECK; behind @RequiresPermission(ACCOUNTING_ADJUST_APPROVE).")),
                     Map.entry(
+                            "com.finapp.accounting.JdbcAccountingBreakStore.rejectAcknowledgement",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-111. The id comes only from the break row this transaction locked FOR"
+                                        + " UPDATE, the clear conditional on OPEN, a pending proposal and no approval (V018's"
+                                        + " edge); behind @RequiresPermission(ACCOUNTING_ADJUST_APPROVE).")),
+                    Map.entry(
                             "com.finapp.accounting.JdbcAccountingBreakStore.resolve",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -4820,6 +4827,15 @@ class OwnershipIsScopedTest {
                                         + " the not-self rule) behind @RequiresPermission(AML_REPORT_APPROVE); the"
                                         + " one-live unique is the arbiter beneath it. A report is risk's record about a"
                                         + " party, owned by no party; nothing is served.")),
+                    Map.entry(
+                            "com.finapp.risk.JdbcRegulatoryReportStore.ofCase",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-109. A case's reports by the case's id, read on the file's own snapshot"
+                                        + " after CaseWorklist.read judged the reader not of the subject's party (fail"
+                                        + " closed, risk.SelfDealingRefused), behind @RequiresPermission(RISK_INVESTIGATE)"
+                                        + " and served only when the request's standing also permits AML_REPORT_APPROVE"
+                                        + " (the owner's tipping-off decision); heads by reference, never the narrative.")),
                     Map.entry(
                             "com.finapp.risk.JdbcRegulatoryReportStore.lock",
                             new Entry(
@@ -6498,6 +6514,18 @@ class OwnershipIsScopedTest {
                                         + " suspension. A label must be one thing, and naming the"
                                         + " safer path would describe the caller that needs no"
                                         + " protection.")),
+                    Map.entry(
+                            "com.finapp.identity.JdbcIdentityDirectoryStore.detail",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-014. The staff directory's detail: the identifier comes from the URL of"
+                                        + " GET /v1/operator/identities/{id} and names SOMEBODY ELSE by design - whom an"
+                                        + " administrator acts on. What stands in for the missing ownership predicate:"
+                                        + " @RequiresPermission(IDENTITY_READ) on a MULTI_FACTOR session at the boundary"
+                                        + " (RoutePermissionRegisterTest, StaffDirectoryApiDatabaseTest), the answer"
+                                        + " identifier-first - no name, login identifier or contact - and an audit record"
+                                        + " naming the identity read (IdentityDirectoryDatabaseTest). No not-self rule: a"
+                                        + " read changes nothing about its subject.")),
                     Map.entry(
                             "com.finapp.identity.JdbcRoleAssignmentStore.lockForRoleChange",
                             new Entry(

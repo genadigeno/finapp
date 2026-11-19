@@ -45,7 +45,7 @@ import lombok.RequiredArgsConstructor;
  *
  * <p>What leaves: a break's finding (its period, check, type, subject, evidence - codes, ids and counts - and the
  * register version it was judged by), its status and its acts' instants, the acknowledgement's <strong>disclosure</strong>
- * (it exists to be disclosed) and the correcting entry's id. Never a person, never a reason.
+ * (it exists to be disclosed), the correcting entry's id, and a pending acknowledgement's proposer by identifier, never a name (`P17-TSK-111`). Never another person, never a reason.
  */
 @RequiredArgsConstructor
 public final class AccountingBreakDesk {
@@ -55,6 +55,7 @@ public final class AccountingBreakDesk {
     static final String READ_SPAN = "accounting.break.read";
     static final String PROPOSE_SPAN = "accounting.break.acknowledgement.propose";
     static final String APPROVE_SPAN = "accounting.break.acknowledgement.approve";
+    static final String REJECT_SPAN = "accounting.break.acknowledgement.reject";
     static final String RESOLVE_SPAN = "accounting.break.resolve";
 
     /** The list's default and largest page. */
@@ -81,7 +82,7 @@ public final class AccountingBreakDesk {
     /** An act's receipt: the break as the act left it. */
     public record AccountingBreakReceipt(String id, String period, String status, boolean acknowledgementPending) {}
 
-    /** A break as the operator reads it - no person, no reason. */
+    /** A break as the operator reads it - no reason; a pending acknowledgement's proposer by identifier (`P17-TSK-111`). */
     public record AccountingBreakView(
             String id,
             String period,
@@ -98,7 +99,8 @@ public final class AccountingBreakDesk {
             String disclosure,
             String acknowledgedAt,
             String resolvedAt,
-            String correctingEntryId) {}
+            String correctingEntryId,
+            String acknowledgementProposedBy) {}
 
     /**
      * One keyset page of a period's breaks in birth order - a read, unkeyed, in one transaction; {@code limit} 1 to 500,
@@ -154,6 +156,19 @@ public final class AccountingBreakDesk {
                 uow -> receipt(breaks.approveAcknowledgement(uow, id, actor, reason, correlation))));
     }
 
+    /**
+     * Rejects a pending acknowledgement (`P17-TSK-111`): the proposal cleared, the break OPEN for a new one - reasoned, keyed per
+     * principal like the approval it races, whose fingerprint it never shares.
+     */
+    public AccountingBreakReceipt rejectAcknowledgement(String idempotencyKey, String rawId, String reason) {
+        AccountingBreakId id = breakId(rawId);
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        return flow.door(REJECT_SPAN, () -> keyed(actor, idempotencyKey,
+                "acknowledgement-rejection|" + id.value() + "|" + reason,
+                uow -> receipt(breaks.rejectAcknowledgement(uow, id, actor, reason, correlation))));
+    }
+
     public AccountingBreakReceipt resolve(String idempotencyKey, String rawId, String rawEntryId, String reason) {
         AccountingBreakId id = breakId(rawId);
         UUID correctingEntry = entryId(rawEntryId);
@@ -183,7 +198,8 @@ public final class AccountingBreakDesk {
                 row.disclosure().orElse(null),
                 row.ackApprovedAt().map(Instant::toString).orElse(null),
                 row.resolvedAt().map(Instant::toString).orElse(null),
-                row.resolvingEntry().map(UUID::toString).orElse(null));
+                row.resolvingEntry().map(UUID::toString).orElse(null),
+                row.acknowledgementPending() ? row.ackProposedBy().orElse(null) : null);
     }
 
     private static AccountingBreakReceipt receipt(AccountingBreaks.Acted acted) {

@@ -152,6 +152,8 @@ class AccountingPeriodDeskTest {
             assertThat(view.reopenPending()).isFalse();
             assertThat(view.reopenId()).as("none pending: null, never read as something").isNull();
             assertThat(view.reopenProposedAt()).isNull();
+            assertThat(view.unlockProposedBy()).as("none pending: no proposer").isNull();
+            assertThat(view.reopenProposedBy()).isNull();
         });
     }
 
@@ -206,12 +208,19 @@ class AccountingPeriodDeskTest {
         assertThat(closedThrough).isEmpty();
     }
 
+    /**
+     * <em>(Read "the approval moves the cutoff and supersedes FINAL runs, so MULTI_FACTOR; nothing else here does", and
+     * {@code Optional.empty()} at every other door, until `P17-TSK-102`, 2026-11-17.)</em>
+     */
     @Test
     @DisplayName("the routes: list ACCOUNTING_READ, lock, unlock proposal and withdrawal ACCOUNTING_CLOSE_PROPOSE, the"
-            + " approval and the rejection ACCOUNTING_CLOSE_APPROVE; every POST keyed")
+            + " approval and the rejection ACCOUNTING_CLOSE_APPROVE; every POST keyed and, since the owner's D-6"
+            + " (P17-TSK-102), MULTI_FACTOR; the list not")
     void theRoutesAreThePartition() {
         Map<String, PermissionName> expected = Map.of(
                 "listAccountingPeriods", PermissionName.ACCOUNTING_READ,
+                // P17-TSK-111: one period by its id, the list's permission - a read, unkeyed and on any session, as the list is.
+                "readAccountingPeriod", PermissionName.ACCOUNTING_READ,
                 "lockAccountingPeriod", PermissionName.ACCOUNTING_CLOSE_PROPOSE,
                 "proposeAccountingPeriodUnlock", PermissionName.ACCOUNTING_CLOSE_PROPOSE,
                 "approveAccountingPeriodUnlock", PermissionName.ACCOUNTING_CLOSE_APPROVE,
@@ -221,13 +230,14 @@ class AccountingPeriodDeskTest {
         for (Method method : AccountingPeriodController.class.getDeclaredMethods()) {
             if (method.isAnnotationPresent(RequiresPermission.class)) {
                 doors++;
-                // P14-TSK-024, the owner's acceptance: the approval moves the cutoff and supersedes FINAL runs, so MULTI_FACTOR; nothing else here does.
+                // P14-TSK-024, the owner's acceptance: the approval moves the cutoff and supersedes FINAL runs, so MULTI_FACTOR; since
+                // the owner's D-6 (P17-TSK-102) every act here is MULTI_FACTOR too, and only the list is not.
                 assertThat(Optional.ofNullable(method.getAnnotation(RequiresAssurance.class)).map(RequiresAssurance::value)).as(method.getName())
-                        .isEqualTo(method.getName().equals("approveAccountingPeriodUnlock") ? Optional.of(AssuranceLevel.MULTI_FACTOR) : Optional.empty());
+                        .isEqualTo(method.getName().startsWith("list") || method.getName().startsWith("read") ? Optional.empty() : Optional.of(AssuranceLevel.MULTI_FACTOR));
                 assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName())
                         .isEqualTo(expected.get(method.getName()));
                 assertThat(method.isAnnotationPresent(RequiresIdempotencyKey.class)).as(method.getName())
-                        .isEqualTo(!method.getName().startsWith("list"));
+                        .isEqualTo(!method.getName().startsWith("list") && !method.getName().startsWith("read"));
             }
         }
         assertThat(doors).isEqualTo(expected.size());
@@ -326,6 +336,8 @@ class AccountingPeriodDeskTest {
         assertThat(desk.list(null)).singleElement().satisfies(view -> {
             assertThat(view.unlockPending()).isTrue();
             assertThat(view.unlockProposedAt()).isEqualTo(store.month(SEPTEMBER).orElseThrow().unlockProposedAt().orElseThrow().toString());
+            assertThat(view.unlockProposedBy()).as("P17-TSK-111: the unlock's proposer named")
+                    .isEqualTo(store.month(SEPTEMBER).orElseThrow().unlockProposedBy().orElseThrow());
         });
         com.finapp.accounting.PeriodReopenId reopen = com.finapp.accounting.PeriodReopenId.next(IDS);
         Instant proposedAt = Instant.parse("2026-10-30T08:00:00.123456Z");
@@ -335,7 +347,18 @@ class AccountingPeriodDeskTest {
             assertThat(view.reopenPending()).isTrue();
             assertThat(view.reopenId()).isEqualTo(reopen.value().toString());
             assertThat(view.reopenProposedAt()).isEqualTo("2026-10-30T08:00:00.123456Z");
+            assertThat(view.reopenProposedBy()).as("P17-TSK-111: the reopen's proposer named").isEqualTo(ACCOUNTANT.id());
         });
+    }
+
+    @Test
+    @DisplayName("P17-TSK-111: one period by its id, however old, is the list's view of it; an unknown or malformed id is the one 404")
+    void onePeriodByItsId() {
+        String id = lockedWithAnUnlockPending();
+        assertThat(desk.one(id)).isEqualTo(desk.list(null).get(0));
+        refused(() -> desk.one(com.finapp.accounting.AccountingPeriodId.next(IDS).value().toString()), AccountingErrorCode.NOT_FOUND, 404);
+        refused(() -> desk.one(UUID.randomUUID().toString()), AccountingErrorCode.NOT_FOUND, 404);
+        refused(() -> desk.one("not-an-id"), AccountingErrorCode.NOT_FOUND, 404);
     }
 
     // -----------------------------------------------------------------

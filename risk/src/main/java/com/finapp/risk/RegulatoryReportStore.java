@@ -43,6 +43,12 @@ public interface RegulatoryReportStore {
     Optional<RegulatoryReport> liveOf(Connection unitOfWork, RiskCaseId caseId);
 
     /**
+     * Every report drafted on {@code caseId}, in drafting order - the rejected ones too (`P17-TSK-109`): what a case's file
+     * lists to a holder of {@code AML_REPORT_APPROVE}. No lock. A case holds a few at most, so no index serves this read.
+     */
+    List<RegulatoryReport> ofCase(Connection unitOfWork, RiskCaseId caseId);
+
+    /**
      * Births {@code report} {@code DRAFT} with its history row - empty, nothing written, when its case already has a live
      * or accepted report ({@code INSERT … ON CONFLICT (case_id) WHERE status <> 'REJECTED' DO NOTHING}).
      */

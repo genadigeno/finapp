@@ -2226,4 +2226,23 @@ See `PHASE_GATES.md` §Phase 16.
 - Read replicas serving stale authoritative balances.
 
 ### 18. What must NOT be implemented yet
-Nothing is deferred beyond this phase; further work is a new programme.
+Nothing is deferred beyond this phase; further work is a new programme. *(2026-11-17, the Phase 16 → 17 transition: the owner appended Phase 17, the Operator Console, below.)*
+
+# Phase 17 — Operator Console
+
+*(Planned at the Phase 16 → 17 transition, 2026-11-17. The plan is finapp-admin-panel `docs/PHASE_17_PLAN.md`, with the console's backlog, ADRs (ADR-C130…C136) and `DOD-UI` beside it, by the owner's instruction of 2026-11-13; this repository's half is `BACKLOG.md` §Phase 17, handed over as finapp-admin-panel `docs/FINAPP_BACKEND_WORK.md`. Where this section and the plan differ, the plan is right.)*
+
+### 1. Objective
+The operator surface made usable by the people who run the platform, through a separate single-page console served same-origin on the operator edge. The console holds no authority: every rule stays in the module that owns it, and its correctness under N replicas reduces to the backend's and the idempotency-key discipline.
+
+### 2. Scope (this repository)
+- The operator surface's foundation: a second factor on every operator act, `Cache-Control: no-store` on operator responses, a rate limit on the operator edge, the console's image on `kind` and its registry and delivery.
+- The read gaps each console module needs, closed in the module that owns the data, behind read permissions and audited where they are sensitive: administration and the audit trail, risk, finance, customers and KYC, payments and merchants, credit, lending and BNPL, FX and cross-border, the overview and the approvals inbox.
+- The single-actor money controls (ADR-C135) and the account restriction, the phase's only new domain behaviour.
+- Test-only seeding for the console's end-to-end tests, never in an image or a served route.
+
+### 3. Exit criteria
+`PHASE_GATES.md` §5 Phase 17.
+
+### 4. What must NOT be implemented
+A workforce identity provider; PII shown to staff beyond identifiers unless the owner decides a field with a concrete need; a backend-for-frontend; generic or audit exports before the owner rules (D-9); a job-status API; cookie sessions; any new financial invariant.

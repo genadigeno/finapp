@@ -36,7 +36,7 @@ import org.junit.jupiter.api.Test;
 class RoleNameTest {
 
     @Test
-    @DisplayName("ADMINISTRATOR grants exactly the two Phase 1 privileged permissions")
+    @DisplayName("ADMINISTRATOR grants exactly the two Phase 1 privileged permissions the staff directory's read (P17-TSK-014) and another's sessions (P17-TSK-015)")
     void administratorGrantsExactlyTwo() {
         // containsExactlyInAnyOrder, never contains: a widening is the defect, and `contains` is
         // satisfied by a role that grants everything. Naming both is what makes a third permission
@@ -45,7 +45,8 @@ class RoleNameTest {
         assertThat(RoleName.ADMINISTRATOR.permissions())
                 .as("granting a permission is a reviewed code change, so widening must fail a test")
                 .containsExactlyInAnyOrder(
-                        PermissionName.IDENTITY_SUSPEND, PermissionName.ROLE_ASSIGN);
+                        PermissionName.IDENTITY_SUSPEND, PermissionName.ROLE_ASSIGN, PermissionName.IDENTITY_READ,
+                        PermissionName.SESSION_ADMINISTER);
     }
 
     @Test
@@ -379,6 +380,17 @@ class RoleNameTest {
     }
 
     @Test
+    @DisplayName("AUDITOR grants exactly AUDIT_READ: the trail read, no act, and never IDENTITY_READ, which ADMINISTRATOR holds")
+    void auditorGrantsExactlyTheTrailRead() {
+        // The twenty-second population (P17-TSK-017; finapp-admin-panel ADR-C134 decision 2): read-only, and its own - ADMINISTRATOR
+        // does not hold AUDIT_READ (the owner, 2026-11-18). ADR-C132 proposed IDENTITY_READ for the auditor as well; the pairwise
+        // disjointness below refuses a permission two roles grant, so the auditor names identities by the records' identifiers.
+        assertThat(RoleName.AUDITOR.permissions()).containsExactly(PermissionName.AUDIT_READ);
+        assertThat(RoleName.ADMINISTRATOR.permissions()).doesNotContain(PermissionName.AUDIT_READ);
+        assertThat(RoleName.AUDITOR.requiresEnrolledFactor()).as("its every read is behind a factor").isTrue();
+    }
+
+    @Test
     @DisplayName("REGULATORY_REPORTER grants exactly REGULATORY_REPORT_PREPARE and REGULATORY_REPORT_SUBMIT - never the"
             + " approval")
     void regulatoryReporterGrantsExactlyTwo() {
@@ -490,6 +502,7 @@ class RoleNameTest {
                                 + " 'LENDING_OFFICER', 'LENDING_TREASURY_OFFICER', 'LOAN_SERVICING_AGENT',"
                                 + " 'BNPL_OFFICER', 'BNPL_SERVICING_AGENT',"
                                 + " 'RISK_ANALYST', 'RISK_OFFICER', 'AML_OFFICER',"
-                                + " 'ACCOUNTANT', 'FINANCIAL_CONTROLLER', 'REGULATORY_REPORTER', 'EVENT_OPERATOR'");
+                                + " 'ACCOUNTANT', 'FINANCIAL_CONTROLLER', 'REGULATORY_REPORTER', 'EVENT_OPERATOR',"
+                                + " 'AUDITOR'");
     }
 }

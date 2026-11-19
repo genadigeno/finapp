@@ -15,11 +15,13 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -38,8 +40,32 @@ import org.springframework.web.bind.annotation.RestController;
 public class RiskScreeningListController {
 
     @NonNull private final RiskScreeningListDesk desk;
+    @NonNull private final RiskCollectionDesk collections;
+
+    /**
+     * The list versions, newest first by recording (`P17-TSK-020`, gap G-92): a §7 collection of metadata, of one {@code list}
+     * ({@code SANCTIONS} or {@code PEP}) when named; {@code limit} 50 unless named, 200 at most; the opaque {@code cursor} of
+     * the page before. Never who recorded or activated a version, and never an entry: finapp holds none.
+     */
+    @GetMapping
+    @RequiresPermission(PermissionName.RISK_POLICY_ADMINISTER)
+    public RiskCollectionDesk.RiskScreeningListPage listScreeningListVersions(
+            @RequestParam(name = "list", required = false) String list,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return collections.screeningLists(list, cursor, limit);
+    }
+
+    /** One list version's metadata (`P17-TSK-020`); an unknown version {@code 404 risk.NotFound}. */
+    @GetMapping(path = "/{listVersionId}")
+    @RequiresPermission(PermissionName.RISK_POLICY_ADMINISTER)
+    public RiskCollectionDesk.RiskScreeningListVersionView readScreeningListVersion(
+            @PathVariable("listVersionId") String listVersionId) {
+        return collections.screeningList(listVersionId);
+    }
 
     /** Records a list version - the fact that the provider's version of a list exists; a recorded label converges. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RISK_POLICY_ADMINISTER)
     @RequiresIdempotencyKey

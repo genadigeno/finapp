@@ -1,7 +1,9 @@
 package com.finapp.app.accounting;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -64,6 +66,7 @@ public class AccountingBreakController {
     }
 
     /** Proposes acknowledging an OPEN break with a disclosure - nothing moves until a different person approves. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{breakId}/acknowledgement-proposal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_ADJUST_PROPOSE)
     @RequiresIdempotencyKey
@@ -75,6 +78,7 @@ public class AccountingBreakController {
     }
 
     /** Approves a pending acknowledgement - a different person's act: the break ACKNOWLEDGED; a reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{breakId}/acknowledgement-approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_ADJUST_APPROVE)
     @RequiresIdempotencyKey
@@ -86,9 +90,25 @@ public class AccountingBreakController {
     }
 
     /**
+     * Rejects a pending acknowledgement (`P17-TSK-111`): the proposal cleared, the break stays OPEN for a new one, the case file
+     * keeping both; a reason is required. It races the approval: one wins, the other is 409 accounting.BreakStale.
+     */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+    @PostMapping(path = "/{breakId}/acknowledgement-rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @RequiresPermission(PermissionName.ACCOUNTING_ADJUST_APPROVE)
+    @RequiresIdempotencyKey
+    public AccountingBreakDesk.AccountingBreakReceipt rejectAccountingBreakAcknowledgement(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("breakId") String breakId,
+            @Valid @RequestBody BreakActRequest body) {
+        return desk.rejectAcknowledgement(idempotencyKey, breakId, body.reason());
+    }
+
+    /**
      * Resolves an OPEN or ACKNOWLEDGED break by reference to the journal entry that corrected it - an existing entry
      * other than the one the break is about; nothing is posted. A reason is required.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{breakId}/resolution", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.ACCOUNTING_ADJUST_APPROVE)
     @RequiresIdempotencyKey

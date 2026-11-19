@@ -1,5 +1,7 @@
 package com.finapp.app.lending;
 
+import com.finapp.app.session.RequiresAssurance;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.lending.LendingSpans;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RequiresPermission;
@@ -58,6 +60,7 @@ public class LoanServicingController {
     }
 
     /** Proposes the exact reversal of one of the loan's repayments, with a reason; nothing is posted. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/repayments/{repaymentId}/reversal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LOAN_SERVICE)
     @RequiresIdempotencyKey
@@ -74,6 +77,7 @@ public class LoanServicingController {
      * Approves the named pending reversal - someone other than its proposer: the repayment's entry swapped exactly, the
      * wallet credited back, what it paid due again.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/repayments/{repaymentId}/reversal/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LOAN_SERVICE_APPROVE)
     @RequiresIdempotencyKey
@@ -86,6 +90,7 @@ public class LoanServicingController {
     }
 
     /** Rejects the named pending reversal - the proposer's withdrawal included; a reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/repayments/{repaymentId}/reversal/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LOAN_SERVICE)
     @RequiresIdempotencyKey
@@ -102,6 +107,7 @@ public class LoanServicingController {
      * paid part, to the credit balance) or of a billed item's interest ({@code INTEREST}), with a reason; nothing is posted
      * (`P11-TSK-025`).
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/waivers", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LOAN_SERVICE)
     @RequiresIdempotencyKey
@@ -117,6 +123,7 @@ public class LoanServicingController {
      * Approves the named pending waiver - someone other than its proposer: posted (rule 8, 8a or 9) within what is due now,
      * the account closed when it settled the last receivable.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/waivers/{waiverId}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LOAN_SERVICE_APPROVE)
     @RequiresIdempotencyKey
@@ -129,6 +136,7 @@ public class LoanServicingController {
     }
 
     /** Rejects the named pending waiver - the proposer's withdrawal included; a reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/waivers/{waiverId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LOAN_SERVICE)
     @RequiresIdempotencyKey
@@ -144,6 +152,7 @@ public class LoanServicingController {
      * Proposes amending the loan's agreement - a rate never above it, a remaining term never shorter than its schedule has
      * left, arrears re-scheduled or not - with a reason; nothing is posted and nothing amended (`P11-TSK-027`).
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/amendments", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LOAN_SERVICE)
     @RequiresIdempotencyKey
@@ -159,6 +168,7 @@ public class LoanServicingController {
      * Approves the named pending amendment - someone other than its proposer, while the agreement it amends is still the
      * loan's: offered to the customer until its expiry.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/amendments/{amendmentId}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LOAN_SERVICE_APPROVE)
     @RequiresIdempotencyKey
@@ -171,6 +181,7 @@ public class LoanServicingController {
     }
 
     /** Rejects the named pending amendment - the proposer's withdrawal included; a reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/amendments/{amendmentId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LOAN_SERVICE)
     @RequiresIdempotencyKey

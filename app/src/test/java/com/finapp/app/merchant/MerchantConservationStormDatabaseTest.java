@@ -1021,7 +1021,8 @@ class MerchantConservationStormDatabaseTest {
                     app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
             app.commit();
         }
-        return field(authenticate(login).body(), "sessionToken");
+        return com.finapp.app.session.OperatorStepUp.elevated(
+                field(authenticate(login).body(), "sessionToken"), this::post);
     }
 
     // ----------------------------------------------------------------- the routes

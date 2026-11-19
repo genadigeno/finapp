@@ -183,7 +183,12 @@ class StoredBoundsAreTheDatabasesTest {
                         "JdbcDeadLetterStore#published_at",
                         "JdbcDisputeStore#opened_at",
                         "LendingFundedAsOfCutoffReads#opened_at",
-                        "LendingReports#occurred_at")) {
+                        "LendingReports#occurred_at",
+                        // P17-TSK-017: the audit trail's window, the instants an auditor named, and its keyset cursor, a row's
+                        // own stored stamp - a read of history, never a deadline judged on an instance's clock.
+                        "JdbcAuditTrail#occurred_at",
+                        // P17-TSK-020: the assessment search's window, the instants an analyst named - history read.
+                        "JdbcRiskCollections#assessed_at")) {
             census.put(asked, Kind.ASKED_ABOUT);
         }
         for (String databases :

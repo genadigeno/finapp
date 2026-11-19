@@ -23,6 +23,8 @@ public interface AccountingBreakStore {
     enum Act {
         RAISED,
         ACKNOWLEDGEMENT_PROPOSED,
+        /** A pending proposal rejected, the break staying {@code OPEN} (`P17-TSK-111`, accounting {@code V018}). */
+        ACKNOWLEDGEMENT_REJECTED,
         ACKNOWLEDGED,
         RESOLVED
     }
@@ -204,6 +206,12 @@ public interface AccountingBreakStore {
 
     /** {@code OPEN -> ACKNOWLEDGED} - conditional on a pending proposal and no approval. */
     boolean approveAcknowledgement(Connection unitOfWork, AccountingBreakId id, Actor actor, String reason);
+
+    /**
+     * Clears a pending proposal whole, the break staying {@code OPEN} (`P17-TSK-111`) - conditional on a pending proposal and no
+     * approval. The rejection's reason and the proposer it names go to the case file, which the caller appends.
+     */
+    boolean rejectAcknowledgement(Connection unitOfWork, AccountingBreakId id);
 
     /** {@code from -> RESOLVED} by reference to {@code correctingEntry} - conditional on {@code from}. */
     boolean resolve(Connection unitOfWork, AccountingBreakId id, BreakStatus from, Actor actor, UUID correctingEntry,

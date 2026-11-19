@@ -132,6 +132,23 @@ public interface SettlementBatchStore<T> {
     /** The batch, or empty — unknown and malformed ids are one answer. */
     Optional<BatchRow> batchById(T unitOfWork, UUID batchId);
 
+    /** Where a page of the batch browse ended: the last batch it served (`P17-TSK-107`). */
+    record BrowseCursor(LocalDate businessDate, UUID batchId) {}
+
+    /**
+     * A page of the batch browse (`P17-TSK-107`, finapp-admin-panel ADR-C133): the batches whose business date lies in
+     * {@code [from, to]}, of one source when one is named, in the declared total order - business date newest first, the batch's
+     * id breaking the tie - and strictly after {@code after} in it. A keyset read of committed rows: a page never repeats or skips
+     * a batch however many are written meanwhile, and a batch parsed later lands where its own key puts it.
+     */
+    List<BatchRow> browse(
+            T unitOfWork,
+            Optional<UUID> sourceId,
+            LocalDate from,
+            LocalDate to,
+            Optional<BrowseCursor> after,
+            int limit);
+
     /** The persisted control totals, by type then direction — the attester's reading. */
     List<TotalRow> totalsOf(T unitOfWork, UUID batchId);
 

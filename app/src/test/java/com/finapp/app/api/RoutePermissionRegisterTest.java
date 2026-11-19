@@ -73,14 +73,39 @@ class RoutePermissionRegisterTest {
                     entry("DELETE /v1/identities/{id}/roles/{role}", PermissionName.ROLE_ASSIGN),
                     // P15-TSK-039: the check of the holdings the factor rule found standing: the administrator's.
                     entry("GET /v1/operator/access-review/factorless-holdings", PermissionName.ROLE_ASSIGN),
+                    // P17-TSK-016: the holdings that conflict under the owner's segregation-of-duties pairs, named, never revoked.
+                    entry("GET /v1/operator/access-review/sod-conflicts", PermissionName.ROLE_ASSIGN),
+                    // P17-TSK-014: the staff directory, identifier-first, under its own read permission (ADR-C132).
+                    entry("GET /v1/operator/identities", PermissionName.IDENTITY_READ),
+                    entry("GET /v1/operator/identities/{id}", PermissionName.IDENTITY_READ),
+                    entry("POST /v1/operator/identities/lookup", PermissionName.IDENTITY_READ),
+                    entry("GET /v1/operator/roles", PermissionName.IDENTITY_READ),
+                    // P17-TSK-017: the audit trail, read - the AUDITOR's alone (ADR-C134; the owner, 2026-11-18).
+                    entry("GET /v1/operator/audit-records", PermissionName.AUDIT_READ),
+                    entry("GET /v1/operator/audit-records/{id}", PermissionName.AUDIT_READ),
+                    // P17-TSK-020: the risk desks' read gaps - one alert and the assessment search, the analyst's; the policy
+                    // versions and the screening list versions, the risk officer's.
+                    entry("GET /v1/operator/risk/alerts/{alertId}", PermissionName.RISK_INVESTIGATE),
+                    entry("GET /v1/operator/risk/assessments", PermissionName.RISK_INVESTIGATE),
+                    entry("GET /v1/operator/risk/policies/versions", PermissionName.RISK_POLICY_ADMINISTER),
+                    entry("GET /v1/operator/risk/screening-lists", PermissionName.RISK_POLICY_ADMINISTER),
+                    entry("GET /v1/operator/risk/screening-lists/{listVersionId}", PermissionName.RISK_POLICY_ADMINISTER),
+                    // P17-TSK-015: another identity's sessions, listed and ended without suspending the person.
+                    entry("GET /v1/operator/identities/{id}/sessions", PermissionName.SESSION_ADMINISTER),
+                    entry("DELETE /v1/operator/identities/{id}/sessions", PermissionName.SESSION_ADMINISTER),
+                    entry("DELETE /v1/operator/identities/{id}/sessions/{session}", PermissionName.SESSION_ADMINISTER),
                     // KYC review (Phase 2)
                     entry("GET /v1/kyc/cases/{id}", PermissionName.KYC_REVIEW),
                     entry("POST /v1/kyc/cases/{id}/decision", PermissionName.KYC_REVIEW),
                     entry("POST /v1/kyc/cases/{id}/reviews/{taskId}/resolution", PermissionName.KYC_REVIEW),
                     // Ledger adjustments, four-eyes by identity (Phase 3)
                     entry("POST /v1/ledger/adjustments", PermissionName.LEDGER_ADJUST),
+                    // The approver's queue (P17-TSK-022, G-112): the permission its door decides under.
+                    entry("GET /v1/ledger/adjustments", PermissionName.LEDGER_ADJUST),
                     entry("GET /v1/ledger/adjustments/{id}", PermissionName.LEDGER_ADJUST),
                     entry("DELETE /v1/ledger/adjustments/{id}", PermissionName.LEDGER_ADJUST),
+                    // P17-TSK-111: the rejection with a reason, the DELETE's act and permission.
+                    entry("POST /v1/ledger/adjustments/{id}/rejection", PermissionName.LEDGER_ADJUST),
                     // MULTI_FACTOR on this one, its three neighbours not (P14-TSK-022); this register holds permissions, ApprovalAssuranceTest the assurance.
                     entry("POST /v1/ledger/adjustments/{id}/approval", PermissionName.LEDGER_ADJUST),
                     // Transfer reversal (Phase 4), refund (Phase 5), void (P7-TSK-004)
@@ -148,6 +173,8 @@ class RoutePermissionRegisterTest {
                     // role's; verification reads content, so it is the investigator's.
                     entry("POST /v1/operator/settlement/files/{id}/readmission", PermissionName.RECONCILIATION_ADMINISTER),
                     entry("POST /v1/operator/settlement/files/{id}/verification", PermissionName.RECONCILIATION_INVESTIGATE),
+                    // P17-TSK-107: the batch browse, under the permission the batch's own read uses.
+                    entry("GET /v1/operator/settlement/batches", PermissionName.RECONCILIATION_INVESTIGATE),
                     entry("GET /v1/operator/settlement/batches/{id}", PermissionName.RECONCILIATION_INVESTIGATE),
                     // The reconciliation controller's own door (P8-TSK-007, ADR-0067
                     // section 8): adopting history is the CONTROLLER's act, a population
@@ -201,6 +228,8 @@ class RoutePermissionRegisterTest {
                     // The Phase 8 -> 9 transition (SEC-01): what an approver reads before
                     // approving - every operand and the frozen lines - under the approver's own
                     // permission.
+                    // P17-TSK-107: the approver's queue, under the permission the resolution's read and approval use (ADR-C133).
+                    entry("GET /v1/operator/reconciliation/resolutions", PermissionName.RECONCILIATION_RESOLVE),
                     entry("GET /v1/operator/reconciliation/resolutions/{id}", PermissionName.RECONCILIATION_RESOLVE),
                     entry("POST /v1/operator/reconciliation/resolutions/{id}/approval", PermissionName.RECONCILIATION_RESOLVE),
                     entry("POST /v1/operator/reconciliation/resolutions/{id}/rejection", PermissionName.RECONCILIATION_RESOLVE),
@@ -501,6 +530,8 @@ class RoutePermissionRegisterTest {
                     // approval the controller's (four eyes), the list the accountant's (identity V025's partition);
                     // the negatives are AccountingPeriodDeskTest's route declarations.
                     entry("GET /v1/operator/accounting/periods", PermissionName.ACCOUNTING_READ),
+                    // P17-TSK-111: one period by its id, however old - the list's permission.
+                    entry("GET /v1/operator/accounting/periods/{periodId}", PermissionName.ACCOUNTING_READ),
                     entry("POST /v1/operator/accounting/periods/{periodId}/lock",
                             PermissionName.ACCOUNTING_CLOSE_PROPOSE),
                     entry("POST /v1/operator/accounting/periods/{periodId}/unlock-proposal",
@@ -534,6 +565,9 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/accounting/breaks/{breakId}/acknowledgement-proposal",
                             PermissionName.ACCOUNTING_ADJUST_PROPOSE),
                     entry("POST /v1/operator/accounting/breaks/{breakId}/acknowledgement-approval",
+                            PermissionName.ACCOUNTING_ADJUST_APPROVE),
+                    // P17-TSK-111: the rejection of a pending acknowledgement, the approval's permission - the act it races.
+                    entry("POST /v1/operator/accounting/breaks/{breakId}/acknowledgement-rejection",
                             PermissionName.ACCOUNTING_ADJUST_APPROVE),
                     entry("POST /v1/operator/accounting/breaks/{breakId}/resolution",
                             PermissionName.ACCOUNTING_ADJUST_APPROVE),
@@ -581,6 +615,18 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/accounting/gl/balances", PermissionName.ACCOUNTING_READ),
                     entry("GET /v1/operator/accounting/gl/accounts/{code}/activity", PermissionName.ACCOUNTING_READ),
                     entry("GET /v1/operator/accounting/gl/entries/{entryId}", PermissionName.ACCOUNTING_READ),
+                    // The ledger as an accountant browses it (P17-TSK-022, G-110, G-111): the GL reads' permission.
+                    entry("GET /v1/operator/ledger/accounts", PermissionName.ACCOUNTING_READ),
+                    entry("GET /v1/operator/ledger/entries", PermissionName.ACCOUNTING_READ),
+                    // The accounting desks' lists (P17-TSK-023, G-113), each under the permission of the desk that needs it - the
+                    // finance roles a partition: the runs the accountant's; the FINAL statements the controller's, exactly what its
+                    // statement door serves (the owner's answer, 2026-11-19); the versions and the sets their approvers', the
+                    // sets a proposer's own under the permission that captures them.
+                    entry("GET /v1/operator/accounting/report-runs", PermissionName.ACCOUNTING_READ),
+                    entry("GET /v1/operator/accounting/report-runs/final-statements", PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    entry("GET /v1/operator/accounting/mapping-versions", PermissionName.ACCOUNTING_MAPPING_APPROVE),
+                    entry("GET /v1/operator/accounting/valuation-rate-sets", PermissionName.ACCOUNTING_CLOSE_APPROVE),
+                    entry("GET /v1/operator/accounting/valuation-rate-sets/mine", PermissionName.ACCOUNTING_CLOSE_PROPOSE),
                     // P14-TSK-008: the report runs - generation and regeneration the accountant's
                     // ACCOUNTING_REPORT_GENERATE, the audited read of a run's content the accountant's ACCOUNTING_READ
                     // (identity V025's partition); the negatives are ReportRunDeskTest's route declarations.
@@ -611,6 +657,7 @@ class RoutePermissionRegisterTest {
                     // The four-eyes projection rebuild (P14-TSK-026, ADR-0119): the ledger operator's, LEDGER_ADJUST;
                     // MULTI_FACTOR on the approval alone (ApprovalAssuranceTest).
                     entry("POST /v1/ledger/projection-rebuilds", PermissionName.LEDGER_ADJUST),
+                    entry("GET /v1/ledger/projection-rebuilds", PermissionName.LEDGER_ADJUST),
                     entry("GET /v1/ledger/projection-rebuilds/{id}", PermissionName.LEDGER_ADJUST),
                     entry("POST /v1/ledger/projection-rebuilds/{id}/approval", PermissionName.LEDGER_ADJUST),
                     entry("POST /v1/ledger/projection-rebuilds/{id}/rejection", PermissionName.LEDGER_ADJUST)));
@@ -698,6 +745,19 @@ class RoutePermissionRegisterTest {
             // The list of holders of a role that needs a factor - the money roles, ADMINISTRATOR and the risk approver
             // (P15-TSK-032) - who have none: not on a password alone.
             "GET /v1/operator/access-review/factorless-holdings",
+            // P17-TSK-016: who holds a conflicting pair - the factorless review's twin, on the same footing.
+            "GET /v1/operator/access-review/sod-conflicts",
+            // P17-TSK-017: the audit trail - who did what to whom - is not a password's to read.
+            "GET /v1/operator/audit-records",
+            "GET /v1/operator/audit-records/{id}",
+            // P17-TSK-014: who holds the privileged roles, one of them, and who a login names - the same map, not on a password.
+            "GET /v1/operator/identities",
+            "GET /v1/operator/identities/{id}",
+            "POST /v1/operator/identities/lookup",
+            // P17-TSK-015: whose sessions are live, and ending them - an incident's acts, not a stolen password's.
+            "GET /v1/operator/identities/{id}/sessions",
+            "DELETE /v1/operator/identities/{id}/sessions",
+            "DELETE /v1/operator/identities/{id}/sessions/{session}",
             // P15-TSK-032, the design's Q1 as decided under the owner's standing word: a role's revocation, which ends a
             // last role's sessions and can take administration from others, is not a stolen password's act.
             "DELETE /v1/identities/{id}/roles/{role}",

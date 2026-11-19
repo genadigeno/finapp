@@ -1396,6 +1396,12 @@ public final class ResolutionMachine {
      * item, a manual match's chosen candidate) and the frozen ledger proposal's lines, each
      * account with its purpose and owner. The same rows {@link #approve} posts from.
      */
+    /** The approver's queue, a page of it (`P17-TSK-107`): what awaits a second person, oldest first, lock-free. */
+    public List<ResolutionStore.PendingRow> pending(
+            Connection unitOfWork, Optional<ResolutionStore.PendingCursor> after, int limit) {
+        return store.pending(unitOfWork, after, limit);
+    }
+
     public Optional<ProposalView> read(Connection unitOfWork, UUID resolutionId) {
         Optional<ResolutionStore.ResolutionRow> found = store.byId(unitOfWork, resolutionId);
         if (found.isEmpty()) {

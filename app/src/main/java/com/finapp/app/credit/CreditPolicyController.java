@@ -2,7 +2,9 @@ package com.finapp.app.credit;
 
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RecordsRefusals;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -41,6 +43,7 @@ public class CreditPolicyController {
     @NonNull private final CreditPolicyDesk desk;
 
     /** Proposes a whole new version for a product - complete, its rules born with it and frozen. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.CREDIT_POLICY_ADMINISTER)
     @RequiresIdempotencyKey
@@ -52,6 +55,7 @@ public class CreditPolicyController {
     }
 
     /** Activates a pending version - a different person's act; retires the product's predecessor. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{versionId}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.CREDIT_POLICY_ADMINISTER)
     @RequiresIdempotencyKey
@@ -63,6 +67,7 @@ public class CreditPolicyController {
     }
 
     /** Rejects a pending version - anyone, the proposer's withdrawal included; a reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{versionId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.CREDIT_POLICY_ADMINISTER)
     @RequiresIdempotencyKey

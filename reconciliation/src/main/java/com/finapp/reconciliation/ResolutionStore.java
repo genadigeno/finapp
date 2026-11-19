@@ -85,6 +85,31 @@ public interface ResolutionStore {
     /** Lock-free: only the frozen break id is used from it, to take the locks in order. */
     Optional<ResolutionRow> byId(Connection unitOfWork, UUID resolutionId);
 
+    /**
+     * One proposal awaiting a second person, as the approver's queue serves it (`P17-TSK-107`): its subject - a break, or a
+     * batch a repudiation names - its kind and reason code, who proposed it and when. Never the narrative: it is the proposer's
+     * confidential account, read on the resolution's own page.
+     */
+    record PendingRow(
+            UUID id,
+            Optional<UUID> breakId,
+            Optional<UUID> settlementBatchId,
+            ResolutionKind kind,
+            ResolutionReasonCode reasonCode,
+            String proposedBy,
+            Instant proposedAt) {}
+
+    /** Where a page of the queue ended: the last proposal it served. */
+    record PendingCursor(Instant proposedAt, UUID resolutionId) {}
+
+    /**
+     * A page of the approver's queue (`P17-TSK-107`, finapp-admin-panel ADR-C133): the {@code PROPOSED} resolutions in the
+     * declared total order - proposed first, first served; the id breaking the tie - strictly after {@code after} in it. Lock-free,
+     * a keyset read of committed rows: a proposal decided meanwhile is gone from the next page, one made meanwhile lands where its
+     * own key puts it, and nothing is repeated.
+     */
+    List<PendingRow> pending(Connection unitOfWork, Optional<PendingCursor> after, int limit);
+
     Optional<ResolutionRow> lockById(Connection unitOfWork, UUID resolutionId);
 
     /** The break's live proposal, locked — the evidence leg's withdrawal target. */

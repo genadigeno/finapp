@@ -1,7 +1,9 @@
 package com.finapp.app.reconciliation;
 
 import com.finapp.app.session.RecordsRefusals;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -104,6 +106,7 @@ public class ReconciliationAdministrationController {
     }
 
     /** Proposes a new version: frozen at once, awaiting a different controller. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/rule-sets", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RECONCILIATION_ADMINISTER)
     @RequiresIdempotencyKey
@@ -118,6 +121,7 @@ public class ReconciliationAdministrationController {
      * Activates a proposed version - never its proposer's act - retiring its predecessor in the
      * same transaction. A new version governs only new decisions.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(
             path = "/rule-sets/{id}/approval",
             consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -128,6 +132,7 @@ public class ReconciliationAdministrationController {
     }
 
     /** Rejects a proposed version; its proposer may withdraw it this way. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(
             path = "/rule-sets/{id}/rejection",
             consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -141,6 +146,7 @@ public class ReconciliationAdministrationController {
      * Opens a {@code REPROCESS} run over the source's residual items, pinned to the version
      * active now; the reprocess leg works it on any instance. One open per source.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(
             path = "/sources/{code}/reprocessing",
             consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -155,6 +161,7 @@ public class ReconciliationAdministrationController {
     }
 
     /** {@code BLOCKED -> IN_PROGRESS}: any instance's next tick resumes the run. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/runs/{id}/requeue", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.RECONCILIATION_ADMINISTER)
     public ReconciliationAdministrationDesk.RunRequeuedReceipt requeueReconciliationRun(
@@ -166,6 +173,7 @@ public class ReconciliationAdministrationController {
      * Replays every stored decision of the run under its pinned version and appends the
      * verdict - {@code IDENTICAL} or {@code DIVERGED}, items merely awaiting a rematch apart.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/runs/{id}/replay")
     @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
     public ReconciliationAdministrationDesk.RunReplayVerdict replayReconciliationRun(

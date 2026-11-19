@@ -1264,7 +1264,10 @@ class SettlementPullDatabaseTest {
                     app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
             app.commit();
         }
-        return new Operator(tokenFrom(authenticate(login).body()), identity);
+        // Every operator act is MULTI_FACTOR (P17-TSK-102): the operator steps up.
+        return new Operator(
+                com.finapp.app.session.OperatorStepUp.elevated(tokenFrom(authenticate(login).body()), this::post),
+                identity);
     }
 
     private String registered() throws Exception {

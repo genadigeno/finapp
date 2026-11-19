@@ -48,6 +48,7 @@ public class CorridorAdministrationController {
     }
 
     /** Proposes a whole new version - keyed per principal; frozen from here. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/corridor-policies", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.CROSSBORDER_ADMINISTER)
     @RequiresIdempotencyKey
@@ -68,6 +69,7 @@ public class CorridorAdministrationController {
     }
 
     /** Rejects a pending version - anyone, the proposer's withdrawal included. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/corridor-policies/{id}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.CROSSBORDER_ADMINISTER)
     public CorridorAdministrationDesk.CorridorPolicyReceipt rejectCorridorPolicy(
@@ -79,6 +81,7 @@ public class CorridorAdministrationController {
      * Sets a corridor's availability: {@code available=false} disables it at once (one person);
      * {@code available=true} proposes enabling it (a different person approves). Keyed.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/corridors/{corridor}/availability", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.CROSSBORDER_ADMINISTER)
     @RequiresIdempotencyKey
@@ -99,6 +102,7 @@ public class CorridorAdministrationController {
     }
 
     /** Rejects a corridor enable request - anyone, the proposer's withdrawal included. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/corridor-enable-requests/{rid}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.CROSSBORDER_ADMINISTER)
     public CorridorAdministrationDesk.CorridorEnableReceipt rejectCorridorEnableRequest(

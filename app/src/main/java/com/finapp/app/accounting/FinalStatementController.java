@@ -8,6 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -21,6 +22,22 @@ import org.springframework.web.bind.annotation.RestController;
 public class FinalStatementController {
 
     @NonNull private final FinalStatementDesk desk;
+    @NonNull private final AccountingCollectionDesk collections;
+
+    /**
+     * The FINAL statements a controller may read, newest first (`P17-TSK-023`, the owner's answer to the finance roles' read
+     * question): a §7 collection of exactly the runs {@code .../{runId}/final-statement} serves - FINAL BALANCE_SHEET and
+     * INCOME_STATEMENT runs - each its head, never its figures; {@code periodId} narrows it. Every page recorded
+     * {@code accounting.FinalStatementsListed}.
+     */
+    @GetMapping("/final-statements")
+    @RequiresPermission(PermissionName.ACCOUNTING_CLOSE_APPROVE)
+    public AccountingCollectionDesk.FinalStatementPage listFinalStatements(
+            @RequestParam(name = "periodId", required = false) String periodId,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return collections.finalStatements(periodId, cursor, limit);
+    }
 
     /**
      * A FINAL BALANCE_SHEET or INCOME_STATEMENT, its routes withheld, with the real status of its month. Any other definition, any other run status, and an unknown or malformed id are one 404. No journal line comes through here: a figure's lines are an accountant's read, so the accountant holding this run's id

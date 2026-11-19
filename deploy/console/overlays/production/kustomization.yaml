@@ -1,6 +1,7 @@
 # Production's console (X-TSK-020). Nothing real is committed: the digest is sixty-four zeros until a release names one, as the application's
-# overlay's are. DESIGNED, NOT DELIVERED: no Application in deploy/delivery syncs this root yet, and infra/scripts/promote.sh writes the
-# application's two digests, not this one (the console's own release path is finapp-admin-panel's; X-TSK-020 records the remainder).
+# overlay's are. DELIVERED since P17-TSK-105 by the Application finapp-console in deploy/delivery/production, the root's last wave, from the
+# repository finapp-production-console (infra/terraform/modules/registry). The digest below is written only by infra/scripts/promote.sh console,
+# in the same commit as release.yaml beside it, which DeliveryManifestsTest and promote.sh recheck hold equal; never by hand.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 

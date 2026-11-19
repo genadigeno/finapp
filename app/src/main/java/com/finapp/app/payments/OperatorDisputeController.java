@@ -1,7 +1,9 @@
 package com.finapp.app.payments;
 
 import com.finapp.app.session.RecordsRefusals;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.payments.DisputeResponseKind;
 import com.finapp.platform.api.IdempotencyKeyHeader;
@@ -60,6 +62,7 @@ public class OperatorDisputeController {
      * encrypted before it is stored, on the record. {@code 201} for the created and the converged
      * upload alike.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/disputes/{disputeId}/evidence", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.DISPUTE_ADMINISTER)
     @ResponseStatus(HttpStatus.CREATED)
@@ -82,6 +85,7 @@ public class OperatorDisputeController {
      * Contests a chargeback on a payment with no merchant (`P7-TSK-014`), keyed and reasoned.
      * {@code 201} with the honest status.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/disputes/{disputeId}/representment", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.DISPUTE_ADMINISTER)
     @RequiresIdempotencyKey
@@ -95,6 +99,7 @@ public class OperatorDisputeController {
     }
 
     /** Concedes a chargeback on a payment with no merchant (`P7-TSK-014`), keyed and reasoned. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/disputes/{disputeId}/acceptance", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.DISPUTE_ADMINISTER)
     @RequiresIdempotencyKey

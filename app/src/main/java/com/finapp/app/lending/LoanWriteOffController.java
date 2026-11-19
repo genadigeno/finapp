@@ -44,6 +44,7 @@ public class LoanWriteOffController {
     @NonNull private final LendingFlowScope flow;
 
     /** Proposes writing the defaulted loan off, with a reason: nothing is posted. The receipt names the figures read. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/write-offs", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LOAN_WRITE_OFF_PROPOSE)
     @RequiresIdempotencyKey
@@ -90,6 +91,7 @@ public class LoanWriteOffController {
     }
 
     /** Rejects it, on any account status - final, and the door out of one that can no longer post. A reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/write-offs/{writeOffId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LOAN_WRITE_OFF_APPROVE)
     @RequiresIdempotencyKey

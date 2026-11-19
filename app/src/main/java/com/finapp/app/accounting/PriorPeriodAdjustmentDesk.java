@@ -48,7 +48,7 @@ import lombok.RequiredArgsConstructor;
  * <p><strong>A key's replay is the first answer</strong>: the same key with the same body returns the stored receipt, a timeout then a retry included; the same key with another body is the executor's conflict, the fingerprint covering the reason, the lines and what was
  * read. Beneath the key, the domain converges the same person's repeat.
  *
- * <p>What leaves a read: the months, the revision, the date, the ledger's ids, the status, and to the controller alone the lines and the proposer's reason, which it must read to answer for. Never a person; never a decision's reason.
+ * <p>What leaves a read: the months, the revision, the date, the ledger's ids, the status, and to the controller alone the lines and the proposer's reason, which it must read to answer for. The proposer by identifier, never a name (`P17-TSK-111`). Never another person; never a decision's reason.
  */
 @RequiredArgsConstructor
 public final class PriorPeriodAdjustmentDesk {
@@ -106,7 +106,8 @@ public final class PriorPeriodAdjustmentDesk {
      * {@code earlierCorrections} that are {@code POSTED}.
      */
     public record PriorPeriodAdjustmentView(String id, String correctedPeriod, int correctedRevision, String targetPeriod, String postingDate, String status, String adjustmentProposalId,
-            String journalEntryId, String proposedAt, String decidedAt, String reason, boolean stillStands, String blockedBy, List<PriorPeriodLineView> lines, List<PriorPeriodCorrectionView> earlierCorrections) {
+            String journalEntryId, String proposedAt, String decidedAt, String reason, boolean stillStands, String blockedBy, List<PriorPeriodLineView> lines, List<PriorPeriodCorrectionView> earlierCorrections,
+            String proposedBy) {
 
         /** Served to the approver and never logged: a record's generated {@code toString} would carry the reason and the amounts into a log line. */
         @Override
@@ -116,7 +117,8 @@ public final class PriorPeriodAdjustmentDesk {
     }
 
     /** A standing proposal in a controller's list - read one to decide it. */
-    public record PendingPriorPeriodAdjustmentView(String id, String correctedPeriod, int correctedRevision, String targetPeriod, String postingDate, String proposedAt) {}
+    public record PendingPriorPeriodAdjustmentView(String id, String correctedPeriod, int correctedRevision, String targetPeriod, String postingDate, String proposedAt,
+            String proposedBy) {}
 
     // ------------------------------------------------------------------ acts
 
@@ -169,7 +171,7 @@ public final class PriorPeriodAdjustmentDesk {
         List<PriorPeriodAdjustmentStore.Row> rows = flow.door(READ_SPAN, () -> guarded(() -> transactions.inTransaction(adjustments::pending)));
         recordRead(PriorPeriodAdjustments.TARGET_TYPE, "pending", "door=pending, rows=" + rows.size(), actor, correlation);
         return rows.stream().map(row -> new PendingPriorPeriodAdjustmentView(row.id().value().toString(), row.correctedMonth().toString(), row.correctedRevision(), row.targetMonth().toString(), row.postingDate().toString(),
-                row.proposedAt().toString())).toList();
+                row.proposedAt().toString(), row.proposedBy())).toList();
     }
 
     /** Every correction of a month, whatever its status and revision. Recorded before it is served. */
@@ -197,7 +199,7 @@ public final class PriorPeriodAdjustmentDesk {
                 row.proposal().toString(), row.entry().map(UUID::toString).orElse(null), row.proposedAt().toString(), row.decidedAt().map(Instant::toString).orElse(null), row.proposalReason(), view.stillStands(),
                 view.blockedBy().map(Enum::name).orElse(null),
                 view.lines().stream().map(read -> new PriorPeriodLineView(read.line().ledgerAccount().toString(), read.purpose(), read.ownerKind(), read.line().side().name(), read.line().amount().toBigDecimal().toPlainString(), read.line().amount().currency().code())).toList(),
-                view.earlierCorrections().stream().map(PriorPeriodAdjustmentDesk::correction).toList());
+                view.earlierCorrections().stream().map(PriorPeriodAdjustmentDesk::correction).toList(), row.proposedBy());
     }
 
     private static PriorPeriodCorrectionView correction(PriorPeriodAdjustments.Correction correction) {

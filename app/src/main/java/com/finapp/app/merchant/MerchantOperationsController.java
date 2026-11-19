@@ -1,6 +1,8 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -46,6 +48,7 @@ public class MerchantOperationsController {
      * {@code 409} ({@code INV-IDEM-03}). The KYB refusal is one {@code 422} that conflates
      * its causes — the surface is not an oracle over parties.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.MERCHANT_ONBOARD)
     @RequiresIdempotencyKey
@@ -75,6 +78,7 @@ public class MerchantOperationsController {
     }
 
     /** Freezes new dispatches, reasoned. Landed money still lands; reversible. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/suspension", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
     public MerchantOperations.MerchantView suspend(
@@ -83,6 +87,7 @@ public class MerchantOperationsController {
     }
 
     /** Lifts the freeze, reasoned. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/reinstatement", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
     public MerchantOperations.MerchantView reinstate(
@@ -91,6 +96,7 @@ public class MerchantOperationsController {
     }
 
     /** Ends the relationship, reasoned. Terminal; the books remain ({@code INV-HIST-01}). */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/closure", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
     public MerchantOperations.MerchantView close(

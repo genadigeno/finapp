@@ -810,7 +810,9 @@ class CheckoutFinancingDatabaseTest {
             authorization.assign(app, IdentityId.of(identity), role, IdentityId.of(identity), "test fixture");
             app.commit();
         }
-        return field(authenticate(login).body(), "sessionToken");
+        // Stepped up: every operator act declares MULTI_FACTOR (P17-TSK-102).
+        return com.finapp.app.session.OperatorStepUp.elevated(field(authenticate(login).body(), "sessionToken"),
+                this::post);
     }
 
     private HttpResponse<String> confirm(Customer customer, String sessionToken) throws Exception {

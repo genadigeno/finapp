@@ -1,6 +1,8 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import jakarta.validation.Valid;
 import lombok.NonNull;
@@ -40,6 +42,7 @@ public class MerchantFeeScheduleController {
     @NonNull private final FeeScheduleOperations feeSchedules;
 
     /** Points the merchant at a schedule, reasoned. Converges when it is already there. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PutMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.FEE_ADMINISTER)
     public FeeScheduleOperations.MerchantFeeScheduleView assignFeeSchedule(

@@ -264,9 +264,35 @@ writes an audit record in an HTTP flow, so there is nothing to record it *on*. W
 key travels as a normal command parameter rather than as ambient state, so no context mechanism is
 needed for it (the distinction `P0-TSK-032` drew for the actor, in the opposite direction).
 
-## 7. Pagination — **Decided, not yet implemented** (first collection endpoint, Phase 3+)
+## 7. Pagination — **Implemented** for the operator collections that follow it (`P17-TSK-107`, finapp-admin-panel ADR-C133)
 
-No endpoint returns a collection today.
+*(Read "Decided, not yet implemented (first collection endpoint, Phase 3+)" and "No endpoint returns a collection today" until
+`P17-TSK-107`, 2026-11-18.)* The operator collections that implement this section exactly, the first two from `P17-TSK-107`:
+
+| Endpoint | Permission | Declared total order | `limit` default / maximum | Filters |
+|---|---|---|---|---|
+| `GET /v1/operator/settlement/batches` | `RECONCILIATION_INVESTIGATE` | business date descending, batch id descending | 50 / 200 | `source` (a declared code); `from`, `to` (business dates, inclusive; `to` today UTC and `from` 30 days before unless named; 92 days at most) |
+| `GET /v1/operator/reconciliation/resolutions` | `RECONCILIATION_RESOLVE` | proposed at ascending, resolution id ascending | 50 / 200 | `status` (`PROPOSED` only: the queue) |
+| `GET /v1/operator/identities` (`P17-TSK-014`) | `IDENTITY_READ`, on a `MULTI_FACTOR` session | created at descending, identity id descending | 50 / 200 | `role` (a live holding of a `RoleName`), `status` (`ACTIVE`, `SUSPENDED`, `CLOSED`) |
+| `GET /v1/operator/audit-records` (`P17-TSK-017`) | `AUDIT_READ`, on a `MULTI_FACTOR` session | occurred at descending, audit id descending | 50 / 200 | `from`, `to` (instants, `[from, to)`, required, 31 days at most); `actor`, `operation`, `targetType`, `targetId`, `correlationId`, `outcome` (exact) |
+| `GET /v1/operator/risk/assessments` (`P17-TSK-020`) | `RISK_INVESTIGATE` | assessed at descending, assessment id descending | 50 / 200 | `from`, `to` (instants, `[from, to)`, required, 31 days at most); `partyId`, `operation`, `decision` (exact). The reader's own party's assessments withheld; naming that party `403 risk.SelfDealingRefused` |
+| `GET /v1/operator/risk/policies/versions` (`P17-TSK-020`) | `RISK_POLICY_ADMINISTER` | proposed at descending, version id descending | 50 / 200 | `operation`, `status` (`PROPOSED` is the approver's queue) |
+| `GET /v1/operator/risk/screening-lists` (`P17-TSK-020`) | `RISK_POLICY_ADMINISTER` | recorded at descending, version id descending | 50 / 200 | `list` (`SANCTIONS`, `PEP`); metadata only, never an entry |
+| `GET /v1/operator/ledger/accounts` (`P17-TSK-022`) | `ACCOUNTING_READ` | purpose ascending, currency ascending, account id ascending | 50 / 200 | `purpose` (an `AccountPurpose`), `currency` (ISO 4217). An owner is a reference, never a name; every page recorded as the audit action ledger.AccountsListed |
+| `GET /v1/operator/ledger/entries` (`P17-TSK-022`) | `ACCOUNTING_READ` | posting date descending, entry id descending | 50 / 200 | `from`, `to` (posting dates, inclusive, required, 31 at most); `reference` (identifier-shaped, matched exactly, never served), `accountId`. Every page recorded as the audit action ledger.EntriesSearched; a read past its statement timeout `503 api.TemporarilyUnavailable` |
+| `GET /v1/ledger/adjustments` (`P17-TSK-022`) | `LEDGER_ADJUST` | proposed at ascending, proposal id ascending | 50 / 200 | `status` (`PROPOSED` only: the queue of `MANUAL` proposals, the only origin that door decides) |
+| `GET /v1/ledger/projection-rebuilds` (`P17-TSK-022`) | `LEDGER_ADJUST` | proposed at ascending, rebuild id ascending | 50 / 200 | `status` (`PROPOSED` only: the queue). Summarised by which figures drifted, never the proposer's reason |
+| `GET /v1/operator/accounting/report-runs` (`P17-TSK-023`) | `ACCOUNTING_READ` | claimed at descending, run id descending | 50 / 200 | `periodId`, `status` (a run status). Each run's head as its own read serves it, never its content; every page recorded as the audit action accounting.ReportRunsListed |
+| `GET /v1/operator/accounting/report-runs/final-statements` (`P17-TSK-023`) | `ACCOUNTING_CLOSE_APPROVE` | claimed at descending, run id descending | 50 / 200 | `periodId`. Exactly the runs the controller's statement door serves - FINAL balance sheets and income statements; every page recorded as the audit action accounting.FinalStatementsListed |
+| `GET /v1/operator/accounting/mapping-versions` (`P17-TSK-023`) | `ACCOUNTING_MAPPING_APPROVE` | version descending | 50 / 200 | `status` (`PROPOSED` is the approver's queue); each row marks whether the caller proposed it |
+| `GET /v1/operator/accounting/valuation-rate-sets` (`P17-TSK-023`) | `ACCOUNTING_CLOSE_APPROVE` | captured at descending, set id descending | 50 / 200 | `periodId`, `status` (`PROPOSED` is the approver's queue); each row marks whether the caller captured it; never a rate |
+| `GET /v1/operator/accounting/valuation-rate-sets/mine` (`P17-TSK-023`) | `ACCOUNTING_CLOSE_PROPOSE` | captured at descending, set id descending | 50 / 200 | `status`. The sets the caller captured, every period's |
+
+All are keyset reads. `app`'s `OperatorCollection` is the one implementation of the request rules: the limit is refused above
+its maximum rather than reduced, and the cursor names its collection, so one collection's cursor is refused by another. Every
+refusal is `422 api.ValidationFailed`. A page record carries `nextCursor` only when there is a next page. Older operator lists
+were built before this section was implemented: some take `after`/`limit`, and some are capped with `truncated`. They are
+retrofitted by `P17-TSK-042` (ADR-C133 decision 2), and until then they are what their own entries say.
 
 **Cursor-based, never offset.** `?limit=&cursor=`. The reason is correctness before performance:
 an offset re-reads a moving set, so when rows are inserted or removed between page 1 and page 2, a
@@ -326,6 +352,8 @@ but stated once in `EdgeRoutes` rather than derived, sends them to the console's
 headers (`console-headers`: the console's Content-Security-Policy with Trusted Types, HSTS, `nosniff`, `no-referrer`, `frameDeny`; no
 `Cache-Control`, which the console's server sets per path). Every API route keeps `edge-headers` and `default-src 'none'`; the public
 host never serves `/console`; and no API route may be served under `/console`, which the generator refuses.
+
+**Operator answers are never stored** *(`P17-TSK-101`, 2026-11-17; gap G-05; finapp-admin-panel ADR-C131 decision 5)*. Every answer the application gives on the operator surface - a handler's, a refusal, a problem document, the container's own error dispatch - carries `Cache-Control: no-store`, so no browser, shared workstation or intermediary keeps what a session read after it ends. One filter sets it from the edge's marker (`OperatorResponsesAreNotStored`, next after the correlation filter, before the chain runs); where nothing is deployed the one port is the operator surface too and carries it. The public surface's answers carry no `Cache-Control`: its caching is not decided here. A route's author sets no `Cache-Control` of their own and never resets a response - `OperatorResponsesAreNotStoredTest` refuses both - and `/console/**` keeps the console server's per-path caching.
 
 **For a route's author.** A route is listed by method and whole path, so a new method on an existing path is a new line. A
 path variable's value is letters, digits, `_` and `-`, with a dot only between other characters: an identifier, a code, an enum

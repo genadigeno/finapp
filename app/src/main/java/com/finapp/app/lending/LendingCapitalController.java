@@ -1,7 +1,9 @@
 package com.finapp.app.lending;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
@@ -37,6 +39,7 @@ public class LendingCapitalController {
     @NonNull private final LendingCapitalDesk desk;
 
     /** Proposes a contribution of the platform's own money - currency, amount, the transfer's bank reference. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/capital-contributions", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LENDING_CAPITAL_ADMINISTER)
     @RequiresIdempotencyKey
@@ -48,6 +51,7 @@ public class LendingCapitalController {
     }
 
     /** Approves a pending contribution - someone other than its proposer; opens its expectation. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/capital-contributions/{contributionId}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LENDING_CAPITAL_ADMINISTER)
     @RequiresIdempotencyKey
@@ -59,6 +63,7 @@ public class LendingCapitalController {
     }
 
     /** Rejects a pending contribution - anyone, the proposer's withdrawal included; a reason is required. */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/capital-contributions/{contributionId}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.LENDING_CAPITAL_ADMINISTER)
     @RequiresIdempotencyKey

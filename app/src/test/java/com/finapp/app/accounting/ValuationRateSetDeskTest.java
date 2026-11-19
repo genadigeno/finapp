@@ -239,6 +239,7 @@ class ValuationRateSetDeskTest {
         assertThat(read.rates()).isEqualTo(approved.rates());
         assertThat(read.capturedAt()).isNotNull();
         assertThat(read.decidedAt()).isNotNull();
+        assertThat(read.capturedBy()).as("P17-TSK-111: the capturer named, by identifier").isEqualTo(ACCOUNTANT.id());
         assertThatThrownBy(() -> desk.read("not-a-uuid")).isInstanceOf(ApiException.class);
     }
 
@@ -405,7 +406,10 @@ class ValuationRateSetDeskTest {
                 "approveValuationRateSet", PermissionName.ACCOUNTING_CLOSE_APPROVE,
                 "approveValuationRateSetAcrossGap", PermissionName.ACCOUNTING_CLOSE_APPROVE,
                 "rejectValuationRateSet", PermissionName.ACCOUNTING_CLOSE_APPROVE,
-                "readValuationRateSet", PermissionName.ACCOUNTING_CLOSE_APPROVE);
+                "readValuationRateSet", PermissionName.ACCOUNTING_CLOSE_APPROVE,
+                // P17-TSK-023: the approver's list under the read's permission; the proposer's own under the capture's.
+                "listValuationRateSets", PermissionName.ACCOUNTING_CLOSE_APPROVE,
+                "listOwnValuationRateSets", PermissionName.ACCOUNTING_CLOSE_PROPOSE);
         int doors = 0;
         for (Method method : ValuationRateSetController.class.getDeclaredMethods()) {
             if (method.isAnnotationPresent(RequiresPermission.class)) {
@@ -413,7 +417,7 @@ class ValuationRateSetDeskTest {
                 assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName())
                         .isEqualTo(expected.get(method.getName()));
                 assertThat(method.isAnnotationPresent(RequiresIdempotencyKey.class)).as(method.getName())
-                        .isEqualTo(!method.getName().startsWith("read"));
+                        .isEqualTo(!method.getName().startsWith("read") && !method.getName().startsWith("list"));
             }
         }
         assertThat(doors).isEqualTo(expected.size());

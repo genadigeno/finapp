@@ -79,7 +79,7 @@ class AlertSuppressionApiTest {
 
     @Test
     @DisplayName("201 PROPOSED; the proposer's approval 403 SelfApprovalRefused recorded FAILED; a password session 403"
-            + " AssuranceRequired; from MULTI_FACTOR 200 SUPPRESSED by two CUSTOMER-typed persons; the key replayed")
+            + " AssuranceRequired; from MULTI_FACTOR 200 SUPPRESSED by two EMPLOYEE-typed persons; the key replayed")
     void twoPersonsSuppress() throws Exception {
         RiskAlert alert = openAlert();
         String door = "/v1/operator/risk/alerts/" + alert.id().value() + "/suppression";
@@ -87,7 +87,9 @@ class AlertSuppressionApiTest {
         HttpResponse<String> proposed = http.post(door, "{\"reasonCode\":\"FALSE_POSITIVE\",\"reason\":"
                 + "\"the customer's payroll\"}", alice.token(), "proposal-" + alert.id().value());
         assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
-        assertThat(proposed.body()).contains("\"status\":\"PROPOSED\"").doesNotContain(alice.identity().toString());
+        // P17-TSK-109: the proposal names its proposer, so the console disables their own approval in advance.
+        assertThat(proposed.body()).contains("\"status\":\"PROPOSED\"")
+                .contains("\"proposedBy\":\"" + alice.identity() + "\"");
 
         HttpResponse<String> own = http.post(door + "/approval", "{\"reason\":\"mine\"}", alice.token());
         assertThat(own.statusCode()).as(own.body()).isEqualTo(403);
@@ -107,8 +109,9 @@ class AlertSuppressionApiTest {
         assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
         assertThat(approved.body()).contains("\"status\":\"SUPPRESSED\"").contains("\"status\":\"DECIDED\"");
         assertThat(RiskOperatorSessions.count("SELECT count(*) FROM risk.risk_alert WHERE id = '" + alert.id().value()
-                + "' AND suppression_proposed_by_type = 'CUSTOMER' AND suppression_decided_by_type = 'CUSTOMER'"))
-                .as("both persons as the session establishes them - V014's widening").isEqualTo(1);
+                + "' AND suppression_proposed_by_type = 'EMPLOYEE' AND suppression_decided_by_type = 'EMPLOYEE'"))
+                .as("both persons as the standing types them (P15-TSK-021; read CUSTOMER until P17-TSK-109 found it stale)")
+                .isEqualTo(1);
         assertThat(RiskOperatorSessions.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
                 + " 'risk.AlertSuppressed' AND target_id = '" + alert.id().value() + "'")).isEqualTo(1);
 
@@ -123,7 +126,7 @@ class AlertSuppressionApiTest {
     @DisplayName("the refusals: an attached alert 409 AlertNotOpen; a card-shaped reason 422 ReasonRequired; an unknown"
             + " alert 404; a risk officer 403; no session 401")
     void theRefusals() throws Exception {
-        RiskOperatorSessions.Session analyst = http.sessionWith(RoleName.RISK_ANALYST, false);
+        RiskOperatorSessions.Session analyst = http.sessionWith(RoleName.RISK_ANALYST, true);
         RiskAlert attached = attachedAlert();
         HttpResponse<String> notOpen = http.post("/v1/operator/risk/alerts/" + attached.id().value() + "/suppression",
                 "{\"reasonCode\":\"FALSE_POSITIVE\",\"reason\":\"seen\"}", analyst.token());
@@ -139,7 +142,7 @@ class AlertSuppressionApiTest {
         assertThat(http.post("/v1/operator/risk/alerts/" + RiskOperatorSessions.IDS.next() + "/suppression",
                 "{\"reasonCode\":\"FALSE_POSITIVE\",\"reason\":\"none\"}", analyst.token()).statusCode())
                 .isEqualTo(404);
-        RiskOperatorSessions.Session officer = http.sessionWith(RoleName.RISK_OFFICER, false);
+        RiskOperatorSessions.Session officer = http.sessionWith(RoleName.RISK_OFFICER, true);
         assertThat(http.post(door, "{\"reasonCode\":\"FALSE_POSITIVE\",\"reason\":\"another desk\"}",
                 officer.token()).statusCode()).isEqualTo(403);
         assertThat(http.post(door, "{\"reasonCode\":\"FALSE_POSITIVE\",\"reason\":\"no one\"}", null).statusCode())

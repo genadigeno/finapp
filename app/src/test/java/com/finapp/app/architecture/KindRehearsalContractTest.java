@@ -187,6 +187,97 @@ class KindRehearsalContractTest {
                 .contains("max-unavailable").contains("min-ready").contains("skip-replay").contains("no-default-deny");
     }
 
+    /**
+     * The Operator Console's step ({@code P17-TSK-104}; X-TSK-020 hosts it). The console's image is another repository's, so the step is
+     * named by the same variables {@code admission-check.sh} reads and runs only when one is named; otherwise it is skipped and said to be,
+     * at the step and beside the run's result, because CI has no console image and a skip that read as a pass would claim what no run showed.
+     *
+     * <p>What is held is the script: the order after the edge, the digest put into the run's own rendered copy and never the committed
+     * overlay, the apply and rollout, and the three probes through the real edge with the policies the edge states. What the step shows on
+     * a cluster is owed to the owner's run and claimed by nothing here.
+     */
+    @Test
+    @DisplayName("the console's step follows the edge: its image named as admission-check.sh names it and had before the cluster, loaded into every node,"
+            + " its digest in the run's own rendered copy and never the committed overlay, applied, rolled out, then asked through the real edge three"
+            + " ways; with no image named it is skipped, and said so beside the result (P17-TSK-104)")
+    void theConsoleIsLoadedAppliedAndAskedAfterTheEdge() {
+        // Named, refused when two are or half of one is, and had before the cluster.
+        for (String name : List.of("CONSOLE_IMAGE", "CONSOLE_ARCHIVE", "CONSOLE_REPOSITORY", "CONSOLE_COMMIT")) {
+            assertThat(harness).as("%s is read", name).contains(name + "=${" + name + ":-}");
+        }
+        int buildImages = harness.indexOf("\nstep build-images\n");
+        assertThat(harness.indexOf("*) echo \"?? one console image at a time: $CONSOLE_FROM are all named\" >&2; exit 2 ;;"))
+                .as("two at once refused before anything is built").isPositive().isLessThan(buildImages);
+        assertThat(harness.indexOf("\n    console_obtain finapp-console:rehearsal\n")).as("had at build-images, before the cluster")
+                .isGreaterThan(buildImages).isLessThan(harness.indexOf("\nstep cluster\n"));
+        assertThat(function("console_obtain")).as("the console's own build, for kind, from the named commit's exported files")
+                .contains("dock build --build-arg VITE_CONSOLE_ENVIRONMENT=kind").contains("archive --format=tar")
+                .contains("sh \"$CONSOLE_TREE/scripts/collect-previous-assets.sh\" >>").contains("dock load --input")
+                .doesNotContain("worktree");
+
+        // After the edge, and after the client and the addresses it reaches the edge by.
+        int console = harness.indexOf("\nstep console\n");
+        assertThat(console).as("a step named in the script's own style").isPositive();
+        assertThat(harness.indexOf("\nstep edge\n")).isLessThan(harness.indexOf("pass \"the edge is up")).isLessThan(console);
+        assertThat(harness.indexOf("[ \"$SCOPE\" != experiments ] || experiments_edge_addresses")).isLessThan(console);
+        assertThat(harness.indexOf("\nclient() {")).isLessThan(console);
+        assertThat(console).as("before the smoke").isLessThan(harness.indexOf("\nstep smoke-nminus1\n"));
+        // The section: its two policies and its skip, then the step, up to the census's first function.
+        int section = harness.indexOf("\n# The Operator Console (P17-TSK-104): after the edge");
+        assertThat(section).as("the step's section").isGreaterThan(harness.indexOf("\nclient() {")).isLessThan(console);
+        String step = harness.substring(section, harness.indexOf("\npending_events() {", console));
+
+        // Skipped, and said to be: at the step and beside the result, never in the release's not-exercised file, which turns it red.
+        assertThat(step).contains("if [ -z \"$CONSOLE_FROM\" ]; then\n    console_skipped \"no console image was named")
+                .contains("elif [ \"$SCOPE\" = delivery ]; then\n    console_skipped").contains("elif [ \"$SCOPE\" = dr ]; then\n    console_skipped");
+        String skipped = function("console_skipped");
+        assertThat(skipped).contains("log \"CONSOLE SKIPPED: $1\"").contains(">> \"$ART/skipped.txt\"").doesNotContain("not-exercised");
+        assertThat(harness).contains(": > \"$ART/skipped.txt\"");
+        String finish = function("finish");
+        assertThat(finish.indexOf("log \"SKIPPED: $skipped\"")).as("said beside the result, whatever it is").isPositive()
+                .isLessThan(finish.indexOf("log \"RESULT: COULD NOT RUN\"")).isLessThan(finish.indexOf("log \"RESULT: RED\""))
+                .isLessThan(finish.indexOf("log \"RESULT: GREEN\""));
+
+        // Loaded into every node, its digest in the run's own copy, the committed overlay read back unchanged, then applied and rolled out.
+        assertThat(step).contains("IMAGE_CONSOLE=$(load_built finapp-console:rehearsal)");
+        assertThat(function("load_tagged")).as("load_built's import reaches every node of the run's cluster").contains("for node in $NODES; do");
+        String substitution = "sed -i \"s#finapp-console@sha256:0\\{64\\}#$IMAGE_CONSOLE#\" \"$CONSOLE_RENDER/all.yaml\" \"$CONSOLE_RENDER/Deployment.finapp-console.yaml\"";
+        assertThat(step).contains("render_overlay console console/overlays/kind").contains("CONSOLE_RENDER=\"$WORK/render/console\"").contains(substitution);
+        assertThat(Pattern.compile("(?m)^.*sed -i[^\\n]*\\$ROOT/deploy").matcher(harness).find())
+                .as("no sed of the harness writes a committed file under deploy/").isFalse();
+        String guard = "grep -q '^    digest: sha256:0\\{64\\}$' \"$ROOT/deploy/console/overlays/kind/kustomization.yaml\"";
+        assertThat(step).as("the committed overlay read back: still sixty-four zeros").contains(guard);
+        assertThat(read("deploy/console/overlays/kind/kustomization.yaml")).as("which the committed overlay names, at the guard's indentation")
+                .containsPattern("(?m)^    digest: sha256:0{64}$");
+        assertThat(read("deploy/console/base/console.yaml")).as("and the name the substitution finds is the base's image").containsPattern("(?m)^ +image: finapp-console$");
+        assertThat(step.indexOf("apply_files \"$CONSOLE_RENDER/all.yaml\"")).as("applied after the digest is in, and the committed file checked")
+                .isGreaterThan(step.indexOf(substitution)).isGreaterThan(step.indexOf(guard));
+        assertThat(step).contains("kube -n finapp-console rollout status deployment/finapp-console")
+                .contains("[ \"$console_images\" = \"$IMAGE_CONSOLE\" ]").contains("fail \"the console did not become ready");
+
+        // Asked through the real edge: the page under the console's policy once, an API route keeping the API's, nothing on the public host.
+        assertThat(step).contains("CONSOLE_CSP=\"" + ConsoleHostingManifestsTest.CONSOLE_CSP + "\"")
+                .contains("API_CSP=\"" + ConsoleHostingManifestsTest.API_CSP + "\"")
+                .contains("client console > \"$ART/console.txt\" 2>&1 || fail")
+                .contains("grep -qxF \"console page-on-operator status=200 csp-count=1 csp=$CONSOLE_CSP\" \"$ART/console.txt\" \\\n        && pass")
+                .contains("grep -qxF \"console api-on-operator status=401 csp-count=1 csp=$API_CSP\" \"$ART/console.txt\" \\\n        && pass")
+                .contains("for console_path in /console/ /console; do")
+                .contains("grep -qxF \"console page-on-public path=$console_path status=404\" \"$ART/console.txt\" \\\n            && pass");
+        assertThat(step.split("\\|\\| fail \"console: ", -1)).as("each probe a failure when it does not hold").hasSize(4);
+        String client = read("infra/scripts/kind-rehearsal/Rehearsal.java");
+        assertThat(client).contains("case \"console\" -> rehearsal.console();")
+                .contains("Answer page = get(operatorBase, \"/console/\", null);")
+                .contains("page.raw().headers().allValues(\"content-security-policy\")")
+                .contains("Answer api = get(operatorBase, \"/v1/operator/events/dead-letters\", null);")
+                .contains("for (String path : List.of(\"/console/\", \"/console\")) {").contains("Answer onPublic = get(publicBase, path, null);")
+                .contains("\"console page-on-operator status=\" + page.status() + \" csp-count=\" + pagePolicies.size()")
+                .contains("\"console api-on-operator status=\" + api.status() + \" csp-count=\" + apiPolicies.size()")
+                .contains("\"console page-on-public path=\" + path + \" status=\" + onPublic.status()");
+
+        // A kept cluster's console is never this run's.
+        assertThat(harness).contains("kube delete namespace finapp finapp-edge finapp-console ");
+    }
+
     @Test
     @DisplayName("an egress and an ingress control beside every denial: a refusal proves nothing while the network is down")
     void everyDenialHasAControl() {

@@ -59,6 +59,11 @@ and park value in suspense; a GL-side discrepancy has neither.
    is in `BreakType` and never raised (`SourceCompleteness.java:20`; accrual lag is the close run's `ACCRUALS_COMPLETE`).
    An `OPEN` break may be resolved without first being acknowledged: `V006`'s edge trigger admits `OPEN` and
    `ACKNOWLEDGED` alike to `RESOLVED` (`V006:165`, its refusal naming the edges at `V006:174`).)*
+   *(Amended by `P17-TSK-111`, 2026-11-19, accounting `V018`: a pending acknowledgement may be **rejected**, reasoned, by a holder
+   of `ACCOUNTING_ADJUST_APPROVE` - the proposal cleared whole from the break, which stays `OPEN` for a new proposal, the case file
+   keeping the proposal and an `ACKNOWLEDGEMENT_REJECTED` act naming its proposer. Four eyes stays the approval's: a rejection may
+   be the proposer's own, as every accounting rejection may. It races the approval on the row's lock, and the loser is
+   `accounting.BreakStale`.)*
    *(As built by `P14-TSK-010`, 2026-10-31, accounting `V006`: decisions 2 and 3 as one callable the close run invokes
    per check, `AccountingChecks.run` → `CheckOutcome` (`PASSED` only when the judge read everything and found nothing;
    any discrepancy, unavailable proof, unreadable judge or month without a mapping version `FAILED` with its reason;

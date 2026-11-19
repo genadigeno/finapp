@@ -351,7 +351,10 @@ class DecisionExplanationDatabaseTest {
         });
     }
 
-    /** A registered identity holding {@code role}, and its session. */
+    /**
+     * A registered identity holding {@code role}, and its session - stepped up to {@code MULTI_FACTOR}: every operator act
+     * declares it (`P17-TSK-102`).
+     */
     private String sessionWith(RoleName role) throws Exception {
         String login = "inv." + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         assertThat(client.post("/v1/registrations", "{\"loginIdentifier\":\"" + login + "\",\"displayName\":\"Ada Lovelace\","
@@ -377,6 +380,7 @@ class DecisionExplanationDatabaseTest {
         HttpResponse<String> session = client.post("/v1/authentications",
                 "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + CreditTestClient.PASSWORD + "\"}", null,
                 CreditTestClient.key());
-        return CreditTestClient.field(session.body(), "sessionToken");
+        return com.finapp.app.session.OperatorStepUp.elevated(CreditTestClient.field(session.body(), "sessionToken"),
+                client::post);
     }
 }

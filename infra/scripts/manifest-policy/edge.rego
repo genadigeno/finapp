@@ -251,6 +251,45 @@ deny contains msg if {
 	msg := sprintf("[edge-routes-operator] %s is not limited to the internal ranges", [name])
 }
 
+# P17-TSK-103 (the owner's D-7): every operator router, the console's included, carries one source's rate limit and in-flight bound,
+# each keyed on the connection's address as the public edge's are - never the Host header, inFlightReq's default, which the client
+# chooses. The application exempts the operator surface from its shedding (THREAT_MODEL.md T14), so this is the surface's first bound.
+operator_middlewares := main.section(main.section(edge_file("finapp-edge-operator-routes-"), "http"), "middlewares")
+
+operator_limit_is_keyed_on_the_connection(limit) if {
+	main.stated(main.section(limit, "sourceCriterion"), "ipStrategy")
+	not main.stated(main.section(limit, "sourceCriterion"), "requestHost")
+	not main.stated(main.section(limit, "sourceCriterion"), "requestHeaderName")
+}
+
+operator_router_is_rate_limited(router) if {
+	some middleware in main.list_of(router, "middlewares")
+	startswith(middleware, "operator-rate")
+	limit := operator_middlewares[middleware].rateLimit
+	limit.average > 0
+	operator_limit_is_keyed_on_the_connection(limit)
+}
+
+operator_router_holds(router) if {
+	some middleware in main.list_of(router, "middlewares")
+	startswith(middleware, "operator-hold")
+	limit := operator_middlewares[middleware].inFlightReq
+	limit.amount > 0
+	operator_limit_is_keyed_on_the_connection(limit)
+}
+
+deny contains msg if {
+	some name, router in main.section(yaml.unmarshal(operator_routes), "http").routers
+	not operator_router_is_rate_limited(router)
+	msg := sprintf("[edge-operator-limits] %s carries no per-source rate limit keyed on the connection", [name])
+}
+
+deny contains msg if {
+	some name, router in main.section(yaml.unmarshal(operator_routes), "http").routers
+	not operator_router_holds(router)
+	msg := sprintf("[edge-operator-limits] %s has no in-flight limit keyed on the connection: the default key is the Host header, which the client chooses", [name])
+}
+
 # ------------------------------------------------------------------------------------------- what one source can hold
 
 edge_file(prefix) := yaml.unmarshal(config_map_with_prefix(prefix).data["edge.yaml"])
@@ -534,7 +573,7 @@ deny contains sprintf("[edge-quota-compute] %s", [msg]) if {
 
 # ------------------------------------------------------------------------------------------- the Operator Console (X-TSK-020)
 
-# finapp-admin-panel P17-TSK-004, ADR-0131 decision 4. The operator edge serves the console's static assets same-origin, from a workload in a
+# finapp-admin-panel P17-TSK-004, finapp-admin-panel ADR-C131 decision 4. The operator edge serves the console's static assets same-origin, from a workload in a
 # namespace of its own, under headers of its own; the public edge never serves them. The policy below is a copy of the console's one definition
 # (finapp-admin-panel config/console-headers.mjs, CONSOLE_CSP); ConsoleHostingManifestsTest holds the committed files to the same string.
 console_namespace := "finapp-console"
@@ -548,7 +587,8 @@ api_csp := "default-src 'none'; frame-ancestors 'none'"
 # As EdgeRoutes generates it: GET on the bare path (nginx's redirect to the slash) and under the slash, nothing beside the prefix.
 console_rule := "(Method(`GET`) && Path(`/console`)) || (Method(`GET`) && PathPrefix(`/console/`))"
 
-console_middlewares := ["console-headers", "internal-only", "body-cap"]
+# P17-TSK-103: one source's rate and in-flight bounds join the private ranges, as on every operator router.
+console_middlewares := ["console-headers", "internal-only", "operator-rate", "operator-hold", "body-cap"]
 
 routers_of(prefix) := main.section(main.section(yaml.unmarshal(config_map_with_prefix(prefix).data["routes.yaml"]), "http"), "routers")
 
@@ -600,7 +640,7 @@ deny contains msg if {
 	some name, router in routers_of("finapp-edge-operator-routes-")
 	sends_to_the_console(router)
 	not console_router_holds(router)
-	msg := sprintf("[edge-console-routes] %s is not exactly GET /console and /console/**, behind console-headers, internal-only and body-cap alone", [name])
+	msg := sprintf("[edge-console-routes] %s is not exactly GET /console and /console/**, behind console-headers, internal-only, operator-rate, operator-hold and body-cap alone", [name])
 }
 
 # The console's headers on an application route would loosen its policy from default-src 'none' to the console's.

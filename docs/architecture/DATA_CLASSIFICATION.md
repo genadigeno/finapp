@@ -457,6 +457,8 @@ sentence lands.
 | `journal_line` | `scale` | `INTERNAL` | Precision metadata of the amount |
 | `journal_line` | `seq` | `INTERNAL` | Line order |
 
+**Served to staff by the ledger's operator reads** (`P17-TSK-022`, 2026-11-19), under `ACCOUNTING_READ`, the GL reads' permission, every page recorded. The account register (`GET /v1/operator/ledger/accounts`, `ledger.AccountsListed`) serves an account's id, purpose, owner kind and owner reference - an id, never a name - currency, type, normal balance, `status` and `created_at`, both `CONFIDENTIAL`, to the accountant who already reads them through the GL; never `gl_code` or `status_changed_at`. The journal entry search (`GET /v1/operator/ledger/entries`, `ledger.EntriesSearched`) serves an entry's id, type, posting and value dates, `created_at`, the entry it reverses, its line count and, per currency, the sum of its debit lines' `amount_minor` - `RESTRICTED-FINANCIAL`, at the level the GL drill-down already serves its lines under the same permission. Never `reference`, `reason` or `actor_id`: the reference is matched, never served, and only an identifier-shaped value is accepted, so an operator's free text never travels in a URL. The two approvers' queues (`GET /v1/ledger/adjustments`, `GET /v1/ledger/projection-rebuilds`, under `LEDGER_ADJUST`) serve a proposal's proposer, its stamp, its reason code and posting date, and a rebuild's account, currency and which figures drifted - never a reason, a reference, a line or an amount.
+
 ### `ledger.account_balance` — *added by `P3-TSK-009`*
 
 The balance projection (ADR-0041): derived from the journal in the posting's own transaction,
@@ -4922,6 +4924,10 @@ provider's version label, the other closed codes, the platform's identifiers, co
 | `rescreening_permit` | `concluded_at` | `INTERNAL` | The database's stamp |
 | `rescreening_permit` | `correlation_id` | `INTERNAL` | The activation's correlation |
 
+**Served to staff by the accounting lists** (`P17-TSK-023`, 2026-11-19), each under the permission of the desk that needs it. The report runs (`GET /v1/operator/accounting/report-runs`, `ACCOUNTING_READ`, every page recorded `accounting.ReportRunsListed`) serve each run's head exactly as its own audited read does - its identity, definition and version, period, revisions, basis, status, pinned mapping version and rate set, `parameters`, `content_sha256` and its instants - never `content` and never `requested_by`. The FINAL statements (`GET …/report-runs/final-statements`, `ACCOUNTING_CLOSE_APPROVE`, every page recorded `accounting.FinalStatementsListed`) serve a FINAL statement run's identity, definition, period, revisions and `completed_at` - less than the statement door beside it. The mapping versions (`GET …/mapping-versions`, `ACCOUNTING_MAPPING_APPROVE`) and the rate sets (`GET …/valuation-rate-sets`, `ACCOUNTING_CLOSE_APPROVE`; `…/mine`, `ACCOUNTING_CLOSE_PROPOSE`, the caller's own) serve their identity, status, months, instants and counts with `proposed_by` and `captured_by`, `CONFIDENTIAL`: an employee's identifier, to the approver who must not decide their own proposal (ADR-C133's pending-decision shape names the proposer) and to the proposer themself - never a reason, a rate or `decided_by`. Unrecorded, as the version's and the set's own reads are.
+
+**Proposers served on the finance views** (`P17-TSK-111`, 2026-11-19). The person who proposed what an approver decides is served by identifier - an employee's id, never a name - on the views that approver reads: a close proposal (`proposedBy`, and a pending reopen's `reopenProposedBy`), a period's requests and the period list (`unlockProposedBy`, `reopenProposedBy`), a prior-period adjustment and the pending list (`proposedBy`), a GL mapping version (`proposedBy`), a valuation rate set (`capturedBy`), an accounting break while its acknowledgement is pending (`acknowledgementProposedBy`), a regulatory obligation (`proposedBy`) and a regulatory submission (`preparedBy`). Each is `CONFIDENTIAL` at its column; served to staff who already act on the row, so the console can say whose proposal it is and disable the self-approval the door refuses (`accounting.SelfApprovalRefused` stays the control). Never a decider, never a reason the view did not already serve. The reads stay as recorded as they were. A submission's view also serves its period's id (`periodId`, `INTERNAL`) beside the month's label.
+
 ### `accounting.report_run` - the report run - *added by `P14-TSK-008`*
 
 `accounting V004`: the issued answer to one question - a report definition and version, a period, a parameter set -
@@ -5105,7 +5111,7 @@ are unchanged.)*
 | `accounting.break_event` | `to_status` | `INTERNAL` | A closed `BreakStatus` |
 | `accounting.break_event` | `actor` | `CONFIDENTIAL` | Who acted - the run's actor for the raise, a person otherwise |
 | `accounting.break_event` | `actor_type` | `INTERNAL` | A closed actor type |
-| `accounting.break_event` | `proposed_by` | `CONFIDENTIAL` | On the acknowledgement: its proposer - never the actor, by `CHECK` |
+| `accounting.break_event` | `proposed_by` | `CONFIDENTIAL` | On the acknowledgement: its proposer - never the actor, by `CHECK`; on an `ACKNOWLEDGEMENT_REJECTED` row (`P17-TSK-111`, `V018`): the proposer it rejected, who may be the actor |
 | `accounting.break_event` | `resolving_entry_id` | `INTERNAL` | On the resolution: the correcting journal entry's id |
 | `accounting.break_event` | `reason` | `RESTRICTED-PII` | Person-written - the proposal's row carries the disclosure, which is `CONFIDENTIAL` on the break's row and kept at the ceiling here; never served from the case file |
 | `accounting.break_event` | `occurred_at` | `INTERNAL` | The database's stamp |
