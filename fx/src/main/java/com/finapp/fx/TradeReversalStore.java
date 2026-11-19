@@ -1,6 +1,7 @@
 package com.finapp.fx;
 
 import java.sql.Connection;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -16,11 +17,25 @@ public interface TradeReversalStore {
             Optional<String> decidedBy,
             Optional<UUID> reversalEntryId) {}
 
+    /**
+     * A reversal as its approver reads it (`P17-TSK-118`): the row, the database's stamps and both acts' reasons -
+     * the decision's once decided.
+     */
+    record Detail(
+            Row row,
+            Instant proposedAt,
+            String proposedReason,
+            Optional<Instant> decidedAt,
+            Optional<String> decidedReason) {}
+
     /** Births a {@code PROPOSED} reversal; false when the trade already carries a live one (the partial unique). */
     boolean propose(Connection unitOfWork, UUID id, FxTradeId tradeId, String proposedBy, String reason, String correlationId);
 
     /** The reversal, no lock. */
     Optional<Row> find(Connection unitOfWork, UUID id);
+
+    /** The reversal with its stamps and reasons, no lock (`P17-TSK-118`). */
+    Optional<Detail> detail(Connection unitOfWork, UUID id);
 
     /** The reversal {@code FOR UPDATE}. */
     Optional<Row> lock(Connection unitOfWork, UUID id);

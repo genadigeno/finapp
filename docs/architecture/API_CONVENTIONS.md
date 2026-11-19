@@ -287,12 +287,14 @@ needed for it (the distinction `P0-TSK-032` drew for the actor, in the opposite 
 | `GET /v1/operator/accounting/mapping-versions` (`P17-TSK-023`) | `ACCOUNTING_MAPPING_APPROVE` | version descending | 50 / 200 | `status` (`PROPOSED` is the approver's queue); each row marks whether the caller proposed it |
 | `GET /v1/operator/accounting/valuation-rate-sets` (`P17-TSK-023`) | `ACCOUNTING_CLOSE_APPROVE` | captured at descending, set id descending | 50 / 200 | `periodId`, `status` (`PROPOSED` is the approver's queue); each row marks whether the caller captured it; never a rate |
 | `GET /v1/operator/accounting/valuation-rate-sets/mine` (`P17-TSK-023`) | `ACCOUNTING_CLOSE_PROPOSE` | captured at descending, set id descending | 50 / 200 | `status`. The sets the caller captured, every period's |
+| `GET /v1/operator/fx/pricing-policies` (`P17-TSK-118`) | `FX_ADMINISTER` | version descending | 50 / 100 | None. Each version with its pairs and its proposer; the maximum is the capped list's old bound, so no page reads more than it did. Retrofitted in place from `{ versions, truncated }` (ADR-C133 decision 2), whose flag was never set |
 
 All are keyset reads. `app`'s `OperatorCollection` is the one implementation of the request rules: the limit is refused above
 its maximum rather than reduced, and the cursor names its collection, so one collection's cursor is refused by another. Every
 refusal is `422 api.ValidationFailed`. A page record carries `nextCursor` only when there is a next page. Older operator lists
 were built before this section was implemented: some take `after`/`limit`, and some are capped with `truncated`. They are
-retrofitted by `P17-TSK-042` (ADR-C133 decision 2), and until then they are what their own entries say.
+retrofitted by `P17-TSK-042` (ADR-C133 decision 2), and until then they are what their own entries say. The FX pricing policy
+list was retrofitted first, by `P17-TSK-118`: its old shape replaced in place, the operator surface being internal.
 
 **Cursor-based, never offset.** `?limit=&cursor=`. The reason is correctness before performance:
 an offset re-reads a moving set, so when rows are inserted or removed between page 1 and page 2, a

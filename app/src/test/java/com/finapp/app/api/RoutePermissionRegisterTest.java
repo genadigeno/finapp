@@ -245,6 +245,8 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/fx/trades/{id}/reversal", PermissionName.FX_TRADE_REVERSE),
                     entry("POST /v1/operator/fx/trades/{id}/reversal/{rid}/approval", PermissionName.FX_TRADE_REVERSE),
                     entry("POST /v1/operator/fx/trades/{id}/reversal/{rid}/rejection", PermissionName.FX_TRADE_REVERSE),
+                    // P17-TSK-118: the reversal read by its approver, with the conversion it would reverse - audited.
+                    entry("GET /v1/operator/fx/trades/{id}/reversal/{rid}", PermissionName.FX_TRADE_REVERSE),
                     // P9-TSK-027: Phase 9's reports and the payment trace - an investigator's reads.
                     entry("GET /v1/operator/reports/fx/position", PermissionName.FX_INVESTIGATE),
                     entry("GET /v1/operator/reports/fx/revenue", PermissionName.FX_INVESTIGATE),
@@ -254,6 +256,8 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/fx/providers/{code}/availability", PermissionName.FX_ADMINISTER),
                     entry("POST /v1/operator/fx/enable-requests/{rid}/approval", PermissionName.FX_ADMINISTER),
                     entry("POST /v1/operator/fx/enable-requests/{rid}/rejection", PermissionName.FX_ADMINISTER),
+                    // P17-TSK-118: an enable request read by its approver.
+                    entry("GET /v1/operator/fx/enable-requests/{rid}", PermissionName.FX_ADMINISTER),
                     // P9-TSK-013: the FX investigator's read of a trade's provenance - held by the
                     // reconciliation operator, never by whoever sets prices; audited at every serving.
                     entry("GET /v1/operator/fx/trades/{id}/provenance", PermissionName.FX_INVESTIGATE),
@@ -269,6 +273,8 @@ class RoutePermissionRegisterTest {
                             PermissionName.CROSSBORDER_ADMINISTER),
                     entry("POST /v1/operator/cross-border/corridor-enable-requests/{rid}/rejection",
                             PermissionName.CROSSBORDER_ADMINISTER),
+                    // P17-TSK-118: a corridor enable request read by its approver.
+                    entry("GET /v1/operator/cross-border/corridor-enable-requests/{rid}", PermissionName.CROSSBORDER_ADMINISTER),
                     // P9-TSK-016: the counterparty reviewer's door - a person releases or blocks a
                     // screening in review; held by KYC_REVIEWER beside KYC_REVIEW (ADR-0081 point 4).
                     entry("POST /v1/operator/kyc/counterparty-screenings/{id}/decision",

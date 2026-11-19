@@ -278,6 +278,11 @@ public final class FxAvailability {
         return new EnableDecided(row.id(), row.subject(), AvailabilityStore.EnableRequestStatus.REJECTED, false);
     }
 
+    /** The enable request {@code id} as its approver reads it (`P17-TSK-118`); read, never locked. */
+    public Optional<AvailabilityStore.RequestView> request(Connection unitOfWork, UUID id) {
+        return store.request(unitOfWork, Objects.requireNonNull(id, "id must not be null"));
+    }
+
     /** Whether {@code subject} is available now. */
     public boolean isAvailable(Connection unitOfWork, AvailabilitySubject subject) {
         return store.isAvailable(unitOfWork, subject);

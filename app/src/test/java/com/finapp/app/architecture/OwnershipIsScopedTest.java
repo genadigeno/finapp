@@ -369,6 +369,18 @@ class OwnershipIsScopedTest {
                                         + " @RequiresPermission(CROSSBORDER_ADMINISTER) - never a request"
                                         + " value; platform-wide configuration with no owner to scope by.")),
                     Map.entry(
+                            "com.finapp.crossborder.JdbcCorridorAvailabilityStore.request",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-118. GET"
+                                        + " /v1/operator/cross-border/corridor-enable-requests/{rid} - the"
+                                        + " approver names the request from the path behind"
+                                        + " @RequiresPermission(CROSSBORDER_ADMINISTER), asserted per route"
+                                        + " by RoutePermissionRegisterTest and"
+                                        + " CorridorAdministrationEndpointDatabaseTest; a read, no lock,"
+                                        + " writing nothing. Platform-wide configuration with no owner to"
+                                        + " scope by.")),
+                    Map.entry(
                             "com.finapp.crossborder.JdbcCorridorAvailabilityStore.lockRequest",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -542,6 +554,15 @@ class OwnershipIsScopedTest {
                                         + " operator's own transaction behind"
                                         + " @RequiresPermission(FX_ADMINISTER) - never a request value;"
                                         + " platform-wide configuration with no owner to scope by.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcAvailabilityStore.request",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-118. GET /v1/operator/fx/enable-requests/{rid} - the approver names"
+                                        + " the request from the path behind @RequiresPermission(FX_ADMINISTER),"
+                                        + " asserted per route by RoutePermissionRegisterTest and"
+                                        + " FxAdministrationEndpointDatabaseTest; a read, no lock, writing"
+                                        + " nothing. Platform-wide configuration with no owner to scope by.")),
                     Map.entry(
                             "com.finapp.fx.JdbcAvailabilityStore.lockRequest",
                             new Entry(
@@ -859,6 +880,17 @@ class OwnershipIsScopedTest {
                                         + " reversal's"
                                         + " (FxTradeReversalRaceDatabaseTest.aDecisionOnAnotherTradesRouteIsRefused);"
                                         + " conditional on PROPOSED.")),
+                    Map.entry(
+                            "com.finapp.fx.JdbcTradeReversalStore.detail",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-118. GET /v1/operator/fx/trades/{id}/reversal/{rid} - the"
+                                        + " approver names the reversal from the path behind"
+                                        + " @RequiresPermission(FX_TRADE_REVERSE), the find reasoning: an"
+                                        + " operator reads any customer's reversal by design, a reversal of a"
+                                        + " trade other than the route's is NotFound"
+                                        + " (FxTradeReversalRaceDatabaseTest), and every serving is recorded"
+                                        + " (fx.TradeReversalRead). A read, no lock.")),
                     Map.entry(
                             "com.finapp.fx.JdbcTradeReversalStore.find",
                             new Entry(

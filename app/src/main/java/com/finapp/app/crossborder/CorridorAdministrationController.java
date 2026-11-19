@@ -40,7 +40,7 @@ public class CorridorAdministrationController {
 
     @NonNull private final CorridorAdministrationDesk desk;
 
-    /** The versions, newest first - each with its corridors. */
+    /** The versions, newest first - each with its corridors and its proposer (`P17-TSK-118`). */
     @GetMapping("/corridor-policies")
     @RequiresPermission(PermissionName.CROSSBORDER_ADMINISTER)
     public CorridorAdministrationDesk.CorridorPolicyList listCorridorPolicies() {
@@ -90,6 +90,14 @@ public class CorridorAdministrationController {
             @PathVariable("corridor") String corridor,
             @Valid @RequestBody CorridorAvailabilityRequest body) {
         return desk.availability(idempotencyKey, corridor, body);
+    }
+
+    /** One corridor enable request - what its approver decides, and who proposed it (`P17-TSK-118`). */
+    @GetMapping("/corridor-enable-requests/{rid}")
+    @RequiresPermission(PermissionName.CROSSBORDER_ADMINISTER)
+    public CorridorAdministrationDesk.CorridorEnableRequestView readCorridorEnableRequest(
+            @PathVariable("rid") String requestId) {
+        return desk.enableRequest(requestId);
     }
 
     /** Approves a corridor enable request - a different person's act; appends the enabling fact. */

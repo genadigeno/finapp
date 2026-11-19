@@ -1,6 +1,9 @@
 package com.finapp.app.fx;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.DecimalText;
+import com.finapp.app.api.OperatorCollection;
+import com.finapp.fx.AvailabilityStore;
 import com.finapp.fx.AvailabilitySubject;
 import com.finapp.fx.FxAvailability;
 import com.finapp.fx.FxErrorCode;
@@ -34,6 +37,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -52,8 +56,15 @@ public final class FxAdministrationDesk {
     static final String POLICY_SCOPE = "fx.pricing-policy:";
     static final String AVAILABILITY_SCOPE = "fx.availability:";
 
-    /** The read's bound - a list is never unbounded (`PHASE_9_PLAN.md` §9). */
-    static final int VERSION_BOUND = 100;
+    /**
+     * The versions' collection (`API_CONVENTIONS.md` §7, `P17-TSK-118`): version descending, the version number the
+     * key - {@code UNIQUE}, so the order is total. The maximum is the list's old cap, so no page reads more than the
+     * capped list did.
+     */
+    static final String PRICING_POLICIES = "fx.pricing-policies";
+
+    static final int DEFAULT_LIMIT = 50;
+    static final int MAXIMUM_LIMIT = 100;
 
     @NonNull private final PricingPolicyAdministration policies;
     @NonNull private final FxAvailability availability;
@@ -67,12 +78,16 @@ public final class FxAdministrationDesk {
     /** A version's receipt. */
     public record PolicyReceipt(String id, int version, String status, String retiredId) {}
 
-    /** The versions, newest first. */
-    public record PolicyList(List<PolicyView> versions, boolean truncated) {}
+    /** A page of versions, newest first; {@code nextCursor} absent on the last one (§7, `P17-TSK-118`). */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record PolicyPage(List<PolicyView> items, String nextCursor) {}
 
-    /** One version and every pair it prices. */
+    /**
+     * One version and every pair it prices, and who proposed it (`P17-TSK-118`: an identity's id, so the console
+     * disables the proposer's own approval - {@code fx.SelfApprovalRefused} stays the control). Never who decided it.
+     */
     public record PolicyView(
-            String id, int version, String status, int openQuoteCap, String proposedAt,
+            String id, int version, String status, int openQuoteCap, String proposedBy, String proposedAt,
             List<PairView> pairs) {}
 
     /** One (pair, purpose), every term as the version froze it. */
@@ -91,12 +106,42 @@ public final class FxAdministrationDesk {
     /** An enable decision's receipt. */
     public record EnableReceipt(String requestId, String subjectKind, String subject, String status) {}
 
+    /**
+     * An enable request as its approver reads it (`P17-TSK-118`): the subject, the position, who proposed it, when and
+     * why, and the decision's instant and reason once decided ({@code null} until then). Never who decided it.
+     */
+    public record EnableRequestView(
+            String requestId, String subjectKind, String subject, String status, String proposedBy, String proposedAt,
+            String reason, String decidedAt, String decisionReason) {}
+
     // ------------------------------------------------------------------ pricing policy
 
-    public PolicyList policies() {
+    /** A page of versions, newest first, each with its pairs; recording nothing, as the list never did. */
+    public PolicyPage policies(String cursor, String limit) {
+        int size = OperatorCollection.limit(limit, DEFAULT_LIMIT, MAXIMUM_LIMIT);
+        Optional<Integer> before = versionCursor(cursor);
         List<PricingPolicyStore.VersionView> versions =
-                transactions.inTransaction(uow -> policies.versions(uow, VERSION_BOUND));
-        return new PolicyList(versions.stream().map(FxAdministrationDesk::view).toList(), false);
+                transactions.inTransaction(uow -> policies.versions(uow, before, size + 1));
+        List<PricingPolicyStore.VersionView> served = versions.subList(0, Math.min(size, versions.size()));
+        String next = versions.size() > size
+                ? OperatorCollection.cursor(PRICING_POLICIES, Integer.toString(served.get(served.size() - 1).row().version()))
+                : null;
+        return new PolicyPage(served.stream().map(FxAdministrationDesk::view).toList(), next);
+    }
+
+    /** The version a cursor resumes below; a cursor this collection did not serve is refused (422). */
+    static Optional<Integer> versionCursor(String cursor) {
+        return OperatorCollection.key(PRICING_POLICIES, cursor, 1).map(key -> {
+            try {
+                int version = Integer.parseInt(key.get(0));
+                if (version < 1) {
+                    throw OperatorCollection.invalidCursor();
+                }
+                return version;
+            } catch (NumberFormatException unreadable) {
+                throw OperatorCollection.invalidCursor();
+            }
+        });
     }
 
     public PolicyReceipt propose(String idempotencyKey, FxAdministrationController.PricingPolicyRequest request) {
@@ -169,6 +214,17 @@ public final class FxAdministrationDesk {
                     "The provider is not declared by this build.");
         }
         return availability(idempotencyKey, subject, request);
+    }
+
+    /** The enable request {@code rawId} as its approver reads it; unknown or malformed, 404. Unrecorded, as the list. */
+    public EnableRequestView enableRequest(String rawId) {
+        UUID id = uuid(rawId);
+        AvailabilityStore.RequestView request =
+                transactions.inTransaction(uow -> availability.request(uow, id)).orElseThrow(FxAdministrationDesk::notFound);
+        return new EnableRequestView(
+                request.id().toString(), request.subject().kind().name(), request.subject().subject(),
+                request.status().name(), request.proposedBy(), request.proposedAt().toString(), request.reason(),
+                request.decidedAt().map(Instant::toString).orElse(null), request.decisionReason().orElse(null));
     }
 
     public EnableReceipt approveEnable(String rawId, String reason) {
@@ -275,6 +331,7 @@ public final class FxAdministrationDesk {
                 version.row().version(),
                 version.row().status().name(),
                 version.row().openQuoteCap(),
+                version.row().proposedBy(),
                 version.proposedAt().toString(),
                 version.pairs().stream()
                         .map(

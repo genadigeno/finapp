@@ -100,7 +100,8 @@ tests (held to O7 by `PricingPolicyV1Test`, and proposed and activated end to en
 
 **Steps** — two different people holding `FX_CONTROLLER` (`FX_ADMINISTER`):
 
-1. **Read**: `GET /v1/operator/fx/pricing-policies` — empty on a fresh deployment.
+1. **Read**: `GET /v1/operator/fx/pricing-policies` — empty on a fresh deployment. *(Since `P17-TSK-118`, a page of
+   `{items, nextCursor}`, newest first, each version naming its proposer; follow `nextCursor` while it is present.)*
 2. **Propose** (person A): `POST /v1/operator/fx/pricing-policies` with an `Idempotency-Key`, the
    40 rows (every decimal a JSON string) and a reason naming this procedure. The answer is the
    version's id (`PROPOSED`, version 1).
@@ -120,7 +121,8 @@ replaces it, and only new quotes see it.
 `POST /v1/operator/fx/pairs/{AAA-BBB}/availability` or `…/providers/{code}/availability` with
 `{"available": false, "reason": …}`. Restarting is two people: the same route with
 `"available": true` opens an enable request (`ENABLE_PROPOSED`), which a DIFFERENT controller
-approves at `POST /v1/operator/fx/enable-requests/{id}/approval`, on a `MULTI_FACTOR` session. **An `FX_CONTROLLER` with no
+approves at `POST /v1/operator/fx/enable-requests/{id}/approval`, on a `MULTI_FACTOR` session, having read it at
+`GET /v1/operator/fx/enable-requests/{id}` (`P17-TSK-118`: the subject, the proposer and the reason). **An `FX_CONTROLLER` with no
 enrolled factor is refused `403 identity.AssuranceRequired` at every approval and restart here and in §3b**, and
 `GET /v1/operator/access-review/factorless-holdings` does not name that role, so enrol controllers ahead of need: enrolment
 is self-service (`POST /v1/me/mfa`, then `POST /v1/authentications/mfa` to step up).
@@ -220,7 +222,7 @@ its own and never nets with its sibling's.
 **The kill switch.** `POST /v1/operator/cross-border/corridors/{S-D-CC}/availability` with
 `{"available": false, "reason": ...}` stops a corridor at once (one person); `{"available": true}`
 opens an enable request a different person approves at `…/corridor-enable-requests/{rid}/approval`, on a
-`MULTI_FACTOR` session.
+`MULTI_FACTOR` session, having read it at `GET …/corridor-enable-requests/{rid}` (`P17-TSK-118`).
 
 **Verify.** Discovery lists the four corridors with their fees, maxima and delivery estimates.
 
@@ -278,7 +280,9 @@ own stored inputs. Both are the platform's defect.
 closed to free adjustment (`422 ledger.AdjustmentOnReconciledPosition`). Read the trade's provenance
 (`GET /v1/operator/fx/trades/{id}/provenance`, `FX_INVESTIGATE`) and the book's entries; open an incident; the
 only corrector of a booked conversion is the four-eyes trade reversal (`P9-TSK-025`), proposed and approved on
-`MULTI_FACTOR` sessions.
+`MULTI_FACTOR` sessions. The approver reads the proposal first at `GET /v1/operator/fx/trades/{id}/reversal/{rid}`
+(`P17-TSK-118`, `FX_TRADE_REVERSE`): the proposer, the reason and the conversion's two customer amounts - every reading
+recorded `fx.TradeReversalRead`.
 
 ## 6. Credit policy, scorecard and review operations (Phase 10)
 

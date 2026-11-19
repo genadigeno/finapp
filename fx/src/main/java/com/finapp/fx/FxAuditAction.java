@@ -143,7 +143,17 @@ public enum FxAuditAction implements AuditableAction {
     FX_TRADE_REVERSAL_REJECTED(
             "fx.FxTradeReversalRejected",
             "A different operator rejected a trade reversal, with a reason; nothing moved.",
-            true);
+            true),
+
+    /**
+     * An operator read a trade reversal with the trade it would reverse (`P17-TSK-118`, FX_TRADE_REVERSE) - a
+     * customer's conversion amounts, so every serving is recorded, as the provenance read's is.
+     */
+    TRADE_REVERSAL_READ(
+            "fx.TradeReversalRead",
+            "An operator read a trade reversal and the conversion it would reverse - the customer's amounts"
+                    + " (FX_TRADE_REVERSE); a read of a customer's trade, so every serving is recorded.",
+            false);
 
     private final String code;
     private final String description;

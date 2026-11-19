@@ -961,6 +961,8 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/providers/{code}/availability",
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/enable-requests/{rid}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/enable-requests/{rid}/rejection",
+                        // P17-TSK-118: an enable request read by its approver (FX_ADMINISTER).
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/enable-requests/{rid}",
                         // P9-TSK-013: the FX investigator's provenance read (FX_INVESTIGATE).
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/trades/{id}/provenance",
                         // P9-TSK-015: the corridor doors (CROSSBORDER_ADMINISTER) and the customer's
@@ -971,6 +973,8 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridors/{corridor}/availability",
                         ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-enable-requests/{rid}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-enable-requests/{rid}/rejection",
+                        // P17-TSK-118: a corridor enable request read by its approver (CROSSBORDER_ADMINISTER).
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-enable-requests/{rid}",
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/corridors",
                         // P9-TSK-016: the counterparty reviewer's door (COUNTERPARTY_SCREENING_REVIEW).
                         ApiVersion.CURRENT_PREFIX + "/operator/kyc/counterparty-screenings/{id}/decision",
@@ -1025,6 +1029,8 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/trades/{id}/reversal",
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/trades/{id}/reversal/{rid}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/fx/trades/{id}/reversal/{rid}/rejection",
+                        // P17-TSK-118: the reversal read by its approver, audited (FX_TRADE_REVERSE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/trades/{id}/reversal/{rid}",
                         // P9-TSK-027: Phase 9's reports and the payment trace.
                         ApiVersion.CURRENT_PREFIX + "/operator/reports/fx/position",
                         ApiVersion.CURRENT_PREFIX + "/operator/reports/fx/revenue",

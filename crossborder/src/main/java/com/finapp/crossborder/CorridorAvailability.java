@@ -251,6 +251,11 @@ public final class CorridorAvailability {
         return new EnableDecided(row.id(), row.corridor(), CorridorAvailabilityStore.EnableRequestStatus.REJECTED, false);
     }
 
+    /** The corridor enable request {@code id} as its approver reads it (`P17-TSK-118`); read, never locked. */
+    public Optional<CorridorAvailabilityStore.RequestView> request(Connection unitOfWork, UUID id) {
+        return store.request(unitOfWork, Objects.requireNonNull(id, "id must not be null"));
+    }
+
     /** Whether {@code corridor} is available now. */
     public boolean isAvailable(Connection unitOfWork, CorridorKey corridor) {
         return store.isAvailable(unitOfWork, corridor);

@@ -306,8 +306,9 @@ public final class PricingPolicyAdministration {
     }
 
     /** Versions newest first, at most {@code limit}, each with its pairs. */
-    public List<PricingPolicyStore.VersionView> versions(Connection unitOfWork, int limit) {
-        return store.versions(unitOfWork, limit);
+    public List<PricingPolicyStore.VersionView> versions(
+            Connection unitOfWork, Optional<Integer> beforeVersion, int limit) {
+        return store.versions(unitOfWork, beforeVersion, limit);
     }
 
     // ------------------------------------------------------------------ plumbing

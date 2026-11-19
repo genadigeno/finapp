@@ -15,6 +15,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -47,6 +48,16 @@ public class FxTradeReversalController {
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @Valid @RequestBody TradeReversalRequest body) {
         return desk.propose(id, idempotencyKey, body.reason());
+    }
+
+    /**
+     * One reversal of the trade, with the conversion it would reverse - what its approver decides, and who proposed it
+     * (`P17-TSK-118`). Every serving recorded ({@code fx.TradeReversalRead}); another trade's reversal 404.
+     */
+    @GetMapping("/{id}/reversal/{rid}")
+    @RequiresPermission(PermissionName.FX_TRADE_REVERSE)
+    public FxTradeReversalDesk.FxTradeReversalView readFxTradeReversal(@PathVariable("id") String id, @PathVariable("rid") String rid) {
+        return desk.read(id, rid);
     }
 
     /** Approves a pending reversal - a different person's act, executing it in one transaction. */

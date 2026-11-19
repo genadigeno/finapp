@@ -2,6 +2,7 @@ package com.finapp.app.crossborder;
 
 import com.finapp.app.api.DecimalText;
 import com.finapp.crossborder.CorridorAvailability;
+import com.finapp.crossborder.CorridorAvailabilityStore;
 import com.finapp.crossborder.CorridorDirectory;
 import com.finapp.crossborder.CorridorKey;
 import com.finapp.crossborder.CorridorPolicyAdministration;
@@ -70,8 +71,13 @@ public final class CorridorAdministrationDesk {
     /** The versions, newest first. */
     public record CorridorPolicyList(List<CorridorPolicyView> versions, boolean truncated) {}
 
-    /** One version and every corridor it holds. */
-    public record CorridorPolicyView(String id, int version, String status, String proposedAt, List<CorridorView> corridors) {}
+    /**
+     * One version and every corridor it holds, and who proposed it (`P17-TSK-118`: an identity's id, so the console
+     * disables the proposer's own approval - {@code crossborder.SelfApprovalRefused} stays the control). Never who
+     * decided it.
+     */
+    public record CorridorPolicyView(
+            String id, int version, String status, String proposedBy, String proposedAt, List<CorridorView> corridors) {}
 
     /** One corridor, every term as the version froze it. */
     public record CorridorView(
@@ -93,6 +99,14 @@ public final class CorridorAdministrationDesk {
 
     /** An enable decision's receipt. */
     public record CorridorEnableReceipt(String requestId, String corridor, String status) {}
+
+    /**
+     * A corridor enable request as its approver reads it (`P17-TSK-118`): the corridor, the position, who proposed it,
+     * when and why, and the decision's instant and reason once decided ({@code null} until then). Never who decided it.
+     */
+    public record CorridorEnableRequestView(
+            String requestId, String corridor, String status, String proposedBy, String proposedAt, String reason,
+            String decidedAt, String decisionReason) {}
 
     /** The corridors on offer to a customer now. */
     public record OfferedCorridors(List<OfferedCorridor> corridors, boolean truncated) {}
@@ -184,6 +198,17 @@ public final class CorridorAdministrationDesk {
         return new CorridorAvailabilityReceipt(corridor.code(), stored[0], stored[1].isEmpty() ? null : stored[1]);
     }
 
+    /** The corridor enable request {@code rawId} as its approver reads it; unknown or malformed, 404. Unrecorded. */
+    public CorridorEnableRequestView enableRequest(String rawId) {
+        UUID id = uuid(rawId);
+        CorridorAvailabilityStore.RequestView request = transactions.inTransaction(uow -> availability.request(uow, id))
+                .orElseThrow(CorridorAdministrationDesk::notFound);
+        return new CorridorEnableRequestView(
+                request.id().toString(), request.corridor().code(), request.status().name(), request.proposedBy(),
+                request.proposedAt().toString(), request.reason(), request.decidedAt().map(Instant::toString).orElse(null),
+                request.decisionReason().orElse(null));
+    }
+
     public CorridorEnableReceipt approveEnable(String rawId, String reason) {
         UUID id = uuid(rawId);
         Actor actor = SecurityContext.require();
@@ -262,6 +287,7 @@ public final class CorridorAdministrationDesk {
                 version.row().id().value().toString(),
                 version.row().version(),
                 version.row().status().name(),
+                version.row().proposedBy(),
                 version.proposedAt().toString(),
                 version.corridors().stream()
                         .map(terms -> new CorridorView(

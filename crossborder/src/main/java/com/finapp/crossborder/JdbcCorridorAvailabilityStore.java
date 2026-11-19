@@ -97,6 +97,34 @@ public final class JdbcCorridorAvailabilityStore implements CorridorAvailability
     }
 
     @Override
+    public Optional<RequestView> request(Connection unitOfWork, UUID id) {
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement(
+                        "SELECT id, corridor, status, proposed_by, proposed_at, proposal_reason, decided_at,"
+                                + " decision_reason FROM crossborder.corridor_enable_request WHERE id = ?")) {
+            select.setObject(1, id);
+            try (ResultSet row = select.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                Timestamp decidedAt = row.getTimestamp("decided_at");
+                return Optional.of(new RequestView(
+                        row.getObject("id", UUID.class),
+                        CorridorKey.parse(row.getString("corridor")),
+                        EnableRequestStatus.valueOf(row.getString("status")),
+                        row.getString("proposed_by"),
+                        row.getTimestamp("proposed_at").toInstant(),
+                        row.getString("proposal_reason"),
+                        Optional.ofNullable(decidedAt).map(Timestamp::toInstant),
+                        Optional.ofNullable(row.getString("decision_reason"))));
+            }
+        } catch (SQLException failure) {
+            throw new CrossborderStorageException(DatabaseFailure.describe("reading a corridor enable request", failure));
+        }
+    }
+
+    @Override
     public Optional<RequestRow> lockRequest(Connection unitOfWork, UUID id) {
         Objects.requireNonNull(id, "id must not be null");
         try (PreparedStatement select =

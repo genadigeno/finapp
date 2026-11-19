@@ -55,6 +55,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * The operator's FX trade reversal (`P9-TSK-025`, the lifecycle document section 3.3; PHASE_9_PLAN.md section 14
@@ -271,6 +273,72 @@ class FxTradeReversalRaceDatabaseTest {
                 .isEqualTo(1);
         HttpResponse<String> own = decide(b.trade(), reversalOfB, "rejection", decider);
         assertThat(own.statusCode()).as("its own route still decides it: %s", own.body()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("P17-TSK-118: a reversal is read by its approver with the conversion it would reverse - its proposer,"
+            + " reason and the customer's two amounts, never its decider or the customer's party - every serving recorded"
+            + " fx.TradeReversalRead; another trade's reversal is 404 and records nothing; the read is FX_TRADE_REVERSE's")
+    void aReversalIsReadByItsApprover() throws Exception {
+        Booked a = booked("100.00");
+        Booked b = booked("100.00");
+        String reversal = field(propose(b.trade(), sessionWith(RoleName.LEDGER_OPERATOR), FxTestClient.key()).body(),
+                "reversalId");
+        String approver = sessionWith(RoleName.LEDGER_OPERATOR);
+        String reads = "SELECT count(*) FROM platform.audit_record WHERE operation = 'fx.TradeReversalRead' AND target_id = ?";
+        String path = TRADES + b.trade() + "/reversal/" + reversal;
+
+        HttpResponse<String> read = client().get(path, approver);
+        assertThat(read.statusCode()).as(read.body()).isEqualTo(200);
+        JsonNode view = new ObjectMapper().readTree(read.body());
+        assertThat(view.get("reversalId").asString()).isEqualTo(reversal);
+        assertThat(view.get("tradeId").asString()).isEqualTo(b.trade());
+        assertThat(view.get("status").asString()).isEqualTo("PROPOSED");
+        assertThat(view.get("proposedBy").asString()).as("the proposer, by identity id")
+                .isEqualTo(scalar("SELECT proposed_by FROM fx.trade_reversal WHERE id = ?::uuid", reversal));
+        assertThat(view.get("reason").asString()).isEqualTo("the customer converted the wrong amount");
+        assertThat(view.get("decidedAt").isNull()).isTrue();
+        assertThat(view.get("reversalEntryId").isNull()).isTrue();
+        JsonNode trade = view.get("trade");
+        assertThat(trade.get("purpose").asString()).isEqualTo("CONVERSION");
+        assertThat(trade.get("status").asString()).isEqualTo("BOOKED");
+        assertThat(trade.get("fixedSide").asString()).isEqualTo("FIXED_SOURCE");
+        assertThat(trade.get("customerSource").get("amount").asString()).isEqualTo("100.00");
+        assertThat(trade.get("customerSource").get("currency").asString()).isEqualTo("EUR");
+        assertThat(trade.get("customerDestination").get("currency").asString()).isEqualTo("USD");
+        assertThat(trade.get("customerDestination").get("amount").asString()).as("the minor units at USD's scale")
+                .isEqualTo(new java.math.BigDecimal(scalar(
+                        "SELECT customer_destination_minor::text FROM fx.trade WHERE id = ?::uuid", b.trade()))
+                        .movePointLeft(2).toPlainString());
+        assertThat(trade.get("journalEntryId").asString())
+                .isEqualTo(scalar("SELECT journal_entry_id::text FROM fx.trade WHERE id = ?::uuid", b.trade()));
+        assertThat(view.has("decidedBy")).as("never who decided").isFalse();
+        assertThat(read.body()).as("never the customer's party")
+                .doesNotContain(scalar("SELECT owner_party_id::text FROM fx.trade WHERE id = ?::uuid", b.trade()));
+        assertThat(count(reads, reversal)).as("the serving is recorded").isEqualTo(1);
+        assertThat(scalar("SELECT change_summary FROM platform.audit_record WHERE operation = 'fx.TradeReversalRead'"
+                + " AND target_id = ?", reversal)).isEqualTo("trade=" + b.trade() + ", status=PROPOSED");
+
+        HttpResponse<String> crossed = client().get(TRADES + a.trade() + "/reversal/" + reversal, approver);
+        assertThat(crossed.statusCode()).as("another trade's route: %s", crossed.body()).isEqualTo(404);
+        assertThat(crossed.body()).contains("fx.NotFound");
+        assertThat(client().get(TRADES + b.trade() + "/reversal/" + UUID.randomUUID(), approver).statusCode()).isEqualTo(404);
+        assertThat(client().get(TRADES + b.trade() + "/reversal/not-an-id", approver).statusCode()).isEqualTo(404);
+        assertThat(count(reads, reversal)).as("a refused read records nothing").isEqualTo(1);
+
+        for (RoleName other : List.of(RoleName.FX_CONTROLLER, RoleName.RECONCILIATION_OPERATOR)) {
+            assertThat(client().get(path, sessionWith(other)).statusCode()).as("403 to %s", other).isEqualTo(403);
+        }
+        assertThat(client().get(path, null).statusCode()).isEqualTo(401);
+        assertThat(count(reads, reversal)).isEqualTo(1);
+
+        assertThat(decide(b.trade(), reversal, "rejection", approver).statusCode()).isEqualTo(200);
+        JsonNode decided = new ObjectMapper().readTree(client().get(path, approver).body());
+        assertThat(decided.get("status").asString()).isEqualTo("REJECTED");
+        assertThat(decided.get("decisionReason").asString()).isEqualTo("checked against the customer's instruction");
+        assertThat(decided.get("decidedAt").isNull()).isFalse();
+        assertThat(decided.has("decidedBy")).isFalse();
+        assertThat(count(reads, reversal)).isEqualTo(2);
     }
 
     @Test

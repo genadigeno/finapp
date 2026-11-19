@@ -32,6 +32,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * The FX controller's doors over HTTP (`P9-TSK-007`, ADR-0075 section 3, {@code INV-AUD-04}): v1
@@ -119,12 +121,30 @@ class FxAdministrationEndpointDatabaseTest {
         HttpResponse<String> proposed = post(path, availability(true, "recovered"), first, someKey());
         assertThat(field(proposed.body(), "outcome")).isEqualTo("ENABLE_PROPOSED");
         String request = field(proposed.body(), "requestId");
+        // P17-TSK-118: the approver reads what they approve, and whose it is, before deciding it.
+        JsonNode pending = json(get(enableRequest(request), second), 200);
+        assertThat(pending.get("requestId").asString()).isEqualTo(request);
+        assertThat(pending.get("subjectKind").asString()).isEqualTo("PAIR");
+        assertThat(pending.get("subject").asString()).isEqualTo("GBP-JPY");
+        assertThat(pending.get("status").asString()).isEqualTo("PROPOSED");
+        assertThat(pending.get("reason").asString()).isEqualTo("recovered");
+        assertThat(pending.get("proposedBy").asString())
+                .as("the proposer, by identity id")
+                .isEqualTo(column("SELECT proposed_by FROM fx.availability_enable_request WHERE id = ?", request));
+        assertThat(pending.get("decidedAt").isNull()).as("undecided, no decision instant").isTrue();
         HttpResponse<String> self = post(enableApproval(request), decision("mine"), first, null);
         assertThat(self.statusCode()).isEqualTo(409);
         assertThat(self.body()).contains("fx.SelfApprovalRefused");
         HttpResponse<String> approved = post(enableApproval(request), decision("verified"), second, null);
         assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
         assertThat(field(approved.body(), "status")).isEqualTo("APPROVED");
+        JsonNode decided = json(get(enableRequest(request), first), 200);
+        assertThat(decided.get("status").asString()).isEqualTo("APPROVED");
+        assertThat(decided.get("decisionReason").asString()).isEqualTo("verified");
+        assertThat(decided.get("decidedAt").isNull()).isFalse();
+        assertThat(decided.has("decidedBy")).as("never who decided").isFalse();
+        assertThat(get(enableRequest(UUID.randomUUID().toString()), second).statusCode()).as("unknown").isEqualTo(404);
+        assertThat(get(enableRequest("not-an-id"), second).statusCode()).as("malformed").isEqualTo(404);
 
         HttpResponse<String> again = post(path, availability(true, "once more"), first, someKey());
         assertThat(again.statusCode()).isEqualTo(409);
@@ -161,6 +181,8 @@ class FxAdministrationEndpointDatabaseTest {
                 new String[] {"/v1/operator/fx/enable-requests/" + id + "/rejection", decision("not mine")});
         assertThat(get("/v1/operator/fx/pricing-policies", other).statusCode()).isEqualTo(403);
         assertThat(get("/v1/operator/fx/pricing-policies", null).statusCode()).isEqualTo(401);
+        assertThat(get(enableRequest(id), other).statusCode()).as("P17-TSK-118's read").isEqualTo(403);
+        assertThat(get(enableRequest(id), null).statusCode()).isEqualTo(401);
         for (String[] route : posts) {
             assertThat(post(route[0], route[1], other, someKey()).statusCode()).as("403 at %s", route[0])
                     .isEqualTo(403);
@@ -174,6 +196,61 @@ class FxAdministrationEndpointDatabaseTest {
             row.next();
             assertThat(row.getLong(1)).as("no refused caller wrote a fact").isZero();
         }
+    }
+
+    @Test
+    @DisplayName("P17-TSK-118: the versions are a §7 collection - walked page by page, newest first, every version once,"
+            + " each naming its proposer and never its decider; the limit refused above 100; another collection's"
+            + " cursor refused")
+    void theVersionsArePaged() throws Exception {
+        String first = sessionWith(RoleName.FX_CONTROLLER);
+        for (int proposal = 0; proposal < 3; proposal++) {
+            withdrawPending(first);
+            HttpResponse<String> proposed =
+                    post("/v1/operator/fx/pricing-policies", PricingPolicyV1.json("a version to page past"), first, someKey());
+            assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        }
+        withdrawPending(first);
+        List<Integer> stored = new java.util.ArrayList<>();
+        java.util.Map<Integer, String> proposers = new java.util.HashMap<>();
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement select = app.prepareStatement(
+                        "SELECT version, proposed_by FROM fx.pricing_policy_version ORDER BY version DESC");
+                ResultSet row = select.executeQuery()) {
+            while (row.next()) {
+                stored.add(row.getInt(1));
+                proposers.put(row.getInt(1), row.getString(2));
+            }
+        }
+        assertThat(stored).hasSizeGreaterThanOrEqualTo(3);
+
+        List<Integer> walked = new java.util.ArrayList<>();
+        String cursor = null;
+        int pages = 0;
+        do {
+            JsonNode page = json(get("/v1/operator/fx/pricing-policies?limit=2"
+                    + (cursor == null ? "" : "&cursor=" + cursor), first), 200);
+            pages++;
+            assertThat(page.get("items").size()).isBetween(1, 2);
+            for (JsonNode item : page.get("items")) {
+                int version = item.get("version").asInt();
+                walked.add(version);
+                assertThat(item.get("proposedBy").asString()).as("v%d's proposer", version).isEqualTo(proposers.get(version));
+                assertThat(item.has("decidedBy")).as("never who decided").isFalse();
+            }
+            assertThat(page.has("truncated")).as("the capped list's flag is gone").isFalse();
+            cursor = page.has("nextCursor") ? page.get("nextCursor").asString() : null;
+        } while (cursor != null);
+        assertThat(walked).as("every version once, newest first").isEqualTo(stored);
+        assertThat(pages).isEqualTo((stored.size() + 1) / 2);
+
+        assertThat(get("/v1/operator/fx/pricing-policies?limit=101", first).statusCode()).as("refused, not reduced")
+                .isEqualTo(422);
+        assertThat(get("/v1/operator/fx/pricing-policies?limit=0", first).statusCode()).isEqualTo(422);
+        String foreign = com.finapp.app.api.OperatorCollection.cursor("accounting.mapping-versions", "2");
+        HttpResponse<String> crossed = get("/v1/operator/fx/pricing-policies?cursor=" + foreign, first);
+        assertThat(crossed.statusCode()).isEqualTo(422);
+        assertThat(crossed.body()).contains("api.ValidationFailed");
     }
 
     // -----------------------------------------------------------------
@@ -198,6 +275,25 @@ class FxAdministrationEndpointDatabaseTest {
 
     private static String enableApproval(String id) {
         return "/v1/operator/fx/enable-requests/" + id + "/approval";
+    }
+
+    private static String enableRequest(String id) {
+        return "/v1/operator/fx/enable-requests/" + id;
+    }
+
+    private static JsonNode json(HttpResponse<String> response, int status) {
+        assertThat(response.statusCode()).as(response.body()).isEqualTo(status);
+        return new ObjectMapper().readTree(response.body());
+    }
+
+    private static String column(String sql, String id) throws Exception {
+        try (Connection app = DatabaseRoles.application(); PreparedStatement select = app.prepareStatement(sql)) {
+            select.setObject(1, UUID.fromString(id));
+            try (ResultSet row = select.executeQuery()) {
+                assertThat(row.next()).as(sql).isTrue();
+                return row.getString(1);
+            }
+        }
     }
 
     private static String decision(String reason) {
