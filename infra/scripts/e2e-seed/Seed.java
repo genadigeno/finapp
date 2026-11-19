@@ -24,9 +24,10 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
 /**
- * TEST-ONLY. The HTTP half of the Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110): every effect the
- * platform has a door for, through that door - registration, a second factor, a step-up, a role grant, a risk policy proposed and
- * activated, a case opened and taken. A single source file run by {@code infra/scripts/e2e-seed.sh}
+ * TEST-ONLY. The HTTP half of the Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112): every
+ * effect the platform has a door for, through that door - registration, a second factor, a step-up, a role grant, a risk policy
+ * proposed and activated, a case opened and taken; and the books' finance acts - a GL mapping version, a manual adjustment, a month's
+ * nil reports, a month locked and closed by four eyes, a prior-period adjustment, a regulatory obligation and its validated return. A single source file run by {@code infra/scripts/e2e-seed.sh}
  * ({@code java --source 21}), never compiled into anything and named by no module's main source set (E2eSeedStaysTestOnlyTest).
  *
  * <p>It has no route to the database and must not have one. What only the database can answer - a test identity's id, which no API
@@ -84,6 +85,16 @@ public final class Seed {
             case "activate-policy" -> seed.activatePolicy(rest[0], rest[1]);
             case "open-case" -> seed.openCase(rest[0], rest[1]);
             case "take-case" -> seed.takeCase(rest[0], rest[1]);
+            case "books" -> seed.books(one(rest));
+            case "propose-mapping" -> seed.proposeMapping(rest[0], rest[1], rest[2]);
+            case "activate-mapping" -> seed.activateMapping(rest[0], rest[1]);
+            case "adjust" -> seed.adjust(rest[0], rest[1], rest[2]);
+            case "nil-reports" -> seed.nilReports(rest[0], rest[1], rest[2], rest[3], rest[4]);
+            case "close-month" -> seed.closeMonth(rest[0], rest[1], rest[2]);
+            case "lock-and-capture" -> seed.lockAndCaptureCommand(rest[0], rest[1]);
+            case "propose-ppa" -> seed.proposePriorPeriodAdjustment(rest[0], rest[1], rest[2]);
+            case "obligation" -> seed.obligation(rest[0], rest[1]);
+            case "draft-submission" -> seed.draftSubmission(rest[0], rest[1], rest[2]);
             default -> throw new IllegalArgumentException("unknown command " + args[3]);
         }
     }
@@ -298,6 +309,279 @@ public final class Seed {
         if (!"IN_INVESTIGATION".equals(field(taken.body(), "status"))) {
             throw new IllegalStateException("the take did not answer IN_INVESTIGATION: " + taken.body());
         }
+    }
+
+    // ---------------------------------------------------------------------------------------------- finance, through its doors (P17-TSK-112)
+
+    /** The platform's own EUR fee-revenue account (ledger V003) - a purpose a manual adjustment may move. */
+    private static final String FEE_REVENUE_EUR = "01a09b66-b58f-79be-b9db-835d27b3eb17";
+    /** The platform's own EUR dispute-costs account (ledger V014) - the other side of the seed's adjustments. */
+    private static final String DISPUTE_COSTS_EUR = "01a0e029-5400-7000-8000-000000000011";
+    /** A period as the list serves it: the view's first members, in its record's order. */
+    private static final Pattern PERIOD = Pattern.compile("\\{\"id\":\"([0-9a-f-]{36})\",\"period\":\"([0-9]{4}-[0-9]{2})\","
+            + "\"startDate\":\"[^\"]*\",\"endDate\":\"[^\"]*\",\"status\":\"([A-Z_]+)\",\"revision\":([0-9]+)");
+    /** A check of a close run as its read serves it: its code, its latest status and the latest attempt's number. */
+    private static final Pattern CHECK = Pattern.compile("\\{\"check\":\"([A-Z_]+)\",\"attempts\":[0-9]+,\"status\":\"([A-Z_]+)\","
+            + "\"history\":\\[\\{\"attempt\":([0-9]+)");
+
+    /**
+     * The books' months as the finance scenarios use them, read from the period list: the closing month - two before today's, which
+     * the seed closes - and the closable one before today's, which it locks for the console. Each printed with its id, status and
+     * revision when the books hold it; a month they do not hold prints nothing, and the shell refuses (ADR-0152: the books open
+     * months back only on a fresh database).
+     */
+    private void books(String who) throws Exception {
+        java.time.YearMonth today = java.time.YearMonth.now(java.time.ZoneOffset.UTC);
+        String session = signIn(operatorBase, who);
+        String list = expect("the period list", get(operatorBase, "/v1/operator/accounting/periods?limit=24", session), 200).body();
+        Map<String, String[]> held = new HashMap<>();
+        Matcher period = PERIOD.matcher(list);
+        while (period.find()) {
+            held.put(period.group(2), new String[] {period.group(1), period.group(3), period.group(4)});
+        }
+        String[][] months = {{"CLOSING", today.minusMonths(2).toString()}, {"CLOSABLE", today.minusMonths(1).toString()}};
+        for (String[] month : months) {
+            System.out.println(month[0] + "_MONTH=" + month[1]);
+            // The day before the month's end at noon: inside a valuation set's 96 hours before the month's last instant.
+            System.out.println(month[0] + "_RATES_AT=" + java.time.YearMonth.parse(month[1]).atEndOfMonth().minusDays(1) + "T12:00:00Z");
+            String[] row = held.get(month[1]);
+            if (row != null) {
+                System.out.println(month[0] + "_ID=" + row[0]);
+                System.out.println(month[0] + "_STATUS=" + row[1]);
+                System.out.println(month[0] + "_REVISION=" + row[2]);
+            }
+        }
+        System.out.println("CURRENT_MONTH=" + today);
+        System.out.println("NEXT_MONTH=" + today.plusMonths(1));
+    }
+
+    /**
+     * A GL mapping version proposed by {@code who} (an ACCOUNTANT): the chart at {@code chart} - the kind rehearsal's reference
+     * mapping, copied beside this file - in force from {@code month}. Prints its MAPPING_VERSION_ID.
+     */
+    private void proposeMapping(String who, String month, String chart) throws Exception {
+        String content = Files.readString(Path.of(chart)).strip();
+        if (!content.startsWith("{")) {
+            throw new IllegalStateException("the chart at " + chart + " is not a JSON object");
+        }
+        String body = "{\"effectiveFromPeriod\":\"" + month + "\",\"reason\":\"e2e seed: the reference chart in force from " + month
+                + "\"," + content.substring(1);
+        String session = elevated(who);
+        Answer proposed = expect("mapping proposal by " + who, post(operatorBase, "/v1/operator/accounting/mapping-versions", body,
+                session, key()), 201);
+        String id = field(proposed.body(), "id");
+        if (id == null || !"PROPOSED".equals(field(proposed.body(), "status"))) {
+            throw new IllegalStateException("the proposal did not answer a PROPOSED version: " + proposed.body());
+        }
+        System.out.println("MAPPING_VERSION_ID=" + id);
+    }
+
+    /** {@code versionId} activated by {@code who} - a FINANCIAL_CONTROLLER, never its proposer (four eyes). */
+    private void activateMapping(String who, String versionId) throws Exception {
+        String session = elevated(who);
+        Answer activated = expect("mapping activation by " + who, post(operatorBase, "/v1/operator/accounting/mapping-versions/"
+                + versionId + "/activation", "{\"reason\":\"e2e seed: the books' chart, reviewed by a second person\"}", session,
+                key()), 200);
+        if (!"ACTIVE".equals(field(activated.body(), "status"))) {
+            throw new IllegalStateException("the activation did not answer ACTIVE: " + activated.body());
+        }
+    }
+
+    /**
+     * A manual adjustment of 1.00 EUR dated {@code postingDate}, from the platform's dispute costs to its fee revenue: proposed by
+     * {@code proposer}, approved by {@code approver} (two LEDGER_OPERATORs) - so the month holds a journal line, without which its
+     * trial balance has no currency row and no return can be drawn from it. Prints its ENTRY_ID.
+     */
+    private void adjust(String proposer, String approver, String postingDate) throws Exception {
+        String body = "{\"postingDate\":\"" + postingDate + "\",\"valueDate\":\"" + postingDate + "\",\"reference\":\"e2e-seed:"
+                + letters(12).toLowerCase(Locale.ROOT) + "\",\"reason\":\"e2e seed: a line in the month its return is drawn from\","
+                + "\"lines\":[{\"accountId\":\"" + DISPUTE_COSTS_EUR + "\",\"direction\":\"DEBIT\",\"amount\":\"1.00\",\"currency\":\"EUR\"},"
+                + "{\"accountId\":\"" + FEE_REVENUE_EUR + "\",\"direction\":\"CREDIT\",\"amount\":\"1.00\",\"currency\":\"EUR\"}]}";
+        Answer proposed = expect("adjustment proposal by " + proposer, post(operatorBase, "/v1/ledger/adjustments", body,
+                elevated(proposer), key()), 201);
+        String proposal = field(proposed.body(), "proposalId");
+        Answer approved = expect("adjustment approval by " + approver, post(operatorBase, "/v1/ledger/adjustments/" + proposal
+                + "/approval", null, elevated(approver), null), 201);
+        System.out.println("ENTRY_ID=" + field(approved.body(), "entryId"));
+    }
+
+    /**
+     * A month's nil reports from the four sources whose runs a close requires (reconciliation V002): uploaded by {@code submitter},
+     * attested by {@code attester} (two RECONCILIATION_OPERATORs, INV-SET-07), each awaited to ACCEPTED - the acceptance opens the
+     * run the matcher completes. Each in its source's own format, as the quiet month's proof writes them; the bank statement continues
+     * the chain at {@code sequence} from {@code opening}, a nil one closing where it opened. Prints NIL_FILE_IDS.
+     */
+    private void nilReports(String submitter, String attester, String businessDate, String sequence, String opening) throws Exception {
+        java.time.LocalDate day = java.time.LocalDate.parse(businessDate);
+        String compact = day.toString().replace("-", "");
+        String sign = opening.startsWith("-") ? "D" : "C";
+        String balance = opening.startsWith("-") ? opening.substring(1) : opening;
+        String[][] reports = {
+            {"simulated-psp.settlement", "H,SIM_PSP_CSV,1,PSPB-" + day + "-01,EUR," + day + "\nT,0,0.00,PSP-REM-" + digits(8) + "\n"},
+            {"simulated-payout.settlement", "H,SIM_PAYOUT_CSV,1,PAYDAY-" + day + "-EUR,EUR," + day + "\nT,0,0.00,PAY-REM-" + digits(8) + "\n"},
+            {"simulated-scheme.cycle-report", "{\"format\":\"SIM_SCHEME_JSON\",\"version\":1,\"cycle\":\"" + day + "-C1\",\"currency\":\"EUR\","
+                    + "\"businessDate\":\"" + day + "\",\"remittanceReference\":\"SCH-REM-" + digits(8) + "\",\"entries\":[],\"net\":\"0.00\","
+                    + "\"entryCount\":0}"},
+            {"simulated-bank.statement", ":20:SB-STMT-" + compact + "-EUR\n:25:SIMBANK-EUR-01\n:28C:" + sequence + "\n:60F:" + sign + ","
+                    + day.minusDays(1) + ",EUR," + balance + "\n:62F:" + sign + "," + day + ",EUR," + balance + "\n"}};
+        String uploading = elevated(submitter);
+        java.util.List<String> files = new java.util.ArrayList<>();
+        for (String[] report : reports) {
+            String content = java.util.Base64.getEncoder().encodeToString(report[1].getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+            Answer received = expect("nil report of " + report[0], post(operatorBase, "/v1/operator/settlement/files",
+                    "{\"sourceCode\":\"" + report[0] + "\",\"businessDate\":\"" + day + "\",\"content\":\"" + content + "\"}", uploading,
+                    key()), 202);
+            String fileId = field(received.body(), "fileId");
+            if (fileId == null || field(received.body(), "duplicateOf") != null) {
+                throw new IllegalStateException("the nil report of " + report[0] + " did not receive a fresh file: " + received.body());
+            }
+            files.add(fileId);
+        }
+        String attesting = elevated(attester);
+        for (String file : files) {
+            expect("attestation of " + file, post(operatorBase, "/v1/operator/settlement/files/" + file + "/attestation", null, attesting,
+                    null), 200);
+        }
+        for (String file : files) {
+            awaitFile(submitter, file, "ACCEPTED");
+        }
+        System.out.println("NIL_FILE_IDS=" + String.join(",", files));
+    }
+
+    /**
+     * Closes {@code periodId} end to end, as the console would by four eyes: locked and its valuation rate set captured by
+     * {@code accountant}, the set approved by {@code controller}; the close run - the schedule's - awaited to complete; the close
+     * proposed by the accountant, every DISCLOSED check disclosed, and approved by the controller. Prints CLOSED_PERIOD_ID.
+     */
+    private void closeMonth(String accountant, String controller, String periodId) throws Exception {
+        String set = lockAndCapture(accountant, periodId);
+        expect("rate set approval by " + controller, post(operatorBase, "/v1/operator/accounting/valuation-rate-sets/" + set + "/approval",
+                "{\"reason\":\"e2e seed: the month's reference rates, reviewed\"}", elevated(controller), key()), 200);
+        String run = awaitCloseRun(accountant, periodId);
+        String runId = field(run, "runId");
+        java.util.List<String> disclosures = new java.util.ArrayList<>();
+        Matcher check = CHECK.matcher(run);
+        while (check.find()) {
+            if ("DISCLOSED".equals(check.group(2))) {
+                disclosures.add("{\"check\":\"" + check.group(1) + "\",\"attempt\":" + check.group(3)
+                        + ",\"reason\":\"e2e seed: disclosed with the seeded month\"}");
+            }
+        }
+        Answer proposed = expect("close proposal by " + accountant, post(operatorBase, "/v1/operator/accounting/periods/" + periodId
+                + "/close-proposal", "{\"closeRunId\":\"" + runId + "\",\"reason\":\"e2e seed: the books' first month, closed\","
+                + "\"disclosures\":[" + String.join(",", disclosures) + "]}", elevated(accountant), key()), 200, 201);
+        String proposal = field(proposed.body(), "proposalId");
+        Answer approved = expect("close approval by " + controller, post(operatorBase, "/v1/operator/accounting/periods/" + periodId
+                + "/close-approval", "{\"proposalId\":\"" + proposal + "\",\"reason\":\"e2e seed: the close, reviewed\"}",
+                elevated(controller), key()), 200);
+        if (!"CLOSED".equals(field(approved.body(), "status"))) {
+            throw new IllegalStateException("the close approval did not answer CLOSED: " + approved.body());
+        }
+        System.out.println("CLOSED_PERIOD_ID=" + periodId);
+    }
+
+    /** {@code periodId} locked and its valuation rate set captured by {@code accountant}, the set left PROPOSED. Prints RATE_SET_ID. */
+    private void lockAndCaptureCommand(String accountant, String periodId) throws Exception {
+        System.out.println("RATE_SET_ID=" + lockAndCapture(accountant, periodId));
+    }
+
+    private String lockAndCapture(String accountant, String periodId) throws Exception {
+        String session = elevated(accountant);
+        Answer locked = expect("lock by " + accountant, post(operatorBase, "/v1/operator/accounting/periods/" + periodId + "/lock",
+                "{\"reason\":\"e2e seed: the month's books stop\"}", session, key()), 200, 201);
+        if (!"LOCKED".equals(field(locked.body(), "status"))) {
+            throw new IllegalStateException("the lock did not answer LOCKED: " + locked.body());
+        }
+        Answer captured = expect("rate set capture by " + accountant, post(operatorBase, "/v1/operator/accounting/valuation-rate-sets",
+                "{\"periodId\":\"" + periodId + "\",\"reason\":\"e2e seed: the month-end reference rates\"}", session, key()), 201);
+        String set = field(captured.body(), "id");
+        if (set == null || !"PROPOSED".equals(field(captured.body(), "status"))) {
+            throw new IllegalStateException("the capture did not answer a PROPOSED set: " + captured.body());
+        }
+        return set;
+    }
+
+    /** Waits for the schedule's close run of {@code periodId} to complete; a FAILED check stops the seed with the run's own read. */
+    private String awaitCloseRun(String who, String periodId) throws Exception {
+        Instant deadline = Instant.now().plus(Duration.ofMinutes(10));
+        String body = null;
+        while (Instant.now().isBefore(deadline)) {
+            Answer read = get(operatorBase, "/v1/operator/accounting/periods/" + periodId + "/close-run", signIn(operatorBase, who));
+            if (read.status() == 200) {
+                body = read.body();
+                if (body.contains("\"complete\":true")) {
+                    return body;
+                }
+                Matcher check = CHECK.matcher(body);
+                while (check.find()) {
+                    if ("FAILED".equals(check.group(2))) {
+                        throw new IllegalStateException("the close run of " + periodId + " has " + check.group(1) + " FAILED: "
+                                + body.substring(0, Math.min(body.length(), 1200)));
+                    }
+                }
+            } else if (read.status() != 404) {
+                expect("the close run of " + periodId, read, 200);
+            }
+            Thread.sleep(3000);
+        }
+        throw new IllegalStateException("the close run of " + periodId + " did not complete in ten minutes: " + body);
+    }
+
+    /**
+     * A prior-period adjustment of the CLOSED {@code periodId} at {@code revision}, proposed by {@code accountant}: 0.50 EUR from fee
+     * revenue back to dispute costs, dated today in the OPEN month. Prints PPA_ID.
+     */
+    private void proposePriorPeriodAdjustment(String accountant, String periodId, String revision) throws Exception {
+        String body = "{\"correctedPeriodId\":\"" + periodId + "\",\"correctedRevision\":" + Integer.parseInt(revision)
+                + ",\"reason\":\"e2e seed: a fee booked in a closed month, given back\",\"lines\":["
+                + "{\"ledgerAccountId\":\"" + FEE_REVENUE_EUR + "\",\"direction\":\"DEBIT\",\"amount\":\"0.50\",\"currency\":\"EUR\"},"
+                + "{\"ledgerAccountId\":\"" + DISPUTE_COSTS_EUR + "\",\"direction\":\"CREDIT\",\"amount\":\"0.50\",\"currency\":\"EUR\"}]}";
+        Answer proposed = expect("prior-period adjustment by " + accountant, post(operatorBase,
+                "/v1/operator/accounting/prior-period-adjustments", body, elevated(accountant), key()), 200, 201);
+        String id = field(proposed.body(), "id");
+        if (id == null || !"PROPOSED".equals(field(proposed.body(), "status"))) {
+            throw new IllegalStateException("the proposal did not answer a PROPOSED adjustment: " + proposed.body());
+        }
+        System.out.println("PPA_ID=" + id);
+    }
+
+    /**
+     * A reference regulatory obligation on the trial balance, proposed by {@code reporter} (a REGULATORY_REPORTER) and activated by
+     * {@code controller} (four eyes): its form code fresh on every run, so no two runs' forms meet. Prints OBLIGATION_ID.
+     */
+    private void obligation(String reporter, String controller) throws Exception {
+        String form = "REF-E2E-" + letters(10);
+        String body = "{\"jurisdictionCode\":\"REF\",\"formCode\":\"" + form + "\",\"formVersion\":1,\"adapterName\":\"simulated-reference\","
+                + "\"sources\":[{\"definition\":\"TRIAL_BALANCE\",\"version\":1}],"
+                + "\"lines\":[{\"code\":\"DEBITS\",\"label\":\"Closing debit balances\",\"source\":\"TRIAL_BALANCE\","
+                + "\"figure\":\"body.currencies[currency=*].closingDebitBalances\"},"
+                + "{\"code\":\"CREDITS\",\"label\":\"Closing credit balances\",\"source\":\"TRIAL_BALANCE\","
+                + "\"figure\":\"body.currencies[currency=*].closingCreditBalances\"}],"
+                + "\"rules\":[{\"code\":\"BALANCED\",\"type\":\"EQUALS\",\"left\":[\"DEBITS\"],\"right\":[\"CREDITS\"]}],"
+                + "\"reason\":\"e2e seed: a reference return for the console's approval\"}";
+        Answer proposed = expect("obligation proposal by " + reporter, post(operatorBase, "/v1/operator/regulatory/obligations", body,
+                elevated(reporter), key()), 201);
+        String id = field(proposed.body(), "obligationId");
+        String hash = field(proposed.body(), "configurationSha256");
+        expect("obligation activation by " + controller, post(operatorBase, "/v1/operator/regulatory/obligations/" + id + "/activation",
+                "{\"configurationSha256\":\"" + hash + "\",\"reason\":\"e2e seed: the reference form, reviewed\"}", elevated(controller),
+                key()), 200);
+        System.out.println("OBLIGATION_ID=" + id);
+    }
+
+    /** A return of {@code obligationId} for the CLOSED {@code periodId}, drafted and validated by {@code reporter}. Prints SUBMISSION_ID. */
+    private void draftSubmission(String reporter, String obligationId, String periodId) throws Exception {
+        String session = elevated(reporter);
+        Answer drafted = expect("draft by " + reporter, post(operatorBase, "/v1/operator/regulatory/submissions", "{\"obligationId\":\""
+                + obligationId + "\",\"periodId\":\"" + periodId + "\",\"correctsSubmissionId\":null,\"reason\":\"e2e seed: the month's"
+                + " return, for the console's approval\"}", session, key()), 201);
+        String id = field(drafted.body(), "submissionId");
+        Answer validated = expect("validation by " + reporter, post(operatorBase, "/v1/operator/regulatory/submissions/" + id
+                + "/validation", null, session, key()), 200);
+        if (!"VALIDATED".equals(field(validated.body(), "status"))) {
+            throw new IllegalStateException("the validation did not answer VALIDATED: " + validated.body());
+        }
+        System.out.println("SUBMISSION_ID=" + id);
     }
 
     private static String letters(int count) {

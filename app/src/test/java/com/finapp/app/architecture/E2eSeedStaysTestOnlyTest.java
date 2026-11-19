@@ -75,10 +75,10 @@ class E2eSeedStaysTestOnlyTest {
         List<Path> plants = files(root.resolve(SEED)).filter(file -> file.toString().endsWith(".sql")).toList();
         assertThat(plants).extracting(file -> file.getFileName().toString())
                 .containsExactlyInAnyOrder("abandoned-event.sql", "parked-record.sql", "held-role.sql", "risk-alert.sql",
-                        "sealed-assessment.sql");
+                        "sealed-assessment.sql", "fx-rates.sql", "accounting-break.sql");
         for (Path plant : plants) {
             String text = EvidenceCitations.read(plant);
-            assertThat(text).as("%s says what it is", plant.getFileName()).containsPattern("\\A-- TEST-ONLY \\(P17-TSK-1(06|08|10)\\)");
+            assertThat(text).as("%s says what it is", plant.getFileName()).containsPattern("\\A-- TEST-ONLY \\(P17-TSK-1(06|08|10|12)\\)");
             String statements = text.replaceAll("(?m)--.*$", "").replaceAll("'[^']*'", "''").strip();
             assertThat(statements.chars().filter(c -> c == ';').count()).as("%s is one statement", plant.getFileName()).isEqualTo(1);
             assertThat(statements).as("%s ends in that statement", plant.getFileName()).endsWith(";");
@@ -108,11 +108,28 @@ class E2eSeedStaysTestOnlyTest {
             assertThat(versionChecked).as("the version %s is handed is checked first", risk).isPositive();
             assertThat(script).contains("plant " + risk + " -v version=\"$TEST_POLICY_ID\"");
         }
+        // P17-TSK-112: the finance plants' values - an instant, a month's first day, a subject - each checked by its shape first.
+        int instantChecked = script.indexOf("grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T12:00:00Z$'");
+        assertThat(instantChecked).as("the rates' instant is checked").isPositive();
+        assertThat(script.indexOf("plant fx-rates.sql -v observed=\"$1\"")).as("and only then planted").isGreaterThan(instantChecked);
+        int subjectChecked = script.indexOf("grep -Eq '^e2e-seed:[0-9a-f]{12}$'");
+        assertThat(subjectChecked).as("the break's subject is checked").isPositive();
+        assertThat(script.indexOf("plant accounting-break.sql -v month=\"$CURRENT_MONTH-01\" -v subject=\"$subject\""))
+                .as("and only then planted, its month one the books printed and month_like checked").isGreaterThan(subjectChecked);
+        assertThat(script.indexOf("month_like \"$CURRENT_MONTH\"")).isPositive().isLessThan(subjectChecked);
         for (Path plant : files(root.resolve(SEED)).filter(file -> file.toString().endsWith(".sql")).toList()) {
             String statement = EvidenceCitations.read(plant).replaceAll("(?m)--.*$", "").replaceAll("'[^']*'", "''");
             assertThat(statement).as("%s takes its values only as quoted variables - no bare :name", plant.getFileName())
                     .doesNotContainPattern("(?<!:):(?![:'])");
         }
+    }
+
+    @Test
+    @DisplayName("P17-TSK-112: the seed's GL chart is the kind rehearsal's, byte for byte - held to the reference mapping there - so the"
+            + " books a seed closes are mapped as a rehearsal's are")
+    void theSeedsChartIsTheRehearsals() {
+        assertThat(EvidenceCitations.read(root.resolve(SEED + "gl-mapping.json")))
+                .isEqualTo(EvidenceCitations.read(root.resolve("infra/scripts/kind-rehearsal/gl-mapping.json")));
     }
 
     @Test
