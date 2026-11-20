@@ -55,9 +55,11 @@ public enum RoleName {
      * The first assignment needs no bootstrap: administrators exist and hold
      * {@code ROLE_ASSIGN}, so a reviewer arrives through the ordinary audited endpoint. Since
      * `P9-TSK-016` it also holds {@code COUNTERPARTY_SCREENING_REVIEW}: a counterparty hit is the
-     * same judgement as an onboarding hit (ADR-0081 point 4).
+     * same judgement as an onboarding hit (ADR-0081 point 4). Since `P17-TSK-125` it also holds {@code KYC_DOCUMENT_READ}:
+     * the reviewer saves the identity document a case rests on (the owner's D-25).
      */
-    KYC_REVIEWER(EnumSet.of(PermissionName.KYC_REVIEW, PermissionName.COUNTERPARTY_SCREENING_REVIEW)),
+    KYC_REVIEWER(EnumSet.of(PermissionName.KYC_REVIEW, PermissionName.COUNTERPARTY_SCREENING_REVIEW,
+            PermissionName.KYC_DOCUMENT_READ)),
 
     /**
      * Operates the platform's money and nothing else (`P3-TSK-007`, widened by `P4-TSK-009`,

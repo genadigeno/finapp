@@ -117,6 +117,19 @@ class RoutePermissionRegisterTest {
                             PermissionName.FEE_SCHEDULE_APPROVE),
                     entry("POST /v1/operator/bnpl-fee-schedule-proposals/{id}/rejection",
                             PermissionName.FEE_SCHEDULE_APPROVE),
+                    // P17-TSK-124: the reads an approver lacks - one pending money act, one restriction - each under the
+                    // permission of the approval door beside it (finapp-admin-panel B7.6, B6.8).
+                    entry("GET /v1/operator/transfer-reversals/{id}", PermissionName.TRANSFER_REVERSE_APPROVE),
+                    entry("GET /v1/operator/refund-proposals/{id}", PermissionName.PAYMENT_REFUND_APPROVE),
+                    entry("GET /v1/operator/payout-proposals/{id}", PermissionName.MERCHANT_PAYOUT_APPROVE),
+                    entry("GET /v1/operator/merchant-closures/{id}", PermissionName.MERCHANT_CLOSE_APPROVE),
+                    entry("GET /v1/operator/bnpl-refund-proposals/{id}", PermissionName.PAYMENT_REFUND_APPROVE),
+                    entry("GET /v1/operator/bnpl-fee-schedule-proposals/{id}", PermissionName.FEE_SCHEDULE_APPROVE),
+                    entry("GET /v1/operator/account-restrictions/{id}", PermissionName.ACCOUNT_RESTRICT_APPROVE),
+                    // P17-TSK-124: one record of each dead-letter queue, under the queues' own permission.
+                    entry("GET /v1/operator/events/abandoned/{eventId}", PermissionName.EVENT_OPERATE),
+                    entry("GET /v1/operator/events/parked/{parkId}", PermissionName.EVENT_OPERATE),
+                    entry("GET /v1/operator/events/discards/{discardId}", PermissionName.EVENT_OPERATE),
                     // P17-TSK-116: the reads an approver lacks, each under the decider's own permission.
                     entry("GET /v1/operator/lending/terms/{versionId}", PermissionName.LENDING_ADMINISTER),
                     entry("GET /v1/operator/lending/capital-contributions/{contributionId}",
@@ -402,6 +415,12 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/kyc/cases", PermissionName.KYC_REVIEW),
                     entry("GET /v1/operator/customers/{id}/kyc-case", PermissionName.KYC_REVIEW),
                     entry("GET /v1/operator/kyc/counterparty-screenings", PermissionName.COUNTERPARTY_SCREENING_REVIEW),
+                    // P17-TSK-125: a customer's name and country, a read of its own (CUSTOMER_READ); a case's documents and one
+                    // document's content, the reviewer's alone (KYC_DOCUMENT_READ) - each a recorded read on a MULTI_FACTOR
+                    // session.
+                    entry("GET /v1/operator/customers/{id}/identity", PermissionName.CUSTOMER_READ),
+                    entry("GET /v1/operator/kyc/cases/{id}/documents", PermissionName.KYC_DOCUMENT_READ),
+                    entry("GET /v1/operator/kyc/documents/{id}/content", PermissionName.KYC_DOCUMENT_READ),
                     // P10-TSK-011: the scorecard doors - model versions under four eyes, held by
                     // CREDIT_POLICY_OFFICER (ADR-0086 section 3); every act keyed.
                     entry("POST /v1/operator/credit/scorecards", PermissionName.CREDIT_POLICY_ADMINISTER),
@@ -926,6 +945,14 @@ class RoutePermissionRegisterTest {
             "POST /v1/operator/bnpl-refund-proposals/{id}/rejection",
             "POST /v1/operator/bnpl-fee-schedule-proposals/{id}/approval",
             "POST /v1/operator/bnpl-fee-schedule-proposals/{id}/rejection",
+            // P17-TSK-124: what a decider reads before deciding a money act or a restriction - on the decision's own factor.
+            "GET /v1/operator/transfer-reversals/{id}",
+            "GET /v1/operator/refund-proposals/{id}",
+            "GET /v1/operator/payout-proposals/{id}",
+            "GET /v1/operator/merchant-closures/{id}",
+            "GET /v1/operator/bnpl-refund-proposals/{id}",
+            "GET /v1/operator/bnpl-fee-schedule-proposals/{id}",
+            "GET /v1/operator/account-restrictions/{id}",
             // P17-TSK-014: who holds the privileged roles, one of them, and who a login names - the same map, not on a password.
             "GET /v1/operator/identities",
             "GET /v1/operator/identities/{id}",
@@ -935,6 +962,10 @@ class RoutePermissionRegisterTest {
             "GET /v1/operator/kyc/cases",
             "GET /v1/operator/customers/{id}/kyc-case",
             "GET /v1/operator/kyc/counterparty-screenings",
+            // P17-TSK-125: a person's name and country, and their identity documents - the most personal reads there are.
+            "GET /v1/operator/customers/{id}/identity",
+            "GET /v1/operator/kyc/cases/{id}/documents",
+            "GET /v1/operator/kyc/documents/{id}/content",
             // P17-TSK-015: whose sessions are live, and ending them - an incident's acts, not a stolen password's.
             "GET /v1/operator/identities/{id}/sessions",
             "DELETE /v1/operator/identities/{id}/sessions",

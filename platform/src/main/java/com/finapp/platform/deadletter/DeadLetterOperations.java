@@ -97,6 +97,31 @@ public final class DeadLetterOperations {
         return page(uow, "discards", after, limit, actor, correlation, size -> store.standingProposals(uow, after, size));
     }
 
+    /**
+     * One abandoned event by its id, while it is in the abandoned queue (`P17-TSK-124`): recorded {@code deadletter.Read} against
+     * the event, in this transaction, when one is served; nothing recorded when none is.
+     */
+    public Optional<DeadLetterStore.AbandonedEvent> abandonedEvent(Connection uow, UUID eventId, Actor actor, CorrelationId correlation) {
+        return one(uow, store.abandonedEvent(uow, eventId), TARGET_EVENT, eventId, "abandoned", actor, correlation);
+    }
+
+    /** One parked record by its id, while it is parked (`P17-TSK-124`); recorded against the record when one is served. */
+    public Optional<DeadLetterStore.ParkedRecord> parkedRecord(Connection uow, UUID parkId, Actor actor, CorrelationId correlation) {
+        return one(uow, store.parkedRecord(uow, parkId), TARGET_PARKED, parkId, "parked", actor, correlation);
+    }
+
+    /** One discard by its id, in whatever status it stands (`P17-TSK-124`); recorded against the discard when one is served. */
+    public Optional<DeadLetterStore.Proposal> discard(Connection uow, UUID discardId, Actor actor, CorrelationId correlation) {
+        return one(uow, store.discard(uow, discardId), TARGET_DISCARD, discardId, "discards", actor, correlation);
+    }
+
+    private <T> Optional<T> one(Connection uow, Optional<T> found, String targetType, UUID id, String queue, Actor actor,
+            CorrelationId correlation) {
+        found.ifPresent(row -> record(uow, PlatformAuditAction.DEAD_LETTERS_READ, targetType, id.toString(), Optional.empty(), actor,
+                correlation, "queue=" + queue + ", served=1", AuditOutcome.SUCCEEDED));
+        return found;
+    }
+
     /** A page of one queue: the rows served, and whether more follow the last of them. */
     public record Page<T>(List<T> rows, boolean more) {
 

@@ -55,6 +55,21 @@ public final class JdbcAccountRestrictionStore implements AccountRestrictionStor
     }
 
     @Override
+    public Optional<AccountRestriction> find(Connection unitOfWork, AccountRestrictionId id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement read = unitOfWork.prepareStatement(
+                // P17-TSK-124: by id alone, unlocked - the approver's read of what they decide; ACCOUNT_RESTRICT_APPROVE on a
+                // MULTI_FACTOR session at app's door stands in for an owner predicate (OwnershipIsScopedTest, ADMINISTERED).
+                "SELECT " + COLUMNS + " FROM " + TABLE + " WHERE id = ?")) {
+            read.setObject(1, id.value());
+            return single(read);
+        } catch (SQLException failure) {
+            throw new AccountsStorageException(DatabaseFailure.describe("reading a restriction", failure));
+        }
+    }
+
+    @Override
     public Optional<AccountRestriction> lock(Connection unitOfWork, AccountRestrictionId id) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(id, "id must not be null");

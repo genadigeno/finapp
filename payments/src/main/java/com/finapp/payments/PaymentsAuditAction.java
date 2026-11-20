@@ -536,6 +536,17 @@ public enum PaymentsAuditAction implements AuditableAction {
             "payments.HeldPaymentsListed",
             "A page of the held card payments was served to a risk investigator, the reader's own party withheld; the record"
                     + " names a count, never an amount.",
+            false),
+
+    /**
+     * A holder of {@code PAYMENT_REFUND_APPROVE} read a refund proposal (`P17-TSK-124`; {@code GET
+     * /v1/operator/refund-proposals/{id}}, on a {@code MULTI_FACTOR} session): the proposal the target, its payment and
+     * status the summary - never an amount. Written by app's {@code RecordedReads} in the read's own transaction.
+     */
+    REFUND_PROPOSAL_READ(
+            "payments.RefundProposalRead",
+            "An approver read a refund proposal above the four-eyes threshold (PAYMENT_REFUND_APPROVE); the proposal, its"
+                    + " payment and status recorded, never an amount; every serving, in the read's transaction.",
             false);
 
     private final String code;

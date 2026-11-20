@@ -4,11 +4,13 @@ import com.finapp.accounts.AccountRestriction;
 import com.finapp.accounts.AccountRestrictionId;
 import com.finapp.accounts.AccountRestrictionRefusedException;
 import com.finapp.accounts.AccountRestrictions;
+import com.finapp.accounts.AccountsAuditAction;
 import com.finapp.accounts.AccountsErrorCode;
 import com.finapp.accounts.CustomerAccountId;
 import com.finapp.accounts.RestrictionKind;
 import com.finapp.accounts.RestrictionReason;
 import com.finapp.accounts.RestrictionStatus;
+import com.finapp.app.api.RecordedReads;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.idempotency.CommandResult;
@@ -22,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Optional;
@@ -53,6 +56,54 @@ public final class AccountRestrictionDesk {
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final TransactionTemplate transactions;
     @NonNull private final DataSource dataSource;
+    @NonNull private final RecordedReads reads;
+
+    /**
+     * A restriction as its approver reads it (`P17-TSK-124`): the agreement and its status now, the kind and its reason code,
+     * who proposed it, when and why, whether the caller did, and once decided the decision's instant and reason ({@code null}
+     * until then). Never who decided.
+     */
+    public record AccountRestrictionView(
+            String restrictionId, String accountId, String accountStatus, String kind, String reasonCode, String status,
+            String reason, String proposedBy, boolean proposedByCaller, String proposedAt, String decidedAt,
+            String decisionReason) {
+
+        @Override
+        public String toString() {
+            // The reasons are a person's prose about a customer's account: they never reach a log.
+            return "AccountRestrictionView[" + restrictionId + ", " + kind + ", " + status + "]";
+        }
+    }
+
+    /**
+     * Restriction {@code rawRestrictionId}, recorded {@code accounts.RestrictionRead} in the read's own transaction
+     * (`P17-TSK-124`). An unknown or malformed identifier: 404, and nothing recorded.
+     */
+    public AccountRestrictionView read(String rawRestrictionId) {
+        AccountRestrictionId id = uuid(rawRestrictionId).map(AccountRestrictionId::of)
+                .orElseThrow(AccountRestrictionDesk::notFound);
+        String caller = SecurityContext.require().id();
+        AccountRestrictions.Read read = transactions.execute(status -> {
+            Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
+            try {
+                return restrictions.read(unitOfWork, id).map(found -> {
+                    reads.record(unitOfWork, AccountsAuditAction.RESTRICTION_READ, "AccountRestriction",
+                            id.value().toString(), "account=" + found.restriction().accountId().value() + ", kind="
+                                    + found.restriction().kind() + ", status=" + found.restriction().status());
+                    return found;
+                });
+            } finally {
+                DataSourceUtils.releaseConnection(unitOfWork, dataSource);
+            }
+        }).orElseThrow(AccountRestrictionDesk::notFound);
+        AccountRestriction restriction = read.restriction();
+        return new AccountRestrictionView(restriction.id().value().toString(), restriction.accountId().value().toString(),
+                read.accountStatus().name(), restriction.kind().name(), restriction.reasonCode().name(),
+                restriction.status().name(), restriction.proposalReason(), restriction.proposedBy(),
+                restriction.proposedBy().equals(caller), restriction.proposedAt().toString(),
+                restriction.decision().map(AccountRestriction.Decision::decidedAt).map(Instant::toString).orElse(null),
+                restriction.decision().map(AccountRestriction.Decision::reason).orElse(null));
+    }
 
     /** A restriction's receipt: identifiers, the kind, its status and the agreement's status after the act. */
     public record RestrictionReceipt(String restrictionId, String accountId, String kind, String status, String accountStatus) {}

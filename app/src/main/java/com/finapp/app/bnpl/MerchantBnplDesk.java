@@ -1,5 +1,6 @@
 package com.finapp.app.bnpl;
 
+import com.finapp.app.api.RecordedReads;
 import com.finapp.merchant.BnplEnablement;
 import com.finapp.merchant.BnplEnablementId;
 import com.finapp.merchant.BnplEnablements;
@@ -8,6 +9,7 @@ import com.finapp.merchant.BnplFeeAssignments;
 import com.finapp.merchant.BnplPricing;
 import com.finapp.merchant.FeeCurrencyMismatchException;
 import com.finapp.merchant.FeeScheduleId;
+import com.finapp.merchant.MerchantAuditAction;
 import com.finapp.merchant.MerchantBnplProduct;
 import com.finapp.merchant.MerchantClosedException;
 import com.finapp.merchant.MerchantErrorCode;
@@ -78,6 +80,39 @@ public final class MerchantBnplDesk {
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final BnplTransactions transactions;
     @NonNull private final BnplFeeAssignments feeAssignments;
+    @NonNull private final RecordedReads reads;
+
+    /**
+     * A BNPL fee assignment proposal as its decider reads it (`P17-TSK-124`): the merchant it would price - its name and
+     * status now - the product and the schedule proposed (a price pointer: no amount), who proposed it, when and why, whether
+     * the caller did, and once decided the decision's instant and reason ({@code null} until then). Never who decided.
+     */
+    public record BnplFeeAssignmentProposalView(
+            String proposalId, String merchantId, String merchantName, String merchantStatus, String product,
+            String feeScheduleId, String status, String reason, String proposedBy, boolean proposedByCaller,
+            String proposedAt, String decidedAt, String decisionReason) {}
+
+    /**
+     * BNPL fee assignment proposal {@code rawId} with its merchant, recorded {@code merchant.BnplFeeAssignmentProposalRead} in
+     * the read's own transaction (`P17-TSK-124`). An unknown or malformed identifier: 404, and nothing recorded.
+     */
+    public BnplFeeAssignmentProposalView readFeeAssignment(String rawId) {
+        BnplFeeAssignmentProposal.Id id = feeProposalOrAbsent(rawId);
+        String caller = SecurityContext.require().id();
+        BnplFeeAssignments.Read read = transactions.inTransaction(uow -> feeAssignments.read(uow, id).map(found -> {
+            reads.record(uow, MerchantAuditAction.BNPL_FEE_ASSIGNMENT_PROPOSAL_READ, "BnplFeeAssignmentProposal",
+                    id.value().toString(), "merchant=" + found.proposal().merchantId().value() + ", product="
+                            + found.proposal().product() + ", status=" + found.proposal().status());
+            return found;
+        })).orElseThrow(MerchantBnplDesk::notFound);
+        BnplFeeAssignmentProposal proposal = read.proposal();
+        return new BnplFeeAssignmentProposalView(proposal.id().value().toString(), proposal.merchantId().value().toString(),
+                read.merchant().displayName(), read.merchant().status().name(), proposal.product().name(),
+                proposal.feeScheduleId().value().toString(), proposal.status().name(), proposal.proposalReason(),
+                proposal.proposedBy(), proposal.proposedBy().equals(caller), proposal.proposedAt().toString(),
+                proposal.decision().map(BnplFeeAssignmentProposal.Decision::decidedAt).map(Instant::toString).orElse(null),
+                proposal.decision().map(BnplFeeAssignmentProposal.Decision::reason).orElse(null));
+    }
 
     /** An enablement act's receipt: the enablement, its merchant and its status. Never a reason or a person. */
     public record BnplEnablementReceipt(String id, String merchantId, String status) {}

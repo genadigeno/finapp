@@ -75,7 +75,10 @@ class OperatorListsAreCollectionsTest {
             entry("GET /v1/operator/fee-schedules",
                     "the platform's own price list, every schedule served whole - never capped (ADR-C133's 'unbounded', complete)"),
             entry("GET /v1/operator/accounting/periods/{periodId}/prior-period-adjustments",
-                    "one month's corrections, served whole - a subject's children, never capped")));
+                    "one month's corrections, served whole - a subject's children, never capped"),
+            // P17-TSK-125: byte[] is an array to this rule, and is no list.
+            entry("GET /v1/operator/kyc/documents/{id}/content",
+                    "not a list: one KYC document's bytes, an attachment of at most 512 KiB (DocumentBytes.MAX_BYTES)")));
 
     /** Routes on the operator surface answering a top-level {@code truncated}, each with why it may. */
     static final Map<String, String> TRUNCATED = new TreeMap<>(Map.ofEntries(

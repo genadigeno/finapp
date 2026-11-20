@@ -61,6 +61,14 @@ public final class JdbcDeadLetterStore implements DeadLetterStore {
     private static final String STANDING_ORDER = " ORDER BY proposed_at, discard_id LIMIT ?";
 
     static final String STANDING_SQL = STANDING_ROWS + STANDING_ORDER;
+
+    // One record of a queue by its id (P17-TSK-124): each queue's own membership predicate and columns, so one read serves exactly
+    // the row its page would - a primary-key lookup, no lock.
+    static final String ABANDONED_ONE_SQL = ABANDONED_ROWS + " AND event_id = ?";
+    static final String PARKED_ONE_SQL = PARKED_ROWS + " AND park_id = ?";
+    static final String DISCARD_ONE_SQL =
+            "SELECT discard_id, subject_kind, subject_id, status, proposed_by, proposed_at, proposal_reason FROM " + DISCARDS
+                    + " WHERE discard_id = ?";
     static final String STANDING_AFTER_SQL = STANDING_ROWS + " AND (proposed_at, discard_id) > (?, ?)" + STANDING_ORDER;
 
     /** Served by the partial index on parked rows, so its cost is the number of parked records, not the table. */
@@ -210,6 +218,50 @@ public final class JdbcDeadLetterStore implements DeadLetterStore {
                         out.add(proposal(rows));
                     }
                     return out;
+                }
+            }
+        });
+    }
+
+    @Override
+    public Optional<AbandonedEvent> abandonedEvent(Connection unitOfWork, UUID eventId) {
+        return read(() -> {
+            try (PreparedStatement select = unitOfWork.prepareStatement(ABANDONED_ONE_SQL)) {
+                select.setObject(1, eventId);
+                try (ResultSet rows = select.executeQuery()) {
+                    return rows.next()
+                            ? Optional.of(new AbandonedEvent(rows.getObject("event_id", UUID.class),
+                                    rows.getObject("aggregate_id", UUID.class), rows.getString("event_type"), rows.getInt("attempts"),
+                                    instant(rows, "dead_lettered_at"), failureClass(rows.getString("last_error"))))
+                            : Optional.empty();
+                }
+            }
+        });
+    }
+
+    @Override
+    public Optional<ParkedRecord> parkedRecord(Connection unitOfWork, UUID parkId) {
+        return read(() -> {
+            try (PreparedStatement select = unitOfWork.prepareStatement(PARKED_ONE_SQL)) {
+                select.setObject(1, parkId);
+                try (ResultSet rows = select.executeQuery()) {
+                    return rows.next()
+                            ? Optional.of(new ParkedRecord(rows.getObject("park_id", UUID.class), rows.getString("consumer"),
+                                    rows.getString("dedupe_key"), rows.getString("consumer_group"), rows.getString("message_type"),
+                                    rows.getInt("attempts"), instant(rows, "parked_at"), rows.getString("last_failure")))
+                            : Optional.empty();
+                }
+            }
+        });
+    }
+
+    @Override
+    public Optional<Proposal> discard(Connection unitOfWork, UUID discardId) {
+        return read(() -> {
+            try (PreparedStatement select = unitOfWork.prepareStatement(DISCARD_ONE_SQL)) {
+                select.setObject(1, discardId);
+                try (ResultSet row = select.executeQuery()) {
+                    return row.next() ? Optional.of(proposal(row)) : Optional.empty();
                 }
             }
         });

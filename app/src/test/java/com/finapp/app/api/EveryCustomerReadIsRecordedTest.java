@@ -56,7 +56,21 @@ class EveryCustomerReadIsRecordedTest {
             // P17-TSK-032: the payment reads under PAYMENT_READ.
             Map.entry("PaymentReadController#listOperatorPayments", "payments.PaymentsListed"),
             Map.entry("PaymentReadController#viewOperatorPayment", "payments.PaymentRead"),
-            Map.entry("PaymentReadController#listPartyPaymentMethods", "paymentmethods.PaymentMethodsRead"));
+            Map.entry("PaymentReadController#listPartyPaymentMethods", "paymentmethods.PaymentMethodsRead"),
+            // P17-TSK-124: a pending decision read by its decider - a permission that also guards the decision, so marked.
+            Map.entry("TransferReversalController#readTransferReversalProposal", "transfers.ReversalProposalRead"),
+            Map.entry("RefundProposalController#readRefundProposal", "payments.RefundProposalRead"),
+            Map.entry("PayoutProposalController#readPayoutProposal", "merchant.PayoutProposalRead"),
+            Map.entry("MerchantClosureController#readMerchantClosureProposal", "merchant.ClosureProposalRead"),
+            Map.entry("BnplRefundProposalController#readBnplRefundProposal", "bnpl.RefundProposalRead"),
+            Map.entry("BnplFeeAssignmentProposalController#readBnplFeeAssignmentProposal",
+                    "merchant.BnplFeeAssignmentProposalRead"),
+            Map.entry("AccountRestrictionController#readAccountRestriction", "accounts.RestrictionRead"),
+            // P17-TSK-125: a customer's name and country (CUSTOMER_READ), and the KYC reviewer's documents (KYC_DOCUMENT_READ).
+            // The download's record is DocumentAccess's own (INV-KYC-06), marked by RecordedReads.recordedByItsModule.
+            Map.entry("CustomerReadController#readCustomerIdentity", "party.CustomerIdentityRead"),
+            Map.entry("KycDocumentReadController#listKycCaseDocuments", "kyc.CaseDocumentsListed"),
+            Map.entry("KycDocumentReadController#readKycDocumentContent", "kyc.DocumentContentRead"));
     // P17-TSK-039: the payments report moved to PLATFORM_OVERVIEW_READ - its counts name no customer - and is recorded there.
 
     @Autowired private ApplicationContext context;

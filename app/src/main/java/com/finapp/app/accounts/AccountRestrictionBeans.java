@@ -40,9 +40,10 @@ public class AccountRestrictionBeans {
             AccountRestrictions accountRestrictions,
             IdempotentExecutor idempotentExecutor,
             PlatformTransactionManager transactionManager,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.app.api.RecordedReads recordedReads) {
         return new AccountRestrictionDesk(accountRestrictions, idempotentExecutor, new TransactionTemplate(transactionManager),
-                dataSource);
+                dataSource, recordedReads);
     }
 
     /** The restrictions awaiting a decision (`P17-TSK-040`), read over the store's own statement. */

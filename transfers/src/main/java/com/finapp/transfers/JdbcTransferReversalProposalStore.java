@@ -64,6 +64,21 @@ public final class JdbcTransferReversalProposalStore implements TransferReversal
     }
 
     @Override
+    public Optional<TransferReversalProposal> find(Connection unitOfWork, TransferReversalProposalId id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement read = unitOfWork.prepareStatement(
+                // P17-TSK-124: by id alone, unlocked - the decider's read of what they decide; TRANSFER_REVERSE_APPROVE on a
+                // MULTI_FACTOR session at app's door stands in for an owner predicate (OwnershipIsScopedTest, ADMINISTERED).
+                "SELECT " + COLUMNS + " FROM " + TABLE + " WHERE id = ?")) {
+            read.setObject(1, id.value());
+            return single(read);
+        } catch (SQLException failure) {
+            throw new TransfersStorageException(DatabaseFailure.describe("reading a reversal proposal", failure));
+        }
+    }
+
+    @Override
     public Optional<TransferReversalProposal> findOpenFor(Connection unitOfWork, TransferId transferId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(transferId, "transferId must not be null");

@@ -31621,6 +31621,9 @@ script.
   (ADR-C132 decision 4);
 - a name, contact detail or document served to staff (D-5: identifier-only through M17.6), the KYC document view (G-62), a
   request-for-information case state (G-63), operator consent revocation;
+  *(2026-11-20: the owner's D-25 (2026-11-19) admits two of these, `P17-TSK-125`'s - a customer's legal name and country of
+  residence, a read of their own, and the KYC document download under `KYC_DOCUMENT_READ`, served as an attachment and never
+  rendered. No other personal field, no contact detail, and no document view in the browser.)*
 - audit export (G-21, deferred by D-9), generic exports (G-152), a job-status API (G-130);
 - a workforce identity provider (G-13, the existing C13), cookie sessions (D-4);
 - a central approval service - the inbox is composed in the browser from each domain's list (ADR-C133 decision 4);
@@ -31647,6 +31650,8 @@ A reviewer finding any of it refuses the change.
   KYC document view (G-62 - it would be `KYC_DOCUMENT_READ`, `MULTI_FACTOR`, an audited, short-lived, non-cacheable read over
   `DocumentAccess.read`, which deliberately has no HTTP caller); "request more information from the customer" (G-63 - a new
   case state, `AWAITING_CUSTOMER`, and a customer notification);
+  *(Decided by the owner on 2026-11-19, D-25: items 1 and 2 - the name and country, the document download - are
+  `P17-TSK-125`'s.)*
 - which identity signs the console's image in a real environment (`-105`) - keyless from CI's identity, as `THREAT_MODEL.md`
   §6 item 35 records for the platform images, is the proposal;
 - the console's ADR-C130…C136 are `Proposed` in `finapp-admin-panel`. A task that implements one records the decision in this
@@ -32360,6 +32365,89 @@ key (G-36). It waits for `-027`'s read and `-031`'s remediation.
 - **Risk**: Low. **Cx**: S. **DoD**: `DOD-TEST`.
 - **As built (2026-11-20, gate `COMPLETE`)**: two scenarios in `infra/scripts/e2e-seed.sh` - `customer-history` on both stacks, `posted-transfers` on kind alone. **The design's decisions**, taken as the recommended options under the owner's standing ruling of 2026-11-20, "if you rise questions, my answer is your recommended options", alternatives below. **(1) The customer goes through the doors; only its verdict is planted.** Each customer is registered, made `ACTIVE` by `customer-verdict.sql` - the one plant that changes a row, as `booked-trade`'s trader and the credit seed's borrower are, no door reaching a KYC verdict on a test stack - and then everything else is a door's: `KYC_PROCESSING` granted, withdrawn and granted again through the consent doors (three immutable facts, ADR-0037), its EUR wallet through the accounts door, each transfer through the transfer door under a fresh key. `Seed.java` gains `consent-history`, `wallet`, `account` and `transfer`; no plant is added. **Rejected**: making the customer `ACTIVE` through `P17-TSK-113`'s review flow (a planted case, the reviewer's resolution and decision) - two more keyed doors and a reviewer for a verdict the line already plants one way. **(2) Money enters only by an economic event, so only kind funds the customer.** The one a test stack offers is the card top-up, which needs the card PSP, kind's alone. So `customer-history`'s transfer of 100.00 EUR is the one the door judges for an unfunded wallet - `FAILED` for `INSUFFICIENT_FUNDS`, recorded, nothing posted - and `posted-transfers` funds its customer with the 12.50 EUR top-up and makes two transfers, 2.00 and 3.00 EUR, each `COMPLETED` with its journal entry; it is refused on compose before anything is touched, as `open-dispute` is. **Rejected**: funding the wallet on compose by planting a balance or a journal entry (money with no economic event behind it - CLAUDE.md's fifth rule; the ledger's history is never written around its doors); one kind-only scenario (compose would hold no customer history at all). **Proven** by app's `E2eSeedCustomersDatabaseTest` (the very `Seed.java` and verdict plant; the card PSP `SimulatedProvider`, as `E2eSeedFxDatabaseTest` has it; no risk policy active, so every transfer judged under the fail-safe `ALLOW`): the unfunded customer's transfer `FAILED`, `INSUFFICIENT_FUNDS`, no journal entry; the console's `CUSTOMER_SUPPORT_AGENT`, stepped up, reads the profile `ACTIVE`, the three consent facts newest first, the one wallet at 0.00, no ledger line, the failed transfer in the customer's list and in its detail, between the two wallets' ledger accounts (a transfer names those, the customer's door resolving them from the agreements); an administrator, holding no `CUSTOMER_READ`, refused (403). The funded customer's top-up `SUCCEEDED`, both transfers `COMPLETED` and posted; the console reads the wallet at 7.50 EUR (12.50 in, 5.00 out), its three lines - the top-up's credit and each transfer's debit - both transfers in the list and in detail, and the payee's 5.00 EUR. `E2eSeedStaysTestOnlyTest` holds every customer checked before its verdict is planted and the verdict's customer before it reaches SQL, the consent's three facts and every transfer judged by the door's own answer before the run goes on, no `INSERT` or `UPDATE` of `ledger`, `transfers` or `accounts` anywhere in the script, and `posted-transfers` refused off kind before anything is touched. `-113`'s two `printf` formats, written with literal line breaks, now read `\n`. **Owed**: the script on a running stack, carried with the seed scripts. **Probe**: four, one at a time (2026-11-20 12:05 - 12:53 UTC): P1 the consent's withdrawal dropped from `Seed.java`'s `consent-history`; P2 the transfer's reason no longer judged in `transferred`; P3 `posted-transfers`' refusal off kind disabled; P4 the wallet opened in GBP - 4 of 4 caught - P1 to P3 by `E2eSeedStaysTestOnlyTest`, each by its own assertion (the consent withdrawn through its door; every transfer judged by the door's status and reason; `posted-transfers` refused off kind), P4 by `E2eSeedCustomersDatabaseTest` in both tests (the unfunded transfer judged `CURRENCY_MISMATCH`, not `INSUFFICIENT_FUNDS`; the funded 2.00 EUR `FAILED`, not `COMPLETED`); every restore byte-identical (sha256). **Fresh**: app's architecture tier 1,293 tests in 119 classes (`E2eSeedStaysTestOnlyTest` 15 of 15 among them) and `E2eSeedCustomersDatabaseTest` 2 of 2, 0 failed (2026-11-20 10:59 UTC - 13:39 UTC); the unit and slice tiers not re-run: the task changes no main code and no class those tiers run (a database-tagged class added, an architecture-tagged one changed, the seed scripts read by those two alone). **Multi-instance**: `PASS` - test-only; every effect is a door's own, keyed where the door is (the wallets, the transfers, the top-up), each scenario's customers fresh identities, so concurrent runs share nothing; the transfers' judgement is the transfer command's, under its account locks.
 
+**P17-TSK-125 — A customer's name and country for operators, and the KYC document download (G-31, G-62; the owner's D-25 decisions 1 and 2)** — `COMPLETE` (2026-11-20; gated on branch `P17-TSK-125` from master `31eb3ddeb`, beside `-124` and `-126`) *(read "`READY` (2026-11-20; added and marked `READY` at its design, 2026-11-20, on the owner's "do both in parallel"; ...)" until its gate)*
+- **Context**: `party`, `kyc`, `identity`, `app`; finapp-admin-panel `docs/FINAPP_BACKEND_WORK.md` B6.6 items 1 and 2 (D-25,
+  2026-11-19); ADR-C132 decisions 1, 3 and 5; ADR-0036; `INV-KYC-06`, `INV-AUD-02`.
+- **Scope**:
+  1. `GET /v1/operator/customers/{id}/identity` under `CUSTOMER_READ`, on a `MULTI_FACTOR` session: the customer's legal name
+     and country of residence and no other personal field - a read of its own, never folded into the profile or any list;
+     recorded `party.CustomerIdentityRead` with actor, target and correlation; `Cache-Control: no-store`;
+     `DATA_CLASSIFICATION.md` records both as personal data with the need "recognising the customer an operator acts on". Served
+     from their owner through its published port.
+  2. A new permission `KYC_DOCUMENT_READ`, held by `KYC_REVIEWER`, needing an enrolled factor at grant;
+     `GET /v1/operator/kyc/cases/{id}/documents` listing a case's documents by identifier, type, size and received-at; and
+     `GET /v1/operator/kyc/documents/{id}/content` serving one over `DocumentAccess.read`, on a `MULTI_FACTOR` session,
+     recorded before any byte is served, with `Content-Disposition: attachment`, `Cache-Control: no-store`,
+     `X-Content-Type-Options: nosniff` and a declared type from an allow-list (PDF, JPEG, PNG). A threat-model row for the
+     download, `EXISTS` on hermetic tests.
+- **Deps**: `-025` (the read permissions and `RecordedReads`), `-026` (the customer reads), `-029` (`@RecordedRead`). All
+  `COMPLETE` and on master.
+- **Accept**: B6.6's "done when" for items 1 and 2 - the routes in the contract, with tests for the factor, the record, that no
+  other personal field is served, the permission and the headers; a passing negative authorization test for each door.
+- **Multi-instance**: reads, each answer and its record in one transaction of its own; the request's mark is the request's.
+  `PASS` by construction.
+- **Risk**: High - the first identity document and the first personal name served to staff. **Cx**: M. **DoD**: `DOD-API`,
+  `DOD-SEC`.
+- **Design (2026-11-20)**: the full design is the session's. **What the code said first**: no module holds a legal name or a
+  country of residence. `party.display_name` is the one name the platform holds - given at registration, changeable by the
+  customer (`PATCH /v1/me`), never verified against a document (the provider is asked by identifiers and answers a verdict) -
+  and the country is unresolved question #13. **The decisions**, taken as the recommended options under the owner's standing
+  ruling of 2026-11-20, "If you rise questions, my answer is your recommended options", alternatives named:
+  **(1) the name** is `party.display_name`, served as `legalName` beside `legalNameSource: "SELF_DECLARED"`, so the console can
+  say what it is - not a verified legal name (no source exists; question #13's territory), not a renamed field (it breaks the
+  console's D-25 contract), not nothing (D-25 undelivered while the name the customer is recognised by exists);
+  **(2) `countryOfResidence` is `null`**, always, until question #13 is answered - never inferred from a currency, a card or an
+  address; capturing it is an ADR and a customer-facing change, not a read;
+  **(3) the content read's record is `DocumentAccess`'s own `kyc.DocumentContentRead`** (`INV-KYC-06`), not a new
+  `kyc.DocumentRead` beside it - two rows for one look would split the trail across two codes, and renaming a published code
+  breaks its continuity;
+  **(4) recorded before any byte**: the read and its record commit in one transaction before the handler returns the body, and
+  the allow-list is checked inside it, so a refused type rolls the record back and serves nothing;
+  **(5) the list is a §7 collection** from birth - received-at ascending then id, 50/200, every page recorded
+  `kyc.CaseDocumentsListed`;
+  **(6) `KYC_DOCUMENT_READ` joins `RecordedReads.PERMISSIONS`**, so every handler under it is held at the answer; the download
+  marks its request once `DocumentAccess` has written its record (`RecordedReads.recordedByItsModule`). It guards no act and
+  every route under it is a `MULTI_FACTOR` read, so `readsBehindAFactor()` - already true of `KYC_REVIEWER`, which acts;
+  **(7) the download's headers**: the type from the allow-list, `attachment` with the document's id for a file name, `nosniff`
+  set by the handler as well as the edge, `no-store` `OperatorResponsesAreNotStored`'s alone;
+  **(8) a narrow party read**, `PartyStore.registeredNameOf`, `ADMINISTERED`, so `findById` keeps its `SESSION_DERIVED`
+  classification (`P2-TSK-015`'s `kindOf` precedent); kyc's `DocumentStore.documentsOf`, metadata only;
+  **(9) no migration** in any module: party's primary key; kyc's `(case_id, checksum_sha256)` index serves a case's documents.
+  **Tests**: hermetic only (the owner's ruling, 2026-11-20); the database and architecture tiers owed.
+- **As built (2026-11-20, gate `COMPLETE`)**: as designed, no migration in any module. **party**: `PartyStore.registeredNameOf`
+  (`SELECT display_name ... WHERE id = ?`), `party.CustomerIdentityRead`. **kyc**: `DocumentStore.documentsOf` and
+  `DocumentPosition` (metadata only, `(uploaded_at, id) > (?, ?)`, received order), `kyc.CaseDocumentsListed` (beside
+  `DOCUMENT_CONTENT_READ`); `DocumentAccess` unchanged, its first HTTP caller noted. **identity**: `KYC_DOCUMENT_READ` on
+  `KYC_REVIEWER`, guarding no act and read behind a factor. **app**: `CustomerReadDesk.nameAndCountry` and
+  `CustomerReadController#readCustomerIdentity` - `{legalName, legalNameSource: "SELF_DECLARED", countryOfResidence: null}`,
+  the null written (`@JsonInclude(ALWAYS)`), the record's summary the party, the name's source and `country=absent`, never the
+  name, `toString` redacted; `KycDocumentReadDesk`, `KycDocumentReadController`, `KycDocumentReadBeans` - the list a §7 page
+  (50/200, received-at then id, `{documentId, documentType, contentType, sizeBytes, receivedAt}`), the download through
+  `DocumentAccess.read` in one `operatorReadTransactions` transaction committed before the body returns, the allow-list
+  (`application/pdf` `.pdf`, `image/jpeg` `.jpg`, `image/png` `.png`) checked inside it, `Content-Disposition: attachment;
+  filename="<documentId>.<ext>"`, `X-Content-Type-Options: nosniff`, `produces` exactly the allow-list's types;
+  `RecordedReads.PERMISSIONS` + `KYC_DOCUMENT_READ` and `recordedByItsModule(action)`, the download's mark; and
+  `UnrecordedReadAdvice` refusing an unrecorded answer that is not JSON by an exception (`500 api.InternalError`) rather than
+  handing its converter the problem in the body's place - the first binary answer under the guard. **Found at the gate**: the
+  targeted runs missed `RoleGrantNeedsAFactorTest#onlyTheReadsNeedNone` (identity unit), the pin of the permissions that guard no
+  act - widened by `KYC_DOCUMENT_READ`; two slice guards read the new code by its shape - `OperatorResponsesAreNotStoredTest`
+  matched the header's name in a Javadoc (reworded) and `OperatorListsAreCollectionsTest` counted `byte[]` as a bare array
+  (registered: one file of at most 512 KiB, not a list). **The contract**: three paths (`OpenApiChange`'s `BREAKING` on the new
+  operations' `required` flags, the known false positive); the edge's operator list three routes; the download's body published
+  by springdoc as `string`/`byte` - OpenAPI 3.0 reads that as base64, the three provider callbacks' raw bodies are published the
+  same way, and correcting the generator's model of `byte[]` for answers alone is a follow-up (the console reads the body as the
+  file). **The registers by hand** (their guards are the architecture tier's, owed): `AUDITABLE_ACTIONS.md` two rows and the
+  download's paragraph, `PRIVILEGED_ACCESS_REVIEW.md` §3, the ownership register (`registeredNameOf` and `documentsOf`
+  `ADMINISTERED`, `readContent`'s first HTTP caller, `findById`'s new reader), `THREAT_MODEL.md` five `EXISTS` rows (T3 x3, T51,
+  T55), `MUTATION_TESTING.md` one row, `DATA_CLASSIFICATION.md` both reads, `API_CONVENTIONS.md` §7. **Probe** (2026-11-20; four
+  runs, eight plants, every one caught - P8 after a mis-planted first attempt and a test of its own; `MUTATION_TESTING.md`).
+  **Fresh** (2026-11-20, the final bytes, every test of each tier): app unit 2,225 tests in 382 classes, app slice 330 in 58; identity unit 220 in 25, party unit 22 in 3, kyc unit 167 in 25 - 0 failed.
+  **Owed**: the database tier - `documentsOf`'s and `registeredNameOf`'s statements have never run on PostgreSQL, and the
+  read's record against a real `platform.audit_record` (`CustomerReadsApiDatabaseTest`'s and `KycQueueApiDatabaseTest`'s
+  shapes); the architecture tier; `edge-check.sh`. **For the console**: the record of a download is `kyc.DocumentContentRead`
+  (not `kyc.DocumentRead`); `legalName` is the name the customer gave, `legalNameSource` says so; `countryOfResidence` is `null`
+  until unresolved question #13 is answered.
+
 *M17.7 — Payments and merchants*
 
 `finapp` serves the merchant and dispute doors, and the console has built screens over them: merchant onboarding, standing,
@@ -32647,6 +32735,82 @@ showing how fresh it is. Both say what is missing.
   existing conditional transitions. `PASS` by construction.
 - **Risk**: Medium - breadth, and lists converted in place (the console is their only client). **Cx**: L. **DoD**:
   `DOD-API`, `DOD-SEC`.
+
+**P17-TSK-124 — The reads an approver lacks: a pending money-act proposal, an account restriction, a dead letter; the KYC case's audit target named (B7.6, B6.8)** — `COMPLETE` (2026-11-20; added and marked `READY` at its design, 2026-11-20, on the owner's "do both in parallel"; branch `P17-TSK-124` from master `31eb3ddeb`) *(read "`READY`" from its design until its gate)*
+- **Context**: `transfers`, `payments`, `merchant`, `bnpl`, `accounts`, `platform` (dead letters), `kyc` (a record only), `app`;
+  finapp-admin-panel B7.6 and B6.8 (D-26); ADR-0154, ADR-0153, ADR-C132 decision 5, ADR-C133 decision 3.
+- **Scope**:
+  1. **a pending money-act proposal, read by its approver** (B7.6) - one `GET` per kind on master, beside its decision door, under
+     the kind's approve permission, on a `MULTI_FACTOR` session, every serving recorded in the read's own transaction: a transfer
+     reversal, a refund, an operator payout and a merchant closure (`-031`'s, ADR-0154), a BNPL refund and a BNPL fee assignment
+     (`-116`'s); each naming its subject, its amount exact with its currency where the act moves one, its reason, `proposedBy`,
+     `proposedAt` and status;
+  2. **one account restriction proposal** (B6.8 item 1, `-028`'s), read by its approver the same way;
+  3. **one dead letter** (B6.8 item 2) - `GET /v1/operator/events/{queue}/{id}` for the abandoned, parked and discard queues, so a
+     record's page needs no search of its queue's oldest 200;
+  4. **the KYC case's audit target type named** (B6.8 item 3), so the case page links its History.
+- **Not here**: every pending **list** - `-040`'s, in ADR-C133's shape, the money acts' and the restrictions' among them; the
+  card fee schedule's proposals and their reads - `-123`'s.
+- **Deps**: `-028`, `-031`, `-116` (on master).
+- **Accept**: each read in the contract and the operator edge's routes, under its approve permission and its factor, recorded,
+  with its tests; an unknown or malformed identifier `404` with nothing recorded; the KYC case's target type stated.
+- **Multi-instance**: reads only - each one statement on the request's connection, its record committed with it; a proposal decided
+  between the read and the click answers `409` at its door, the existing conditional transitions. `PASS` by construction.
+- **Risk**: Low - reads, no migration. **Cx**: M - breadth (six modules). **DoD**: `DOD-API`, `DOD-SEC`.
+- **As built (2026-11-20, gate `COMPLETE`)**: **ten `GET` routes, no migration, no ADR.** **(1) A pending money act, read by
+  its decider** beside its approval door, under that door's own permission, on a `MULTI_FACTOR` session, every serving recorded
+  in the read's own transaction by `RecordedReads` and held at the answer (`@RecordedRead`, `UnrecordedReadAdvice`):
+  `GET /v1/operator/transfer-reversals/{id}` (`TRANSFER_REVERSE_APPROVE`; the transfer's amount, currency and status now;
+  `transfers.ReversalProposalRead`), `/refund-proposals/{id}` (`PAYMENT_REFUND_APPROVE`; the payment, the amount and the
+  cumulative amount the threshold judged, its version, an approval's refund; `payments.RefundProposalRead`),
+  `/payout-proposals/{id}` (`MERCHANT_PAYOUT_APPROVE`; the merchant's display name and status, the amount, the threshold version,
+  an approval's payout; `merchant.PayoutProposalRead`), `/merchant-closures/{id}` (`MERCHANT_CLOSE_APPROVE`; the merchant's name
+  and status - a closure moves no amount; `merchant.ClosureProposalRead`), `/bnpl-refund-proposals/{id}` (`PAYMENT_REFUND_APPROVE`;
+  the purchase, the amount, the cumulative amount, the version, an approval's refund; `bnpl.RefundProposalRead`; the reader's own
+  party's purchase, or a reader the platform cannot place, `403 bnpl.SelfDealingRefused` recorded `FAILED` - BNPL's operator-read
+  rule, `-035` and `-116`), `/bnpl-fee-schedule-proposals/{id}` (`FEE_SCHEDULE_APPROVE`; the merchant, the product, the schedule -
+  a price pointer, no amount; `merchant.BnplFeeAssignmentProposalRead`). Each names its status, its reason, `proposedBy`,
+  `proposedByCaller` and `proposedAt`, and once decided `decidedAt` and `decisionReason` - never who decided; every amount an
+  exact decimal string with its currency; no record's summary carries an amount. **(2) One restriction**: `GET
+  /v1/operator/account-restrictions/{id}` (`ACCOUNT_RESTRICT_APPROVE`, the same rules; the agreement and its status now, the kind,
+  its reason code; `accounts.RestrictionRead`; the view's string form masks both reasons). **(3) One dead letter**: `GET
+  /v1/operator/events/abandoned/{eventId}`, `/parked/{parkId}`, `/discards/{discardId}` (`EVENT_OPERATE`, as the queue pages beside
+  them, no factor) - three literal routes rather than a `{queue}` variable, each answering its page's row (the abandoned and
+  parked reads keep their queue's membership predicate; a discard is read in whatever status it stands, with its proposer), each
+  serving recorded `deadletter.Read` against the record; an id that names no record of the queue now `404 deadletter.NotFound`.
+  **(4) The KYC case's audit target** named in `AUDITABLE_ACTIONS.md` from the writers: `KycCase`, its id the case's - and the
+  four case records that target something else (`kyc.CaseOpened` the `Customer`, `kyc.ReviewResolved` the `ReviewTask`,
+  `kyc.CheckCompleted` the `VerificationCheck`, `kyc.DocumentContentRead` the `Document`), each naming the case in its summary.
+  **The modules' reads**: an unlocked `find` by primary key on transfers' reversal proposal, merchant's closure and BNPL fee
+  assignment proposals and accounts' restriction (refund, payout and BNPL refund already had one); `read` on
+  `TransferReversalProposals`, `PayoutProposals`, `MerchantClosures`, `BnplFeeAssignments` and `AccountRestrictions` composing the
+  proposal with its subject and writing nothing; `DeadLetterStore` gains `abandonedEvent`, `parkedRecord` and `discard`. An
+  unknown or malformed identifier is each door's own `404`, nothing recorded. **Decisions, each on the owner's ruling "if you
+  rise questions, my answer is your recommended options"**: (D1) each read at its approval door's own path and under its
+  permission alone, never the proposer's (alternative: also under the proposing permission - a second route each); (D2) every
+  serving recorded, the BNPL fee assignment's too (alternative: fee configuration unrecorded, as `-123`'s fee reads are);
+  (D3) a merchant subject named by its display name and status, the controller holding no `MERCHANT_ADMINISTER` (alternative:
+  the id alone, the approver deciding a closure blind); (D4) the dead letters as three literal routes under `EVENT_OPERATE`
+  without a factor, as their pages (alternative: one `{queue}` variable, or a factor the pages lack); (D5) the KYC case's target
+  in the document, not a view field (alternative: a contract field carrying a constant); (D6) the BNPL fee assignment's read
+  built beside its door though `-123`'s `GET /v1/operator/fee-schedule-proposals/{id}` also serves those rows - both correct
+  under one permission, the merge's to keep or retire. **Tests: none run, on the owner's word of 2026-11-20, "tests not
+  needed"**: `ApproverProposalReadsTest` (new: every read beside its door's permission, factor and mark; each view's fields,
+  exact amounts, never the decider; one record each, no amount in it; `404`s recording nothing; the modules' reads composing
+  and writing nothing), `BnplListDeskTest` (the BNPL refund proposal: its view and record; own party and unplaced reader `403`
+  recorded `FAILED`), `DeadLetterDeskTest` (twelve doors; one record of each queue, recorded, `404` once out of its queue) and the
+  slice registers (`RoutePermissionRegisterTest`, `EveryCustomerReadIsRecordedTest`, `OpenApiContractTest`'s path list) are
+  written and **owed a first run**, as are five recorded probes (`MUTATION_TESTING.md`) and every new finder's SQL over
+  PostgreSQL. The main sources of the six modules compiled (`compileJava`, 2026-11-20); **the test sources were never
+  compiled** - their compile was stopped. **`docs/api/openapi.json` and `deploy/edge/base/operator-routes.yaml` are NOT
+  regenerated, on the owner's word of 2026-11-20, "skip the generators too, just commit"**: the ten routes are served but in
+  neither file until `OpenApiContractTest` and `EdgeAllowListTest` regenerate them - owed at the merge, so the operator edge
+  refuses the ten routes until then.
+  The architecture tier's registers were kept by hand: `OwnershipIsScopedTest` (four new `find`s, three widened),
+  `AUDITABLE_ACTIONS.md` (seven new reads, `deadletter.Read` widened); `THREAT_MODEL.md` unchanged - the reads add no threat,
+  the recording being ADR-C132 decision 5's control. **Multi-instance**: `PASS` by construction - reads only, no lock, each
+  one transaction on the request's connection with its record; a proposal decided between the read and the click answers
+  `409` at its door.
 
 **P17-TSK-042 — The §7 retrofit of capped operator lists (G-03, G-121)** — `COMPLETE` (2026-11-20; marked `READY` 2026-11-19 before its design on the owner's "every task whose dependencies are met in parallel", no dependencies; branch `P17-TSK-042` from `P17-TSK-120`) *(read "`PLANNED`" until 2026-11-19, then "`READY`" until its gate)*
 - **Context**: every module with a capped operator list; `API_CONVENTIONS.md` §7; ADR-C133; B10.3. Several operator lists are

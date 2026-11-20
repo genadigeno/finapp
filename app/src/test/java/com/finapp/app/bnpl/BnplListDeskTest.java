@@ -15,6 +15,9 @@ import com.finapp.bnpl.BnplErrorCode;
 import com.finapp.bnpl.BnplObligationStatus;
 import com.finapp.bnpl.BnplOperatorLists;
 import com.finapp.bnpl.BnplPurchaseId;
+import com.finapp.bnpl.BnplRefundProposal;
+import com.finapp.bnpl.BnplRefundProposalStore;
+import com.finapp.bnpl.BnplRefundProposals;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.audit.AuditOutcome;
@@ -67,8 +70,11 @@ class BnplListDeskTest {
     private final AuditWriter<Connection> writer = (unitOfWork, record) -> written.add(record);
     private final Fake lists = new Fake();
     private Optional<UUID> readersParty = Optional.of(READERS_PARTY);
+    @SuppressWarnings("unchecked")
+    private final BnplRefundProposalStore<Connection> refundProposals = mock(BnplRefundProposalStore.class);
     private final BnplListDesk desk = new BnplListDesk(lists, (unitOfWork, actor) -> readersParty,
-            new RecordedReads(writer, IDS, CLOCK), writer, IDS, CLOCK, transactions());
+            new RecordedReads(writer, IDS, CLOCK), writer, IDS, CLOCK, transactions(),
+            new BnplRefundProposals(refundProposals, writer, IDS, CLOCK));
 
     @Test
     @DisplayName("one purchase's refunds walk once, oldest first, each amount an exact decimal; every page recorded"
@@ -162,6 +168,79 @@ class BnplListDeskTest {
         assertError(() -> desk.applications(null, null, "0"), PlatformErrorCode.VALIDATION_FAILED);
         assertError(() -> desk.refunds(IDS.next().toString(), null, "1000"), PlatformErrorCode.VALIDATION_FAILED);
         assertThat(lists.read).isZero();
+        assertThat(written).isEmpty();
+    }
+
+    // ------------------------------------------------------------------ a refund proposal, read by its approver (P17-TSK-124)
+
+    @Test
+    @DisplayName("a BNPL refund proposal read by its approver: the purchase, the amount and the cumulative amount exact with"
+            + " the currency, the threshold version, the proposer - recorded bnpl.RefundProposalRead against the proposal, never"
+            + " an amount; once decided its instant and reason, never who decided")
+    void aRefundProposalReadByItsApprover() {
+        BnplPurchaseId purchase = BnplPurchaseId.of(IDS.next());
+        lists.parties.put(purchase, UUID.randomUUID());
+        UUID refund = IDS.next();
+        BnplRefundProposal proposal = new BnplRefundProposal(BnplRefundProposal.Id.of(IDS.next()), purchase,
+                Money.ofMinorUnits(1_250_00L, EUR), Money.ofMinorUnits(1_400_50L, EUR), 4, "the goods came back damaged",
+                "another-agent", "EMPLOYEE", Instant.parse("2026-11-20T08:00:00Z"), "c-1", BnplRefundProposal.Status.APPROVED,
+                Optional.of(new BnplRefundProposal.Decision("the-decider", "EMPLOYEE", Instant.parse("2026-11-20T08:30:00Z"),
+                        "photos checked", "c-2")), Optional.of(refund));
+        when(refundProposals.find(any(), any())).thenReturn(Optional.of(proposal));
+
+        BnplListDesk.BnplRefundProposalView view = as(() -> desk.refundProposal(proposal.id().value().toString()));
+
+        assertThat(view.purchaseId()).isEqualTo(purchase.value().toString());
+        assertThat(view.amount()).isEqualTo("1250.00");
+        assertThat(view.currency()).isEqualTo("EUR");
+        assertThat(view.cumulativeAmount()).isEqualTo("1400.50");
+        assertThat(view.thresholdVersion()).isEqualTo(4);
+        assertThat(view.refundId()).isEqualTo(refund.toString());
+        assertThat(view.status()).isEqualTo("APPROVED");
+        assertThat(view.reason()).isEqualTo("the goods came back damaged");
+        assertThat(view.proposedBy()).isEqualTo("another-agent");
+        assertThat(view.proposedByCaller()).isFalse();
+        assertThat(view.decidedAt()).isEqualTo("2026-11-20T08:30:00Z");
+        assertThat(view.decisionReason()).isEqualTo("photos checked");
+        assertThat(view.toString()).doesNotContain("the-decider");
+        assertThat(written).singleElement().satisfies(record -> {
+            assertThat(record.operation()).isEqualTo(BnplAuditAction.REFUND_PROPOSAL_READ);
+            assertThat(record.targetType()).isEqualTo("BnplRefundProposal");
+            assertThat(record.targetId()).isEqualTo(proposal.id().value().toString());
+            assertThat(record.outcome()).isEqualTo(AuditOutcome.SUCCEEDED);
+            assertThat(record.changeSummary().orElseThrow()).contains("purchase=" + purchase.value())
+                    .doesNotContain("1250.00", "1400.50");
+        });
+    }
+
+    @Test
+    @DisplayName("a BNPL refund proposal of the reader's own party's purchase, or read by a reader the platform cannot place, is"
+            + " 403 bnpl.SelfDealingRefused recorded FAILED with nothing served; unknown, malformed or non-v7 is the uniform 404"
+            + " recording nothing")
+    void aRefundProposalOfTheReadersOwnParty() {
+        BnplPurchaseId own = BnplPurchaseId.of(IDS.next());
+        lists.parties.put(own, READERS_PARTY);
+        BnplRefundProposal proposal = new BnplRefundProposal(BnplRefundProposal.Id.of(IDS.next()), own,
+                Money.ofMinorUnits(1_250_00L, EUR), Money.ofMinorUnits(1_250_00L, EUR), 1, "r", "another-agent", "EMPLOYEE",
+                Instant.parse("2026-11-20T08:00:00Z"), "c-1", BnplRefundProposal.Status.PROPOSED, Optional.empty(),
+                Optional.empty());
+        when(refundProposals.find(any(), any())).thenReturn(Optional.of(proposal));
+        assertError(() -> desk.refundProposal(proposal.id().value().toString()), BnplErrorCode.SELF_DEALING_REFUSED);
+        readersParty = Optional.empty();
+        lists.parties.put(own, UUID.randomUUID());
+        assertError(() -> desk.refundProposal(proposal.id().value().toString()), BnplErrorCode.SELF_DEALING_REFUSED);
+        assertThat(written).hasSize(2).allSatisfy(record -> {
+            assertThat(record.operation()).isEqualTo(BnplAuditAction.SELF_DEALING_REFUSED);
+            assertThat(record.outcome()).isEqualTo(AuditOutcome.FAILED);
+            assertThat(record.targetType()).isEqualTo("BnplRefundProposal");
+            assertThat(record.changeSummary().orElseThrow()).contains("act=refund-proposal:read");
+        });
+        written.clear();
+        readersParty = Optional.of(READERS_PARTY);
+        when(refundProposals.find(any(), any())).thenReturn(Optional.empty());
+        assertError(() -> desk.refundProposal(IDS.next().toString()), BnplErrorCode.NOT_FOUND);
+        assertError(() -> desk.refundProposal(UUID.randomUUID().toString()), BnplErrorCode.NOT_FOUND);
+        assertError(() -> desk.refundProposal("not-a-proposal"), BnplErrorCode.NOT_FOUND);
         assertThat(written).isEmpty();
     }
 

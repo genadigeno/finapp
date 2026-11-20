@@ -13902,6 +13902,47 @@
         ],
         "type": "object"
       },
+      "AccountRestrictionView": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "accountStatus": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "restrictionId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AccountView": {
         "properties": {
           "id": {
@@ -16615,6 +16656,50 @@
         ],
         "type": "object"
       },
+      "BnplFeeAssignmentProposalView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "feeScheduleId": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "merchantName": {
+            "type": "string"
+          },
+          "merchantStatus": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BnplFeeScheduleAssignmentRequest": {
         "properties": {
           "feeScheduleId": {
@@ -17520,6 +17605,54 @@
         ],
         "type": "object"
       },
+      "BnplRefundProposalView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "cumulativeAmount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "purchaseId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "refundId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "thresholdVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "BnplRefundReport": {
         "properties": {
           "asOf": {
@@ -17930,6 +18063,52 @@
               "$ref": "#/components/schemas/BnplExplainedWaiverView"
             },
             "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "BnplServicingRequestPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BnplServicingRequestView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplServicingRequestView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reasonSummary": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -18876,6 +19055,42 @@
           },
           "truncated": {
             "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "CaseDocument": {
+        "properties": {
+          "contentType": {
+            "type": "string"
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "documentType": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sizeBytes": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CaseDocumentsPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CaseDocument"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -21373,6 +21588,20 @@
         ],
         "type": "object"
       },
+      "CustomerNameAndCountry": {
+        "properties": {
+          "countryOfResidence": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "legalNameSource": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CustomerProfile": {
         "properties": {
           "customerId": {
@@ -21633,6 +21862,46 @@
         },
         "type": "object"
       },
+      "DiscardPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DiscardView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DiscardRecordView": {
+        "properties": {
+          "discardId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "DiscardRequest": {
         "properties": {
           "reason": {
@@ -21648,6 +21917,26 @@
           "subjectKind": {
             "maxLength": 32,
             "minLength": 0,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DiscardView": {
+        "properties": {
+          "discardId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectKind": {
             "type": "string"
           }
         },
@@ -25712,6 +26001,52 @@
         },
         "type": "object"
       },
+      "LoanServicingRequestPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LoanServicingRequestView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoanServicingRequestView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reasonSummary": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "LoanTermsDecisionRequest": {
         "properties": {
           "reason": {
@@ -26492,6 +26827,44 @@
           "sales": {
             "format": "int64",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "MerchantClosureProposalView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "merchantName": {
+            "type": "string"
+          },
+          "merchantStatus": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -28325,6 +28698,57 @@
         },
         "type": "object"
       },
+      "PayoutProposalView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "merchantName": {
+            "type": "string"
+          },
+          "merchantStatus": {
+            "type": "string"
+          },
+          "payoutId": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "thresholdVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "PayoutView": {
         "properties": {
           "amount": {
@@ -28346,46 +28770,6 @@
             "type": "string"
           },
           "status": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "PendingDecision": {
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "proposedAt": {
-            "type": "string"
-          },
-          "proposedBy": {
-            "type": "string"
-          },
-          "reasonSummary": {
-            "type": "string"
-          },
-          "relatedId": {
-            "type": "string"
-          },
-          "subjectId": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "PendingDecisionPage": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/PendingDecision"
-            },
-            "type": "array"
-          },
-          "nextCursor": {
             "type": "string"
           }
         },
@@ -28432,6 +28816,33 @@
             "type": "array"
           },
           "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PendingPriorPeriodAdjustmentView": {
+        "properties": {
+          "correctedPeriod": {
+            "type": "string"
+          },
+          "correctedRevision": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "postingDate": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "targetPeriod": {
             "type": "string"
           }
         },
@@ -29936,6 +30347,54 @@
         "required": [
           "reason"
         ],
+        "type": "object"
+      },
+      "RefundProposalView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "cumulativeAmount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "paymentId": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "refundId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "thresholdVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "RefundRequest": {
@@ -36505,6 +36964,47 @@
         ],
         "type": "object"
       },
+      "TransferReversalProposalView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "transferId": {
+            "type": "string"
+          },
+          "transferStatus": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "TransferReversalReceipt": {
         "properties": {
           "proposalId": {
@@ -41119,6 +41619,33 @@
         }
       }
     },
+    "/v1/operator/account-restrictions/{id}": {
+      "get": {
+        "operationId": "readAccountRestriction",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountRestrictionView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/account-restrictions/{id}/approval": {
       "post": {
         "operationId": "approveAccountRestriction",
@@ -42637,38 +43164,15 @@
     "/v1/operator/accounting/prior-period-adjustments": {
       "get": {
         "operationId": "listPendingPriorPeriodAdjustments",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
+                  "items": {
+                    "$ref": "#/components/schemas/PendingPriorPeriodAdjustmentView"
+                  },
+                  "type": "array"
                 }
               }
             },
@@ -43821,7 +44325,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
+                  "$ref": "#/components/schemas/BnplServicingRequestPage"
                 }
               }
             },
@@ -43833,38 +44337,15 @@
     "/v1/operator/bnpl-agreements/write-offs": {
       "get": {
         "operationId": "listPendingBnplWriteOffs",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
+                  "items": {
+                    "$ref": "#/components/schemas/BnplWriteOffReceipt"
+                  },
+                  "type": "array"
                 }
               }
             },
@@ -44735,6 +45216,33 @@
         }
       }
     },
+    "/v1/operator/bnpl-fee-schedule-proposals/{id}": {
+      "get": {
+        "operationId": "readBnplFeeAssignmentProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplFeeAssignmentProposalView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/bnpl-fee-schedule-proposals/{id}/approval": {
       "post": {
         "operationId": "approveBnplFeeAssignment",
@@ -44907,6 +45415,33 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl-refund-proposals/{id}": {
+      "get": {
+        "operationId": "readBnplRefundProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplRefundProposalView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }
@@ -46544,6 +47079,33 @@
         }
       }
     },
+    "/v1/operator/customers/{id}/identity": {
+      "get": {
+        "operationId": "readCustomerIdentity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerNameAndCountry"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/customers/{id}/kyc-case": {
       "get": {
         "operationId": "readCustomerLatestKycCase",
@@ -46846,6 +47408,33 @@
         }
       }
     },
+    "/v1/operator/events/abandoned/{eventId}": {
+      "get": {
+        "operationId": "readAbandonedEvent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "eventId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AbandonedView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/events/abandoned/{eventId}/retry": {
       "post": {
         "operationId": "retryAbandonedEvent",
@@ -46925,7 +47514,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
+                  "$ref": "#/components/schemas/DiscardPage"
                 }
               }
             },
@@ -46961,6 +47550,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ActReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/events/discards/{discardId}": {
+      "get": {
+        "operationId": "readDeadLetterDiscard",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "discardId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscardRecordView"
                 }
               }
             },
@@ -47086,6 +47702,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ParkedPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/events/parked/{parkId}": {
+      "get": {
+        "operationId": "readParkedRecord",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "parkId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParkedView"
                 }
               }
             },
@@ -48261,6 +48904,49 @@
         }
       }
     },
+    "/v1/operator/kyc/cases/{id}/documents": {
+      "get": {
+        "operationId": "listKycCaseDocuments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseDocumentsPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/kyc/counterparty-screenings": {
       "get": {
         "operationId": "listCounterpartyScreeningBacklog",
@@ -48341,6 +49027,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScreeningDecisionReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/kyc/documents/{id}/content": {
+      "get": {
+        "operationId": "readKycDocumentContent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
                 }
               }
             },
@@ -49012,7 +49738,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
+                  "$ref": "#/components/schemas/LoanServicingRequestPage"
                 }
               }
             },
@@ -49024,38 +49750,15 @@
     "/v1/operator/loans/write-offs": {
       "get": {
         "operationId": "listPendingLoanWriteOffs",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
+                  "items": {
+                    "$ref": "#/components/schemas/LoanWriteOffReceipt"
+                  },
+                  "type": "array"
                 }
               }
             },
@@ -49873,6 +50576,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OperatorSelf"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/merchant-closures/{id}": {
+      "get": {
+        "operationId": "readMerchantClosureProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantClosureProposalView"
                 }
               }
             },
@@ -51339,6 +52069,33 @@
         }
       }
     },
+    "/v1/operator/payout-proposals/{id}": {
+      "get": {
+        "operationId": "readPayoutProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutProposalView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/payout-proposals/{id}/approval": {
       "post": {
         "operationId": "approvePayoutProposal",
@@ -51421,1597 +52178,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PayoutView"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/accounting/close-requests": {
-      "get": {
-        "operationId": "listAccountingCloseRequestDecisions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/accounting/mapping-versions": {
-      "get": {
-        "operationId": "listAccountingMappingVersionDecisions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/accounting/reopen-requests": {
-      "get": {
-        "operationId": "listAccountingReopenRequestDecisions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/accounting/unlock-requests": {
-      "get": {
-        "operationId": "listAccountingUnlockRequestDecisions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/accounting/valuation-rate-sets": {
-      "get": {
-        "operationId": "listAccountingValuationRateSetDecisions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/accounts/restrictions": {
-      "get": {
-        "operationId": "listPendingAccountRestrictions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/bnpl/dispute-resolutions": {
-      "get": {
-        "operationId": "listPendingBnplDisputeResolutions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/bnpl/fee-assignments": {
-      "get": {
-        "operationId": "listPendingBnplFeeAssignments",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/bnpl/refund-proposals": {
-      "get": {
-        "operationId": "listPendingBnplRefundProposals",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/bnpl/terms-versions": {
-      "get": {
-        "operationId": "listPendingBnplTermsVersions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/credit/policy-versions": {
-      "get": {
-        "operationId": "listPendingCreditPolicyVersions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/credit/review-case-decisions": {
-      "get": {
-        "operationId": "listPendingReviewCaseDecisions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/credit/scorecard-versions": {
-      "get": {
-        "operationId": "listPendingScorecardVersions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/crossborder/corridor-enable-requests": {
-      "get": {
-        "operationId": "listPendingCorridorEnableRequests",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/crossborder/corridor-policies": {
-      "get": {
-        "operationId": "listPendingCorridorPolicies",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/fx/enable-requests": {
-      "get": {
-        "operationId": "listPendingFxEnableRequests",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/fx/pricing-policies": {
-      "get": {
-        "operationId": "listPendingFxPricingPolicies",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/fx/trade-reversals": {
-      "get": {
-        "operationId": "listPendingFxTradeReversals",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/ledger/adjustments": {
-      "get": {
-        "operationId": "listLedgerAdjustmentDecisions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/ledger/projection-rebuilds": {
-      "get": {
-        "operationId": "listLedgerProjectionRebuildDecisions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/lending/capital-contributions": {
-      "get": {
-        "operationId": "listPendingCapitalContributions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/lending/terms-versions": {
-      "get": {
-        "operationId": "listPendingLoanTermsVersions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/merchant/bnpl-enablements": {
-      "get": {
-        "operationId": "listPendingMerchantBnplEnablements",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/merchant/closures": {
-      "get": {
-        "operationId": "listPendingMerchantClosures",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/merchant/payout-destinations": {
-      "get": {
-        "operationId": "listPendingPayoutDestinations",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/merchant/payout-proposals": {
-      "get": {
-        "operationId": "listPendingPayoutProposals",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/payments/refund-proposals": {
-      "get": {
-        "operationId": "listPendingRefundProposals",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/reconciliation/resolutions": {
-      "get": {
-        "operationId": "listReconciliationResolutionDecisions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/reconciliation/rule-sets": {
-      "get": {
-        "operationId": "listReconciliationRuleSetDecisions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/risk/actions": {
-      "get": {
-        "operationId": "listPendingRiskActions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/risk/dispositions": {
-      "get": {
-        "operationId": "listPendingRiskDispositions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/risk/overrides": {
-      "get": {
-        "operationId": "listPendingRiskOverrides",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/risk/policy-versions": {
-      "get": {
-        "operationId": "listPendingRiskPolicyVersions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/risk/reports": {
-      "get": {
-        "operationId": "listPendingRiskReports",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/risk/screening-list-versions": {
-      "get": {
-        "operationId": "listPendingRiskScreeningListVersions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/risk/suppressions": {
-      "get": {
-        "operationId": "listPendingRiskSuppressions",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
-                }
-              }
-            },
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/v1/operator/pending-decisions/transfers/reversals": {
-      "get": {
-        "operationId": "listPendingTransferReversals",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
                 }
               }
             },
@@ -54177,6 +53343,33 @@
         }
       }
     },
+    "/v1/operator/refund-proposals/{id}": {
+      "get": {
+        "operationId": "readRefundProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefundProposalView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/refund-proposals/{id}/approval": {
       "post": {
         "operationId": "approveRefundProposal",
@@ -54340,38 +53533,15 @@
     "/v1/operator/regulatory/obligations/awaiting-activation": {
       "get": {
         "operationId": "listRegulatoryObligationsAwaitingActivation",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
+                  "items": {
+                    "$ref": "#/components/schemas/RegulatoryObligationSummaryView"
+                  },
+                  "type": "array"
                 }
               }
             },
@@ -54597,38 +53767,15 @@
     "/v1/operator/regulatory/submissions/awaiting-approval": {
       "get": {
         "operationId": "listRegulatorySubmissionsAwaitingApproval",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "status",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PendingDecisionPage"
+                  "items": {
+                    "$ref": "#/components/schemas/RegulatorySubmissionSummaryView"
+                  },
+                  "type": "array"
                 }
               }
             },
@@ -57980,6 +57127,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FetchAnswer"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/transfer-reversals/{id}": {
+      "get": {
+        "operationId": "readTransferReversalProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferReversalProposalView"
                 }
               }
             },

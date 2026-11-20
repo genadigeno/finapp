@@ -1,5 +1,6 @@
 package com.finapp.app.transfers;
 
+import com.finapp.app.api.RecordedReads;
 import com.finapp.app.telemetry.TransferMetrics;
 import com.finapp.identity.IdentityStore;
 import com.finapp.identity.MfaEnrolmentStore;
@@ -178,9 +179,10 @@ class TransferBeans {
             IdempotentExecutor idempotentExecutor,
             TransactionTemplate transferTransactions,
             DataSource dataSource,
-            TransferMetrics transferMetrics) {
+            TransferMetrics transferMetrics,
+            RecordedReads recordedReads) {
         return new TransferReversalDesk(transferReversalProposals, idempotentExecutor, transferTransactions, dataSource,
-                transferMetrics);
+                transferMetrics, recordedReads);
     }
 
     /** The transfer reversals awaiting a decision (`P17-TSK-040`), on the transfer transaction. */

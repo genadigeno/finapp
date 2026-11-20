@@ -1,5 +1,6 @@
 package com.finapp.app.bnpl;
 
+import com.finapp.app.api.RecordedRead;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresAssurance;
@@ -14,6 +15,7 @@ import jakarta.validation.constraints.Size;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,6 +36,19 @@ import org.springframework.web.bind.annotation.RestController;
 public class BnplFeeAssignmentProposalController {
 
     @NonNull private final MerchantBnplDesk desk;
+
+    /**
+     * One BNPL fee assignment proposal - the merchant, the product, the schedule, the reason and who proposed it - what its
+     * decider decides (`P17-TSK-124`). Every serving recorded ({@code merchant.BnplFeeAssignmentProposalRead}); unknown or
+     * malformed 404.
+     */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+    @GetMapping("/{id}")
+    @RequiresPermission(PermissionName.FEE_SCHEDULE_APPROVE)
+    @RecordedRead
+    public MerchantBnplDesk.BnplFeeAssignmentProposalView readBnplFeeAssignmentProposal(@PathVariable("id") String id) {
+        return desk.readFeeAssignment(id);
+    }
 
     /** Approves a BNPL fee assignment proposal the caller did not propose: the pointer moves. */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)

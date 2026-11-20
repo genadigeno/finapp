@@ -1,5 +1,7 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.api.RecordedReads;
+import com.finapp.merchant.MerchantAuditAction;
 import com.finapp.merchant.MerchantErrorCode;
 import com.finapp.merchant.MerchantId;
 import com.finapp.merchant.PayoutProposal;
@@ -19,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
@@ -48,6 +51,40 @@ public final class PayoutDesk {
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final TransactionTemplate payoutProposalTransactions;
     @NonNull private final DataSource dataSource;
+    @NonNull private final RecordedReads reads;
+
+    /**
+     * A payout proposal as its decider reads it (`P17-TSK-124`): the merchant it would pay - its name and status now - the
+     * amount exact with its currency and the threshold's version, who proposed it, when and why, whether the caller did, and
+     * once decided the decision's instant and reason and an approval's payout ({@code null} until then). Never who decided.
+     */
+    public record PayoutProposalView(
+            String proposalId, String merchantId, String merchantName, String merchantStatus, String amount, String currency,
+            int thresholdVersion, String payoutId, String status, String reason, String proposedBy, boolean proposedByCaller,
+            String proposedAt, String decidedAt, String decisionReason) {}
+
+    /**
+     * Proposal {@code rawId} with its merchant, recorded {@code merchant.PayoutProposalRead} in the read's own transaction
+     * (`P17-TSK-124`). An unknown or malformed identifier: 404, and nothing recorded.
+     */
+    public PayoutProposalView read(String rawId) {
+        PayoutProposal.Id id = uuid(rawId).map(PayoutProposal.Id::of).orElseThrow(PayoutDesk::notFound);
+        String caller = SecurityContext.require().id();
+        PayoutProposals.Read read = inOneTransaction(uow -> proposals.read(uow, id).map(found -> {
+            reads.record(uow, MerchantAuditAction.PAYOUT_PROPOSAL_READ, "PayoutProposal", id.value().toString(),
+                    "merchant=" + found.proposal().merchantId().value() + ", status=" + found.proposal().status());
+            return found;
+        })).orElseThrow(PayoutDesk::notFound);
+        PayoutProposal proposal = read.proposal();
+        return new PayoutProposalView(proposal.id().value().toString(), proposal.merchantId().value().toString(),
+                read.merchant().displayName(), read.merchant().status().name(),
+                proposal.amount().toBigDecimal().toPlainString(), proposal.amount().currency().code(),
+                proposal.thresholdVersion(), proposal.payoutId().map(payout -> payout.value().toString()).orElse(null),
+                proposal.status().name(), proposal.proposalReason(), proposal.proposedBy(), proposal.proposedBy().equals(caller),
+                proposal.proposedAt().toString(),
+                proposal.decision().map(PayoutProposal.Decision::decidedAt).map(Instant::toString).orElse(null),
+                proposal.decision().map(PayoutProposal.Decision::reason).orElse(null));
+    }
 
     /** The operator's payout: dispatched at or below the threshold, proposed above it. */
     public MerchantPayoutOperations.PayoutView initiateAsOperator(

@@ -77,7 +77,10 @@ class RoleGrantNeedsAFactorTest {
                         // P17-TSK-032: every route under it reads.
                         PermissionName.PAYMENT_READ,
                         // P17-TSK-039: the overview's three reports, each a read.
-                        PermissionName.PLATFORM_OVERVIEW_READ);
+                        PermissionName.PLATFORM_OVERVIEW_READ,
+                        // P17-TSK-125: a case's documents and one document's content, each a read - behind a second factor,
+                        // so its holder still needs one at grant (readsBehindAFactor).
+                        PermissionName.KYC_DOCUMENT_READ);
     }
 
     @Test

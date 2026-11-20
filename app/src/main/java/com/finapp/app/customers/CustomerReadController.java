@@ -20,8 +20,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * The operator's customer reads (`P17-TSK-026`, gaps G-30, G-31, G-70; finapp-admin-panel ADR-C132): find a customer by an exact
  * identifier, read its profile - identifiers and statuses, never a name, contact detail or document (D-5) - and its consent
- * history. Under {@code CUSTOMER_READ}, each on a {@code MULTI_FACTOR} session - a map of who is a customer is what a stolen
- * password must not buy, the staff directory's reason - and every one recorded ({@code RecordedReads}, held at the answer).
+ * history; and, since `P17-TSK-125`, its name and country, a read of their own (D-25). Under {@code CUSTOMER_READ}, each on a
+ * {@code MULTI_FACTOR} session - a map of who is a customer is what a stolen password must not buy, the staff directory's
+ * reason - and every one recorded ({@code RecordedReads}, held at the answer).
  */
 @RestController
 @RequestMapping(path = "/operator", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -49,6 +50,20 @@ public class CustomerReadController {
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public CustomerReadDesk.CustomerProfile readCustomer(@PathVariable("id") String customerId) {
         return desk.profile(customerId);
+    }
+
+    /**
+     * A customer's name and country of residence - the two personal fields staff may see, and nothing else personal
+     * (`P17-TSK-125`; the owner's D-25 decision 1): a read of its own, never in the profile or a list, so a person's name is
+     * fetched only when an operator asks for it. Recorded {@code party.CustomerIdentityRead}, the name never in the record;
+     * an unknown id is {@code 404}. The name is self-declared ({@code legalNameSource}); the country {@code null} while none is
+     * held.
+     */
+    @GetMapping("/customers/{id}/identity")
+    @RequiresPermission(PermissionName.CUSTOMER_READ)
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+    public CustomerReadDesk.CustomerNameAndCountry readCustomerIdentity(@PathVariable("id") String customerId) {
+        return desk.nameAndCountry(customerId);
     }
 
     /**

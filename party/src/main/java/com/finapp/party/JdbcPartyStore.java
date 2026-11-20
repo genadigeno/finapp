@@ -184,6 +184,25 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
     }
 
     @Override
+    public Optional<PartyName> registeredNameOf(Connection unitOfWork, PartyId partyId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(partyId, "partyId must not be null");
+        try (PreparedStatement select =
+                unitOfWork.prepareStatement("SELECT display_name FROM party.party WHERE id = ?")) {
+            select.setObject(1, partyId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next()
+                        ? Optional.of(new PartyName(rows.getString("display_name")))
+                        : Optional.empty();
+            }
+        } catch (SQLException e) {
+            // Names the party, never the name (RESTRICTED-PII).
+            throw new PartyStorageException(
+                    DatabaseFailure.describe("Could not read the registered name of party " + partyId, e));
+        }
+    }
+
+    @Override
     public Optional<PartyId> partyOfCustomer(Connection unitOfWork, CustomerId customerId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(customerId, "customerId must not be null");

@@ -15,6 +15,7 @@ import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.EnumSet;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import lombok.NonNull;
@@ -43,7 +44,9 @@ public final class RecordedReads {
 
     /** The permissions every one of whose answers is recorded: the operator's reads of customers and what they hold. */
     public static final Set<PermissionName> PERMISSIONS = Set.copyOf(EnumSet.of(
-            PermissionName.CUSTOMER_READ, PermissionName.ACCOUNT_READ, PermissionName.TRANSFER_READ, PermissionName.PAYMENT_READ));
+            PermissionName.CUSTOMER_READ, PermissionName.ACCOUNT_READ, PermissionName.TRANSFER_READ, PermissionName.PAYMENT_READ,
+            // P17-TSK-125: a case's documents and one document's content - what a customer holds that is most theirs.
+            PermissionName.KYC_DOCUMENT_READ));
 
     /** The request attribute that says this request's read was recorded. */
     static final String RECORDED = RecordedReads.class.getName() + ".recorded";
@@ -76,6 +79,24 @@ public final class RecordedReads {
                                 .orElseThrow(() -> new IllegalStateException("an operator read runs inside a correlation scope"))
                                 .correlationId(),
                         Optional.of(summary)));
+        mark();
+    }
+
+    /**
+     * Marks the request recorded where the owning module's own audited path has already written the read's record in this
+     * request's unit of work (`P17-TSK-125`): {@code DocumentAccess.read} writes {@code kyc.DocumentContentRead} beside the
+     * content it returns ({@code INV-KYC-06}), and a second record of the same look would split the trail across two codes.
+     * Call it only after that path returned what is served, inside the transaction that wrote its record - never in place of a
+     * record. {@code EveryCustomerReadIsRecordedTest} names each such handler with the record its module writes.
+     *
+     * @param written the action the module's path wrote, named here so the call site says which record stands for the read
+     */
+    public void recordedByItsModule(AuditableAction written) {
+        Objects.requireNonNull(written, "written must not be null");
+        mark();
+    }
+
+    private static void mark() {
         RequestAttributes request = RequestContextHolder.getRequestAttributes();
         if (request != null) {
             request.setAttribute(RECORDED, Boolean.TRUE, RequestAttributes.SCOPE_REQUEST);

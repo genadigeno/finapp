@@ -38,6 +38,9 @@ public final class AccountRestrictions {
     /** An approval or rejection: the restriction as decided, and the agreement's status after it. */
     public record Decided(AccountRestriction restriction, CustomerAccountStatus accountStatus) {}
 
+    /** A restriction as its approver reads it (`P17-TSK-124`): the restriction, and the agreement's status now. */
+    public record Read(AccountRestriction restriction, CustomerAccountStatus accountStatus) {}
+
     /** Risk's action, answered as risk's dispatch reads it (`ActionOutcome`'s three). */
     public enum RiskOutcome {
         /** The agreement moved. */
@@ -53,6 +56,18 @@ public final class AccountRestrictions {
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+
+    /**
+     * The restriction and its agreement's status, unlocked - what its approver reads before deciding (`P17-TSK-124`). Empty
+     * for an unknown restriction. Nothing is written here: the caller records the serving in this unit of work.
+     */
+    public Optional<Read> read(Connection unitOfWork, AccountRestrictionId id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        return restrictions.find(unitOfWork, id).map(restriction -> new Read(restriction, accounts.findById(unitOfWork,
+                restriction.accountId()).orElseThrow(() -> new AccountsStorageException(
+                        "a restriction names an agreement that does not exist")).status()));
+    }
 
     /**
      * Proposes {@code kind} on the agreement, by the acting person - empty for an unknown agreement. Refused when the

@@ -1,5 +1,6 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.api.RecordedReads;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.idempotency.CommandResult;
@@ -10,6 +11,7 @@ import com.finapp.platform.idempotency.StoredResponse;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.merchant.ClosureProposalStatus;
+import com.finapp.merchant.MerchantAuditAction;
 import com.finapp.merchant.MerchantId;
 import com.finapp.merchant.MerchantClosureProposal;
 import com.finapp.merchant.MerchantClosureProposalId;
@@ -21,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
@@ -51,9 +54,49 @@ public final class MerchantClosureDesk {
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final TransactionTemplate merchantClosureTransactions;
     @NonNull private final DataSource dataSource;
+    @NonNull private final RecordedReads reads;
 
     /** A closure proposal's receipt: identifiers, its status and the merchant's status after the act. */
     public record ClosureReceipt(String proposalId, String merchantId, String status, String merchantStatus) {}
+
+    /**
+     * A closure proposal as its decider reads it (`P17-TSK-124`): the merchant it would close - its name and status now; a
+     * closure moves no amount - who proposed it, when and why, whether the caller did, and once decided the decision's instant
+     * and reason ({@code null} until then). Never who decided.
+     */
+    public record MerchantClosureProposalView(
+            String proposalId, String merchantId, String merchantName, String merchantStatus, String status, String reason,
+            String proposedBy, boolean proposedByCaller, String proposedAt, String decidedAt, String decisionReason) {}
+
+    /**
+     * Proposal {@code rawProposalId} with its merchant, recorded {@code merchant.ClosureProposalRead} in the read's own
+     * transaction (`P17-TSK-124`). An unknown or malformed identifier: 404, and nothing recorded.
+     */
+    public MerchantClosureProposalView read(String rawProposalId) {
+        MerchantClosureProposalId id = uuid(rawProposalId).map(MerchantClosureProposalId::of)
+                .orElseThrow(MerchantClosureDesk::notFound);
+        String caller = SecurityContext.require().id();
+        MerchantClosures.Read read = merchantClosureTransactions.execute(status -> {
+            Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
+            try {
+                return proposals.read(unitOfWork, id).map(found -> {
+                    reads.record(unitOfWork, MerchantAuditAction.CLOSURE_PROPOSAL_READ, "MerchantClosureProposal",
+                            id.value().toString(), "merchant=" + found.proposal().merchantId().value() + ", status="
+                                    + found.proposal().status());
+                    return found;
+                });
+            } finally {
+                DataSourceUtils.releaseConnection(unitOfWork, dataSource);
+            }
+        }).orElseThrow(MerchantClosureDesk::notFound);
+        MerchantClosureProposal proposal = read.proposal();
+        return new MerchantClosureProposalView(proposal.id().value().toString(), proposal.merchantId().value().toString(),
+                read.merchant().displayName(), read.merchant().status().name(), proposal.status().name(),
+                proposal.proposalReason(), proposal.proposedBy(), proposal.proposedBy().equals(caller),
+                proposal.proposedAt().toString(),
+                proposal.decision().map(MerchantClosureProposal.Decision::decidedAt).map(Instant::toString).orElse(null),
+                proposal.decision().map(MerchantClosureProposal.Decision::reason).orElse(null));
+    }
 
     /** Proposes the merchant's closure. */
     public ClosureReceipt propose(String idempotencyKey, String rawMerchantId, String reason) {

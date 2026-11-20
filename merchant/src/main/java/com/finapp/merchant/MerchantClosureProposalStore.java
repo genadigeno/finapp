@@ -20,6 +20,9 @@ public interface MerchantClosureProposalStore<T> {
     /** The proposal, read {@code FOR UPDATE} - the deciders' serialization point. Empty for an unknown id. */
     Optional<MerchantClosureProposal> lock(T unitOfWork, MerchantClosureProposalId id);
 
+    /** The proposal, unlocked - its decider's read (`P17-TSK-124`). Empty for an unknown id. */
+    Optional<MerchantClosureProposal> find(T unitOfWork, MerchantClosureProposalId id);
+
     /** The merchant's open ({@code PROPOSED}) proposal, if any - at most one, by the index. */
     Optional<MerchantClosureProposal> findOpenFor(T unitOfWork, MerchantId merchantId);
 
