@@ -691,6 +691,24 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/accounting/mapping-versions", PermissionName.ACCOUNTING_MAPPING_APPROVE),
                     entry("GET /v1/operator/accounting/valuation-rate-sets", PermissionName.ACCOUNTING_CLOSE_APPROVE),
                     entry("GET /v1/operator/accounting/valuation-rate-sets/mine", PermissionName.ACCOUNTING_CLOSE_PROPOSE),
+                    // The credit, lending and BNPL read gaps (P17-TSK-035, G-80...G-85): each list and read under the
+                    // permission its desk's existing reads use - the investigators' for their lists and the approvers' for the
+                    // servicing queues (ADR-C133: a queue is read by who may decide it).
+                    entry("GET /v1/operator/credit/decision-requests", PermissionName.CREDIT_INVESTIGATE),
+                    entry("GET /v1/operator/credit/policies/versions", PermissionName.CREDIT_INVESTIGATE),
+                    entry("GET /v1/operator/credit/policies/versions/{versionId}", PermissionName.CREDIT_INVESTIGATE),
+                    entry("GET /v1/operator/credit/scorecards", PermissionName.CREDIT_INVESTIGATE),
+                    entry("GET /v1/operator/credit/scorecards/{versionId}", PermissionName.CREDIT_INVESTIGATE),
+                    entry("GET /v1/operator/loan-applications", PermissionName.LENDING_INVESTIGATE),
+                    entry("GET /v1/operator/loans", PermissionName.LENDING_INVESTIGATE),
+                    entry("GET /v1/operator/loans/{id}/schedule", PermissionName.LENDING_INVESTIGATE),
+                    entry("GET /v1/operator/loans/{id}/statements", PermissionName.LENDING_INVESTIGATE),
+                    entry("GET /v1/operator/loans/servicing-requests", PermissionName.LOAN_SERVICE_APPROVE),
+                    entry("GET /v1/operator/lending/terms/versions", PermissionName.LENDING_INVESTIGATE),
+                    entry("GET /v1/operator/bnpl-applications", PermissionName.BNPL_INVESTIGATE),
+                    entry("GET /v1/operator/bnpl-agreements", PermissionName.BNPL_INVESTIGATE),
+                    entry("GET /v1/operator/bnpl-purchases/{id}/refunds", PermissionName.BNPL_INVESTIGATE),
+                    entry("GET /v1/operator/bnpl-agreements/servicing-requests", PermissionName.BNPL_SERVICE_APPROVE),
                     // P14-TSK-008: the report runs - generation and regeneration the accountant's
                     // ACCOUNTING_REPORT_GENERATE, the audited read of a run's content the accountant's ACCOUNTING_READ
                     // (identity V025's partition); the negatives are ReportRunDeskTest's route declarations.

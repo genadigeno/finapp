@@ -151,7 +151,9 @@ public enum BnplAuditAction implements AuditableAction {
                     + " summary names it and the act - never an amount. Since the Phase 12 -> 13 gate the operator refund door"
                     + " fails closed too (A7-6), and a merchant key whose issuer is the purchase's own party, or cannot be placed in"
                     + " one, refunding or accepting a dispute (A5-F1) - its actor the merchant, its target the purchase, the"
-                    + " summary the act and the key id, never the issuer.",
+                    + " summary the act and the key id, never the issuer. Since P17-TSK-035 also a read of a purchase's refunds"
+                    + " of the reader's own party, and a list read by an operator the platform cannot place in a party (the"
+                    + " target the collection, the act the list).",
             false),
 
     /** A BNPL servicing agent proposed the reversal of a repayment (`P12-TSK-024`). */
@@ -330,6 +332,42 @@ public enum BnplAuditAction implements AuditableAction {
             false),
 
     /** An investigator read a BNPL agreement (`P12-TSK-025`). */
+    /** An investigator read a page of the BNPL applications (`P17-TSK-035`). */
+    APPLICATIONS_READ(
+            "bnpl.ApplicationsRead",
+            "A holder of BNPL_INVESTIGATE read a page of the BNPL applications (P17-TSK-035, ADR-C132 decision 5): each"
+                    + " application's party, product, plan, status, merchant, decision request and terms version - never a"
+                    + " figure; the reader's own party withheld by the read. Written once per page in the read's own"
+                    + " transaction, the summary naming the filter and the count served.",
+            false),
+
+    /** An investigator read a page of the BNPL agreements (`P17-TSK-035`). */
+    AGREEMENTS_READ(
+            "bnpl.AgreementsRead",
+            "A holder of BNPL_INVESTIGATE read a page of the BNPL agreements (P17-TSK-035, ADR-C132 decision 5): each"
+                    + " agreement's obligation, purchase, party, merchant, product, plan and status - never an amount; the"
+                    + " reader's own party withheld by the read. Written once per page in the read's own transaction, the"
+                    + " summary naming the filter and the count served.",
+            false),
+
+    /** An investigator read one purchase's refunds (`P17-TSK-035`). */
+    REFUNDS_READ(
+            "bnpl.RefundsRead",
+            "A holder of BNPL_INVESTIGATE read a page of one BNPL purchase's refunds (P17-TSK-035): each refund's door,"
+                    + " amounts, what it cancelled and released, its reason and journal entry - never the investigator's own"
+                    + " party's purchase (bnpl.SelfDealingRefused, recorded FAILED). Its target the purchase; written in the"
+                    + " read's own transaction, the summary naming the count served - never an amount.",
+            false),
+
+    /** An approver read a page of the servicing proposals awaiting a decision (`P17-TSK-035`). */
+    SERVICING_REQUESTS_READ(
+            "bnpl.ServicingRequestsRead",
+            "A holder of BNPL_SERVICE_APPROVE read a page of the waivers and repayment reversals awaiting a decision"
+                    + " (P17-TSK-035, ADR-C133's pending-decision shape): each proposal's kind, agreement, proposer and reason -"
+                    + " never a figure; the reader's own party's agreements withheld by the read. Written once per page in"
+                    + " the read's own transaction, the summary naming the count served.",
+            false),
+
     AGREEMENT_READ(
             "bnpl.AgreementRead",
             "An investigator holding BNPL_INVESTIGATE read a BNPL agreement (GET /v1/operator/bnpl-agreements/{id}): its"

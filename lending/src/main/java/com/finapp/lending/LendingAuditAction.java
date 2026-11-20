@@ -163,7 +163,37 @@ public enum LendingAuditAction implements AuditableAction {
             "A holder of LOAN_SERVICE read a loan account through the operator door (P11-TSK-020, ADR-0099 point 8): its"
                     + " state, agreement and balances derived from journal lines, its repayments with their derived status"
                     + " and its reversals - read in one REPEATABLE READ snapshot and committed with this record, so no read"
-                    + " is served without it. The summary names the loan and the row counts - never an amount.",
+                    + " is served without it. The summary names the loan and the row counts - never an amount. Since"
+                    + " P17-TSK-035 also a holder of LENDING_INVESTIGATE served one account's schedule version or its"
+                    + " statements through GET /v1/operator/loans/{id}/schedule and /statements - the borrower's views,"
+                    + " written in the read's own transaction; the summary names the view, the version or the count.",
+            false),
+
+    /** An investigator read a page of the loan applications (P17-TSK-035). */
+    APPLICATIONS_READ(
+            "lending.ApplicationsRead",
+            "A holder of LENDING_INVESTIGATE read a page of the loan applications (P17-TSK-035, ADR-C132 decision 5): each"
+                    + " application's party, product, status, decision request and terms version - never a figure; the"
+                    + " reader's own party withheld by the read. Written once per page in the read's own transaction, the"
+                    + " summary naming the filter and the count served.",
+            false),
+
+    /** An investigator read a page of the loans (P17-TSK-035). */
+    LOANS_READ(
+            "lending.LoansRead",
+            "A holder of LENDING_INVESTIGATE read a page of the loans (P17-TSK-035, ADR-C132 decision 5): each account's"
+                    + " party, product, kind, state and the condition the servicing step last recorded - never a balance;"
+                    + " the reader's own party withheld by the read. Written once per page in the read's own transaction, the"
+                    + " summary naming the filter and the count served.",
+            false),
+
+    /** An approver read a page of the servicing proposals awaiting a decision (P17-TSK-035). */
+    SERVICING_REQUESTS_READ(
+            "lending.ServicingRequestsRead",
+            "A holder of LOAN_SERVICE_APPROVE read a page of the waivers, amendments and repayment reversals awaiting a"
+                    + " decision (P17-TSK-035, ADR-C133's pending-decision shape): each proposal's kind, loan, proposer and"
+                    + " reason - never a figure; the reader's own party's loans withheld by the read. Written once per page in"
+                    + " the read's own transaction, the summary naming the count served.",
             false),
 
     /** An operator tried to service a loan of their own party - refused, recorded. */
@@ -173,7 +203,9 @@ public enum LendingAuditAction implements AuditableAction {
                     + " is no identity the platform can place in a party - and was refused before anything was written"
                     + " (P11-TSK-020, ADR-0099 point 2, the Phase 10 to 11 transition's R1, INV-LND-11). Recorded FAILED in"
                     + " a transaction of its own after the act rolled back, so the attempt survives. The summary names the"
-                    + " loan and the act.",
+                    + " loan and the act. Since P11-TSK-029 also an investigation of such a loan, and since P17-TSK-035 a read"
+                    + " of its schedule or statements, and a list read by an operator the platform cannot place in a party or"
+                    + " naming their own party (the target the collection, the act the list).",
             false),
 
     /** A proposer tried to approve their own four-eyes proposal - refused, recorded. */

@@ -3064,7 +3064,10 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P10-TSK-011. A read of platform-wide configuration: the version id is the one a"
                                         + " snapshot pinned or one this transaction locked; a scorecard has no owner to"
-                                        + " scope by and no customer door.")),
+                                        + " scope by and no customer door. P17-TSK-035: also the id from the URL of GET"
+                                        + " /v1/operator/credit/scorecards/{versionId}, behind"
+                                        + " @RequiresPermission(CREDIT_INVESTIGATE), read-only and audited"
+                                        + " credit.ScorecardRead.")),
                     Map.entry(
                             "com.finapp.credit.JdbcCreditPolicyStore.insertProposal",
                             new Entry(
@@ -3100,7 +3103,99 @@ class OwnershipIsScopedTest {
                                     "P10-TSK-012. A read of platform-wide configuration: the version id is one the"
                                         + " effective periods or the ACTIVE status answered, or one a snapshot pinned; a"
                                         + " policy has no owner to scope by, and its one door is the investigator's, behind"
-                                        + " @RequiresPermission(CREDIT_INVESTIGATE).")),
+                                        + " @RequiresPermission(CREDIT_INVESTIGATE). P17-TSK-035: also the id from the URL"
+                                        + " of GET /v1/operator/credit/policies/versions/{versionId}, the same"
+                                        + " permission, read-only and audited credit.PolicyRead.")),
+                    // ---- P17-TSK-035: the credit, lending and BNPL operator collections
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditCollections.policyVersion",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-035. One policy version's head by the id from the URL of GET"
+                                        + " /v1/operator/credit/policies/versions/{versionId}, behind"
+                                        + " @RequiresPermission(CREDIT_INVESTIGATE): platform-wide configuration with no"
+                                        + " owner to scope by - JdbcCreditPolicyStore.policy's precedent; read-only and"
+                                        + " audited credit.PolicyRead.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditCollections.scorecardVersion",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-035. One scorecard version's head by the id from the URL of GET"
+                                        + " /v1/operator/credit/scorecards/{versionId}, behind"
+                                        + " @RequiresPermission(CREDIT_INVESTIGATE): platform-wide configuration with no"
+                                        + " owner to scope by - JdbcScorecardStore.model's precedent; read-only and"
+                                        + " audited credit.ScorecardRead.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLendingOperatorLists.applications",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-035. GET /v1/operator/loan-applications behind"
+                                        + " @RequiresPermission(LENDING_INVESTIGATE) - the investigator's list by"
+                                        + " permission, audited lending.ApplicationsRead; its one identifier is the"
+                                        + " reader's own party, left out (party_id <> ?), never a target, and a reader the"
+                                        + " platform cannot place is refused before it runs -"
+                                        + " JdbcLoanWriteOffStore.oldestPending's precedent.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLendingOperatorLists.loans",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-035. GET /v1/operator/loans behind @RequiresPermission(LENDING_INVESTIGATE),"
+                                        + " audited lending.LoansRead: the reader's own party left out (l.party_id <> ?),"
+                                        + " and a partyId filter naming that party refused 403 lending.SelfDealingRefused"
+                                        + " before it runs; any other party is the investigator's subject by permission -"
+                                        + " JdbcLoanRecordStore.read's precedent.")),
+                    Map.entry(
+                            "com.finapp.lending.JdbcLendingOperatorLists.pendingServicing",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-035. GET /v1/operator/loans/servicing-requests behind"
+                                        + " @RequiresPermission(LOAN_SERVICE_APPROVE) - the approver's queue by"
+                                        + " permission, audited lending.ServicingRequestsRead; its one identifier is the"
+                                        + " approver's own party, left out (l.party_id <> ?), never a target -"
+                                        + " JdbcLoanWriteOffStore.oldestPending's precedent.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOperatorLists.applications",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-035. GET /v1/operator/bnpl-applications behind"
+                                        + " @RequiresPermission(BNPL_INVESTIGATE), audited bnpl.ApplicationsRead; its one"
+                                        + " identifier is the reader's own party, left out (party_id <> ?), never a"
+                                        + " target - JdbcBnplWriteOffStore.oldestPending's precedent.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOperatorLists.agreements",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-035. GET /v1/operator/bnpl-agreements behind"
+                                        + " @RequiresPermission(BNPL_INVESTIGATE), audited bnpl.AgreementsRead: the"
+                                        + " reader's own party left out (o.party_id <> ?); the optional merchant is a"
+                                        + " filter the investigator names, not a tenant acting on its own rows - the"
+                                        + " console is the platform's operator, never a merchant's.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOperatorLists.purchaseParty",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-035. The party of the purchase named by the URL of GET"
+                                        + " /v1/operator/bnpl-purchases/{id}/refunds behind"
+                                        + " @RequiresPermission(BNPL_INVESTIGATE), read only to judge the reader: a"
+                                        + " purchase of the reader's own party, or a reader the platform cannot place, is"
+                                        + " refused 403 bnpl.SelfDealingRefused, recorded FAILED; nothing is served.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOperatorLists.refunds",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-035. A purchase's refunds by the id from the URL, behind"
+                                        + " @RequiresPermission(BNPL_INVESTIGATE), only after purchaseParty judged the"
+                                        + " reader not of the purchase's party (fail closed, bnpl.SelfDealingRefused);"
+                                        + " read-only and audited bnpl.RefundsRead.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplOperatorLists.pendingServicing",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-035. GET /v1/operator/bnpl-agreements/servicing-requests behind"
+                                        + " @RequiresPermission(BNPL_SERVICE_APPROVE) - the approver's queue by"
+                                        + " permission, audited bnpl.ServicingRequestsRead; its one identifier is the"
+                                        + " approver's own party, left out (o.party_id <> ?), never a target -"
+                                        + " JdbcBnplWriteOffStore.oldestPending's precedent.")),
                     Map.entry(
                             "com.finapp.lending.JdbcLoanApplicationStore.ownedBy",
                             new Entry(

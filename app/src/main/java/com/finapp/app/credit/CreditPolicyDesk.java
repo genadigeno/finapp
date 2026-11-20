@@ -224,7 +224,8 @@ public final class CreditPolicyDesk {
 
     // ------------------------------------------------------------------ the view
 
-    private static CreditPolicyView view(CreditPolicyStore.PolicyVersion version) {
+    /** The version's policy as the operator reads it - also the collection desk's read of one version (`P17-TSK-035`). */
+    static CreditPolicyView view(CreditPolicyStore.PolicyVersion version) {
         CreditPolicy policy = version.policy();
         List<CreditPolicySourceView> sources = new ArrayList<>();
         policy.sourceKinds().forEach(kind ->

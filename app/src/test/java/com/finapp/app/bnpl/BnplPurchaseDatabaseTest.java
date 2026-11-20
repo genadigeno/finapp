@@ -663,6 +663,88 @@ class BnplPurchaseDatabaseTest {
     }
 
     @Test
+    @DisplayName("an investigator reads the purchase's agreement and refunds (P17-TSK-035): the refunds oldest first, a page"
+            + " each, as recorded; the agreement found by its merchant; the applications, agreements and the approver's"
+            + " queue walked in the tables' order with the reader's own party withheld; every serving recorded; the"
+            + " customer made an investigator refused their own purchase, recorded FAILED")
+    void anInvestigatorReadsThePurchasesAgreementAndRefunds() throws Exception {
+        Bought bought = payIn4();
+        HttpResponse<String> accepted = world.accept(bought.customer().token(), bought.offer(), BnplApplicationClient.key());
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
+        String purchase = BnplApplicationClient.field(accepted.body(), "purchaseId");
+        String refunder = world.client.operatorSession(authorization, com.finapp.identity.RoleName.LEDGER_OPERATOR);
+        for (String amount : List.of("40.00", "20.00")) {
+            HttpResponse<String> refunded = world.client.post("/v1/operator/bnpl-purchases/" + purchase + "/refunds",
+                    "{\"amount\":\"" + amount + "\",\"currency\":\"EUR\",\"reason\":\"goods returned\"}", refunder,
+                    BnplApplicationClient.key());
+            assertThat(refunded.statusCode()).as(refunded.body()).isEqualTo(201);
+        }
+
+        com.finapp.app.api.OperatorReadClient operators = new com.finapp.app.api.OperatorReadClient(port, authorization);
+        com.finapp.app.api.OperatorReadClient.Operator investigator = operators.operator(com.finapp.identity.RoleName.BNPL_OFFICER);
+        var refunds = operators.walk("/v1/operator/bnpl-purchases/" + purchase + "/refunds?limit=1", investigator.token());
+        assertThat(refunds.pages()).isEqualTo(2);
+        assertThat(refunds.each("amount")).containsExactly("40.00", "20.00");
+        assertThat(refunds.each("refundId")).containsExactlyElementsOf(com.finapp.app.api.OperatorReadClient.column(
+                "SELECT id::text FROM bnpl.bnpl_refund WHERE purchase_id = ?::uuid ORDER BY created_at, id", purchase));
+        assertThat(refunds.items()).allSatisfy(item -> {
+            assertThat(item.path("door").asString()).isEqualTo("OPERATOR");
+            assertThat(item.path("reason").asString()).isEqualTo("goods returned");
+            assertThat(item.has("refundKey")).isFalse();
+        });
+        assertThat(com.finapp.app.api.OperatorReadClient.recorded("bnpl.RefundsRead", investigator.identity())).isEqualTo(2);
+
+        String obligation = BnplApplicationClient.scalar("SELECT id::text FROM bnpl.bnpl_obligation WHERE purchase_id ="
+                + " ?::uuid", purchase);
+        var atMerchant = operators.walk("/v1/operator/bnpl-agreements?merchantId=" + bought.merchant().id(),
+                investigator.token());
+        assertThat(atMerchant.each("obligationId")).containsExactly(obligation);
+        assertThat(atMerchant.items().getFirst().path("status").asString()).isEqualTo("ACTIVE");
+        assertThat(atMerchant.items().getFirst().path("partyId").asString()).isEqualTo(bought.customer().party().toString());
+        var agreements = operators.walk("/v1/operator/bnpl-agreements?limit=2", investigator.token());
+        assertThat(agreements.each("obligationId")).containsExactlyElementsOf(com.finapp.app.api.OperatorReadClient.column(
+                "SELECT id::text FROM bnpl.bnpl_obligation WHERE party_id <> ? ORDER BY opened_at DESC, id DESC",
+                investigator.party()));
+        var applications = operators.walk("/v1/operator/bnpl-applications?limit=2", investigator.token());
+        assertThat(applications.each("applicationId")).containsExactlyElementsOf(com.finapp.app.api.OperatorReadClient.column(
+                "SELECT id::text FROM bnpl.bnpl_application WHERE party_id <> ? ORDER BY submitted_at DESC, id DESC",
+                investigator.party()));
+        assertThat(com.finapp.app.api.OperatorReadClient.recorded("bnpl.AgreementsRead", investigator.identity()))
+                .isEqualTo(atMerchant.pages() + agreements.pages());
+        assertThat(com.finapp.app.api.OperatorReadClient.recorded("bnpl.ApplicationsRead", investigator.identity()))
+                .isEqualTo(applications.pages());
+
+        com.finapp.app.api.OperatorReadClient.Operator approver =
+                operators.operator(com.finapp.identity.RoleName.BNPL_SERVICING_AGENT);
+        var queue = operators.walk("/v1/operator/bnpl-agreements/servicing-requests?limit=2", approver.token());
+        assertThat(queue.each("id")).containsExactlyElementsOf(com.finapp.app.api.OperatorReadClient.column(
+                "SELECT p.id::text FROM (SELECT w.id, w.obligation_id, w.proposed_at FROM bnpl.bnpl_waiver w WHERE NOT EXISTS"
+                        + " (SELECT 1 FROM bnpl.bnpl_waiver_decision d WHERE d.waiver_id = w.id) UNION ALL SELECT r.id,"
+                        + " r.obligation_id, r.proposed_at FROM bnpl.bnpl_repayment_reversal r WHERE r.status = 'PROPOSED') p"
+                        + " JOIN bnpl.bnpl_obligation o ON o.id = p.obligation_id WHERE o.party_id <> ?"
+                        + " ORDER BY p.proposed_at, p.id", approver.party()));
+        assertThat(com.finapp.app.api.OperatorReadClient.recorded("bnpl.ServicingRequestsRead", approver.identity()))
+                .isEqualTo(queue.pages());
+        assertThat(operators.get("/v1/operator/bnpl-agreements/servicing-requests", investigator.token()).statusCode())
+                .as("the queue is its approvers'").isEqualTo(403);
+        assertThat(operators.get("/v1/operator/bnpl-purchases/" + purchase + "/refunds", approver.token()).statusCode())
+                .as("the lists are the investigator's").isEqualTo(403);
+        assertThat(operators.get("/v1/operator/bnpl-agreements", null).statusCode()).isEqualTo(401);
+        assertThat(com.finapp.app.api.OperatorReadClient.problem(operators.get("/v1/operator/bnpl-purchases/"
+                + UUID.randomUUID() + "/refunds", investigator.token()), 404)).isEqualTo("bnpl.NotFound");
+
+        UUID customer = UUID.fromString(BnplApplicationClient.scalar("SELECT id::text FROM identity.identity WHERE party_id"
+                + " = ?::uuid", bought.customer().party().toString()));
+        operators.grant(customer, com.finapp.identity.RoleName.BNPL_OFFICER);
+        assertThat(com.finapp.app.api.OperatorReadClient.problem(operators.get("/v1/operator/bnpl-purchases/" + purchase
+                + "/refunds", bought.customer().token()), 403)).isEqualTo("bnpl.SelfDealingRefused");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.SelfDealingRefused' AND actor_id = ? AND outcome = 'FAILED' AND target_id = ?", customer.toString(),
+                purchase)).isEqualTo(1);
+        assertThat(com.finapp.app.api.OperatorReadClient.recorded("bnpl.RefundsRead", customer)).isZero();
+    }
+
+    @Test
     @DisplayName("standing lost refuses 409 credit.ApplicantNotEligible; nothing consumed")
     void standingLostRefuses() throws Exception {
         Bought bought = payIn4();

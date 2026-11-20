@@ -348,7 +348,8 @@ public final class LoanAccountDesk {
 
     // ------------------------------------------------------------------ the views
 
-    private static StatementView view(CreditLineStatements.StatementRead read) {
+    /** One statement as its borrower reads it - also the investigator's (`P17-TSK-035`, {@code LendingCollectionDesk}). */
+    static StatementView view(CreditLineStatements.StatementRead read) {
         CreditLineStatementStore.StatedItem item = read.item();
         var statement = item.statement();
         var figures = statement.statement();
