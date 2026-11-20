@@ -190,8 +190,8 @@ public class MerchantPayoutBeans {
     /** An operator payout above the threshold, by four eyes (`P17-TSK-031`, ADR-0154). */
     @Bean
     com.finapp.merchant.PayoutProposals payoutProposals(AuditWriter<Connection> auditWriter, IdGenerator ids, Clock clock) {
-        return new com.finapp.merchant.PayoutProposals(new com.finapp.merchant.JdbcPayoutProposalStore(), auditWriter, ids,
-                clock);
+        return new com.finapp.merchant.PayoutProposals(new com.finapp.merchant.JdbcPayoutProposalStore(),
+                new com.finapp.merchant.JdbcMerchantStore(), auditWriter, ids, clock);
     }
 
     /** The operator payout door's four-eyes half (`P17-TSK-031`), each act in a transaction of its own. */
@@ -201,9 +201,10 @@ public class MerchantPayoutBeans {
             com.finapp.merchant.PayoutProposals payoutProposals,
             com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
             PlatformTransactionManager transactionManager,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.app.api.RecordedReads recordedReads) {
         return new PayoutDesk(merchantPayoutOperations, payoutProposals, idempotentExecutor,
-                new TransactionTemplate(transactionManager), dataSource);
+                new TransactionTemplate(transactionManager), dataSource, recordedReads);
     }
 
     @Bean

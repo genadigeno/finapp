@@ -184,6 +184,62 @@ public final class DeadLetterDesk {
         return OperatorCollection.cursor(collection, tail.at().toString(), tail.id().toString());
     }
 
+    // ------------------------------------------------------------------ one record of a queue (P17-TSK-124)
+
+    /**
+     * One discard as the second person reads it (`P17-TSK-124`): the subject, the status it stands in now, who proposed it, when
+     * and why. Never who decided. The reason is served to whoever decides it, and never logged.
+     */
+    public record DiscardRecordView(String discardId, String subjectKind, String subjectId, String status, String proposedBy,
+            String proposedAt, String reason) {
+
+        @Override
+        public String toString() {
+            return "DiscardRecordView[" + discardId + ", " + subjectKind + ", " + status + "]";
+        }
+    }
+
+    /**
+     * Abandoned event {@code rawEventId}, while it is in the queue - the row its page serves, so a record's page needs no search of
+     * the queue. Recorded {@code deadletter.Read} in the read's transaction; unknown, malformed or no longer abandoned: 404, nothing
+     * recorded.
+     */
+    public AbandonedView abandonedEvent(String rawEventId) {
+        UUID id = identifier(rawEventId);
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        DeadLetterStore.AbandonedEvent row = spans.within("deadletter.read", Map.of(), () -> transactions.inTransaction(uow ->
+                operations.abandonedEvent(uow, id, actor, correlation))).orElseThrow(DeadLetterDesk::noRecord);
+        return new AbandonedView(row.eventId().toString(), row.aggregateId().toString(), row.eventType(), row.attempts(),
+                row.abandonedAt().toString(), row.failureClass());
+    }
+
+    /** Parked record {@code rawParkId}, while it is parked; the abandoned read's rules. */
+    public ParkedView parkedRecord(String rawParkId) {
+        UUID id = identifier(rawParkId);
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        DeadLetterStore.ParkedRecord row = spans.within("deadletter.read", Map.of(), () -> transactions.inTransaction(uow ->
+                operations.parkedRecord(uow, id, actor, correlation))).orElseThrow(DeadLetterDesk::noRecord);
+        return new ParkedView(row.parkId().toString(), row.consumer(), row.dedupeKey(), row.group(), row.messageType(), row.attempts(),
+                row.parkedAt().toString(), row.failureClass());
+    }
+
+    /** Discard {@code rawDiscardId}, in whatever status it stands; the abandoned read's rules. */
+    public DiscardRecordView discard(String rawDiscardId) {
+        UUID id = identifier(rawDiscardId);
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        DeadLetterStore.Proposal row = spans.within("deadletter.read", Map.of(), () -> transactions.inTransaction(uow ->
+                operations.discard(uow, id, actor, correlation))).orElseThrow(DeadLetterDesk::noRecord);
+        return new DiscardRecordView(row.discardId().toString(), row.kind().name(), row.subjectId().toString(), row.status(),
+                row.proposedBy(), row.proposedAt().toString(), row.reason());
+    }
+
+    private static ApiException noRecord() {
+        return new ApiException(DeadLetterErrorCode.NOT_FOUND, "No record of the queue matches the requested identifier");
+    }
+
     // ------------------------------------------------------------------ the acts
 
     public ActReceipt retry(String idempotencyKey, String rawEventId, String reason) {

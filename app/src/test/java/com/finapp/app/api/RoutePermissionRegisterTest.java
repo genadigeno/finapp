@@ -117,6 +117,19 @@ class RoutePermissionRegisterTest {
                             PermissionName.FEE_SCHEDULE_APPROVE),
                     entry("POST /v1/operator/bnpl-fee-schedule-proposals/{id}/rejection",
                             PermissionName.FEE_SCHEDULE_APPROVE),
+                    // P17-TSK-124: the reads an approver lacks - one pending money act, one restriction - each under the
+                    // permission of the approval door beside it (finapp-admin-panel B7.6, B6.8).
+                    entry("GET /v1/operator/transfer-reversals/{id}", PermissionName.TRANSFER_REVERSE_APPROVE),
+                    entry("GET /v1/operator/refund-proposals/{id}", PermissionName.PAYMENT_REFUND_APPROVE),
+                    entry("GET /v1/operator/payout-proposals/{id}", PermissionName.MERCHANT_PAYOUT_APPROVE),
+                    entry("GET /v1/operator/merchant-closures/{id}", PermissionName.MERCHANT_CLOSE_APPROVE),
+                    entry("GET /v1/operator/bnpl-refund-proposals/{id}", PermissionName.PAYMENT_REFUND_APPROVE),
+                    entry("GET /v1/operator/bnpl-fee-schedule-proposals/{id}", PermissionName.FEE_SCHEDULE_APPROVE),
+                    entry("GET /v1/operator/account-restrictions/{id}", PermissionName.ACCOUNT_RESTRICT_APPROVE),
+                    // P17-TSK-124: one record of each dead-letter queue, under the queues' own permission.
+                    entry("GET /v1/operator/events/abandoned/{eventId}", PermissionName.EVENT_OPERATE),
+                    entry("GET /v1/operator/events/parked/{parkId}", PermissionName.EVENT_OPERATE),
+                    entry("GET /v1/operator/events/discards/{discardId}", PermissionName.EVENT_OPERATE),
                     // P17-TSK-116: the reads an approver lacks, each under the decider's own permission.
                     entry("GET /v1/operator/lending/terms/{versionId}", PermissionName.LENDING_ADMINISTER),
                     entry("GET /v1/operator/lending/capital-contributions/{contributionId}",
@@ -888,6 +901,14 @@ class RoutePermissionRegisterTest {
             "POST /v1/operator/bnpl-refund-proposals/{id}/rejection",
             "POST /v1/operator/bnpl-fee-schedule-proposals/{id}/approval",
             "POST /v1/operator/bnpl-fee-schedule-proposals/{id}/rejection",
+            // P17-TSK-124: what a decider reads before deciding a money act or a restriction - on the decision's own factor.
+            "GET /v1/operator/transfer-reversals/{id}",
+            "GET /v1/operator/refund-proposals/{id}",
+            "GET /v1/operator/payout-proposals/{id}",
+            "GET /v1/operator/merchant-closures/{id}",
+            "GET /v1/operator/bnpl-refund-proposals/{id}",
+            "GET /v1/operator/bnpl-fee-schedule-proposals/{id}",
+            "GET /v1/operator/account-restrictions/{id}",
             // P17-TSK-014: who holds the privileged roles, one of them, and who a login names - the same map, not on a password.
             "GET /v1/operator/identities",
             "GET /v1/operator/identities/{id}",

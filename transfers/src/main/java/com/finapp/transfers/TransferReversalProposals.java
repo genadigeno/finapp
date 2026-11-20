@@ -34,6 +34,9 @@ public final class TransferReversalProposals {
     /** A decided proposal and the transfer's status after it. */
     public record Decided(TransferReversalProposal proposal, TransferStatus transferStatus) {}
 
+    /** A proposal as its decider reads it (`P17-TSK-124`): the proposal and the transfer it would reverse, as they stand. */
+    public record Read(TransferReversalProposal proposal, Transfer transfer) {}
+
     @NonNull private final TransferStore<Connection> transfers;
     @NonNull private final TransferReversalProposalStore<Connection> proposals;
     @NonNull private final TransferReversal reversal;
@@ -67,6 +70,18 @@ public final class TransferReversalProposals {
                 AuditOutcome.SUCCEEDED, correlation.correlationId(),
                 Optional.of("proposal=" + proposed.id().value() + ", customer=" + locked.get().customerId())));
         return Optional.of(proposed);
+    }
+
+    /**
+     * The proposal and its transfer, unlocked - what its decider reads before deciding (`P17-TSK-124`). Empty for an unknown
+     * proposal. Nothing is written here: the caller records the serving in this unit of work.
+     */
+    public Optional<Read> read(Connection unitOfWork, TransferReversalProposalId id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        return proposals.find(unitOfWork, id).map(proposal -> new Read(proposal, transfers.findById(unitOfWork,
+                proposal.transferId()).orElseThrow(() -> new TransfersStorageException(
+                        "a reversal proposal names a transfer that does not exist"))));
     }
 
     /**

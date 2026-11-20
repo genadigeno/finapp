@@ -1,5 +1,6 @@
 package com.finapp.app.transfers;
 
+import com.finapp.app.api.RecordedReads;
 import com.finapp.app.telemetry.TransferMetrics;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
@@ -16,11 +17,13 @@ import com.finapp.transfers.TransferReversalProposal;
 import com.finapp.transfers.TransferReversalProposalId;
 import com.finapp.transfers.TransferReversalProposals;
 import com.finapp.transfers.TransferReversalRefusedException;
+import com.finapp.transfers.TransfersAuditAction;
 import com.finapp.transfers.TransfersErrorCode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,9 +55,52 @@ public final class TransferReversalDesk {
     @NonNull private final TransactionTemplate transferTransactions;
     @NonNull private final DataSource dataSource;
     @NonNull private final TransferMetrics metrics;
+    @NonNull private final RecordedReads reads;
 
     /** A reversal proposal's receipt: identifiers, its status and the transfer's status after the act. */
     public record TransferReversalReceipt(String proposalId, String transferId, String status, String transferStatus) {}
+
+    /**
+     * A reversal proposal as its decider reads it (`P17-TSK-124`): the transfer it would reverse - its amount exact, with its
+     * currency, and its status now - who proposed it, when and why, whether the caller did, and once decided the decision's
+     * instant and reason ({@code null} until then). Never who decided.
+     */
+    public record TransferReversalProposalView(
+            String proposalId, String transferId, String amount, String currency, String transferStatus, String status,
+            String reason, String proposedBy, boolean proposedByCaller, String proposedAt, String decidedAt,
+            String decisionReason) {}
+
+    /**
+     * Proposal {@code rawProposalId} with its transfer, recorded {@code transfers.ReversalProposalRead} in the read's own
+     * transaction (`P17-TSK-124`). An unknown or malformed identifier: 404, and nothing recorded.
+     */
+    public TransferReversalProposalView read(String rawProposalId) {
+        TransferReversalProposalId id = uuid(rawProposalId).map(TransferReversalProposalId::of)
+                .orElseThrow(TransferReversalDesk::notFound);
+        String caller = SecurityContext.require().id();
+        return transferTransactions.execute(status -> {
+            Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
+            try {
+                TransferReversalProposals.Read read = proposals.read(unitOfWork, id).orElseThrow(TransferReversalDesk::notFound);
+                reads.record(unitOfWork, TransfersAuditAction.REVERSAL_PROPOSAL_READ, "TransferReversalProposal",
+                        id.value().toString(), "transfer=" + read.transfer().id().value() + ", status="
+                                + read.proposal().status());
+                return view(read, caller);
+            } finally {
+                DataSourceUtils.releaseConnection(unitOfWork, dataSource);
+            }
+        });
+    }
+
+    private static TransferReversalProposalView view(TransferReversalProposals.Read read, String caller) {
+        TransferReversalProposal proposal = read.proposal();
+        return new TransferReversalProposalView(proposal.id().value().toString(), proposal.transferId().value().toString(),
+                read.transfer().amount().toBigDecimal().toPlainString(), read.transfer().amount().currency().code(),
+                read.transfer().status().name(), proposal.status().name(), proposal.proposalReason(), proposal.proposedBy(),
+                proposal.proposedBy().equals(caller), proposal.proposedAt().toString(),
+                proposal.decision().map(TransferReversalProposal.Decision::decidedAt).map(Instant::toString).orElse(null),
+                proposal.decision().map(TransferReversalProposal.Decision::reason).orElse(null));
+    }
 
     /** Proposes the transfer's reversal. */
     public TransferReversalReceipt propose(String idempotencyKey, String rawTransferId, String reason) {

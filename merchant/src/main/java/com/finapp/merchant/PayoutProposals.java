@@ -34,6 +34,7 @@ public final class PayoutProposals {
     static final String TARGET_TYPE = "merchant";
 
     @NonNull private final PayoutProposalStore<Connection> proposals;
+    @NonNull private final MerchantStore<Connection> merchants;
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
@@ -61,6 +62,21 @@ public final class PayoutProposals {
     /** The proposal, unlocked: what its approval asks the payout command to do. */
     public Optional<PayoutProposal> find(Connection unitOfWork, PayoutProposal.Id id) {
         return proposals.find(unitOfWork, id);
+    }
+
+    /** A proposal as its decider reads it (`P17-TSK-124`): the proposal and the merchant it would pay, as they stand. */
+    public record Read(PayoutProposal proposal, Merchant merchant) {}
+
+    /**
+     * The proposal and its merchant, unlocked - what its decider reads before deciding (`P17-TSK-124`). Empty for an unknown
+     * proposal. Nothing is written here: the caller records the serving in this unit of work.
+     */
+    public Optional<Read> read(Connection unitOfWork, PayoutProposal.Id id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        return proposals.find(unitOfWork, id).map(proposal -> new Read(proposal, merchants.findById(unitOfWork,
+                proposal.merchantId()).orElseThrow(() -> new MerchantStorageException(
+                        "a payout proposal names a merchant that does not exist"))));
     }
 
     /**

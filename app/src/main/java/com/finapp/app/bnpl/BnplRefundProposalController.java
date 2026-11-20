@@ -1,5 +1,6 @@
 package com.finapp.app.bnpl;
 
+import com.finapp.app.api.RecordedRead;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresAssurance;
@@ -14,6 +15,7 @@ import jakarta.validation.constraints.Size;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,6 +36,20 @@ import org.springframework.web.bind.annotation.RestController;
 public class BnplRefundProposalController {
 
     @NonNull private final BnplRefundDesk desk;
+    @NonNull private final BnplListDesk reads;
+
+    /**
+     * One BNPL refund proposal - the purchase, the amount, the reason and who proposed it - what its decider decides
+     * (`P17-TSK-124`). Every serving recorded ({@code bnpl.RefundProposalRead}); the reader's own party's purchase 403
+     * {@code bnpl.SelfDealingRefused}, recorded FAILED; unknown or malformed 404.
+     */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+    @GetMapping("/{id}")
+    @RequiresPermission(PermissionName.PAYMENT_REFUND_APPROVE)
+    @RecordedRead
+    public BnplListDesk.BnplRefundProposalView readBnplRefundProposal(@PathVariable("id") String id) {
+        return reads.refundProposal(id);
+    }
 
     /** Approves a BNPL refund proposal the caller did not propose: the refund applies. */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)

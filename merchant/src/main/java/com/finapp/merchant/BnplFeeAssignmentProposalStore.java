@@ -13,6 +13,9 @@ public interface BnplFeeAssignmentProposalStore<T> {
     /** Inserts a {@code PROPOSED} proposal; a second open one for the product is refused {@code ALREADY_PROPOSED} by the index. */
     void insert(T unitOfWork, BnplFeeAssignmentProposal proposed);
 
+    /** The proposal, unlocked - its decider's read (`P17-TSK-124`). Empty for an unknown id. */
+    Optional<BnplFeeAssignmentProposal> find(T unitOfWork, BnplFeeAssignmentProposal.Id id);
+
     /** The proposal, read {@code FOR UPDATE} - the deciders' serialization point. Empty for an unknown id. */
     Optional<BnplFeeAssignmentProposal> lock(T unitOfWork, BnplFeeAssignmentProposal.Id id);
 

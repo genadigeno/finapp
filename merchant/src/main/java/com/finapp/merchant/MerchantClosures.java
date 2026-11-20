@@ -35,12 +35,27 @@ public final class MerchantClosures {
     /** A decided proposal and the merchant's status after it. */
     public record Decided(MerchantClosureProposal proposal, MerchantStatus merchantStatus) {}
 
+    /** A proposal as its decider reads it (`P17-TSK-124`): the proposal and the merchant it would close, as they stand. */
+    public record Read(MerchantClosureProposal proposal, Merchant merchant) {}
+
     @NonNull private final MerchantStore<java.sql.Connection> merchants;
     @NonNull private final MerchantClosureProposalStore<Connection> proposals;
     @NonNull private final MerchantAdministration administration;
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+
+    /**
+     * The proposal and its merchant, unlocked - what its decider reads before deciding (`P17-TSK-124`). Empty for an unknown
+     * proposal. Nothing is written here: the caller records the serving in this unit of work.
+     */
+    public Optional<Read> read(Connection unitOfWork, MerchantClosureProposalId id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        return proposals.find(unitOfWork, id).map(proposal -> new Read(proposal, merchants.findById(unitOfWork,
+                proposal.merchantId()).orElseThrow(() -> new MerchantStorageException(
+                        "a closure proposal names a merchant that does not exist"))));
+    }
 
     /**
      * Proposes the merchant's closure, by the acting person - empty for an unknown merchant. Refused when the merchant is not

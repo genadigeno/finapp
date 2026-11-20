@@ -98,7 +98,8 @@ class DeadLetterDeskTest {
         List<Method> doors = Arrays.stream(DeadLetterController.class.getDeclaredMethods())
                 .filter(method -> method.isAnnotationPresent(PostMapping.class) || method.isAnnotationPresent(GetMapping.class))
                 .toList();
-        assertThat(doors).as("six acts - retry, release, replay, a discard's proposal, approval and rejection - and the three reads: abandoned, parked, discards").hasSize(9);
+        assertThat(doors).as("six acts - retry, release, replay, a discard's proposal, approval and rejection - the three queues'"
+                + " pages, and one record of each queue (P17-TSK-124)").hasSize(12);
         for (Method door : doors) {
             assertThat(door.getAnnotation(RequiresPermission.class).value()).as(door.getName()).isEqualTo(PermissionName.EVENT_OPERATE);
             if (door.isAnnotationPresent(PostMapping.class)) {
@@ -274,6 +275,63 @@ class DeadLetterDeskTest {
                         problem -> assertThat(problem.errorCode().code()).isEqualTo("api.ValidationFailed"));
             }
             assertThat(audited).as("a refused page reads and records nothing").hasSize(recorded);
+        }
+    }
+
+    @Test
+    @DisplayName("one record of each queue by its id (P17-TSK-124): the row its page serves, recorded deadletter.Read against the"
+            + " record in the read's transaction; a record no longer in its queue, an unknown or a malformed id is 404"
+            + " deadletter.NotFound recording nothing")
+    void oneRecordOfEachQueue() {
+        UUID abandoned = UUID.randomUUID();
+        store.abandoned(abandoned);
+        UUID parked = UUID.randomUUID();
+        store.parked(parked, "probe.consumer", "dedupe-1");
+        UUID published = UUID.randomUUID();
+        store.published(published, "probe.Type", Duration.ofDays(1), Instant.parse("2026-11-07T00:00:00Z"));
+        String discardId;
+        try (var ignored = as(OPERATOR); var flow = flow()) {
+            discardId = desk.proposeDiscard("p-9", "OUTBOX_EVENT", abandoned.toString(), "the topic is gone for good").subject();
+        }
+        audited.clear();
+        try (var ignored = as(SECOND); var flow = flow()) {
+            DeadLetterDesk.AbandonedView event = desk.abandonedEvent(abandoned.toString());
+            assertThat(event).isEqualTo(desk.abandoned(null, null).items().stream()
+                    .filter(row -> row.eventId().equals(abandoned.toString())).findFirst().orElseThrow());
+            DeadLetterDesk.ParkedView record = desk.parkedRecord(parked.toString());
+            assertThat(record.parkId()).isEqualTo(parked.toString());
+            assertThat(record.dedupeKey()).isEqualTo("dedupe-1");
+            DeadLetterDesk.DiscardRecordView discard = desk.discard(discardId);
+            assertThat(discard.status()).isEqualTo("PROPOSED");
+            assertThat(discard.subjectKind()).isEqualTo("OUTBOX_EVENT");
+            assertThat(discard.subjectId()).isEqualTo(abandoned.toString());
+            assertThat(discard.proposedBy()).isEqualTo(OPERATOR.id());
+            assertThat(discard.reason()).isEqualTo("the topic is gone for good");
+            assertThat(discard.toString()).doesNotContain("the topic is gone");
+
+            java.util.List<AuditRecord> ones = audited.stream()
+                    .filter(row -> !"deadletter.queues".equals(row.targetType())).toList();
+            assertThat(ones).extracting(AuditRecord::targetType)
+                    .containsExactly("outbox.event", "inbox.parked-record", "deadletter.discard");
+            assertThat(ones).extracting(AuditRecord::targetId).containsExactly(abandoned.toString(), parked.toString(), discardId);
+            assertThat(ones).allSatisfy(row -> {
+                assertThat(row.operation()).isEqualTo(PlatformAuditAction.DEAD_LETTERS_READ);
+                assertThat(row.outcome()).isEqualTo(AuditOutcome.SUCCEEDED);
+                assertThat(row.actor()).isEqualTo(SECOND);
+            });
+            assertThat(ones).extracting(row -> row.changeSummary().orElseThrow())
+                    .containsExactly("queue=abandoned, served=1", "queue=parked, served=1", "queue=discards, served=1");
+
+            assertThat(desk.approveDiscard("a-9", discardId, "agreed").status()).isEqualTo("APPROVED");
+            assertThat(desk.discard(discardId).status()).as("a discard is read in whatever status it stands").isEqualTo("APPROVED");
+
+            int recorded = audited.size();
+            assertRefused(() -> desk.abandonedEvent(abandoned.toString()), DeadLetterErrorCode.NOT_FOUND);
+            assertRefused(() -> desk.abandonedEvent(published.toString()), DeadLetterErrorCode.NOT_FOUND);
+            assertRefused(() -> desk.parkedRecord(UUID.randomUUID().toString()), DeadLetterErrorCode.NOT_FOUND);
+            assertRefused(() -> desk.discard(UUID.randomUUID().toString()), DeadLetterErrorCode.NOT_FOUND);
+            assertRefused(() -> desk.discard("not-an-identifier"), DeadLetterErrorCode.NOT_FOUND);
+            assertThat(audited).as("nothing served, nothing recorded").hasSize(recorded);
         }
     }
 

@@ -32648,6 +32648,82 @@ showing how fresh it is. Both say what is missing.
 - **Risk**: Medium - breadth, and lists converted in place (the console is their only client). **Cx**: L. **DoD**:
   `DOD-API`, `DOD-SEC`.
 
+**P17-TSK-124 — The reads an approver lacks: a pending money-act proposal, an account restriction, a dead letter; the KYC case's audit target named (B7.6, B6.8)** — `COMPLETE` (2026-11-20; added and marked `READY` at its design, 2026-11-20, on the owner's "do both in parallel"; branch `P17-TSK-124` from master `31eb3ddeb`) *(read "`READY`" from its design until its gate)*
+- **Context**: `transfers`, `payments`, `merchant`, `bnpl`, `accounts`, `platform` (dead letters), `kyc` (a record only), `app`;
+  finapp-admin-panel B7.6 and B6.8 (D-26); ADR-0154, ADR-0153, ADR-C132 decision 5, ADR-C133 decision 3.
+- **Scope**:
+  1. **a pending money-act proposal, read by its approver** (B7.6) - one `GET` per kind on master, beside its decision door, under
+     the kind's approve permission, on a `MULTI_FACTOR` session, every serving recorded in the read's own transaction: a transfer
+     reversal, a refund, an operator payout and a merchant closure (`-031`'s, ADR-0154), a BNPL refund and a BNPL fee assignment
+     (`-116`'s); each naming its subject, its amount exact with its currency where the act moves one, its reason, `proposedBy`,
+     `proposedAt` and status;
+  2. **one account restriction proposal** (B6.8 item 1, `-028`'s), read by its approver the same way;
+  3. **one dead letter** (B6.8 item 2) - `GET /v1/operator/events/{queue}/{id}` for the abandoned, parked and discard queues, so a
+     record's page needs no search of its queue's oldest 200;
+  4. **the KYC case's audit target type named** (B6.8 item 3), so the case page links its History.
+- **Not here**: every pending **list** - `-040`'s, in ADR-C133's shape, the money acts' and the restrictions' among them; the
+  card fee schedule's proposals and their reads - `-123`'s.
+- **Deps**: `-028`, `-031`, `-116` (on master).
+- **Accept**: each read in the contract and the operator edge's routes, under its approve permission and its factor, recorded,
+  with its tests; an unknown or malformed identifier `404` with nothing recorded; the KYC case's target type stated.
+- **Multi-instance**: reads only - each one statement on the request's connection, its record committed with it; a proposal decided
+  between the read and the click answers `409` at its door, the existing conditional transitions. `PASS` by construction.
+- **Risk**: Low - reads, no migration. **Cx**: M - breadth (six modules). **DoD**: `DOD-API`, `DOD-SEC`.
+- **As built (2026-11-20, gate `COMPLETE`)**: **ten `GET` routes, no migration, no ADR.** **(1) A pending money act, read by
+  its decider** beside its approval door, under that door's own permission, on a `MULTI_FACTOR` session, every serving recorded
+  in the read's own transaction by `RecordedReads` and held at the answer (`@RecordedRead`, `UnrecordedReadAdvice`):
+  `GET /v1/operator/transfer-reversals/{id}` (`TRANSFER_REVERSE_APPROVE`; the transfer's amount, currency and status now;
+  `transfers.ReversalProposalRead`), `/refund-proposals/{id}` (`PAYMENT_REFUND_APPROVE`; the payment, the amount and the
+  cumulative amount the threshold judged, its version, an approval's refund; `payments.RefundProposalRead`),
+  `/payout-proposals/{id}` (`MERCHANT_PAYOUT_APPROVE`; the merchant's display name and status, the amount, the threshold version,
+  an approval's payout; `merchant.PayoutProposalRead`), `/merchant-closures/{id}` (`MERCHANT_CLOSE_APPROVE`; the merchant's name
+  and status - a closure moves no amount; `merchant.ClosureProposalRead`), `/bnpl-refund-proposals/{id}` (`PAYMENT_REFUND_APPROVE`;
+  the purchase, the amount, the cumulative amount, the version, an approval's refund; `bnpl.RefundProposalRead`; the reader's own
+  party's purchase, or a reader the platform cannot place, `403 bnpl.SelfDealingRefused` recorded `FAILED` - BNPL's operator-read
+  rule, `-035` and `-116`), `/bnpl-fee-schedule-proposals/{id}` (`FEE_SCHEDULE_APPROVE`; the merchant, the product, the schedule -
+  a price pointer, no amount; `merchant.BnplFeeAssignmentProposalRead`). Each names its status, its reason, `proposedBy`,
+  `proposedByCaller` and `proposedAt`, and once decided `decidedAt` and `decisionReason` - never who decided; every amount an
+  exact decimal string with its currency; no record's summary carries an amount. **(2) One restriction**: `GET
+  /v1/operator/account-restrictions/{id}` (`ACCOUNT_RESTRICT_APPROVE`, the same rules; the agreement and its status now, the kind,
+  its reason code; `accounts.RestrictionRead`; the view's string form masks both reasons). **(3) One dead letter**: `GET
+  /v1/operator/events/abandoned/{eventId}`, `/parked/{parkId}`, `/discards/{discardId}` (`EVENT_OPERATE`, as the queue pages beside
+  them, no factor) - three literal routes rather than a `{queue}` variable, each answering its page's row (the abandoned and
+  parked reads keep their queue's membership predicate; a discard is read in whatever status it stands, with its proposer), each
+  serving recorded `deadletter.Read` against the record; an id that names no record of the queue now `404 deadletter.NotFound`.
+  **(4) The KYC case's audit target** named in `AUDITABLE_ACTIONS.md` from the writers: `KycCase`, its id the case's - and the
+  four case records that target something else (`kyc.CaseOpened` the `Customer`, `kyc.ReviewResolved` the `ReviewTask`,
+  `kyc.CheckCompleted` the `VerificationCheck`, `kyc.DocumentContentRead` the `Document`), each naming the case in its summary.
+  **The modules' reads**: an unlocked `find` by primary key on transfers' reversal proposal, merchant's closure and BNPL fee
+  assignment proposals and accounts' restriction (refund, payout and BNPL refund already had one); `read` on
+  `TransferReversalProposals`, `PayoutProposals`, `MerchantClosures`, `BnplFeeAssignments` and `AccountRestrictions` composing the
+  proposal with its subject and writing nothing; `DeadLetterStore` gains `abandonedEvent`, `parkedRecord` and `discard`. An
+  unknown or malformed identifier is each door's own `404`, nothing recorded. **Decisions, each on the owner's ruling "if you
+  rise questions, my answer is your recommended options"**: (D1) each read at its approval door's own path and under its
+  permission alone, never the proposer's (alternative: also under the proposing permission - a second route each); (D2) every
+  serving recorded, the BNPL fee assignment's too (alternative: fee configuration unrecorded, as `-123`'s fee reads are);
+  (D3) a merchant subject named by its display name and status, the controller holding no `MERCHANT_ADMINISTER` (alternative:
+  the id alone, the approver deciding a closure blind); (D4) the dead letters as three literal routes under `EVENT_OPERATE`
+  without a factor, as their pages (alternative: one `{queue}` variable, or a factor the pages lack); (D5) the KYC case's target
+  in the document, not a view field (alternative: a contract field carrying a constant); (D6) the BNPL fee assignment's read
+  built beside its door though `-123`'s `GET /v1/operator/fee-schedule-proposals/{id}` also serves those rows - both correct
+  under one permission, the merge's to keep or retire. **Tests: none run, on the owner's word of 2026-11-20, "tests not
+  needed"**: `ApproverProposalReadsTest` (new: every read beside its door's permission, factor and mark; each view's fields,
+  exact amounts, never the decider; one record each, no amount in it; `404`s recording nothing; the modules' reads composing
+  and writing nothing), `BnplListDeskTest` (the BNPL refund proposal: its view and record; own party and unplaced reader `403`
+  recorded `FAILED`), `DeadLetterDeskTest` (twelve doors; one record of each queue, recorded, `404` once out of its queue) and the
+  slice registers (`RoutePermissionRegisterTest`, `EveryCustomerReadIsRecordedTest`, `OpenApiContractTest`'s path list) are
+  written and **owed a first run**, as are five recorded probes (`MUTATION_TESTING.md`) and every new finder's SQL over
+  PostgreSQL. The main sources of the six modules compiled (`compileJava`, 2026-11-20); **the test sources were never
+  compiled** - their compile was stopped. **`docs/api/openapi.json` and `deploy/edge/base/operator-routes.yaml` are NOT
+  regenerated, on the owner's word of 2026-11-20, "skip the generators too, just commit"**: the ten routes are served but in
+  neither file until `OpenApiContractTest` and `EdgeAllowListTest` regenerate them - owed at the merge, so the operator edge
+  refuses the ten routes until then.
+  The architecture tier's registers were kept by hand: `OwnershipIsScopedTest` (four new `find`s, three widened),
+  `AUDITABLE_ACTIONS.md` (seven new reads, `deadletter.Read` widened); `THREAT_MODEL.md` unchanged - the reads add no threat,
+  the recording being ADR-C132 decision 5's control. **Multi-instance**: `PASS` by construction - reads only, no lock, each
+  one transaction on the request's connection with its record; a proposal decided between the read and the click answers
+  `409` at its door.
+
 **P17-TSK-042 — The §7 retrofit of capped operator lists (G-03, G-121)** — `COMPLETE` (2026-11-20; marked `READY` 2026-11-19 before its design on the owner's "every task whose dependencies are met in parallel", no dependencies; branch `P17-TSK-042` from `P17-TSK-120`) *(read "`PLANNED`" until 2026-11-19, then "`READY`" until its gate)*
 - **Context**: every module with a capped operator list; `API_CONVENTIONS.md` §7; ADR-C133; B10.3. Several operator lists are
   capped, some with a `truncated` flag and some without, and some page by `after`/`limit`. The console shows each as capped and

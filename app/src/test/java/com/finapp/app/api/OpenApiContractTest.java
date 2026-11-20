@@ -1150,6 +1150,17 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/refund-proposals/{id}/rejection",
                         ApiVersion.CURRENT_PREFIX + "/operator/payout-proposals/{id}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/payout-proposals/{id}/rejection",
+                        // P17-TSK-124: the reads an approver lacks, and one record of each dead-letter queue.
+                        ApiVersion.CURRENT_PREFIX + "/operator/transfer-reversals/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/refund-proposals/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/payout-proposals/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchant-closures/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-refund-proposals/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-fee-schedule-proposals/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/account-restrictions/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/events/abandoned/{eventId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/events/parked/{parkId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/events/discards/{discardId}",
                         // P17-TSK-116: two BNPL acts decided by four eyes, and the reads an approver lacks.
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-refund-proposals/{id}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-refund-proposals/{id}/rejection",

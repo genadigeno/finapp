@@ -390,7 +390,42 @@ public enum MerchantAuditAction implements AuditableAction {
     BNPL_FEE_ASSIGNMENT_REJECTED(
             "merchant.BnplFeeAssignmentRejected",
             "A BNPL fee assignment proposal was rejected by a second person with a reason; nothing changed.",
-            true);
+            true),
+
+    /**
+     * A holder of {@code MERCHANT_PAYOUT_APPROVE} read an operator payout proposal with the merchant it would pay
+     * (`P17-TSK-124`; {@code GET /v1/operator/payout-proposals/{id}}, on a {@code MULTI_FACTOR} session): the proposal the
+     * target, its merchant and status the summary - never an amount. Written by app's {@code RecordedReads} in the read's
+     * own transaction.
+     */
+    PAYOUT_PROPOSAL_READ(
+            "merchant.PayoutProposalRead",
+            "An approver read an operator payout proposal above the four-eyes threshold and the merchant it would pay"
+                    + " (MERCHANT_PAYOUT_APPROVE); the proposal, its merchant and status recorded, never an amount; every"
+                    + " serving, in the read's transaction.",
+            false),
+
+    /**
+     * A holder of {@code MERCHANT_CLOSE_APPROVE} read a merchant closure proposal with the merchant it would close
+     * (`P17-TSK-124`; {@code GET /v1/operator/merchant-closures/{id}}, on a {@code MULTI_FACTOR} session): the proposal the
+     * target, its merchant and status the summary. Written by app's {@code RecordedReads} in the read's own transaction.
+     */
+    CLOSURE_PROPOSAL_READ(
+            "merchant.ClosureProposalRead",
+            "An approver read a merchant closure proposal and the merchant it would close (MERCHANT_CLOSE_APPROVE); the"
+                    + " proposal, its merchant and status recorded; every serving, in the read's transaction.",
+            false),
+
+    /**
+     * A holder of {@code FEE_SCHEDULE_APPROVE} read a BNPL fee assignment proposal with its merchant (`P17-TSK-124`;
+     * {@code GET /v1/operator/bnpl-fee-schedule-proposals/{id}}, on a {@code MULTI_FACTOR} session): the proposal the target,
+     * its merchant, product and status the summary. Written by app's {@code RecordedReads} in the read's own transaction.
+     */
+    BNPL_FEE_ASSIGNMENT_PROPOSAL_READ(
+            "merchant.BnplFeeAssignmentProposalRead",
+            "An approver read a BNPL fee assignment proposal and the merchant it would price (FEE_SCHEDULE_APPROVE); the"
+                    + " proposal, its merchant, product and status recorded; every serving, in the read's transaction.",
+            false);
 
     private final String code;
     private final String description;

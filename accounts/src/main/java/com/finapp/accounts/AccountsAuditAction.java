@@ -117,7 +117,19 @@ public enum AccountsAuditAction implements AuditableAction {
     ACCOUNT_REINSTATED(
             "accounts.AccountReinstated",
             "A suspended agreement was reinstated, by a second person's approval or risk's approved action.",
-            true);
+            true),
+
+    /**
+     * A holder of {@code ACCOUNT_RESTRICT_APPROVE} read a restriction proposal (`P17-TSK-124`; {@code GET
+     * /v1/operator/account-restrictions/{id}}, on a {@code MULTI_FACTOR} session): the restriction the target, its agreement,
+     * kind and status the summary - never the reason's text. Written by app's {@code RecordedReads} in the read's own
+     * transaction.
+     */
+    RESTRICTION_READ(
+            "accounts.RestrictionRead",
+            "An approver read a suspension or reinstatement proposal (ACCOUNT_RESTRICT_APPROVE); the restriction, its"
+                    + " agreement, kind and status recorded; every serving, in the read's transaction.",
+            false);
 
     private final String code;
     private final String description;

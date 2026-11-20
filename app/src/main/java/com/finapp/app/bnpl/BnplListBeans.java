@@ -32,8 +32,9 @@ public class BnplListBeans {
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
             Clock clock,
-            BnplTransactions bnplTransactions) {
+            BnplTransactions bnplTransactions,
+            com.finapp.bnpl.BnplRefundProposals bnplRefundProposals) {
         return new BnplListDesk(bnplOperatorLists, new IdentityActingParty(identityStore), recordedReads, auditWriter,
-                idGenerator, clock, bnplTransactions);
+                idGenerator, clock, bnplTransactions, bnplRefundProposals);
     }
 }

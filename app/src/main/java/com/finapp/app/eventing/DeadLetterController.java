@@ -71,6 +71,33 @@ public class DeadLetterController {
         return desk.discards(status, cursor, limit);
     }
 
+    /**
+     * One abandoned event by its id, while it is in the queue - the row its page serves (`P17-TSK-124`), so a record's page needs no
+     * search of the queue. Recorded; unknown, malformed or no longer abandoned 404. Never a payload.
+     */
+    @GetMapping("/abandoned/{eventId}")
+    @RequiresPermission(PermissionName.EVENT_OPERATE)
+    public DeadLetterDesk.AbandonedView readAbandonedEvent(@PathVariable("eventId") String eventId) {
+        return desk.abandonedEvent(eventId);
+    }
+
+    /** One parked record by its id, while it is parked (`P17-TSK-124`). Recorded; unknown, malformed or released 404. */
+    @GetMapping("/parked/{parkId}")
+    @RequiresPermission(PermissionName.EVENT_OPERATE)
+    public DeadLetterDesk.ParkedView readParkedRecord(@PathVariable("parkId") String parkId) {
+        return desk.parkedRecord(parkId);
+    }
+
+    /**
+     * One discard by its id, in whatever status it stands, with its reason and who proposed it - what the second person decides
+     * (`P17-TSK-124`). Recorded; unknown or malformed 404.
+     */
+    @GetMapping("/discards/{discardId}")
+    @RequiresPermission(PermissionName.EVENT_OPERATE)
+    public DeadLetterDesk.DiscardRecordView readDeadLetterDiscard(@PathVariable("discardId") String discardId) {
+        return desk.discard(discardId);
+    }
+
     /** Clears an event's abandonment, so the relay takes it again. Refused while a discard stands. */
     @PostMapping(path = "/abandoned/{eventId}/retry", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.EVENT_OPERATE)

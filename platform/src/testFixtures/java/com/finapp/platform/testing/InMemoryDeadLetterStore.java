@@ -187,6 +187,21 @@ public final class InMemoryDeadLetterStore implements DeadLetterStore {
     }
 
     @Override
+    public Optional<AbandonedEvent> abandonedEvent(Connection unitOfWork, UUID eventId) {
+        return abandoned(unitOfWork, Optional.empty(), Integer.MAX_VALUE).stream().filter(row -> row.eventId().equals(eventId)).findFirst();
+    }
+
+    @Override
+    public Optional<ParkedRecord> parkedRecord(Connection unitOfWork, UUID parkId) {
+        return parked(unitOfWork, Optional.empty(), Integer.MAX_VALUE).stream().filter(row -> row.parkId().equals(parkId)).findFirst();
+    }
+
+    @Override
+    public Optional<Proposal> discard(Connection unitOfWork, UUID discardId) {
+        return Optional.ofNullable(proposals.get(discardId));
+    }
+
+    @Override
     public void insertProposal(Connection unitOfWork, UUID discardId, SubjectKind kind, UUID subjectId, String proposedBy, String reason) {
         proposals.put(discardId, new Proposal(discardId, kind, subjectId, "PROPOSED", proposedBy, Instant.EPOCH, reason));
     }

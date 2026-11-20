@@ -700,6 +700,20 @@ an approver's console disables a proposer's own approval in advance; never a rea
 (credit V027) is `INTERNAL`: the provider's own name for the bytes, metadata - the content stays `RESTRICTED`, reachable
 only through `credit.read_evidence` with a reason.
 
+**Served to staff, the decider's read of one pending decision** (`P17-TSK-124`; finapp-admin-panel B7.6, B6.8): to the
+holders of the permission that decides it alone - `TRANSFER_REVERSE_APPROVE`, `PAYMENT_REFUND_APPROVE`,
+`MERCHANT_PAYOUT_APPROVE`, `MERCHANT_CLOSE_APPROVE`, `FEE_SCHEDULE_APPROVE`, `ACCOUNT_RESTRICT_APPROVE` - on a `MULTI_FACTOR`
+session, every serving recorded in the read's own transaction (held at the answer by `UnrecordedReadAdvice`): the proposal's
+`proposal_reason` and, once decided, `decision_reason` (`RESTRICTED-PII` - the approver must read the case to decide it),
+`proposed_by` (`RESTRICTED-PII`, so the console disables a proposer's own approval in advance), `proposed_at` and `decided_at`,
+`status`, the money asked (`RESTRICTED-FINANCIAL`, exact, with its currency: a refund's and a BNPL refund's amount and
+cumulative amount, a payout's amount, and the transfer's amount a reversal would undo) and the restriction's `kind` and
+`reason_code` (`CONFIDENTIAL`; to staff only, never the customer - the tipping-off rule stands). The subject is named by its
+identifier, and a merchant subject also by its `display_name` and `status` (`CONFIDENTIAL`; the controller holds no
+`MERCHANT_ADMINISTER` and would decide a closure or a payout blind without them). **Never** `decided_by`, never a customer's
+name, never an account's balance. No record's summary carries an amount or a reason, and the restriction's view masks its two
+reasons in its string form, so neither reaches a log.
+
 ### `transfers.beneficiary` — *added by `P4-TSK-006`*
 
 **A person's saved address book.** The row is a convenience, never a trust decision — and its
