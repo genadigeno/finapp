@@ -1204,6 +1204,15 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-refund-proposals/{id}/rejection",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-fee-schedule-proposals/{id}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-fee-schedule-proposals/{id}/rejection",
+                        // P17-TSK-123: a fee schedule version and a merchant's fee assignment decided by four eyes, and
+                        // each kind's queue (P17-TSK-040's shape) and one proposal's read (FEE_SCHEDULE_APPROVE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-schedule-version-proposals/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-schedule-version-proposals/{id}/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-assignment-proposals/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-assignment-proposals/{id}/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/pending-decisions/merchant/fee-schedule-versions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/pending-decisions/merchant/fee-assignments",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-schedule-proposals/{id}",
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/terms/{versionId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/capital-contributions/{contributionId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}",
@@ -1252,6 +1261,11 @@ class OpenApiContractTest {
                         // P2-TSK-013. The decision: the one recorded act every later phase
                         // gates on (INV-KYC-02), behind the same permission.
                         ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}/decision",
+                        // P17-TSK-126 (ADR-0155). A reviewer asks the case's customer for more
+                        // information - keyed, on a factor, every refusal recorded - and the
+                        // customer answers on the /v1/me shape, no identifier anywhere.
+                        ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}/information-request",
+                        ApiVersion.CURRENT_PREFIX + "/me/kyc/information-response",
                         // P2-TSK-016. The KYB surface: the /v1/me ownership-by-absence shape -
                         // registration, the shaped view, and the owner declaration whose one
                         // identifier names the declaration's subject, never a resource.

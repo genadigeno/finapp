@@ -274,7 +274,28 @@ public enum MerchantErrorCode implements ErrorCode {
     BNPL_FEE_PROPOSAL_SELF_DECISION(
             "merchant.BnplFeeProposalSelfDecision",
             409,
-            "A BNPL fee assignment proposal is decided by a person who did not propose it.");
+            "A BNPL fee assignment proposal is decided by a person who did not propose it."),
+
+    /**
+     * A second fee proposal while one is open on its subject (`P17-TSK-123`): one open version proposal per schedule, one
+     * open assignment proposal per merchant.
+     */
+    FEE_PROPOSAL_ALREADY_OPEN(
+            "merchant.FeeProposalAlreadyOpen",
+            409,
+            "The fee schedule or merchant already has an open fee proposal; decide it first."),
+
+    /** A decision on a decided fee schedule version or fee assignment proposal (`P17-TSK-123`): decided once. */
+    FEE_PROPOSAL_ALREADY_DECIDED(
+            "merchant.FeeProposalAlreadyDecided",
+            409,
+            "The fee proposal is already decided."),
+
+    /** The proposer deciding their own fee schedule version or fee assignment proposal (`P17-TSK-123`, INV-AUD-04). */
+    FEE_PROPOSAL_SELF_DECISION(
+            "merchant.FeeProposalSelfDecision",
+            409,
+            "A fee proposal is decided by a person who did not propose it.");
 
     private final String code;
     private final int status;

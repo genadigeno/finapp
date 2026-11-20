@@ -716,6 +716,23 @@ identifier, and a merchant subject also by its `display_name` and `status` (`CON
 name, never an account's balance. No record's summary carries an amount or a reason, and the restriction's view masks its two
 reasons in its string form, so neither reaches a log.
 
+### The fee schedule's proposals — *added by `P17-TSK-123`*
+
+**Two more acts on ADR-0154's pattern** (merchant V022): `merchant.fee_schedule_version_proposal` and
+`merchant.fee_assignment_proposal` take `P17-TSK-031`'s table above column for column - the subject's id `fee_schedule_id`
+or `merchant_id`, `INTERNAL`; the proposal and decision reasons `RESTRICTED-PII` (a person's prose about commercial terms,
+screened for instrument shapes). A version proposal's terms - `rate`, the fixed part's three money columns,
+`rounding_policy`, `refund_fee_policy`, `effective_from` - are `INTERNAL`, as `fee_schedule_version`'s are: the platform's
+own price, not a fact about anybody; `fee_schedule_version_id`, the version an approval minted, `INTERNAL`.
+
+**Served to staff** (`P17-TSK-123`): each kind's queue (`GET /v1/operator/pending-decisions/merchant/fee-schedule-versions`
+and `.../merchant/fee-assignments`, `FEE_SCHEDULE_APPROVE`) serves each open proposal's proposer (the raw actor id) and the
+proposer's reason cut to 120 characters (`reasonSummary`) to the holders of the permission that decides it - the servicing
+queues' precedent - and one version or assignment proposal's read (`GET /v1/operator/fee-schedule-proposals/{id}`, on a
+`MULTI_FACTOR` session, every serving recorded `merchant.FeeProposalRead` - `P17-TSK-124`'s rule above) serves its terms,
+its decider and the schedule it names; never a decision's reason. A BNPL fee assignment proposal is read at `P17-TSK-124`'s
+own door.
+
 ### `transfers.beneficiary` — *added by `P4-TSK-006`*
 
 **A person's saved address book.** The row is a convenience, never a trust decision — and its
@@ -2237,6 +2254,28 @@ the reason is a person's prose about a person.
 | `kyc_decision` | `decided_at` | `CONFIDENTIAL` | Dates the decision on a named person's case — `kyc_case.status_changed_at`'s reasoning |
 | `kyc_decision_check` | `decision_id` | `INTERNAL` | As `kyc_decision.id` — an identifier of a thing |
 | `kyc_decision_check` | `check_id` | `INTERNAL` | As `verification_check.id` — an identifier of a thing |
+
+### `kyc.information_request` — *added by `P17-TSK-126`* (ADR-0155)
+
+A reviewer's request to a case's customer for more information, and the customer's answer. The
+row exists only because a case was in review, so its existence carries `review_task.status`'s
+tipping-off reasoning; what reaches the customer is the screened text and the deadline, never the
+reason code. The answer is the customer's own words about themselves.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `information_request` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `information_request` | `case_id` | `INTERNAL` | As `kyc_case.id` — an identifier of a thing |
+| `information_request` | `reason_code` | `CONFIDENTIAL` | Why a reviewer held a named person's case on them — a closed vocabulary naming what is needed, never a screening, but internal: `review_task.status`'s reasoning, one table over. Never served to the customer |
+| `information_request` | `request_text` | `CONFIDENTIAL` | **Written by a person for the customer to read**, screened before it is written so it carries no screening, list, suspicion or investigation term, identifier or link (`CustomerRequestText`); it names what is needed about a named person's verification. Served to that customer on their own session and to reviewers |
+| `information_request` | `requested_by` | `RESTRICTED-PII` | The reviewer's `IdentityId` — as `review_task.resolved_by` |
+| `information_request` | `requested_at` | `CONFIDENTIAL` | Dates a review event on a named person — `review_task.opened_at`'s reasoning |
+| `information_request` | `due_at` | `CONFIDENTIAL` | The deadline the customer is told — dates the same event |
+| `information_request` | `correlation_id` | `INTERNAL` | The asking flow's identifier, joining the request to its records |
+| `information_request` | `status` | `CONFIDENTIAL` | Whether the customer answered — a fact about their verification, `kyc_case.status`'s reasoning |
+| `information_request` | `closed_at` | `CONFIDENTIAL` | Dates the answer or the lapse — as `requested_at` |
+| `information_request` | `answer_text` | `RESTRICTED-PII` | **The customer's own words about themselves**, free text — anything a person may write about their identity, address or money. `audit_record.reason`'s ceiling; shown to reviewers only, never logged, never in an event |
+| `information_request` | `answered_by` | `RESTRICTED-PII` | The customer's `IdentityId` — from Phase 1 an identity names a person |
 
 ### `kyc.counterparty_screening` and `kyc.counterparty_screening_attempt` — *added by `P9-TSK-016`*
 

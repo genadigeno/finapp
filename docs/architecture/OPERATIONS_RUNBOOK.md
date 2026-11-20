@@ -742,7 +742,12 @@ condition below is true, in this order, each with its evidence recorded:
    the schedule is this procedure's, not the platform's - a fee schedule and its versions are created by one
    `FEE_ADMINISTER` holder (`POST /v1/operator/fee-schedules`, `…/{id}/versions`) with no second person in code; the
    platform enforces the `RETURNED` policy, the four-eyes enablement, and that a product the merchant has no version in
-   force for is not offered - `422 bnpl.MerchantNotEnabled`.)*
+   force for is not offered - `422 bnpl.MerchantNotEnabled`.)* *(Since `P17-TSK-116` and `P17-TSK-123`, ADR-0154: the
+   assignment above and every fee schedule version are keyed proposals, decided by a `FINANCIAL_CONTROLLER`
+   (`FEE_SCHEDULE_APPROVE`) who did not propose them - `POST /v1/operator/bnpl-fee-schedule-proposals/{id}/approval` and
+   `POST /v1/operator/fee-schedule-version-proposals/{id}/approval`, the queues at
+   `GET /v1/operator/pending-decisions/merchant/fee-schedule-versions` and `.../merchant/fee-assignments`;
+   the second person is in code now. A schedule's creation stays one person's, keyed.)*
 5. **A four-eyes BNPL terms activation**: one `BNPL_OFFICER` (the role holding `BNPL_ADMINISTER`) proposes the reviewed
    version (`POST /v1/operator/bnpl/terms`, `Idempotency-Key`, a reason - judged whole, `422 bnpl.TermsInvalid` or
    `bnpl.TermsNotAmortising` naming the defect), a **second** activates it (`POST …/{versionId}/approval`, a reason),

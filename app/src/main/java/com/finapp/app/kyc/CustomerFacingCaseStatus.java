@@ -24,6 +24,10 @@ final class CustomerFacingCaseStatus {
         return switch (status) {
             case OPEN -> "OPEN";
             case CHECKS_IN_PROGRESS, IN_REVIEW -> "IN_PROGRESS";
+            // P17-TSK-126 (ADR-0155 decision 4): the customer is needed, as every onboarding's
+            // document request needs them - and nothing about which check raised it. The request's
+            // text is screened before it is written; the reason code never reaches this surface.
+            case AWAITING_CUSTOMER -> "ACTION_REQUIRED";
             case READY_FOR_DECISION -> "PENDING_DECISION";
             case APPROVED -> "APPROVED";
             case REJECTED -> "REJECTED";

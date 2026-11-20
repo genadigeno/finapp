@@ -3676,37 +3676,16 @@ class CheckoutFlowDatabaseTest {
             throws Exception {
         String operator = operatorSession();
         String merchantId = onboard(operator);
-        String schedule =
-                field(
-                        post(
-                                        "/v1/operator/fee-schedules",
-                                        "{\"name\":\"Std " + UUID.randomUUID()
-                                                + "\",\"currency\":\"EUR\"}",
-                                        operator,
-                                        null)
-                                .body(),
-                        "feeScheduleId");
-        assertThat(
-                        post(
-                                        "/v1/operator/fee-schedules/" + schedule + "/versions",
-                                        "{\"rate\":" + rate + ",\"fixedAmountMinor\":"
-                                                + fixedMinor
-                                                + ",\"roundingPolicy\":\"HALF_EVEN\","
-                                                + "\"refundFeePolicy\":\""
-                                                + refundFeePolicy + "\","
-                                                + "\"reason\":\"initial pricing\"}",
-                                        operator,
-                                        null)
-                                .statusCode())
-                .isEqualTo(201);
-        assertThat(
-                        put(
-                                        "/v1/operator/merchants/" + merchantId + "/fee-schedule",
-                                        "{\"feeScheduleId\":\"" + schedule
-                                                + "\",\"reason\":\"standard terms\"}",
-                                        operator)
-                                .statusCode())
-                .isEqualTo(200);
+        // P17-TSK-123: priced by the two-person path - this administrator proposes, a FINANCIAL_CONTROLLER approves.
+        new com.finapp.app.merchant.FeePricing(
+                        com.finapp.app.merchant.FeePricing.overHttp(port),
+                        operator,
+                        operatorSession(RoleName.FINANCIAL_CONTROLLER))
+                .priced(
+                        merchantId,
+                        "EUR",
+                        com.finapp.app.merchant.FeePricing.versionBody(
+                                rate, fixedMinor, "HALF_EVEN", refundFeePolicy, null, "initial pricing"));
         return new Merchant(merchantId, issueKey(operator, merchantId));
     }
 

@@ -367,17 +367,24 @@ class BnplMerchantEndpointDatabaseTest {
 
     // -----------------------------------------------------------------
 
+    /**
+     * A EUR schedule with one version of {@code refundFeePolicy}, created by {@code bearer} and its version approved by
+     * another person - the two-person path (`P17-TSK-123`).
+     */
     private String feeSchedule(String bearer, String refundFeePolicy) throws Exception {
-        HttpResponse<String> created = post("/v1/operator/fee-schedules",
-                "{\"name\":\"bnpl " + UUID.randomUUID() + "\",\"currency\":\"EUR\"}", bearer, someKey());
-        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
-        String id = field(created.body(), "feeScheduleId");
-        HttpResponse<String> version = post("/v1/operator/fee-schedules/" + id + "/versions",
-                "{\"rate\":0.0299,\"fixedAmountMinor\":0,\"roundingPolicy\":\"HALF_EVEN\",\"refundFeePolicy\":\""
-                        + refundFeePolicy + "\",\"reason\":\"bnpl pricing\"}", bearer, someKey());
-        assertThat(version.statusCode()).as(version.body()).isIn(200, 201);
+        if (feeController == null) {
+            feeController = sessionWith(RoleName.FINANCIAL_CONTROLLER);
+        }
+        com.finapp.app.merchant.FeePricing fees = new com.finapp.app.merchant.FeePricing(
+                com.finapp.app.merchant.FeePricing.overHttp(port), bearer, feeController);
+        String id = fees.schedule("bnpl " + UUID.randomUUID(), "EUR");
+        fees.version(id, com.finapp.app.merchant.FeePricing.versionBody("0.0299", 0, "HALF_EVEN", refundFeePolicy, null,
+                "bnpl pricing"));
         return id;
     }
+
+    /** The FINANCIAL_CONTROLLER who approves this test's schedule versions. */
+    private String feeController;
 
     private static String merchant() throws Exception {
         UUID id = IDS.next();

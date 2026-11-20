@@ -45,9 +45,13 @@ public final class KycQueueDesk {
     static final int DEFAULT_LIMIT = 50;
     static final int MAXIMUM_LIMIT = 200;
 
-    /** The statuses a queue holds: every open one. A decided case is no queue's. */
+    /**
+     * The statuses a queue holds: every open one, a case awaiting its customer included (`P17-TSK-126`). A decided case is no
+     * queue's.
+     */
     static final Set<KycCaseStatus> OPEN = Set.copyOf(EnumSet.of(
-            KycCaseStatus.OPEN, KycCaseStatus.CHECKS_IN_PROGRESS, KycCaseStatus.IN_REVIEW, KycCaseStatus.READY_FOR_DECISION));
+            KycCaseStatus.OPEN, KycCaseStatus.CHECKS_IN_PROGRESS, KycCaseStatus.IN_REVIEW, KycCaseStatus.AWAITING_CUSTOMER,
+            KycCaseStatus.READY_FOR_DECISION));
 
     /** The one status the backlog serves. */
     static final String AWAITING = "IN_REVIEW";

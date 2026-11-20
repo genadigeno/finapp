@@ -286,6 +286,15 @@ class NoSingleInstanceAssumptionRulesTest {
                     // once, counted. The instance's clock decides nothing. Register row:
                     // DISTRIBUTED_EXECUTION.md section 3; the herd is QuoteLifecycleDatabaseTest's.
                     "com.finapp.app.fx.FxQuoteExpirySchedule",
+                    // P17-TSK-126: a KYC request for information's lapse - leaderless and idempotent PER
+                    // ROW, the quote expiry's shape. Each page is one conditional UPDATE judged on
+                    // statement_timestamp(), rows another sweeper or an answer holds skipped (FOR UPDATE
+                    // SKIP LOCKED), the outer predicate repeating the inner; each returned request's case
+                    // moves back by its own conditional and its one kyc.InformationRequestExpired is
+                    // written in the page's transaction. The instance's clock decides nothing. Register
+                    // row: DISTRIBUTED_EXECUTION.md section 3; the statement is
+                    // InformationRequestStatementsTest's, the race owed to the database tier.
+                    "com.finapp.app.kyc.InformationRequestExpirySchedule",
                     // P9-TSK-012: the cover sweep - leaderless and idempotent PER ROW. Each tick
                     // claims the due covers in ONE statement, the forward-only permit renewed by
                     // statement_timestamp() (fx V006's trigger), rows another sweeper holds skipped

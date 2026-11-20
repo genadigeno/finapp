@@ -293,6 +293,9 @@ that is recorded debt rather than an omission here.
 | `kyc.CounterpartyScreeningDecided` | **Yes** | kyc decided a counterparty screening - automatically from the provider's verdict and the payee check, or a reviewer's release or block - naming its basis and policy version. |
 | `kyc.ReviewQueueRead` | No | A reviewer was served a page of the open KYC cases; the status filter and a count recorded. |
 | `kyc.ScreeningBacklogRead` | No | A reviewer was served a page of the counterparty screenings awaiting review; a count recorded, never a subject. |
+| `kyc.InformationRequested` | **Yes** | A reviewer asked a case's customer for more information, with a reason code and a deadline; the case awaits the customer. |
+| `kyc.InformationRequestAnswered` | No | The customer answered a reviewer's request for information; the case returned to review. |
+| `kyc.InformationRequestExpired` | No | A reviewer's request for information passed its deadline unanswered; the case returned to review. |
 
 The two reason-required actions are the invariants speaking: `INV-KYC-02` makes a decision's
 reason a `NOT NULL` column, and `INV-KYC-04` requires a hit's resolution to carry its
@@ -349,6 +352,19 @@ is born of a customer's registration), `kyc.ReviewResolved` the **`ReviewTask`**
 **`VerificationCheck`**, and `kyc.DocumentContentRead` the **`Document`**. The literals are the writers' own (`DecisionRecording`,
 `OwnerDeclaration`, `ReviewService`, `KycQueueDesk`, `CaseOpeningTrail`, `ReviewService`, `CheckOutcomeTrail`, `DocumentAccess`);
 renaming one is a contract change for the console's History link.
+
+`kyc.InformationRequested`, `kyc.InformationRequestAnswered` and `kyc.InformationRequestExpired` joined at
+`P17-TSK-126` (ADR-0155): the three edges of a case awaiting its customer, each written in the transaction that
+moves the case, its target the case (`KycCase`, its id). **The request requires a reason** - its reason code
+(`InformationRequestReason`, named for what the customer must supply): holding a case on its customer is an act
+taken on somebody's verification, and the reviewer answers for why. Its summary names the customer, the request
+and its deadline, **never the request's text** - the row and the case file hold what the customer was told. The
+answer is the customer's own act (their actor, no reason) and names the request, **never the answer's words**,
+which are RESTRICTED-PII on the reviewer surface alone. The expiry is the platform's (`enterSystem()`, the
+leaderless sweep), under the asking flow's correlation so one search joins the request to its lapse; no reason,
+the deadline is the reason, and its summary says whether the case moved (`caseReturned`). A request the
+tipping-off rule refuses writes none of these: the door's `door.ActRefused` records the refusal - who tried,
+`kyc.RequestTextRefused` - and never the body.
 
 `kyc.CaseDocumentsListed` joined at `P17-TSK-125` (the owner's D-25 decision 2): a case's documents
 (`GET /v1/operator/kyc/cases/{id}/documents`, `KYC_DOCUMENT_READ`, `MULTI_FACTOR`) listed by identifier,
@@ -605,8 +621,8 @@ record nothing.
 | `merchant.MerchantApiKeyIssued` | No | An operator issued an API key to a merchant; the record names the key by its public id and the merchant by identifier, never the secret. |
 | `merchant.MerchantApiKeyRevoked` | **Yes** | An operator revoked a merchant's API key - terminal, never reinstated; the reason is required. |
 | `merchant.FeeScheduleCreated` | No | An operator created a fee schedule; the record names the schedule by identifier with its name and currency. |
-| `merchant.FeeScheduleVersionCreated` | **Yes** | An operator created a fee schedule version - immutable, effective forward; the record names the version by identifier with its terms; the reason is required. |
-| `merchant.MerchantFeeScheduleAssigned` | **Yes** | An operator assigned a merchant to a fee schedule; the record names the merchant and both schedules by identifier; the reason is required. |
+| `merchant.FeeScheduleVersionCreated` | **Yes** | A fee schedule version was created - immutable, effective forward; the record names the version by identifier with its terms; the reason is required. Since `P17-TSK-123` written by a version proposal's approval, its actor the approver and its reason the proposer's *(read "An operator created" until then)*. |
+| `merchant.MerchantFeeScheduleAssigned` | **Yes** | A merchant was assigned to a fee schedule; the record names the merchant and both schedules by identifier; the reason is required. Since `P17-TSK-123` written by an assignment proposal's approval, its actor the approver and its reason the proposer's *(read "An operator assigned" until then)*. |
 | `merchant.PayoutDestinationProposed` | **Yes** | An operator proposed a payout destination for a merchant; the record names the destination and the merchant by identifier, never the bank reference; the reason is required. |
 | `merchant.PayoutDestinationApproved` | **Yes** | A second operator, distinct from the proposer, approved a payout destination and its cooling-off started; the reason is required. |
 | `merchant.PayoutDestinationApprovalRefused` | **Yes** | The proposer of a payout destination tried to approve it and was refused (INV-AUD-04); recorded as DENIED with the attempted reason. |
@@ -635,6 +651,13 @@ record nothing.
 | `merchant.PayoutProposalRead` | No | A holder of `MERCHANT_PAYOUT_APPROVE` read an operator payout proposal with the merchant it would pay (`P17-TSK-124`, B7.6; `GET /v1/operator/payout-proposals/{id}`, on a `MULTI_FACTOR` session): every serving, in the read's own transaction, held at the answer (`@RecordedRead`). Target the proposal (`PayoutProposal`); the summary its merchant and status - never an amount. Unknown or malformed `404`, nothing recorded. |
 | `merchant.ClosureProposalRead` | No | A holder of `MERCHANT_CLOSE_APPROVE` read a merchant closure proposal with the merchant it would close (`P17-TSK-124`, B7.6; `GET /v1/operator/merchant-closures/{id}`, on a `MULTI_FACTOR` session): every serving, in the read's own transaction, held at the answer. Target the proposal (`MerchantClosureProposal`); the summary its merchant and status. Unknown or malformed `404`, nothing recorded. |
 | `merchant.BnplFeeAssignmentProposalRead` | No | A holder of `FEE_SCHEDULE_APPROVE` read a BNPL fee assignment proposal with the merchant it would price (`P17-TSK-124`, B7.6; `GET /v1/operator/bnpl-fee-schedule-proposals/{id}`, on a `MULTI_FACTOR` session): every serving, in the read's own transaction, held at the answer. Target the proposal (`BnplFeeAssignmentProposal`); the summary its merchant, product and status. Unknown or malformed `404`, nothing recorded. |
+| `merchant.FeeScheduleVersionProposed` | **Yes** | A holder of `FEE_ADMINISTER` proposed a fee schedule version (`P17-TSK-123`; ADR-C135 decision 3, ADR-0125 decision 4: a price by four eyes; `POST /v1/operator/fee-schedules/{id}/versions`, keyed): nothing is minted until a second person approves; target the schedule; the record names the proposal and the terms. |
+| `merchant.FeeScheduleVersionApproved` | **Yes** | A holder of `FEE_SCHEDULE_APPROVE` who did not propose it approved a fee schedule version (`P17-TSK-123`; `POST /v1/operator/fee-schedule-version-proposals/{id}/approval`): written in the version's own transaction, beside `merchant.FeeScheduleVersionCreated` (the approver its actor); target the schedule; names the proposal, the version minted and the proposer. |
+| `merchant.FeeScheduleVersionRejected` | **Yes** | A fee schedule version proposal rejected by a second person (`P17-TSK-123`; `.../rejection`); nothing minted. |
+| `merchant.FeeAssignmentProposed` | **Yes** | A holder of `FEE_ADMINISTER` proposed the fee schedule that prices a merchant (`P17-TSK-123`; ADR-C135 decision 3: merchant fee assignment by four eyes; `PUT /v1/operator/merchants/{merchantId}/fee-schedule`, keyed): nothing changes until a second person approves; target the merchant; the record names the proposal and the schedule. A `PUT` naming the schedule already in place proposes and records nothing. |
+| `merchant.FeeAssignmentApproved` | **Yes** | A holder of `FEE_SCHEDULE_APPROVE` who did not propose it approved a merchant fee assignment (`P17-TSK-123`; `POST /v1/operator/fee-assignment-proposals/{id}/approval`): written in the assignment's own transaction, beside `merchant.MerchantFeeScheduleAssigned` (the approver its actor); names the proposal and the proposer. |
+| `merchant.FeeAssignmentRejected` | **Yes** | A merchant fee assignment proposal rejected by a second person (`P17-TSK-123`; `.../rejection`); nothing changed. |
+| `merchant.FeeProposalRead` | No | A holder of `FEE_SCHEDULE_APPROVE` read a fee schedule version or merchant fee assignment proposal with the schedule it names (`P17-TSK-123`; `GET /v1/operator/fee-schedule-proposals/{id}`, on a `MULTI_FACTOR` session; `P17-TSK-124`'s pattern for the reads an approver lacks): written by `RecordedReads` in the read's own transaction, every serving; target the proposal (`FeeProposal`), its kind, subject and status the summary - never an amount or a reason. An unknown proposal records nothing. |
 
 The three pricing actions arrive with `P6-TSK-004`, and their reason split is the
 `MerchantApiKeyIssued`/`Revoked` split restated: **creating a named schedule needs no reason**

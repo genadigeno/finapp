@@ -130,6 +130,19 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/events/abandoned/{eventId}", PermissionName.EVENT_OPERATE),
                     entry("GET /v1/operator/events/parked/{parkId}", PermissionName.EVENT_OPERATE),
                     entry("GET /v1/operator/events/discards/{discardId}", PermissionName.EVENT_OPERATE),
+                    // P17-TSK-123: a fee schedule version and a merchant's fee assignment, decided by a second person
+                    // (ADR-C135 decision 3, ADR-0125 decision 4); each kind's queue (P17-TSK-040's shape) and the read.
+                    entry("POST /v1/operator/fee-schedule-version-proposals/{id}/approval",
+                            PermissionName.FEE_SCHEDULE_APPROVE),
+                    entry("POST /v1/operator/fee-schedule-version-proposals/{id}/rejection",
+                            PermissionName.FEE_SCHEDULE_APPROVE),
+                    entry("POST /v1/operator/fee-assignment-proposals/{id}/approval", PermissionName.FEE_SCHEDULE_APPROVE),
+                    entry("POST /v1/operator/fee-assignment-proposals/{id}/rejection", PermissionName.FEE_SCHEDULE_APPROVE),
+                    entry("GET /v1/operator/pending-decisions/merchant/fee-schedule-versions",
+                            PermissionName.FEE_SCHEDULE_APPROVE),
+                    entry("GET /v1/operator/pending-decisions/merchant/fee-assignments",
+                            PermissionName.FEE_SCHEDULE_APPROVE),
+                    entry("GET /v1/operator/fee-schedule-proposals/{id}", PermissionName.FEE_SCHEDULE_APPROVE),
                     // P17-TSK-116: the reads an approver lacks, each under the decider's own permission.
                     entry("GET /v1/operator/lending/terms/{versionId}", PermissionName.LENDING_ADMINISTER),
                     entry("GET /v1/operator/lending/capital-contributions/{contributionId}",
@@ -156,6 +169,8 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/kyc/cases/{id}", PermissionName.KYC_REVIEW),
                     entry("POST /v1/kyc/cases/{id}/decision", PermissionName.KYC_REVIEW),
                     entry("POST /v1/kyc/cases/{id}/reviews/{taskId}/resolution", PermissionName.KYC_REVIEW),
+                    // P17-TSK-126 (ADR-0155): a reviewer asks the case's customer for more information.
+                    entry("POST /v1/kyc/cases/{id}/information-request", PermissionName.KYC_REVIEW),
                     // Ledger adjustments, four-eyes by identity (Phase 3)
                     entry("POST /v1/ledger/adjustments", PermissionName.LEDGER_ADJUST),
                     // The approver's queue (P17-TSK-022, G-112): the permission its door decides under.
@@ -953,6 +968,16 @@ class RoutePermissionRegisterTest {
             "GET /v1/operator/bnpl-refund-proposals/{id}",
             "GET /v1/operator/bnpl-fee-schedule-proposals/{id}",
             "GET /v1/operator/account-restrictions/{id}",
+            // P17-TSK-123: deciding a fee schedule version or a merchant's fee assignment - on a factor, as every privileged act.
+            "POST /v1/operator/fee-schedule-version-proposals/{id}/approval",
+            "POST /v1/operator/fee-schedule-version-proposals/{id}/rejection",
+            "POST /v1/operator/fee-assignment-proposals/{id}/approval",
+            "POST /v1/operator/fee-assignment-proposals/{id}/rejection",
+            // P17-TSK-123: each kind's queue, on the approve door's factor (P17-TSK-040's rule).
+            "GET /v1/operator/pending-decisions/merchant/fee-schedule-versions",
+            "GET /v1/operator/pending-decisions/merchant/fee-assignments",
+            // P17-TSK-123: one fee proposal read by its decider - on the decision's own factor, P17-TSK-124's rule.
+            "GET /v1/operator/fee-schedule-proposals/{id}",
             // P17-TSK-014: who holds the privileged roles, one of them, and who a login names - the same map, not on a password.
             "GET /v1/operator/identities",
             "GET /v1/operator/identities/{id}",
@@ -962,6 +987,9 @@ class RoutePermissionRegisterTest {
             "GET /v1/operator/kyc/cases",
             "GET /v1/operator/customers/{id}/kyc-case",
             "GET /v1/operator/kyc/counterparty-screenings",
+            // P17-TSK-126 (ADR-0155): a reviewer's request for information - a text that reaches the customer, so an act on a
+            // factor as the decision and the resolution are.
+            "POST /v1/kyc/cases/{id}/information-request",
             // P17-TSK-125: a person's name and country, and their identity documents - the most personal reads there are.
             "GET /v1/operator/customers/{id}/identity",
             "GET /v1/operator/kyc/cases/{id}/documents",

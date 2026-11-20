@@ -237,12 +237,21 @@ platform's failure — a `500` for a request that can never succeed by being ret
 | `kyc.ScreeningNotFound` | 404 | No counterparty screening matches the requested identifier. |
 | `kyc.ScreeningNotInReview` | 409 | The counterparty screening is not in review. |
 | `kyc.ScreeningReviewInvalid` | 422 | The counterparty screening review is not acceptable. |
+| `kyc.RequestTextRefused` | 422 | This request cannot be sent to the customer as written. |
+| `kyc.NoOpenInformationRequest` | 409 | There is no open request for information on your verification case. |
 
 **A distinct code because it is actionable** (`P1-TSK-018`'s test for earning one): the caller's
 case was decided, changed circumstances are a *new* case (`INV-LIFE-04`), so the remedy is opening
 one rather than retrying the upload. No enumeration concern applies — the caller is the
 authenticated owner asking about their own case, the opposite of `party.RegistrationRefused`'s
 stranger, so telling them the truth discloses nothing they do not already own.
+
+`kyc.RequestTextRefused` and `kyc.NoOpenInformationRequest` joined at `P17-TSK-126` (ADR-0155). **The first is the
+tipping-off control's answer**: a reviewer's text for the customer named a screening, a list, a suspicion or an
+investigation, carried one of the platform's identifiers or a link, or broke its bounds (`CustomerRequestText`); the
+detail names the rule and never echoes the text, and the door records the refusal. Actionable - the reviewer rewrites
+the text. **The second is the customer's**: there is nothing to answer - no request is open on their case, it was
+answered, or its deadline passed on the database clock. Actionable - their case view says whether anything is asked.
 
 **The four KYB codes** (`P2-TSK-016`) split the same way. `kyc.OwnerAlreadyDeclared`,
 `kyc.CaseNotAcceptingOwners` and `kyc.StakeExceedsWhole` are about the caller's *own* graph and
@@ -531,6 +540,9 @@ folds into `api.NotFound` exactly as above; the operator learns nothing a custom
 | `merchant.BnplFeeProposalAlreadyOpen` | 409 | The merchant's BNPL product already has an open fee assignment proposal; decide it first. |
 | `merchant.BnplFeeProposalAlreadyDecided` | 409 | The BNPL fee assignment proposal is already decided. |
 | `merchant.BnplFeeProposalSelfDecision` | 409 | A BNPL fee assignment proposal is decided by a person who did not propose it. |
+| `merchant.FeeProposalAlreadyOpen` | 409 | The fee schedule or merchant already has an open fee proposal; decide it first. (`P17-TSK-123`: one open version proposal per schedule, one open assignment proposal per merchant.) |
+| `merchant.FeeProposalAlreadyDecided` | 409 | The fee proposal is already decided. (`P17-TSK-123`) |
+| `merchant.FeeProposalSelfDecision` | 409 | A fee proposal is decided by a person who did not propose it. (`P17-TSK-123`, `INV-AUD-04`) |
 
 `merchant.FeeScheduleNotForward` is `INV-MER-03`'s refusal, and it is the one an operator
 actually meets: *"make this effective from the first of the month"* is a natural thing to type

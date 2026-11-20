@@ -225,6 +225,8 @@ class CredentialReachesNoEmittedSinkTest {
                         // P17-TSK-116: a BNPL refund proposal's and a BNPL fee assignment's decision - a reason, nothing else.
                         "BnplRefundDecisionRequest",
                         "BnplFeeAssignmentDecisionRequest",
+                        // P17-TSK-123: a fee schedule version's or a merchant fee assignment's decision - a reason, nothing else.
+                        "FeeProposalDecisionRequest",
                         // P17-TSK-015: ending another identity's session. A reason, and nothing else.
                         "SessionRevocationRequest",
                         // P17-TSK-111: a ledger adjustment's rejection with a reason. A reason, and nothing else.
@@ -315,6 +317,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // reason reaches exactly the audit record and kyc_decision.reason
                         // (RESTRICTED-PII at its ceiling), and no event carries it.
                         "DecisionRequest",
+                        // P17-TSK-126: a reviewer's request for information - a reason code (an
+                        // enum) and the text the customer reads, screened for tipping-off; it
+                        // reaches the request row and the customer's own read, never an event or
+                        // an audit record. And the customer's answer - their own words,
+                        // RESTRICTED-PII, reaching the request row and the reviewer's case file.
+                        "RequestForInformation",
+                        "InformationResponse",
                         // P2-TSK-008. Carries no secret and no PII field by name - the document
                         // CONTENT is RESTRICTED-PII, and what protects it is not the secret
                         // vocabulary (a field named `content` is exactly the innocent name the

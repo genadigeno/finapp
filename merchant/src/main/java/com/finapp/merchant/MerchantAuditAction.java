@@ -425,6 +425,73 @@ public enum MerchantAuditAction implements AuditableAction {
             "merchant.BnplFeeAssignmentProposalRead",
             "An approver read a BNPL fee assignment proposal and the merchant it would price (FEE_SCHEDULE_APPROVE); the"
                     + " proposal, its merchant, product and status recorded; every serving, in the read's transaction.",
+            false),
+
+    /**
+     * An operator proposed a fee schedule version (`P17-TSK-123`; ADR-C135 decision 3, ADR-0125 decision 4: a price by four
+     * eyes). Nothing is minted until a second person approves.
+     */
+    FEE_SCHEDULE_VERSION_PROPOSED(
+            "merchant.FeeScheduleVersionProposed",
+            "An operator proposed, with a reason, a fee schedule version (POST /v1/operator/fee-schedules/{id}/versions);"
+                    + " nothing is minted until a second person approves. The record names the proposal, the schedule and"
+                    + " the terms.",
+            true),
+
+    /**
+     * A holder of {@code FEE_SCHEDULE_APPROVE} who did not propose it approved a fee schedule version (`P17-TSK-123`):
+     * written in the version's transaction, beside {@link #FEE_SCHEDULE_VERSION_CREATED}.
+     */
+    FEE_SCHEDULE_VERSION_APPROVED(
+            "merchant.FeeScheduleVersionApproved",
+            "A fee schedule version proposal was approved by a second person with a reason; the version was minted in"
+                    + " the same transaction. The record names the proposal, the version and the proposer.",
+            true),
+
+    /** A holder of {@code FEE_SCHEDULE_APPROVE} rejected a fee schedule version it did not propose (`P17-TSK-123`). */
+    FEE_SCHEDULE_VERSION_REJECTED(
+            "merchant.FeeScheduleVersionRejected",
+            "A fee schedule version proposal was rejected by a second person with a reason; nothing was minted.",
+            true),
+
+    /**
+     * An operator proposed which fee schedule prices a merchant (`P17-TSK-123`; ADR-C135 decision 3: merchant fee assignment
+     * by four eyes). Nothing changes until a second person approves.
+     */
+    FEE_ASSIGNMENT_PROPOSED(
+            "merchant.FeeAssignmentProposed",
+            "An operator proposed, with a reason, the fee schedule that prices a merchant"
+                    + " (PUT /v1/operator/merchants/{merchantId}/fee-schedule); nothing changes until a second person"
+                    + " approves. The record names the proposal and the schedule.",
+            true),
+
+    /**
+     * A holder of {@code FEE_SCHEDULE_APPROVE} who did not propose it approved a merchant's fee assignment (`P17-TSK-123`):
+     * written in the assignment's transaction, beside {@link #MERCHANT_FEE_SCHEDULE_ASSIGNED}.
+     */
+    FEE_ASSIGNMENT_APPROVED(
+            "merchant.FeeAssignmentApproved",
+            "A merchant fee assignment proposal was approved by a second person with a reason; the assignment was made"
+                    + " in the same transaction. The record names the proposal and its proposer.",
+            true),
+
+    /** A holder of {@code FEE_SCHEDULE_APPROVE} rejected a merchant fee assignment it did not propose (`P17-TSK-123`). */
+    FEE_ASSIGNMENT_REJECTED(
+            "merchant.FeeAssignmentRejected",
+            "A merchant fee assignment proposal was rejected by a second person with a reason; nothing changed.",
+            true),
+
+    /**
+     * A holder of {@code FEE_SCHEDULE_APPROVE} read a fee schedule version or merchant fee assignment proposal with the
+     * schedule it names (`P17-TSK-123`; {@code GET /v1/operator/fee-schedule-proposals/{id}}, on a {@code MULTI_FACTOR}
+     * session; `P17-TSK-124`'s pattern): the proposal the target, its kind, subject and status the summary - never an amount
+     * or a reason. Written by app's {@code RecordedReads} in the read's own transaction.
+     */
+    FEE_PROPOSAL_READ(
+            "merchant.FeeProposalRead",
+            "An approver read a fee schedule version or merchant fee assignment proposal and the schedule it names"
+                    + " (FEE_SCHEDULE_APPROVE); the proposal, its kind, subject and status recorded; every serving, in the"
+                    + " read's transaction.",
             false);
 
     private final String code;

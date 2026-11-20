@@ -1,7 +1,6 @@
 package com.finapp.kyc;
 
 import java.util.Arrays;
-import java.util.EnumSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -10,11 +9,16 @@ import java.util.stream.Collectors;
  *
  * <pre>
  * OPEN → CHECKS_IN_PROGRESS → { READY_FOR_DECISION | IN_REVIEW } → { APPROVED | REJECTED }
+ *                                                     IN_REVIEW ⇄ AWAITING_CUSTOMER
  * </pre>
  *
- * <p>{@code IN_REVIEW} leads only back to {@code READY_FOR_DECISION}: a reviewer resolves what
- * the checks raised, and the <em>decision</em> is a separate act ({@code INV-KYC-04} — a hit is
- * resolved by a person, and resolving it is not deciding the case).
+ * <p>The edges are {@link KycCaseTransition}'s named table, from which {@link #permittedTransitions()}
+ * is derived (`P17-TSK-126`, ADR-0155): each edge says what drives it.
+ *
+ * <p>{@code IN_REVIEW} leads only to {@code READY_FOR_DECISION}, or to {@code AWAITING_CUSTOMER} and
+ * back: a reviewer resolves what the checks raised, asking the customer first if they must, and the
+ * <em>decision</em> is a separate act ({@code INV-KYC-04} — a hit is resolved by a person, and
+ * resolving it is not deciding the case).
  *
  * <p><strong>{@code APPROVED} and {@code REJECTED} are terminal, and that is the point of the
  * enum rather than a detail of it</strong> ({@code INV-LIFE-04}). Changed circumstances — new
@@ -42,6 +46,14 @@ public enum KycCaseStatus {
      */
     IN_REVIEW,
 
+    /**
+     * A reviewer asked the customer for more information, and the request is open (`P17-TSK-126`,
+     * ADR-0155): the case waits on the customer until they answer or the request's deadline passes,
+     * then returns to {@link #IN_REVIEW}. Nothing is ready or decided meanwhile. Not terminal: it
+     * holds the customer's one open case like every state before the decision.
+     */
+    AWAITING_CUSTOMER,
+
     /** Every check terminal and clear, or every review task resolved. Awaiting the decision. */
     READY_FOR_DECISION,
 
@@ -52,20 +64,15 @@ public enum KycCaseStatus {
     REJECTED;
 
     /**
-     * The states reachable from this one.
+     * The states reachable from this one: the targets of {@link KycCaseTransition}'s named edges
+     * leaving it.
      *
-     * <p>Declared here rather than in the aggregate so the machine is readable in one place, and
-     * so a test can enumerate every transition rather than the ones somebody remembered to write
-     * — the {@code CustomerStatus} idiom.
+     * <p>Readable in one place, so a test can enumerate every transition rather than the ones
+     * somebody remembered to write — the {@code CustomerStatus} idiom. Since `P17-TSK-126` the
+     * place is the named table, and this set is derived from it rather than written beside it.
      */
     public Set<KycCaseStatus> permittedTransitions() {
-        return switch (this) {
-            case OPEN -> EnumSet.of(CHECKS_IN_PROGRESS);
-            case CHECKS_IN_PROGRESS -> EnumSet.of(READY_FOR_DECISION, IN_REVIEW);
-            case IN_REVIEW -> EnumSet.of(READY_FOR_DECISION);
-            case READY_FOR_DECISION -> EnumSet.of(APPROVED, REJECTED);
-            case APPROVED, REJECTED -> EnumSet.noneOf(KycCaseStatus.class);
-        };
+        return KycCaseTransition.targetsFrom(this);
     }
 
     public boolean isTerminal() {

@@ -83,7 +83,12 @@ final class EdgeRoutes {
     /** What a generated router's clauses are joined with, once YAML has folded the lines. */
     static final String CLAUSE_SEPARATOR = " || ";
 
-    private static final Pattern LITERAL_SEGMENT = Pattern.compile("[a-z0-9-]+");
+    /**
+     * A plain literal: lower-case words, or dotted parts of them (`P17-TSK-123`, for `P17-TSK-040`'s first queue form; its
+     * rule now names the module as a segment of its own, so no route uses a dotted literal today). A dot is itself in a
+     * {@code Path} rule and escaped in a {@code PathRegexp} ({@link #regex}), so a dotted literal still matches exactly itself.
+     */
+    private static final Pattern LITERAL_SEGMENT = Pattern.compile("[a-z0-9-]+(?:\\.[a-z0-9-]+)*");
 
     private static final Pattern VARIABLE_SEGMENT = Pattern.compile("\\{[A-Za-z][A-Za-z0-9]*}");
 
@@ -195,7 +200,8 @@ final class EdgeRoutes {
             if (VARIABLE_SEGMENT.matcher(segment).matches()) {
                 regex.append('/').append(VARIABLE);
             } else {
-                regex.append('/').append(plain(segment, template));
+                // A literal's dot is escaped: in the regex it must be itself, never "any character".
+                regex.append('/').append(plain(segment, template).replace(".", "\\."));
             }
         }
         return regex.append('$').toString();

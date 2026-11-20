@@ -66,6 +66,8 @@ class EveryCustomerReadIsRecordedTest {
             Map.entry("BnplFeeAssignmentProposalController#readBnplFeeAssignmentProposal",
                     "merchant.BnplFeeAssignmentProposalRead"),
             Map.entry("AccountRestrictionController#readAccountRestriction", "accounts.RestrictionRead"),
+            // P17-TSK-123: a fee schedule version or merchant fee assignment proposal read by its decider, as P17-TSK-124's.
+            Map.entry("FeeProposalController#viewFeeScheduleProposal", "merchant.FeeProposalRead"),
             // P17-TSK-125: a customer's name and country (CUSTOMER_READ), and the KYC reviewer's documents (KYC_DOCUMENT_READ).
             // The download's record is DocumentAccess's own (INV-KYC-06), marked by RecordedReads.recordedByItsModule.
             Map.entry("CustomerReadController#readCustomerIdentity", "party.CustomerIdentityRead"),

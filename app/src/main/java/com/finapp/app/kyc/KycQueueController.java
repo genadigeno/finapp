@@ -31,8 +31,8 @@ public class KycQueueController {
 
     /**
      * The open KYC cases, oldest opening first, the case id breaking a tie - a §7 collection, {@code limit} 50 unless named, 200 at
-     * most - of one open {@code status} when named: {@code OPEN}, {@code CHECKS_IN_PROGRESS}, {@code IN_REVIEW} or
-     * {@code READY_FOR_DECISION}. Every page recorded {@code kyc.ReviewQueueRead}.
+     * most - of one open {@code status} when named: {@code OPEN}, {@code CHECKS_IN_PROGRESS}, {@code IN_REVIEW},
+     * {@code AWAITING_CUSTOMER} (`P17-TSK-126`) or {@code READY_FOR_DECISION}. Every page recorded {@code kyc.ReviewQueueRead}.
      */
     @GetMapping("/kyc/cases")
     @RequiresPermission(PermissionName.KYC_REVIEW)

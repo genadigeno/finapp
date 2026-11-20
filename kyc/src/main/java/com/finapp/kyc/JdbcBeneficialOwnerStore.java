@@ -27,12 +27,17 @@ public final class JdbcBeneficialOwnerStore implements BeneficialOwnerStore<Conn
 
     private static final String TABLE = "kyc.beneficial_owner";
 
-    /** The statuses still accepting declarations: everything before the set freezes at RFD. */
+    /**
+     * The statuses still accepting declarations: everything before the set freezes at RFD - a case
+     * awaiting its customer included (`P17-TSK-126`, ADR-0155 decision 9: a missing owner is one
+     * thing a reviewer may ask for).
+     */
     private static final List<KycCaseStatus> ACCEPTING =
             List.of(
                     KycCaseStatus.OPEN,
                     KycCaseStatus.CHECKS_IN_PROGRESS,
-                    KycCaseStatus.IN_REVIEW);
+                    KycCaseStatus.IN_REVIEW,
+                    KycCaseStatus.AWAITING_CUSTOMER);
 
     @Override
     public Declared declare(Connection unitOfWork, BeneficialOwner owner) {
