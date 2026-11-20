@@ -65,7 +65,12 @@ class EveryCustomerReadIsRecordedTest {
             Map.entry("BnplRefundProposalController#readBnplRefundProposal", "bnpl.RefundProposalRead"),
             Map.entry("BnplFeeAssignmentProposalController#readBnplFeeAssignmentProposal",
                     "merchant.BnplFeeAssignmentProposalRead"),
-            Map.entry("AccountRestrictionController#readAccountRestriction", "accounts.RestrictionRead"));
+            Map.entry("AccountRestrictionController#readAccountRestriction", "accounts.RestrictionRead"),
+            // P17-TSK-125: a customer's name and country (CUSTOMER_READ), and the KYC reviewer's documents (KYC_DOCUMENT_READ).
+            // The download's record is DocumentAccess's own (INV-KYC-06), marked by RecordedReads.recordedByItsModule.
+            Map.entry("CustomerReadController#readCustomerIdentity", "party.CustomerIdentityRead"),
+            Map.entry("KycDocumentReadController#listKycCaseDocuments", "kyc.CaseDocumentsListed"),
+            Map.entry("KycDocumentReadController#readKycDocumentContent", "kyc.DocumentContentRead"));
     // P17-TSK-039: the payments report moved to PLATFORM_OVERVIEW_READ - its counts name no customer - and is recorded there.
 
     @Autowired private ApplicationContext context;

@@ -18926,6 +18926,42 @@
         },
         "type": "object"
       },
+      "CaseDocument": {
+        "properties": {
+          "contentType": {
+            "type": "string"
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "documentType": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sizeBytes": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CaseDocumentsPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CaseDocument"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CaseFileResponse": {
         "properties": {
           "checks": {
@@ -21417,6 +21453,20 @@
           "kind",
           "value"
         ],
+        "type": "object"
+      },
+      "CustomerNameAndCountry": {
+        "properties": {
+          "countryOfResidence": {
+            "type": "string"
+          },
+          "legalName": {
+            "type": "string"
+          },
+          "legalNameSource": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "CustomerProfile": {
@@ -46611,6 +46661,33 @@
         }
       }
     },
+    "/v1/operator/customers/{id}/identity": {
+      "get": {
+        "operationId": "readCustomerIdentity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerNameAndCountry"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/customers/{id}/kyc-case": {
       "get": {
         "operationId": "readCustomerLatestKycCase",
@@ -48328,6 +48405,49 @@
         }
       }
     },
+    "/v1/operator/kyc/cases/{id}/documents": {
+      "get": {
+        "operationId": "listKycCaseDocuments",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CaseDocumentsPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/kyc/counterparty-screenings": {
       "get": {
         "operationId": "listCounterpartyScreeningBacklog",
@@ -48408,6 +48528,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScreeningDecisionReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/kyc/documents/{id}/content": {
+      "get": {
+        "operationId": "readKycDocumentContent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "format": "byte",
+                  "type": "string"
                 }
               }
             },

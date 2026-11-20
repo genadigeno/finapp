@@ -132,6 +132,19 @@ public enum PartyAuditAction implements AuditableAction {
             "An operator read a customer's profile: identifiers and statuses, never a name or contact detail.",
             false),
 
+    /**
+     * An operator read a customer's name and country of residence (`P17-TSK-125`; the owner's D-25 decision 1;
+     * {@code GET /v1/operator/customers/{id}/identity}, {@code CUSTOMER_READ}, on a {@code MULTI_FACTOR} session) - the two
+     * personal fields staff may see, read on their own, never in the profile or a list. The customer the target; the party and
+     * whether a country was served the summary, <strong>never the name</strong> (INV-AUD-02). Written in the read's own
+     * transaction.
+     */
+    CUSTOMER_IDENTITY_READ(
+            "party.CustomerIdentityRead",
+            "An operator read a customer's name and country of residence, on their own; the record names the customer, never"
+                    + " the name.",
+            false),
+
     /** An overview reader was served the customers report (`P17-TSK-039`, PLATFORM_OVERVIEW_READ) - counts, never a customer. */
     CUSTOMERS_REPORT_READ(
             "party.CustomersReportRead",

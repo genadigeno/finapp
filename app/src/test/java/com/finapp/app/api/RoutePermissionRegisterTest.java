@@ -377,6 +377,12 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/kyc/cases", PermissionName.KYC_REVIEW),
                     entry("GET /v1/operator/customers/{id}/kyc-case", PermissionName.KYC_REVIEW),
                     entry("GET /v1/operator/kyc/counterparty-screenings", PermissionName.COUNTERPARTY_SCREENING_REVIEW),
+                    // P17-TSK-125: a customer's name and country, a read of its own (CUSTOMER_READ); a case's documents and one
+                    // document's content, the reviewer's alone (KYC_DOCUMENT_READ) - each a recorded read on a MULTI_FACTOR
+                    // session.
+                    entry("GET /v1/operator/customers/{id}/identity", PermissionName.CUSTOMER_READ),
+                    entry("GET /v1/operator/kyc/cases/{id}/documents", PermissionName.KYC_DOCUMENT_READ),
+                    entry("GET /v1/operator/kyc/documents/{id}/content", PermissionName.KYC_DOCUMENT_READ),
                     // P10-TSK-011: the scorecard doors - model versions under four eyes, held by
                     // CREDIT_POLICY_OFFICER (ADR-0086 section 3); every act keyed.
                     entry("POST /v1/operator/credit/scorecards", PermissionName.CREDIT_POLICY_ADMINISTER),
@@ -918,6 +924,10 @@ class RoutePermissionRegisterTest {
             "GET /v1/operator/kyc/cases",
             "GET /v1/operator/customers/{id}/kyc-case",
             "GET /v1/operator/kyc/counterparty-screenings",
+            // P17-TSK-125: a person's name and country, and their identity documents - the most personal reads there are.
+            "GET /v1/operator/customers/{id}/identity",
+            "GET /v1/operator/kyc/cases/{id}/documents",
+            "GET /v1/operator/kyc/documents/{id}/content",
             // P17-TSK-015: whose sessions are live, and ending them - an incident's acts, not a stolen password's.
             "GET /v1/operator/identities/{id}/sessions",
             "DELETE /v1/operator/identities/{id}/sessions",

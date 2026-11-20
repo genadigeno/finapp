@@ -25,7 +25,8 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
  * handler declaring one of those permissions, in a request where {@link RecordedReads#record} wrote nothing, is refused: logged
  * and answered {@code 500 api.InternalError}, and the body it would have served is dropped. Fail closed, as
  * {@link RefusedActAdvice} is for a refusal it cannot record. A problem answer serves nothing and passes; so does an answer of no
- * body.
+ * body. An answer that is not JSON - a KYC document's bytes, since `P17-TSK-125` - is refused by an exception the error contract
+ * answers {@code 500}, its converter being unable to write the problem in the body's place.
  *
  * <p>No state of its own: the mark is the request's, written by the thread that ran the read, so ten replicas each hold it for
  * their own requests and nothing is shared.
@@ -58,6 +59,12 @@ public class UnrecordedReadAdvice implements ResponseBodyAdvice<Object> {
         }
         log.error("{}#{} answered a read under a recorded permission without recording it; answered as a failure, nothing served",
                 handler.getBeanType().getSimpleName(), handler.getMethod().getName());
+        if (selectedContentType == null || !selectedContentType.isCompatibleWith(MediaType.APPLICATION_JSON)
+                && !"json".equals(selectedContentType.getSubtypeSuffix())) {
+            // A body that is not JSON - a document's bytes (P17-TSK-125) - goes through a converter that cannot write the problem
+            // in its place. Refused by throwing instead: the body is dropped and the error contract answers 500 api.InternalError.
+            throw new IllegalStateException("an unrecorded read under a recorded permission is not served");
+        }
         response.setStatusCode(HttpStatus.INTERNAL_SERVER_ERROR);
         // The error contract's media type, as every problem answer carries it (ApiErrorHandler.render).
         response.getHeaders().setContentType(MediaType.APPLICATION_PROBLEM_JSON);

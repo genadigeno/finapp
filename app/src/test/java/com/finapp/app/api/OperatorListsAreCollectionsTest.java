@@ -85,7 +85,10 @@ class OperatorListsAreCollectionsTest {
             entry("GET /v1/operator/regulatory/obligations/awaiting-activation",
                     "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape"),
             entry("GET /v1/operator/regulatory/submissions/awaiting-approval",
-                    "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape")));
+                    "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape"),
+            // P17-TSK-125: byte[] is an array to this rule, and is no list.
+            entry("GET /v1/operator/kyc/documents/{id}/content",
+                    "not a list: one KYC document's bytes, an attachment of at most 512 KiB (DocumentBytes.MAX_BYTES)")));
 
     /** Routes on the operator surface answering a top-level {@code truncated}, each with why it may. */
     static final Map<String, String> TRUNCATED = new TreeMap<>(Map.ofEntries(

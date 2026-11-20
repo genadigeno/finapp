@@ -207,6 +207,19 @@ public enum PermissionName {
     KYC_REVIEW,
 
     /**
+     * Save a customer's identity document (`P17-TSK-125`; the owner's D-25 decision 2, finapp-admin-panel B6.6 item 2, gap
+     * G-62): list a KYC case's documents by identifier, type, size and received-at, and download one's content over
+     * {@code DocumentAccess.read} - an attachment the console never renders, recorded ({@code kyc.DocumentContentRead}) before
+     * any byte leaves, on a {@code MULTI_FACTOR} session.
+     *
+     * <p><strong>Apart from {@link #KYC_REVIEW}, deliberately</strong>: reading a case's references and saving a person's
+     * passport are different exposures, and a permission of its own is what lets the access review see who can do the second.
+     * Held by {@code KYC_REVIEWER}. It guards only reads, each behind a second factor ({@link #readsBehindAFactor}), so its
+     * holders need an enrolled factor at grant.
+     */
+    KYC_DOCUMENT_READ,
+
+    /**
      * Command a journal posting directly over an HTTP surface (`P3-TSK-007`).
      *
      * <p>Posting authority becomes a privileged capability rather than an ambient one — but the
@@ -917,7 +930,8 @@ public enum PermissionName {
      */
     public boolean guardsAnAct() {
         return switch (this) {
-            case ACCOUNTING_READ, FX_INVESTIGATE, AUDIT_READ, ACCOUNT_READ, TRANSFER_READ, PAYMENT_READ, PLATFORM_OVERVIEW_READ -> false;
+            case ACCOUNTING_READ, FX_INVESTIGATE, AUDIT_READ, ACCOUNT_READ, TRANSFER_READ, PAYMENT_READ, PLATFORM_OVERVIEW_READ,
+                    KYC_DOCUMENT_READ -> false;
             default -> true;
         };
     }
@@ -932,6 +946,7 @@ public enum PermissionName {
      */
     public boolean readsBehindAFactor() {
         // P17-TSK-027: the account and transfer reads, every one on a MULTI_FACTOR session as every customer read is.
-        return this == AUDIT_READ || this == ACCOUNT_READ || this == TRANSFER_READ;
+        // P17-TSK-125: a case's documents and one document's content, both reads on a MULTI_FACTOR session.
+        return this == AUDIT_READ || this == ACCOUNT_READ || this == TRANSFER_READ || this == KYC_DOCUMENT_READ;
     }
 }

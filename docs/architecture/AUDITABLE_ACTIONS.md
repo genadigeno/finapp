@@ -22,7 +22,7 @@ check is possible at all.
 |---|---|
 | Every audit record names a *declared* action | The type system. `AuditRecord.operation` is an `AuditableAction`, so an ad-hoc string cannot be recorded |
 | Every action that *should* be audited *is* | **Nothing mechanical.** A missing call is a missing call |
-| Every operator read of a customer is recorded - a handler under `CUSTOMER_READ`, `ACCOUNT_READ`, `TRANSFER_READ` or `PAYMENT_READ` (`P17-TSK-025`; finapp-admin-panel ADR-C132 decision 5), or marked `@RecordedRead` (`P17-TSK-029`: the KYC reviewer's reads, whose permissions also guard acts) | **At the answer.** The one helper, app's `RecordedReads`, writes the module's record in the read's own transaction and marks the request; `UnrecordedReadAdvice` refuses a successful answer from such a handler with no mark, `500 api.InternalError` before any byte leaves. `EveryCustomerReadIsRecordedTest` holds the advice on the answer path, every such handler named with its record, and every operator `GET` naming a customer held whatever its permission, so a forgotten mark fails the build. The exception to the row above, for these reads only |
+| Every operator read of a customer is recorded - a handler under `CUSTOMER_READ`, `ACCOUNT_READ`, `TRANSFER_READ` or `PAYMENT_READ` (`P17-TSK-025`; finapp-admin-panel ADR-C132 decision 5) or `KYC_DOCUMENT_READ` (`P17-TSK-125`: the download's record is `DocumentAccess`'s own, the request marked by `RecordedReads.recordedByItsModule`), or marked `@RecordedRead` (`P17-TSK-029`: the KYC reviewer's reads, whose permissions also guard acts) | **At the answer.** The one helper, app's `RecordedReads`, writes the module's record in the read's own transaction and marks the request; `UnrecordedReadAdvice` refuses a successful answer from such a handler with no mark, `500 api.InternalError` before any byte leaves. `EveryCustomerReadIsRecordedTest` holds the advice on the answer path, every such handler named with its record, and every operator `GET` naming a customer held whatever its permission, so a forgotten mark fails the build. The exception to the row above, for these reads only |
 
 The second is what the Phase 15 gate and code review are for. Saying so plainly is more useful
 than implying a guarantee the mechanism does not provide — a registry that looked complete while
@@ -76,6 +76,7 @@ question, not a refactor.
 | `party.ProfileChanged` | No | A party's own profile data was changed, recording which field and by whom. |
 | `party.CustomerLookedUp` | No | A holder of `CUSTOMER_READ` looked a customer up by an exact identifier (`P17-TSK-026`; `POST /v1/operator/customers/lookup`, the value in the body, on a `MULTI_FACTOR` session): `kind` one of `CUSTOMER_ID`, `PARTY_ID`, `LOGIN_IDENTIFIER`, `ACCOUNT_ID`. Recorded whether it matched or not, the customer it resolved to the target (`no-match` otherwise), the kind and the outcome the summary - **never the value**. Written by app's `RecordedReads` in the lookup's own transaction; an unknown `kind` is a `422` and records nothing. |
 | `party.CustomerRead` | No | A holder of `CUSTOMER_READ` read a customer's profile (`P17-TSK-026`; `GET /v1/operator/customers/{id}`, on a `MULTI_FACTOR` session): identifiers and statuses, never a name or contact detail. The customer the target; the party, how many identities and the latest KYC case the summary. In the read's own transaction; an unknown customer records nothing. |
+| `party.CustomerIdentityRead` | No | A holder of `CUSTOMER_READ` read a customer's name and country of residence (`P17-TSK-125`; the owner's D-25 decision 1; `GET /v1/operator/customers/{id}/identity`, on a `MULTI_FACTOR` session) - the two personal fields staff may see, a read of its own, never in the profile or a list. The customer the target; the party, the name's source (`SELF_DECLARED`) and whether a country was served (`absent` until one is held) the summary - **never the name**. Written by app's `RecordedReads` in the read's own transaction; an unknown customer records nothing. |
 | `party.CustomersReportRead` | No | A holder of `PLATFORM_OVERVIEW_READ` was served the customers report (`P17-TSK-039`; `GET /v1/operator/reports/customers?date=`): each lifecycle status's standing count and the UTC day's openings and changes, in the read's own transaction. Target the day; the summary the total - never a customer. |
 
 `party.CustomerRegistered` is **one action for two writes**, deliberately. `PHASE_1_PLAN.md` §4
@@ -286,6 +287,7 @@ that is recorded debt rather than an omission here.
 | `kyc.ReviewResolved` | **Yes** | A reviewer resolved a review task — the judgement a non-clean check owed a person — with its justification. |
 | `kyc.CheckCompleted` | No | A verification check reached its outcome — the platform recording a provider's answer in its own vocabulary. *(Since `P13-TSK-022`'s second review the summary names the check's purpose beside the case, the type and the outcome - `purpose=ONBOARDING` for a run's check, `purpose=RESCREEN` for a list update's - so an investigator tells the two apart in one row.)* |
 | `kyc.DocumentContentRead` | No | Document content was read, naming who looked and at which document. |
+| `kyc.CaseDocumentsListed` | No | A reviewer was served a page of a case's documents - identifiers, types and sizes, never content; whether it followed a cursor and a count recorded. |
 | `kyc.CaseRead` | No | A reviewer read a KYC/KYB case, naming who looked and at which case. |
 | `kyc.OwnerDeclared` | No | A beneficial owner was declared onto a KYB case, pinning the verification case the graph rests on. |
 | `kyc.CounterpartyScreeningDecided` | **Yes** | kyc decided a counterparty screening - automatically from the provider's verdict and the payee check, or a reviewer's release or block - naming its basis and policy version. |
@@ -347,6 +349,18 @@ is born of a customer's registration), `kyc.ReviewResolved` the **`ReviewTask`**
 **`VerificationCheck`**, and `kyc.DocumentContentRead` the **`Document`**. The literals are the writers' own (`DecisionRecording`,
 `OwnerDeclaration`, `ReviewService`, `KycQueueDesk`, `CaseOpeningTrail`, `ReviewService`, `CheckOutcomeTrail`, `DocumentAccess`);
 renaming one is a contract change for the console's History link.
+
+`kyc.CaseDocumentsListed` joined at `P17-TSK-125` (the owner's D-25 decision 2): a case's documents
+(`GET /v1/operator/kyc/cases/{id}/documents`, `KYC_DOCUMENT_READ`, `MULTI_FACTOR`) listed by identifier,
+type, size and received-at - one record a page, the case the target, whether it followed a cursor and how
+many it served, written by `RecordedReads` in the read's own transaction - its target `KycCase` and the case's id, so a
+case's History (the filter above) holds it. **The download writes no new
+action**: `GET /v1/operator/kyc/documents/{id}/content` is `DocumentAccess.read`'s first HTTP caller, and its
+record is `kyc.DocumentContentRead` - the reviewer, the document, its case, the correlation - committed in
+the read's own transaction before a byte is served. A second record of the same look (the console asked for
+`kyc.DocumentRead`) would split the trail of who looked across two codes, so the request is marked by
+`RecordedReads.recordedByItsModule` instead, and held at the answer by `UnrecordedReadAdvice` like every read
+under `KYC_DOCUMENT_READ`.
 
 `party.OrganisationRegistered` joined at `P2-TSK-016`, and its actor is **the proven person,
 never the platform** — the opposite of `party.CustomerRegistered`, whose caller is

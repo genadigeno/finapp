@@ -54,7 +54,7 @@ Every role is an operator role: a customer holds none. Each permission is held b
 | Role | Permissions |
 |---|---|
 | `ADMINISTRATOR` | `IDENTITY_SUSPEND`, `ROLE_ASSIGN`, `IDENTITY_READ`, `SESSION_ADMINISTER` |
-| `KYC_REVIEWER` | `KYC_REVIEW`, `COUNTERPARTY_SCREENING_REVIEW` |
+| `KYC_REVIEWER` | `KYC_REVIEW`, `COUNTERPARTY_SCREENING_REVIEW`, `KYC_DOCUMENT_READ` |
 | `LEDGER_OPERATOR` | `LEDGER_POST`, `LEDGER_ADJUST`, `TRANSFER_REVERSE`, `PAYMENT_REFUND`, `MERCHANT_PAYOUT`, `PAYMENT_ROUTING_ADMINISTER`, `DISPUTE_ADMINISTER`, `FX_TRADE_REVERSE` |
 | `MERCHANT_ADMINISTRATOR` | `MERCHANT_ONBOARD`, `MERCHANT_ADMINISTER`, `FEE_ADMINISTER`, `PAYOUT_DESTINATION_APPROVE` |
 | `RECONCILIATION_OPERATOR` | `SETTLEMENT_INGEST`, `RECONCILIATION_INVESTIGATE`, `RECONCILIATION_RESOLVE`, `FX_INVESTIGATE` |
@@ -79,6 +79,8 @@ Every role is an operator role: a customer holds none. Each permission is held b
 | `OPERATIONS_VIEWER` | `PLATFORM_OVERVIEW_READ` |
 
 **The operator read roles** (`P17-TSK-025`; finapp-admin-panel ADR-C132 decision 2). `CUSTOMER_SUPPORT_AGENT` reads customers, their accounts, transfers and payments, and acts on nothing; `OPERATIONS_VIEWER` reads the overview reports (`P17-TSK-039`'s) and nothing else. Both need an enrolled factor at grant while a permission they hold guards no route, since such a permission counts as an act (`PermissionName.guardsAnAct`). *(`P17-TSK-032`, 2026-11-20: `PAYMENT_READ` now guards routes that only read, so it counts as no act; the support role still needs a factor while its other reads guard no route.)* *(`P17-TSK-039`, 2026-11-20: `PLATFORM_OVERVIEW_READ` guards the overview's three reports - customers, transfers and payments, counts and totals that name no customer - every one a read, so it counts as no act and `OPERATIONS_VIEWER` is the one role that needs no enrolled factor at grant; the payments report left `PAYMENT_READ` for it, so the support agent no longer reads the day's payment totals.)* ADR-C132 proposed `KYC_REVIEWER` and `RISK_ANALYST` as holders of `CUSTOMER_READ` and `LEDGER_OPERATOR` and `RISK_ANALYST` of the account, transfer and payment reads. The roles are a partition (the owner's C12, above), so this repository's decision is: **a person on those desks who needs the reads holds `CUSTOMER_SUPPORT_AGENT` as well**, granted and reviewed like any role, and no segregation-of-duties pair below forbids it. The cost, stated: such a holder gets all four reads, where ADR-C132 gave the KYC reviewer only the customer read. Every one of those reads is recorded (`RecordedReads`, held at the answer by `UnrecordedReadAdvice`), so the review sees each customer an operator read.
+
+**The KYC document download** (`P17-TSK-125`; the owner's D-25 decision 2). `KYC_DOCUMENT_READ` - a case's documents listed, and one document's content saved as an attachment - is `KYC_REVIEWER`'s alone, apart from `KYC_REVIEW` so that this review can see who can save a person's passport. It guards only reads, each on a `MULTI_FACTOR` session (`PermissionName.readsBehindAFactor`), so its holders need an enrolled factor at grant, as the reviewer, who acts, already did. Every download is `kyc.DocumentContentRead`, naming the reviewer and the document, committed before a byte is served: the review reads who saved which document there.
 
 Which route requires which permission is `RoutePermissionRegisterTest`'s register. **Every route under `/v1/operator`
 declares a permission** (`RoutePermissionRegisterTest#everyOperatorRouteIsPermissionGuarded`, T31): a route there

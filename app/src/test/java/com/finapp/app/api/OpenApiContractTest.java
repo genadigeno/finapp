@@ -1186,6 +1186,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/kyc/cases",
                         ApiVersion.CURRENT_PREFIX + "/operator/customers/{id}/kyc-case",
                         ApiVersion.CURRENT_PREFIX + "/operator/kyc/counterparty-screenings",
+                        // P17-TSK-125: a customer's name and country (CUSTOMER_READ); a case's documents and one document's
+                        // content as an attachment (KYC_DOCUMENT_READ) - recorded reads on a second factor.
+                        ApiVersion.CURRENT_PREFIX + "/operator/customers/{id}/identity",
+                        ApiVersion.CURRENT_PREFIX + "/operator/kyc/cases/{id}/documents",
+                        ApiVersion.CURRENT_PREFIX + "/operator/kyc/documents/{id}/content",
                         // P1-TSK-030. Declared by the plan for the whole phase and owned by no
                         // task until the review found it.
                         ApiVersion.CURRENT_PREFIX + "/me",

@@ -7464,6 +7464,18 @@ class OwnershipIsScopedTest {
                                         + " audited declaration and P2-TSK-016's acting-person"
                                         + " authorization.")),
                     Map.entry(
+                            "com.finapp.party.JdbcPartyStore.registeredNameOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-125, kindOf's shape: a narrow read beside findById so that findById's"
+                                        + " SESSION_DERIVED claim stays true. The party is the one behind a customer an"
+                                        + " operator names from the URL of GET /v1/operator/customers/{id}/identity -"
+                                        + " somebody else by design, the owner's D-25. Standing in for the owner predicate:"
+                                        + " @RequiresPermission(CUSTOMER_READ) on a MULTI_FACTOR session at the boundary"
+                                        + " (RoutePermissionRegisterTest, CustomerIdentityReadTest), the name alone - no"
+                                        + " other personal field - and party.CustomerIdentityRead of every read, never the"
+                                        + " name, held at the answer by UnrecordedReadAdvice.")),
+                    Map.entry(
                             "com.finapp.party.JdbcPartyStore.kindOfCustomer",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -7514,7 +7526,23 @@ class OwnershipIsScopedTest {
                                         + " DocumentAccess, which writes the INV-KYC-06 audit"
                                         + " record in the same unit of work - the trail of who"
                                         + " looked is the control, asserted by"
-                                        + " DocumentUploadDatabaseTest.")),
+                                        + " DocumentUploadDatabaseTest. P17-TSK-125 brought its"
+                                        + " first production HTTP caller, on the owner's D-25:"
+                                        + " KycDocumentReadDesk, GET /v1/operator/kyc/documents/{id}/content,"
+                                        + " a KYC_DOCUMENT_READ holder (KYC_REVIEWER alone) on a"
+                                        + " MULTI_FACTOR session naming any document - still through"
+                                        + " DocumentAccess, its record committed before a byte is"
+                                        + " served (KycDocumentReadDeskTest).")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcDocumentStore.documentsOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-125. A case's documents, metadata only - never the ciphertext: a reviewer"
+                                        + " names the case from the URL of GET /v1/operator/kyc/cases/{id}/documents,"
+                                        + " somebody else's by design, as the case file's own read does (findById's"
+                                        + " ADMINISTERED entry). Standing in: KYC_DOCUMENT_READ on a MULTI_FACTOR session"
+                                        + " at the boundary, and kyc.CaseDocumentsListed of every page, held at the answer"
+                                        + " by UnrecordedReadAdvice.")),
                     Map.entry(
                             "com.finapp.kyc.JdbcKycCaseStore.moveStatus",
                             new Entry(
@@ -7541,7 +7569,9 @@ class OwnershipIsScopedTest {
                                         + " being on the record (kyc.CaseRead names who looked -"
                                         + " the reviewer is the insider surface), and existence"
                                         + " disclosure to a proven reviewer being the P1-TSK-028"
-                                        + " decision.")),
+                                        + " decision. P17-TSK-125's document list reads it the same"
+                                        + " way, for the 404 of an unknown case, under"
+                                        + " KYC_DOCUMENT_READ.")),
                     Map.entry(
                             "com.finapp.kyc.JdbcKycCaseStore.moveToReadyForDecision",
                             new Entry(

@@ -17,6 +17,7 @@ import com.finapp.party.CustomerId;
 import com.finapp.party.PartyAuditAction;
 import com.finapp.party.PartyId;
 import com.finapp.party.PartyKind;
+import com.finapp.party.PartyName;
 import com.finapp.party.PartyStore;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
@@ -43,6 +44,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p><strong>Identifier-first</strong> (ADR-C132 decision 3, D-5): nothing served names a person - no display name, no login
  * identifier, no contact detail, no document. A lookup records what it resolved to and how it was asked, never the value.
+ * <em>The one exception is {@link #nameAndCountry}</em> (`P17-TSK-125`, the owner's D-25): a customer's name and country, a
+ * read of its own that nothing else here folds in.
  */
 @RequiredArgsConstructor
 public class CustomerReadDesk {
@@ -112,6 +115,36 @@ public class CustomerReadDesk {
                     "party=" + customer.partyId().value() + ", identities=" + identities.size() + ", kycCase="
                             + latest.map(kycCase -> kycCase.id().value().toString()).orElse("none"));
             return CustomerProfile.of(customer, kind, identities, latest);
+        })).orElseThrow(CustomerReadDesk::notFound);
+    }
+
+    /**
+     * A customer's name and country of residence - the two personal fields staff may see (`P17-TSK-125`; the owner's D-25
+     * decision 1), read on their own and never in the profile or a list. Recorded {@code party.CustomerIdentityRead} with the
+     * customer as the target, the party and whether a country was served the summary - <strong>never the name</strong>. An
+     * unknown or malformed id is {@code 404}, recording nothing.
+     *
+     * <p>The name is the one the party registered under ({@link PartyStore#registeredNameOf}), served with its provenance,
+     * {@link CustomerNameAndCountry#SELF_DECLARED}: no module holds a name verified against a document. The country is
+     * {@code null}: no module holds a country of residence ({@code CURRENT_STATE.md} unresolved question #13), and none is
+     * inferred.
+     */
+    public CustomerNameAndCountry nameAndCountry(String rawCustomerId) {
+        Optional<UUID> id = uuid(rawCustomerId);
+        if (id.isEmpty()) {
+            throw notFound();
+        }
+        CustomerId customerId = CustomerId.of(id.get());
+        return inOneSnapshot(unitOfWork -> partyStore.findCustomer(unitOfWork, customerId).map(customer -> {
+            PartyName name = partyStore.registeredNameOf(unitOfWork, customer.partyId()).orElseThrow(
+                    () -> new IllegalStateException("a customer's party exists: party.customer references it"));
+            CustomerNameAndCountry answer = CustomerNameAndCountry.of(name);
+            // Identifiers and codes only (INV-AUD-02): the party, what kind of name was served, whether a country was.
+            String country = answer.countryOfResidence() == null ? "absent" : "served";
+            recordedReads.record(unitOfWork, PartyAuditAction.CUSTOMER_IDENTITY_READ, "party.Customer",
+                    customerId.value().toString(),
+                    "party=" + customer.partyId().value() + ", nameSource=" + answer.legalNameSource() + ", country=" + country);
+            return answer;
         })).orElseThrow(CustomerReadDesk::notFound);
     }
 
@@ -233,6 +266,29 @@ public class CustomerReadDesk {
             return new CustomerProfile(customer.id().value().toString(), customer.status().name(), customer.openedAt(),
                     customer.statusChangedAt(), customer.partyId().value().toString(), kind.name(), identities,
                     latest.map(CustomerKycCase::of).orElse(null));
+        }
+    }
+
+    /**
+     * A customer's name and country of residence, and nothing else personal (`P17-TSK-125`; D-25): {@code legalName} the name
+     * the party registered under, {@code legalNameSource} what that name is - {@code SELF_DECLARED}, given by the customer and
+     * changeable by them, never verified against a document - and {@code countryOfResidence} an ISO 3166-1 alpha-2 code, or
+     * {@code null} while no module holds one (unresolved question #13). The null is written, not left out: it says "not held".
+     * {@code RESTRICTED-PII}: {@code toString} renders none of it.
+     */
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    public record CustomerNameAndCountry(String legalName, String legalNameSource, String countryOfResidence) {
+
+        /** The name as the customer gave it: at registration, or by renaming themselves since. Never verified. */
+        public static final String SELF_DECLARED = "SELF_DECLARED";
+
+        static CustomerNameAndCountry of(PartyName name) {
+            return new CustomerNameAndCountry(name.value(), SELF_DECLARED, null);
+        }
+
+        @Override
+        public String toString() {
+            return "CustomerNameAndCountry[redacted]";
         }
     }
 

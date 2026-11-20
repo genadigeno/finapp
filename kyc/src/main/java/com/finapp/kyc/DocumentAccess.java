@@ -47,6 +47,11 @@ import lombok.RequiredArgsConstructor;
  * download endpoint at all (no plan row gives them one). Building the read path <em>here</em> is
  * what makes "content readable only through the audited path" true from the first day content
  * exists, rather than a property retrofitted around an unaudited read somebody already shipped.
+ *
+ * <p><em>Its first HTTP caller arrived with `P17-TSK-125`</em> (the owner's D-25 decision 2): the
+ * reviewer's download, {@code GET /v1/operator/kyc/documents/{id}/content} under
+ * {@code KYC_DOCUMENT_READ} on a {@code MULTI_FACTOR} session, which commits this record before it
+ * serves a byte. Still no customer download.
  */
 @RequiredArgsConstructor
 public final class DocumentAccess {
