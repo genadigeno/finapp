@@ -77,6 +77,16 @@ public class LoanTermsController {
     }
 
     /**
+     * One terms version by its identifier, in any state (`P17-TSK-116`): what the approver of a proposal reads before
+     * deciding it, with its proposer. Under {@code LENDING_ADMINISTER}, the approver's own permission.
+     */
+    @GetMapping(path = "/{versionId}")
+    @RequiresPermission(PermissionName.LENDING_ADMINISTER)
+    public LoanTermsDesk.LoanTermsView readLoanTermsVersion(@PathVariable("versionId") String versionId) {
+        return desk.version(versionId);
+    }
+
+    /**
      * The product's terms in force at {@code at} (an ISO-8601 instant) - answered from the effective periods alone; with
      * no {@code at}, the version {@code ACTIVE} now.
      */

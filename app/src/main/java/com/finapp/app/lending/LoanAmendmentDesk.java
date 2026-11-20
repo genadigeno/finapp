@@ -81,7 +81,8 @@ public final class LoanAmendmentDesk {
             String proposedAt,
             String decidedAt,
             String expiresAt,
-            Integer agreementVersion) {}
+            Integer agreementVersion,
+            String proposedBy) {}
 
     /** What the customer reads: the amendment offered to them and the document they accept by its hash. */
     public record OfferedAmendmentView(AmendmentView amendment, String document) {}
@@ -225,7 +226,8 @@ public final class LoanAmendmentDesk {
                 amendment.proposedAt().toString(),
                 amendment.decidedAt().map(Instant::toString).orElse(null),
                 amendment.expiresAt().map(Instant::toString).orElse(null),
-                amendment.acceptedVersion().orElse(null));
+                amendment.acceptedVersion().orElse(null),
+                amendment.proposedBy());
     }
 
     private static AmendmentAcceptedView view(LoanAmendments.Accepted accepted) {
@@ -309,21 +311,25 @@ public final class LoanAmendmentDesk {
         return new Acted(decided.amendment(), decided.replayed());
     }
 
-    /** The receipt: the view's fields, '|'-separated, an absent one empty. */
-    private static StoredResponse stored(AmendmentView view) {
+    /**
+     * The receipt: the view's fields, '|'-separated, an absent one empty - the proposer last (`P17-TSK-116`), so a receipt
+     * stored before it replays with none named.
+     */
+    static StoredResponse stored(AmendmentView view) {
         String body = String.join("|", view.amendmentId(), view.loanId(), Integer.toString(view.amendsVersion()),
                 view.currentRate(), view.nominalAnnualRate(), Integer.toString(view.remainingInstalments()),
                 Boolean.toString(view.rescheduleArrears()), view.status(), view.documentSha256(), view.proposedAt(),
                 nullable(view.decidedAt()), nullable(view.expiresAt()),
-                view.agreementVersion() == null ? "" : view.agreementVersion().toString());
+                view.agreementVersion() == null ? "" : view.agreementVersion().toString(), nullable(view.proposedBy()));
         return StoredResponse.of(body.getBytes(StandardCharsets.UTF_8), "text/plain");
     }
 
-    private static AmendmentView replayed(byte[] body) {
+    static AmendmentView replayed(byte[] body) {
         String[] f = new String(body, StandardCharsets.UTF_8).split("\\|", -1);
         return new AmendmentView(f[0], f[1], Integer.parseInt(f[2]), f[3], f[4], Integer.parseInt(f[5]),
                 Boolean.parseBoolean(f[6]), f[7], f[8], f[9], f[10].isEmpty() ? null : f[10],
-                f[11].isEmpty() ? null : f[11], f[12].isEmpty() ? null : Integer.valueOf(f[12]));
+                f[11].isEmpty() ? null : f[11], f[12].isEmpty() ? null : Integer.valueOf(f[12]),
+                f.length > 13 && !f[13].isEmpty() ? f[13] : null);
     }
 
     private static StoredResponse stored(AmendmentAcceptedView view) {

@@ -256,7 +256,25 @@ public enum MerchantErrorCode implements ErrorCode {
     BNPL_SCHEDULE_NOT_RETURNING(
             "merchant.BnplScheduleNotReturning",
             422,
-            "A BNPL fee schedule must return its fee on refund; this schedule retains it.");
+            "A BNPL fee schedule must return its fee on refund; this schedule retains it."),
+
+    /** A second BNPL fee assignment proposal while one is open on the product (`P17-TSK-116`). */
+    BNPL_FEE_PROPOSAL_ALREADY_OPEN(
+            "merchant.BnplFeeProposalAlreadyOpen",
+            409,
+            "The merchant's BNPL product already has an open fee assignment proposal; decide it first."),
+
+    /** A decision on a decided BNPL fee assignment proposal (`P17-TSK-116`): decided once. */
+    BNPL_FEE_PROPOSAL_ALREADY_DECIDED(
+            "merchant.BnplFeeProposalAlreadyDecided",
+            409,
+            "The BNPL fee assignment proposal is already decided."),
+
+    /** The proposer deciding their own BNPL fee assignment proposal (`P17-TSK-116`, INV-AUD-04). */
+    BNPL_FEE_PROPOSAL_SELF_DECISION(
+            "merchant.BnplFeeProposalSelfDecision",
+            409,
+            "A BNPL fee assignment proposal is decided by a person who did not propose it.");
 
     private final String code;
     private final int status;

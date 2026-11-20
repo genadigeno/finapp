@@ -232,6 +232,45 @@ class BnplServicingApiTest {
     }
 
     @Test
+    @DisplayName("P17-TSK-116: the servicing agent reads the agreement it services - the waiver its approver decides, with"
+            + " its proposer, and the proposal's answer names the proposer too - recorded bnpl.ServicingAgreementRead; an"
+            + " insider of the agreement's party is 403 bnpl.SelfDealingRefused, recorded FAILED; BNPL_INVESTIGATE alone"
+            + " (BNPL_OFFICER) is 403; no session 401; an unknown agreement 404")
+    void theServicingAgentReadsTheAgreementItServices() throws Exception {
+        Owing owing = owing();
+        String proposer = world.client.operatorSession(authorization, RoleName.BNPL_SERVICING_AGENT);
+        HttpResponse<String> proposed = world.client.post(owing.waivers(), waiverOf(owing), proposer,
+                BnplApplicationClient.key());
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        String waiver = BnplApplicationClient.field(proposed.body(), "waiverId");
+        String proposedBy = BnplApplicationClient.scalar("SELECT proposed_by FROM bnpl.bnpl_waiver WHERE id = ?::uuid",
+                waiver);
+        assertThat(BnplApplicationClient.field(proposed.body(), "proposedBy")).isEqualTo(proposedBy);
+
+        String approver = world.client.operatorSession(authorization, RoleName.BNPL_SERVICING_AGENT);
+        String servicing = AGREEMENTS + owing.agreement() + "/servicing";
+        HttpResponse<String> read = world.client.get(servicing, approver);
+        assertThat(read.statusCode()).as(read.body()).isEqualTo(200);
+        assertThat(read.body()).contains("\"agreementId\":\"" + owing.agreement() + "\"")
+                .contains("\"waiverId\":\"" + waiver + "\"").contains("\"proposedBy\":\"" + proposedBy + "\"")
+                .doesNotContain("journalEntries").doesNotContain("subledgerVerdict");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.ServicingAgreementRead' AND outcome = 'SUCCEEDED' AND target_id = ?", owing.agreement()))
+                .isEqualTo(1);
+
+        String insider = world.client.insiderSession(authorization, owing.owner(), RoleName.BNPL_SERVICING_AGENT);
+        HttpResponse<String> own = world.client.get(servicing, insider);
+        assertThat(own.statusCode()).as(own.body()).isEqualTo(403);
+        assertThat(own.body()).contains("bnpl.SelfDealingRefused");
+        assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.audit_record WHERE operation ="
+                + " 'bnpl.SelfDealingRefused' AND outcome = 'FAILED' AND target_id = ?", owing.agreement())).isEqualTo(1);
+        assertThat(world.client.get(servicing, world.client.operatorSession(authorization, RoleName.BNPL_OFFICER))
+                .statusCode()).as("BNPL_INVESTIGATE is not BNPL_SERVICE").isEqualTo(403);
+        assertThat(world.client.get(servicing, null).statusCode()).isEqualTo(401);
+        assertThat(world.client.get(AGREEMENTS + UUID.randomUUID() + "/servicing", approver).statusCode()).isEqualTo(404);
+    }
+
+    @Test
     @DisplayName("self-dealing through the API at the waiver doors: an agent whose identity is the agreement's own party is"
             + " 403 bnpl.SelfDealingRefused proposing and approving - each recorded FAILED against the agreement, no"
             + " waiver of theirs and no decision written")

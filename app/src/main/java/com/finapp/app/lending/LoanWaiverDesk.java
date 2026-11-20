@@ -72,7 +72,8 @@ public final class LoanWaiverDesk {
             int agreementVersion,
             String proposedAt,
             String decidedAt,
-            String journalEntryId) {}
+            String journalEntryId,
+            String proposedBy) {}
 
     /** A fee as an operator reads it: the assessment, the item it is on, its kind, business date, amount and entry. */
     public record FeeView(
@@ -142,7 +143,8 @@ public final class LoanWaiverDesk {
                 waiver.agreementVersion(),
                 waiver.proposedAt().toString(),
                 waiver.decidedAt().map(Instant::toString).orElse(null),
-                waiver.journalEntry().map(entry -> entry.value().toString()).orElse(null));
+                waiver.journalEntry().map(entry -> entry.value().toString()).orElse(null),
+                waiver.proposedBy());
     }
 
     static FeeView view(FeeAssessment fee) {
@@ -232,19 +234,23 @@ public final class LoanWaiverDesk {
         return new Acted(decided.waiver(), decided.replayed());
     }
 
-    /** The receipt: the view's fields, '|'-separated, an absent one empty. */
-    private static StoredResponse stored(WaiverView view) {
+    /**
+     * The receipt: the view's fields, '|'-separated, an absent one empty - the proposer last (`P17-TSK-116`), so a receipt
+     * stored before it replays with none named.
+     */
+    static StoredResponse stored(WaiverView view) {
         String body = String.join("|", view.waiverId(), view.loanId(), view.kind(), nullable(view.assessmentId()),
                 view.dueItemId(), view.amount(), view.currency(), view.status(), Integer.toString(view.agreementVersion()),
-                view.proposedAt(), nullable(view.decidedAt()), nullable(view.journalEntryId()));
+                view.proposedAt(), nullable(view.decidedAt()), nullable(view.journalEntryId()), nullable(view.proposedBy()));
         return StoredResponse.of(body.getBytes(StandardCharsets.UTF_8), "text/plain");
     }
 
-    private static WaiverView replayed(byte[] body) {
+    static WaiverView replayed(byte[] body) {
         String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", -1);
         return new WaiverView(fields[0], fields[1], fields[2], fields[3].isEmpty() ? null : fields[3], fields[4],
                 fields[5], fields[6], fields[7], Integer.parseInt(fields[8]), fields[9],
-                fields[10].isEmpty() ? null : fields[10], fields[11].isEmpty() ? null : fields[11]);
+                fields[10].isEmpty() ? null : fields[10], fields[11].isEmpty() ? null : fields[11],
+                fields.length > 12 && !fields[12].isEmpty() ? fields[12] : null);
     }
 
     private static String nullable(String value) {

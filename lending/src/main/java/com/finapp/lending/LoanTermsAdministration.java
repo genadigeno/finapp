@@ -312,6 +312,18 @@ public final class LoanTermsAdministration {
     }
 
     /**
+     * One version by id, in any state - what the second person reads before deciding a proposal (`P17-TSK-116`;
+     * {@code BnplTermsAdministration.version}'s shape).
+     *
+     * @throws TermsNotFound when no version has this id
+     */
+    public LoanTermsStore.LoanTermsVersion version(Connection unitOfWork, LoanTermsVersionId id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork");
+        Objects.requireNonNull(id, "id");
+        return store.version(unitOfWork, id).orElseThrow(TermsNotFound::new);
+    }
+
+    /**
      * The product's {@code ACTIVE} version, its row held {@code FOR SHARE} to the caller's commit - the read the
      * application (`P11-TSK-010`) and the offer (`P11-TSK-011`) pin. An activation waits for the pin, so the caller pins
      * the old version or the new, never one retiring under it, and never neither.

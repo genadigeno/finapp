@@ -2471,6 +2471,44 @@ class OwnershipIsScopedTest {
                                         + " permission and factor - so one open proposal per payment is judged before the partial"
                                         + " unique index has to refuse it.")),
                     Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundProposalStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-116. A BNPL refund proposal by its id alone - another person's proposal by design."
+                                        + " Standing in: PAYMENT_REFUND_APPROVE on a MULTI_FACTOR session, keyed, the proposer"
+                                        + " refused by the domain and bnpl V023's CHECK, every decision audited.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundProposalStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-116. A BNPL refund proposal by its id alone, FOR UPDATE - the deciders' lock, at the"
+                                        + " start of the approval's T-ref: the id from the URL of POST"
+                                        + " /v1/operator/bnpl-refund-proposals/{id}/approval or /rejection. Standing in:"
+                                        + " PAYMENT_REFUND_APPROVE on a MULTI_FACTOR session, keyed, four eyes by the domain and"
+                                        + " bnpl V023's CHECK.")),
+                    Map.entry(
+                            "com.finapp.bnpl.JdbcBnplRefundProposalStore.findOpenFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-116. The open refund proposal of the purchase the operator refund door names - under"
+                                        + " PAYMENT_REFUND and its factor - so one open proposal per purchase is judged before the"
+                                        + " partial unique index has to refuse it.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcBnplFeeAssignmentProposalStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-116. A BNPL fee assignment proposal by its id alone, FOR UPDATE - the deciders'"
+                                        + " lock: the id from the URL of POST /v1/operator/bnpl-fee-schedule-proposals/{id}/approval"
+                                        + " or /rejection, another person's proposal by design. Standing in: FEE_SCHEDULE_APPROVE"
+                                        + " on a MULTI_FACTOR session, keyed, four eyes by the domain and merchant V021's CHECK.")),
+                    Map.entry(
+                            "com.finapp.credit.JdbcCreditReads.mediaTypeOf",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-116. An evidence row's media type by its id - metadata, never the content - read"
+                                        + " inside the evidence read (CREDIT_INVESTIGATE, a reason of twenty characters, audited"
+                                        + " credit.EvidenceRead), for the evidence evidenceOf found for the record the URL names.")),
+                    Map.entry(
                             "com.finapp.merchant.JdbcPayoutProposalStore.find",
                             new Entry(
                                     Scope.ADMINISTERED,

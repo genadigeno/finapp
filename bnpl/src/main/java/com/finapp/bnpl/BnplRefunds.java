@@ -139,6 +139,29 @@ public final class BnplRefunds {
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+    /**
+     * The operator's four-eyes threshold (`P17-TSK-116`, ADR-0154 decision 4's shape): judged in T-ref under B5 for the
+     * operator's door only - never the merchant's own sale or a dispute's resolution - and above it the refund is refused
+     * for a second person ({@link BnplRefundRequiresApprovalException}), nothing locked further, held or written.
+     */
+    @NonNull private final BnplRefundThresholds thresholds;
+
+    /**
+     * A refund proposal's decision, run inside T-ref right after the refund row (`P17-TSK-116`, ADR-0154): the decision and
+     * the refund commit together, and a refusal of the decision rolls the refund back with it. {@link #admit} runs first -
+     * under B5, after the key's arbiter and before self-dealing and the bound (ADR-0154 decision 4's admit-before-judging,
+     * `P17-TSK-031`'s hook): a decided proposal approved again under a new key is refused as decided, never answered by the
+     * bound its own first refund used; under the same key the arbiter has replayed that refund already.
+     */
+    @FunctionalInterface
+    public interface ApprovalStep {
+        void within(Connection unitOfWork, UUID refund);
+
+        /** Refuses the approval before anything is judged when it cannot decide the proposal; by default admits. */
+        default void admit(Connection unitOfWork) {
+            // admitted
+        }
+    }
 
     /**
      * Whether the refund refunds all that remained of the purchase - the meter's {@code kind}, and for a refund that
@@ -225,6 +248,22 @@ public final class BnplRefunds {
      */
     public Refunded byOperator(Connection unitOfWork, BnplPurchaseId purchase, Request request, Actor actor,
             CorrelationId correlation) {
+        return byOperator(unitOfWork, purchase, request, actor, correlation, Optional.empty());
+    }
+
+    /**
+     * {@link #byOperator(Connection, BnplPurchaseId, Request, Actor, CorrelationId)} as a refund proposal's approval
+     * (`P17-TSK-116`): no threshold judged - this IS the second person - and {@code approval} run in T-ref after the refund
+     * row. Self-dealing is judged for the approver as for any operator.
+     */
+    public Refunded byOperator(Connection unitOfWork, BnplPurchaseId purchase, Request request, Actor actor,
+            CorrelationId correlation, ApprovalStep approval) {
+        Objects.requireNonNull(approval, "approval");
+        return byOperator(unitOfWork, purchase, request, actor, correlation, Optional.of(approval));
+    }
+
+    private Refunded byOperator(Connection unitOfWork, BnplPurchaseId purchase, Request request, Actor actor,
+            CorrelationId correlation, Optional<ApprovalStep> approval) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(purchase, "purchase");
         Objects.requireNonNull(request, "request");
@@ -239,7 +278,7 @@ public final class BnplRefunds {
         String reason = BnplReasons.reasoned(request.reason());
         BnplRefundStore.LockedPurchase locked = store.lock(unitOfWork, purchase).orElseThrow(PurchaseNotFound::new);
         return refund(unitOfWork, locked, BnplRefund.Door.OPERATOR, "OPERATOR:" + actor.id(), request, reason, actor,
-                correlation);
+                correlation, approval);
     }
 
     // ------------------------------------------------------------------ the dispute's two uses (`P12-TSK-023`)
@@ -327,6 +366,12 @@ public final class BnplRefunds {
 
     private Refunded refund(Connection unitOfWork, BnplRefundStore.LockedPurchase locked, BnplRefund.Door door,
             String requestedBy, Request request, String reason, Actor actor, CorrelationId correlation) {
+        return refund(unitOfWork, locked, door, requestedBy, request, reason, actor, correlation, Optional.empty());
+    }
+
+    private Refunded refund(Connection unitOfWork, BnplRefundStore.LockedPurchase locked, BnplRefund.Door door,
+            String requestedBy, Request request, String reason, Actor actor, CorrelationId correlation,
+            Optional<ApprovalStep> approval) {
         BnplPurchase purchase = locked.purchase();
         UUID merchant = purchase.merchant();
         // A refund already born under this key: the arbiter behind a claim that lapsed.
@@ -340,6 +385,8 @@ public final class BnplRefunds {
                     : Kind.PARTIAL;
             return new Refunded(born.get(), Optional.empty(), true, replayedKind);
         }
+        // A proposal's approval admitted before anything is judged (`P17-TSK-116`): decided already, or by its proposer.
+        approval.ifPresent(step -> step.admit(unitOfWork));
         if (door == BnplRefund.Door.OPERATOR) {
             // Fails CLOSED (the Phase 12 -> 13 gate's A7-6 / A5-F3): an operator the platform cannot place in a party is
             // refused as one of the purchase's own - BnplRepaymentReversals.judgeSelfDealing's shape.
@@ -375,6 +422,16 @@ public final class BnplRefunds {
         }
         if (amount.compareTo(gross.minus(refundedBefore)) > 0) {
             throw new RefundExceedsPurchase(kind);
+        }
+        // ADR-0154 decision 4's shape (`P17-TSK-116`): an operator's refund that, with every door's committed refunds before
+        // it, is above the four-eyes threshold is a proposal - judged under B5, the lock that serialises the purchase's
+        // refunds, so ten refunds racing under the threshold cannot add up past it unseen. Nothing further is locked or written.
+        if (door == BnplRefund.Door.OPERATOR && approval.isEmpty()) {
+            Money cumulative = refundedBefore.plus(amount);
+            Optional<BnplRefundThresholds.Threshold> above = thresholds.requiresApproval(unitOfWork, cumulative);
+            if (above.isPresent()) {
+                throw new BnplRefundRequiresApprovalException(above.get(), cumulative);
+            }
         }
 
         // (B4) The obligation; the database clock after it.
@@ -534,6 +591,8 @@ public final class BnplRefunds {
                 allocation.engine().name(), obligationLocked.agreement(), agreementVersion, scheduleVersion, reason,
                 entry, valueDate, Optional.empty(), correlation, adjustments);
         refund = refund.stampedAt(store.insertRefund(unitOfWork, refund));
+        // A proposal's approval: decided in this transaction, naming this refund (`P17-TSK-116`).
+        approval.ifPresent(step -> step.within(unitOfWork, refundId));
         if (refundedBefore.plus(amount).equals(gross)) {
             if (!store.fullyRefunded(unitOfWork, purchase.id())) {
                 throw new IllegalStateException("the locked purchase did not move under its own row lock");

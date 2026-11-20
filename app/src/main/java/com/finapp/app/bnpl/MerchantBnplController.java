@@ -16,6 +16,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -94,18 +95,34 @@ public class MerchantBnplController {
     }
 
     /**
-     * Points the merchant's BNPL {@code product} ({@code BNPL_PAY_IN_4}, {@code BNPL_PAY_IN_N}) at a fee schedule whose
-     * versions return their fee on refund ({@code 422 merchant.BnplScheduleNotReturning} otherwise), reasoned. Converges
-     * when it is already there.
+     * Proposes pointing the merchant's BNPL {@code product} ({@code BNPL_PAY_IN_4}, {@code BNPL_PAY_IN_N}) at a fee schedule
+     * whose versions return their fee on refund ({@code 422 merchant.BnplScheduleNotReturning} otherwise), reasoned and keyed
+     * - four eyes since `P17-TSK-116` (ADR-C135 decision 3): {@code PROPOSED} with its {@code proposalId}, for a holder of
+     * {@code FEE_SCHEDULE_APPROVE} ({@link BnplFeeAssignmentProposalController}); {@code ASSIGNED}, nothing proposed, when it
+     * is already there.
      */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PutMapping(path = "/bnpl-fee-schedules/{product}", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.FEE_ADMINISTER)
+    @RequiresIdempotencyKey
     public MerchantBnplDesk.BnplFeeScheduleView assignMerchantBnplFeeSchedule(
             @PathVariable("merchantId") String merchantId,
             @PathVariable("product") String product,
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @Valid @RequestBody BnplFeeScheduleAssignmentRequest body) {
-        return desk.assignFeeSchedule(merchantId, product, body.feeScheduleId(), body.reason());
+        return desk.assignFeeSchedule(idempotencyKey, merchantId, product, body.feeScheduleId(), body.reason());
+    }
+
+    /**
+     * The merchant's BNPL enablement by its identifier (`P17-TSK-116`): what its approver decides - its status, proposer,
+     * decider and their instants, never a reason. Another merchant's is the uniform {@code 404}.
+     */
+    @GetMapping(path = "/bnpl-enablement/{enablementId}")
+    @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
+    public MerchantBnplDesk.BnplEnablementView readMerchantBnplEnablement(
+            @PathVariable("merchantId") String merchantId,
+            @PathVariable("enablementId") String enablementId) {
+        return desk.readEnablement(merchantId, enablementId);
     }
 
     // -----------------------------------------------------------------

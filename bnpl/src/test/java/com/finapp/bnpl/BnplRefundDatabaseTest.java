@@ -230,6 +230,181 @@ class BnplRefundDatabaseTest {
                 + "'")).as("the one full refund only").isEqualTo(1);
     }
 
+    // ------------------------------------------------------------------ P17-TSK-116: the operator's door by four eyes
+
+    @Test
+    @DisplayName("P17-TSK-116: an operator's refund above the four-eyes threshold, with the merchant's refund before it, is a"
+            + " proposal - nothing refunded; a second proposal refused by V023's index; the proposer refused its own"
+            + " approval; approved by another person, the refund applies once and the proposal names it; the approver's"
+            + " lapsed claim retried under the same key replays the one refund, under another key is refused")
+    void anOperatorsRefundAboveTheThresholdIsDecidedByASecondPerson() throws Exception {
+        World world = new World();
+        Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+        LocalDate day = bought.purchaseDate().plusDays(1);
+        world.refundOn(day, bought, "merchant-first", 150_00);
+        BnplRefundProposal proposed = world.proposeOn(day, bought, OPERATOR_A, "above", 100_00);
+        assertThat(proposed.cumulative()).as("the merchant's 150.00 and this 100.00").isEqualTo(Money.ofMinorUnits(250_00, EUR));
+        assertThat(proposed.thresholdVersion()).isEqualTo(FOUR_EYES_VERSION);
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = '" + bought.purchase().value() + "'"))
+                .as("nothing refunded by the proposal").isEqualTo(1);
+        assertThatThrownBy(() -> world.proposeOn(day, bought, OPERATOR_B, "again", 60_00))
+                .isInstanceOfSatisfying(BnplRefundProposal.Refused.class, refused -> assertThat(refused.reason())
+                        .isEqualTo(BnplRefundProposal.Refused.Reason.ALREADY_PROPOSED));
+        assertThatThrownBy(() -> world.approveOn(day, proposed.id(), OPERATOR_A, "self"))
+                .isInstanceOfSatisfying(BnplRefundProposal.Refused.class, refused -> assertThat(refused.reason())
+                        .isEqualTo(BnplRefundProposal.Refused.Reason.SELF_DECISION));
+
+        BnplRefunds.Refunded approved = world.approveOn(day, proposed.id(), OPERATOR_B, "approval-key");
+        assertThat(approved.replayed()).isFalse();
+        assertThat(approved.refund().amount()).isEqualTo(Money.ofMinorUnits(100_00, EUR));
+        assertThat(approved.refund().requestedBy()).isEqualTo("OPERATOR:" + OPERATOR_B.id());
+        assertThat(scalar("SELECT status || '|' || refund_id || '|' || decided_by FROM bnpl.refund_proposal WHERE id = '"
+                + proposed.id().value() + "'")).isEqualTo("APPROVED|" + approved.refund().id() + "|" + OPERATOR_B.id());
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'bnpl.RefundProposalApproved'"
+                + " AND target_id = '" + bought.purchase().value() + "'")).isEqualTo(1);
+
+        BnplRefunds.Refunded retried = world.approveOn(day, proposed.id(), OPERATOR_B, "approval-key");
+        assertThat(retried.replayed()).as("the lapsed claim's retry converges on the refund born under its key").isTrue();
+        assertThat(retried.refund().id()).isEqualTo(approved.refund().id());
+        assertThatThrownBy(() -> world.approveOn(day, proposed.id(), OPERATOR_B, "another-key"))
+                .as("under another key the decision refuses, rolling that refund back")
+                .isInstanceOfSatisfying(BnplRefundProposal.Refused.class, refused -> assertThat(refused.reason())
+                        .isEqualTo(BnplRefundProposal.Refused.Reason.ALREADY_DECIDED));
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = '" + bought.purchase().value() + "'"))
+                .as("the merchant's and the approved one - the effect once").isEqualTo(2);
+        assertThat(world.book.keys()).filteredOn(key -> key.startsWith(BnplRefunds.POSTING_KEY_PREFIX)).hasSize(2);
+
+        // Admit before judging (ADR-0154 decision 4, P17-TSK-031's hook): the whole purchase proposed and approved, its
+        // approver's second approval under a new key is refused as decided - never by the purchase's own refusal, the
+        // first approval having used all of it - and nothing moves.
+        Purchased whole = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+        LocalDate then = whole.purchaseDate().plusDays(1);
+        BnplRefundProposal everything = world.proposeOn(then, whole, OPERATOR_A, "whole", 600_00);
+        assertThat(world.approveOn(then, everything.id(), OPERATOR_B, "whole-approval").refund().amount())
+                .isEqualTo(Money.ofMinorUnits(600_00, EUR));
+        assertThat(scalar("SELECT status FROM bnpl.purchase WHERE id = '" + whole.purchase().value() + "'"))
+                .isEqualTo("FULLY_REFUNDED");
+        assertThatThrownBy(() -> world.approveOn(then, everything.id(), OPERATOR_B, "whole-again"))
+                .as("a second approval under a new key is decided, not fully refunded")
+                .isInstanceOfSatisfying(BnplRefundProposal.Refused.class, refused -> assertThat(refused.reason())
+                        .isEqualTo(BnplRefundProposal.Refused.Reason.ALREADY_DECIDED));
+        assertThat(world.approveOn(then, everything.id(), OPERATOR_B, "whole-approval").replayed())
+                .as("under its own key it replays").isTrue();
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = '" + whole.purchase().value() + "'"))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("P17-TSK-116: ten approvers racing one proposal on ten instances make one refund and nine ALREADY_DECIDED; an"
+            + " approval racing a rejection, one winner; ten operators proposing on one purchase, one open proposal; a"
+            + " rejection moves nothing")
+    void theFourEyesRacesHaveOneWinner() throws Exception {
+        World world = new World();
+        Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+        LocalDate day = bought.purchaseDate().plusDays(1);
+        BnplRefundProposal proposed = world.proposeOn(day, bought, OPERATOR_A, "raced", 250_00);
+        List<Object> approvals = world.concurrently(10, index -> {
+            try {
+                return world.approveOn(day, proposed.id(), new Actor("operator-racer-" + index, ActorType.CUSTOMER),
+                        "racer-" + index);
+            } catch (BnplRefundProposal.Refused refused) {
+                return refused.reason();
+            }
+        });
+        assertThat(approvals).filteredOn(BnplRefunds.Refunded.class::isInstance).hasSize(1);
+        assertThat(approvals).filteredOn(outcome -> outcome == BnplRefundProposal.Refused.Reason.ALREADY_DECIDED)
+                .hasSize(9);
+        assertThat(scalar("SELECT count(*) || '|' || coalesce(sum(amount_minor), 0) FROM bnpl.bnpl_refund WHERE purchase_id"
+                + " = '" + bought.purchase().value() + "'")).as("the effect once").isEqualTo("1|25000");
+
+        Purchased contested = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+        LocalDate later = contested.purchaseDate().plusDays(1);
+        BnplRefundProposal decided = world.proposeOn(later, contested, OPERATOR_A, "contested", 300_00);
+        List<Object> outcomes = world.concurrently(2, index -> {
+            try {
+                return index == 0 ? world.approveOn(later, decided.id(), OPERATOR_B, "yes")
+                        : world.rejectOn(later, decided.id(), OPERATOR_C);
+            } catch (BnplRefundProposal.Refused refused) {
+                return refused.reason();
+            }
+        });
+        assertThat(outcomes).filteredOn(outcome -> outcome == BnplRefundProposal.Refused.Reason.ALREADY_DECIDED)
+                .as("one winner").hasSize(1);
+        String status = scalar("SELECT status FROM bnpl.refund_proposal WHERE id = '" + decided.id().value() + "'");
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = '" + contested.purchase().value() + "'"))
+                .as("refunded exactly when approved").isEqualTo(status.equals("APPROVED") ? 1 : 0);
+
+        Purchased crowded = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+        LocalDate then = crowded.purchaseDate().plusDays(1);
+        List<Object> proposals = world.concurrently(10, index -> {
+            try {
+                return world.proposeOn(then, crowded, new Actor("operator-proposer-" + index, ActorType.CUSTOMER),
+                        "crowd-" + index, 210_00);
+            } catch (BnplRefundProposal.Refused refused) {
+                return refused.reason();
+            }
+        });
+        assertThat(proposals).filteredOn(BnplRefundProposal.class::isInstance).hasSize(1);
+        assertThat(proposals).filteredOn(outcome -> outcome == BnplRefundProposal.Refused.Reason.ALREADY_PROPOSED)
+                .hasSize(9);
+        BnplRefundProposal open = (BnplRefundProposal) proposals.stream().filter(BnplRefundProposal.class::isInstance)
+                .findFirst().orElseThrow();
+        world.rejectOn(then, open.id(), OPERATOR_C);
+        assertThat(count("SELECT count(*) FROM bnpl.bnpl_refund WHERE purchase_id = '" + crowded.purchase().value() + "'"))
+                .as("a rejection moves nothing").isZero();
+        assertThat(world.proposeOn(then, crowded, OPERATOR_A, "after-rejection", 210_00).status())
+                .as("a decided proposal frees the purchase for another").isEqualTo(BnplRefundProposal.Status.PROPOSED);
+    }
+
+    @Test
+    @DisplayName("P17-TSK-116: bnpl V023 for every writer - a proposal decided by its proposer refused by the CHECK, a decided"
+            + " proposal is history, no DELETE; the threshold: v1 EUR 1,000.00 read, the latest version wins, a currency"
+            + " with none fails closed")
+    void v023HoldsForEveryWriter() throws Exception {
+        World world = new World();
+        Purchased bought = world.purchase(BnplProduct.BNPL_PAY_IN_4, BnplPlan.PAY_IN_4);
+        LocalDate day = bought.purchaseDate().plusDays(1);
+        BnplRefundProposal proposed = world.proposeOn(day, bought, OPERATOR_A, "schema", 300_00);
+        try (Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            refused(app, "UPDATE bnpl.refund_proposal SET status = 'REJECTED', decided_by = proposed_by, decided_by_type ="
+                    + " 'CUSTOMER', decided_at = proposed_at, decision_reason = 'mine', decision_correlation_id = 'c'"
+                    + " WHERE id = '" + proposed.id().value() + "'", "23514", "refund_proposal_four_eyes");
+            app.rollback();
+            refused(app, "DELETE FROM bnpl.refund_proposal WHERE id = '" + proposed.id().value() + "'", "42501",
+                    "permission denied");
+            app.rollback();
+        }
+        world.rejectOn(day, proposed.id(), OPERATOR_B);
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            migrator.setAutoCommit(false);
+            refused(migrator, "UPDATE bnpl.refund_proposal SET decision_reason = 'rewritten' WHERE id = '"
+                    + proposed.id().value() + "'", "P0001", "a decided proposal is history");
+            migrator.rollback();
+        }
+
+        JdbcBnplRefundThresholds thresholds = new JdbcBnplRefundThresholds();
+        try (Connection migrator = DatabaseRoles.migrator()) {
+            migrator.setAutoCommit(false);
+            assertThat(thresholds.requiresApproval(migrator, Money.ofMinorUnits(1_000_00, EUR))).as("at it: no").isEmpty();
+            assertThat(thresholds.requiresApproval(migrator, Money.ofMinorUnits(1_000_01, EUR)))
+                    .hasValueSatisfying(above -> assertThat(above.amount()).isEqualTo(Money.ofMinorUnits(1_000_00, EUR)));
+            try (Statement version = migrator.createStatement()) {
+                version.execute("INSERT INTO bnpl.refund_four_eyes_threshold (version, currency, scale, threshold_minor,"
+                        + " recorded_at) SELECT max(version) + 1, 'EUR', 2, 20000, now() FROM bnpl.refund_four_eyes_threshold"
+                        + " WHERE currency = 'EUR'");
+            }
+            assertThat(thresholds.requiresApproval(migrator, Money.ofMinorUnits(200_01, EUR))).as("the latest version wins")
+                    .hasValueSatisfying(above -> assertThat(above.amount()).isEqualTo(Money.ofMinorUnits(200_00, EUR)));
+            try (Statement none = migrator.createStatement()) {
+                none.execute("DELETE FROM bnpl.refund_four_eyes_threshold WHERE currency = 'GBP'");
+            }
+            assertThat(thresholds.requiresApproval(migrator, Money.ofMinorUnits(1, CurrencyCode.of("GBP"))))
+                    .as("fail closed").hasValueSatisfying(above -> assertThat(above.version()).isZero());
+            migrator.rollback();
+        }
+    }
+
     // ------------------------------------------------------------------ scenarios 7 and 8, and the fee
 
     @Test
@@ -502,6 +677,16 @@ class BnplRefundDatabaseTest {
                 + bought.purchase().value() + "'";
     }
 
+    /** The four-eyes threshold the suite's operator door judges by (`P17-TSK-116`): above 200.00 EUR, version 7. */
+    private static final int FOUR_EYES_VERSION = 7;
+
+    private static final Actor OPERATOR_A = new Actor("operator-a-who-proposes", ActorType.CUSTOMER);
+    private static final Actor OPERATOR_B = new Actor("operator-b-who-approves", ActorType.CUSTOMER);
+    private static final Actor OPERATOR_C = new Actor("operator-c-who-rejects", ActorType.CUSTOMER);
+
+    /** Every suite operator's party - nobody's customer. */
+    private static final UUID OPERATORS_PARTY = UUID.fromString("0192a3b4-c5d6-7e8f-9a0b-1c2d3e4f5a7c");
+
     /** One purchased obligation - its purchase, id, party, merchant and purchase date. */
     record Purchased(BnplPurchaseId purchase, BnplObligationId obligation, UUID party, UUID merchant,
             LocalDate purchaseDate, BnplPurchaseStore.StoredSchedule schedule, BnplAgreementId agreement) {
@@ -536,7 +721,20 @@ class BnplRefundDatabaseTest {
                 new JdbcOutboxWriter(), IDS, CLOCK);
         final BnplRefunds refunds = new BnplRefunds(REFUNDS, SERVICING, PURCHASES, TERMS_STORE, ports, ports, book,
                 closures, (uow, actor) -> BnplKeyIssuer.partyOf(actor), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS,
-                CLOCK);
+                CLOCK, (unitOfWork, cumulative) -> Optional.empty());
+        /**
+         * T-ref with the operator's four-eyes threshold (`P17-TSK-116`): above 200.00 EUR - the seeded 1,000.00 is above
+         * any of the suite's 600.00 purchases - with every {@code operator-} actor placed in a party of their own.
+         */
+        final BnplRefunds fourEyes = new BnplRefunds(REFUNDS, SERVICING, PURCHASES, TERMS_STORE, ports, ports, book,
+                closures, (uow, actor) -> actor.id().startsWith("operator-") ? Optional.of(OPERATORS_PARTY)
+                        : BnplKeyIssuer.partyOf(actor), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK,
+                (unitOfWork, cumulative) -> cumulative.compareTo(Money.ofMinorUnits(200_00, EUR)) > 0
+                        ? Optional.of(new BnplRefundThresholds.Threshold(FOUR_EYES_VERSION,
+                                Money.ofMinorUnits(200_00, EUR)))
+                        : Optional.empty());
+        final BnplRefundProposals proposals = new BnplRefundProposals(new JdbcBnplRefundProposalStore(),
+                new JdbcAuditWriter(), IDS, CLOCK);
         private final BnplAcceptances acceptances = new BnplAcceptances(OFFERS, TERMS_STORE, PURCHASES, ports,
                 (uow, party) -> true, ports, ports, ports, ports, book, new JdbcOutboxWriter(), new JdbcAuditWriter(),
                 IDS, CLOCK);
@@ -602,6 +800,38 @@ class BnplRefundDatabaseTest {
             return BnplClockFrame.inOneTransaction(frameOn(date), uow -> refunds.atMerchant(uow, bought.purchase(),
                     bought.merchant(), new BnplRefunds.Request(key, Money.ofMinorUnits(minor, EUR), "goods returned",
                             Optional.of("key-under-test"), BnplKeyIssuer.KEY_ISSUER), merchant, correlation()));
+        }
+
+        /**
+         * The operator's door (`P17-TSK-116`): T-ref under the threshold; above it rolled back whole, then the proposal in a
+         * transaction of its own - the desk's two steps.
+         */
+        BnplRefundProposal proposeOn(LocalDate date, Purchased bought, Actor operator, String key, long minor) {
+            Money amount = Money.ofMinorUnits(minor, EUR);
+            try {
+                BnplClockFrame.inOneTransaction(frameOn(date), uow -> fourEyes.byOperator(uow, bought.purchase(),
+                        new BnplRefunds.Request(key, amount, "goods returned", Optional.empty()), operator,
+                        correlation()));
+            } catch (BnplRefundRequiresApprovalException above) {
+                return BnplClockFrame.inOneTransaction(frameOn(date), uow -> proposals.propose(uow, bought.purchase(),
+                        amount, "goods returned", above, operator, correlation()));
+            }
+            throw new AssertionError("the refund was at or below the threshold: no proposal");
+        }
+
+        /** A proposal's approval in one transaction: the proposal locked first, then T-ref with the decision as its step. */
+        BnplRefunds.Refunded approveOn(LocalDate date, BnplRefundProposal.Id id, Actor approver, String key) {
+            return BnplClockFrame.inOneTransaction(frameOn(date), uow -> {
+                BnplRefundProposal locked = proposals.lockForApproval(uow, id, approver).orElseThrow();
+                return fourEyes.byOperator(uow, locked.purchaseId(), new BnplRefunds.Request(key, locked.amount(),
+                        locked.proposalReason(), Optional.empty()), approver, correlation(),
+                        proposals.approval(id, "reviewed", approver, correlation()));
+            });
+        }
+
+        BnplRefundProposal rejectOn(LocalDate date, BnplRefundProposal.Id id, Actor decider) {
+            return BnplClockFrame.inOneTransaction(frameOn(date), uow -> proposals.reject(uow, id, "not agreed", decider,
+                    correlation())).orElseThrow();
         }
 
         <R> List<R> concurrently(int racers, Racer<R> racer) throws Exception {

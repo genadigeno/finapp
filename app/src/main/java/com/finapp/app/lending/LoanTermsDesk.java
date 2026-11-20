@@ -66,13 +66,15 @@ public final class LoanTermsDesk {
 
     /**
      * A terms version as the operator reads it - its machine row and its whole term set (RESTRICTED-FINANCIAL): every
-     * amount in minor units of {@code currency} at {@code scale}, the rate a decimal fraction string.
+     * amount in minor units of {@code currency} at {@code scale}, the rate a decimal fraction string - and who proposed it
+     * (`P17-TSK-116`, the raw actor id), so an approver's console disables a proposer's own approval in advance.
      */
     public record LoanTermsView(
             String id,
             String product,
             int version,
             String status,
+            String proposedBy,
             String proposedAt,
             String decidedAt,
             String effectiveFrom,
@@ -151,6 +153,15 @@ public final class LoanTermsDesk {
             throw notFound();
         }
         return guarded(() -> transactions.inTransaction(uow -> view(administration.activeAt(uow, product, at))));
+    }
+
+    /**
+     * One version by id, in any state (`P17-TSK-116`): what the approver reads before deciding a proposal - under
+     * {@code LENDING_ADMINISTER}, the approver's own permission ({@code BnplTermsDesk.version}'s shape). Unkeyed.
+     */
+    public LoanTermsView version(String rawId) {
+        LoanTermsVersionId id = versionId(rawId);
+        return guarded(() -> transactions.inTransaction(uow -> view(administration.version(uow, id))));
     }
 
     // ------------------------------------------------------------------ the terms in the domain's words
@@ -275,6 +286,7 @@ public final class LoanTermsDesk {
                 row.product().name(),
                 row.version(),
                 row.status().name(),
+                row.proposedBy(),
                 row.proposedAt().toString(),
                 row.decidedAt().map(Instant::toString).orElse(null),
                 row.effectiveFrom().map(Instant::toString).orElse(null),

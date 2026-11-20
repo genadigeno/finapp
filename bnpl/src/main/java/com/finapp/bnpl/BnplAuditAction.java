@@ -366,6 +366,45 @@ public enum BnplAuditAction implements AuditableAction {
                     + " answer, so no report is served unrecorded. Amounts are an audited report, never a metric"
                     + " (ADR-0072). Its target the report; the summary names the report, its date, whether the date is"
                     + " reportable and the row count - never an amount, a party, a merchant or an obligation.",
+            false),
+
+    /**
+     * An operator's BNPL refund above the four-eyes threshold was proposed (`P17-TSK-116`, ADR-0154's shape): nothing moved
+     * until a second person approves. Its target the purchase; the summary names the proposal and the threshold version.
+     */
+    REFUND_PROPOSED(
+            "bnpl.RefundProposed",
+            "An operator's BNPL refund above the four-eyes threshold was proposed with a reason (POST"
+                    + " /v1/operator/bnpl-purchases/{id}/refunds); nothing moved until a second person approves. Its"
+                    + " target the purchase; the summary names the proposal and the threshold version, never an amount.",
+            true),
+
+    /**
+     * A holder of {@code PAYMENT_REFUND_APPROVE} who did not propose it approved a BNPL refund proposal (`P17-TSK-116`):
+     * written in T-ref beside {@link #REFUND_APPLIED}, naming the refund applied.
+     */
+    REFUND_PROPOSAL_APPROVED(
+            "bnpl.RefundProposalApproved",
+            "A BNPL refund proposal was approved by a second person with a reason (POST"
+                    + " /v1/operator/bnpl-refund-proposals/{id}/approval); the refund applied in the same transaction."
+                    + " Its target the purchase; the summary names the proposal, the refund and the proposer.",
+            true),
+
+    /** A holder of {@code PAYMENT_REFUND_APPROVE} rejected a BNPL refund proposal it did not propose (`P17-TSK-116`). */
+    REFUND_PROPOSAL_REJECTED(
+            "bnpl.RefundProposalRejected",
+            "A BNPL refund proposal was rejected by a second person with a reason (POST"
+                    + " /v1/operator/bnpl-refund-proposals/{id}/rejection); nothing moved. Its target the purchase.",
+            true),
+
+    /** A servicing agent read a BNPL agreement to service it (`P17-TSK-116`). */
+    SERVICING_AGREEMENT_READ(
+            "bnpl.ServicingAgreementRead",
+            "A holder of BNPL_SERVICE read a BNPL agreement to service it (GET"
+                    + " /v1/operator/bnpl-agreements/{id}/servicing): its latest version, its repayments, late fees,"
+                    + " waivers and repayment reversals with their proposers - never the agent's own party's"
+                    + " (bnpl.SelfDealingRefused, recorded FAILED). Recorded in the read's own transaction. Its target the"
+                    + " agreement; the summary counts, never an amount.",
             false);
 
     private final String code;

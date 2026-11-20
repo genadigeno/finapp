@@ -151,16 +151,7 @@ public final class BnplPricing {
         String reasoned = BnplEnablement.reasoned(reason);
         Merchant merchant = merchants.findByIdForUpdate(unitOfWork, merchantId)
                 .orElseThrow(UnknownMerchantException::new);
-        FeeSchedule schedule = schedules.findSchedule(unitOfWork, scheduleId)
-                .orElseThrow(UnknownFeeScheduleException::new);
-        if (!schedule.currency().equals(merchant.settlementCurrency())) {
-            throw new FeeCurrencyMismatchException(schedule.currency(), merchant.settlementCurrency());
-        }
-        if (schedules.listVersions(unitOfWork, scheduleId).stream()
-                .anyMatch(version -> version.refundFeePolicy() != RefundFeePolicy.RETURNED)) {
-            throw new ScheduleNotReturning();
-        }
-        Optional<FeeScheduleId> previous = pricing.findAssignment(unitOfWork, merchantId, product);
+        Optional<FeeScheduleId> previous = judgedAssignment(unitOfWork, merchant, product, scheduleId);
         if (previous.filter(scheduleId::equals).isPresent()) {
             return scheduleId;
         }
@@ -173,6 +164,41 @@ public final class BnplPricing {
                 Optional.of("merchant=" + merchantId + ", product=" + product.name() + ", from="
                         + previous.map(Object::toString).orElse("none") + ", to=" + scheduleId)));
         return scheduleId;
+    }
+
+    /**
+     * Whether pointing the merchant's {@code product} at {@code scheduleId} would change anything (`P17-TSK-116`, the
+     * proposal's door): judged by {@link #assign}'s own rules - the merchant, the schedule, its currency, every version
+     * returning its fee - on an unlocked read, nothing written. {@code false} when the pointer is there already. The
+     * approval's {@link #assign} judges them all again under the merchant's {@code FOR UPDATE}.
+     *
+     * @throws UnknownMerchantException no merchant answers to the identifier
+     * @throws UnknownFeeScheduleException no schedule does
+     * @throws FeeCurrencyMismatchException the schedule does not price the merchant's settlement currency
+     * @throws ScheduleNotReturning a version of the schedule retains its fee
+     */
+    public boolean wouldAssign(Connection unitOfWork, MerchantId merchantId, MerchantBnplProduct product,
+            FeeScheduleId scheduleId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(product, "product must not be null");
+        Objects.requireNonNull(scheduleId, "scheduleId must not be null");
+        Merchant merchant = merchants.findById(unitOfWork, merchantId).orElseThrow(UnknownMerchantException::new);
+        return judgedAssignment(unitOfWork, merchant, product, scheduleId).filter(scheduleId::equals).isEmpty();
+    }
+
+    /** {@link #assign}'s rules, in its order: the merchant's current pointer when they hold. */
+    private Optional<FeeScheduleId> judgedAssignment(Connection unitOfWork, Merchant merchant, MerchantBnplProduct product,
+            FeeScheduleId scheduleId) {
+        FeeSchedule schedule = schedules.findSchedule(unitOfWork, scheduleId)
+                .orElseThrow(UnknownFeeScheduleException::new);
+        if (!schedule.currency().equals(merchant.settlementCurrency())) {
+            throw new FeeCurrencyMismatchException(schedule.currency(), merchant.settlementCurrency());
+        }
+        if (schedules.listVersions(unitOfWork, scheduleId).stream()
+                .anyMatch(version -> version.refundFeePolicy() != RefundFeePolicy.RETURNED)) {
+            throw new ScheduleNotReturning();
+        }
+        return pricing.findAssignment(unitOfWork, merchant.id(), product);
     }
 
     /** Which schedule prices the merchant's product, or empty. */

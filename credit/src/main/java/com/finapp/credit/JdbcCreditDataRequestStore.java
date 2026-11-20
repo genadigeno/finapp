@@ -160,7 +160,7 @@ public final class JdbcCreditDataRequestStore implements CreditDataRequestStore 
         try (PreparedStatement insert = unitOfWork.prepareStatement(
                 "INSERT INTO credit.credit_evidence (id, data_request_id, attempt, duplicate, consent_withdrawn,"
                         + " content_ciphertext, content_nonce, key_version, checksum_sha256, content_length,"
-                        + " retention_months) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
+                        + " retention_months, media_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) {
             insert.setObject(1, evidence.id().value());
             insert.setObject(2, evidence.dataRequest().value());
             insert.setInt(3, evidence.attempt());
@@ -181,6 +181,8 @@ public final class JdbcCreditDataRequestStore implements CreditDataRequestStore 
                 insert.setNull(10, Types.INTEGER);
             }
             insert.setInt(11, evidence.retentionMonths());
+            // P17-TSK-116 (credit V027): the provider's Content-Type, NULL exactly when there is no payload.
+            insert.setString(12, evidence.mediaType().orElse(null));
             insert.executeUpdate();
         } catch (SQLException failure) {
             throw new CreditStorageException(DatabaseFailure.describe("recording credit evidence", failure));

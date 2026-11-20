@@ -73,13 +73,16 @@ public final class BnplTermsDesk {
 
     /**
      * A terms version as the operator reads it - its machine row and its whole term set (RESTRICTED-FINANCIAL): every
-     * amount in minor units of {@code currency} at {@code scale}, the rate a decimal fraction string. No reason, no person.
+     * amount in minor units of {@code currency} at {@code scale}, the rate a decimal fraction string. No reason; the one
+     * person named is who proposed it (`P17-TSK-116`, the raw actor id), so an approver's console disables a proposer's own
+     * approval in advance - {@code bnpl.SelfApprovalRefused} stays the control.
      */
     public record BnplTermsView(
             String id,
             String product,
             int version,
             String status,
+            String proposedBy,
             String proposedAt,
             String decidedAt,
             String effectiveFrom,
@@ -296,6 +299,7 @@ public final class BnplTermsDesk {
                 row.product().name(),
                 row.version(),
                 row.status().name(),
+                row.proposedBy(),
                 row.proposedAt().toString(),
                 row.decidedAt().map(Instant::toString).orElse(null),
                 row.effectiveFrom().map(Instant::toString).orElse(null),

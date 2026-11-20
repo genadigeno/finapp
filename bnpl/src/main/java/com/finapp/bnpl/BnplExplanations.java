@@ -89,6 +89,19 @@ public final class BnplExplanations {
     }
 
     /**
+     * {@code agreement} read by a servicing agent to service it (`P17-TSK-116`; {@code BNPL_SERVICE}: "read any obligation,
+     * audited"), on the caller's {@code REPEATABLE READ} transaction, {@code bnpl.ServicingAgreementRead} appended to it.
+     *
+     * @throws BnplRepaymentReversals.SelfDealingRefused the agreement is the agent's own party's
+     * @throws AgreementNotFound no such agreement
+     */
+    public Explanation serviced(Connection unitOfWork, BnplAgreementId agreement, Actor actor, CorrelationId correlation) {
+        Explanation explanation = explained(unitOfWork, agreement, actor, "servicing");
+        record(unitOfWork, BnplAuditAction.SERVICING_AGREEMENT_READ, explanation, Optional.empty(), actor, correlation);
+        return explanation;
+    }
+
+    /**
      * {@code agreement} replayed for {@code actor} on the caller's read-only {@code REPEATABLE READ} snapshot - nothing
      * recorded here: {@link #recordReplay} records it, in a transaction of its own.
      *

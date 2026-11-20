@@ -88,7 +88,8 @@ final class BnplConditionDatabaseWorld {
             conditions, new JdbcOutboxWriter(), IDS, CLOCK);
     /** The merchant key's issuer has a party of their own (the Phase 12 -> 13 gate's A5-F1); nobody else is placed. */
     final BnplRefunds refunds = new BnplRefunds(REFUNDS, SERVICING, PURCHASES, TERMS_STORE, ports, ports, book, closures,
-            (uow, actor) -> BnplKeyIssuer.partyOf(actor), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
+            (uow, actor) -> BnplKeyIssuer.partyOf(actor), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK,
+            (unitOfWork, cumulative) -> Optional.empty());
     /** T-pay (`P12-TSK-022`): the quote and the execution over the same stores - scenario 13's payoff during the worker. */
     /** T-acc (`P12-TSK-017`) over the same stores and book - a pay-in-N obligation is serviced only caught up. */
     final BnplAccruals accruals = new BnplAccruals(SERVICING, new JdbcBnplAccrualStore(), PURCHASES, TERMS_STORE, book,

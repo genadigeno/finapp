@@ -404,8 +404,11 @@ final class RestoreRehearsalProducts {
         MerchantBnplDesk.BnplEnablementReceipt enabled = as(APPROVER, () -> bnpl.approve(key(), merchantId, proposed.id(),
                 "the restore rehearsal's review of the merchant agreement"));
         String bnplFees = schedule(fees, "bnpl", "0.04", 0L, "RETURNED");
-        as(PROPOSER, () -> bnpl.assignFeeSchedule(merchantId, "BNPL_PAY_IN_4", UUID.fromString(bnplFees),
-                "the restore rehearsal's pay-in-4 pricing"));
+        // P17-TSK-116: the BNPL fee assignment is four eyes - proposed, then approved by the other person.
+        MerchantBnplDesk.BnplFeeScheduleView pricing = as(PROPOSER, () -> bnpl.assignFeeSchedule(key(), merchantId,
+                "BNPL_PAY_IN_4", UUID.fromString(bnplFees), "the restore rehearsal's pay-in-4 pricing"));
+        as(APPROVER, () -> bnpl.approveFeeAssignment(key(), pricing.proposalId(),
+                "the restore rehearsal's review of the pay-in-4 pricing"));
         System.out.println("seed: a trading merchant, BNPL " + enabled.status() + " by two persons, pay-in-4 priced");
         return new Merchant(authenticated, new Actor(merchantId, ActorType.MERCHANT));
     }

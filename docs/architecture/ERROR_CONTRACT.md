@@ -528,6 +528,9 @@ folds into `api.NotFound` exactly as above; the operator learns nothing a custom
 | `merchant.BnplEnablementPending` | 409 | A BNPL enablement is already proposed or active for this merchant. |
 | `merchant.BnplEnablementNotOpen` | 409 | The BNPL enablement is no longer open to this decision. |
 | `merchant.BnplScheduleNotReturning` | 422 | A BNPL fee schedule must return its fee on refund; this schedule retains it. |
+| `merchant.BnplFeeProposalAlreadyOpen` | 409 | The merchant's BNPL product already has an open fee assignment proposal; decide it first. |
+| `merchant.BnplFeeProposalAlreadyDecided` | 409 | The BNPL fee assignment proposal is already decided. |
+| `merchant.BnplFeeProposalSelfDecision` | 409 | A BNPL fee assignment proposal is decided by a person who did not propose it. |
 
 `merchant.FeeScheduleNotForward` is `INV-MER-03`'s refusal, and it is the one an operator
 actually meets: *"make this effective from the first of the month"* is a natural thing to type
@@ -1461,6 +1464,9 @@ horizon is `api.ValidationFailed` (`422`), as is a malformed one.
 | `bnpl.DisputeOpen` | 409 | The BNPL purchase has an open dispute. |
 | `bnpl.DisputeNotActionable` | 409 | The BNPL dispute is not open to this act. |
 | `bnpl.DisputeCoolingOff` | 409 | A dispute of this BNPL purchase was withdrawn too recently to open another. |
+| `bnpl.RefundProposalAlreadyOpen` | 409 | The BNPL purchase already has an open refund proposal; decide it first. |
+| `bnpl.RefundProposalAlreadyDecided` | 409 | The BNPL refund proposal is already decided. |
+| `bnpl.RefundProposalSelfDecision` | 409 | A BNPL refund proposal is decided by a person who did not propose it. |
 
 The acceptance door (`P12-TSK-013`; `POST /v1/me/bnpl-offers/{id}/acceptance`, a `MULTI_FACTOR` act keyed
 `bnpl.offer-acceptance:CUSTOMER:<id>`; the purchase): `OfferNotAcceptable` an offer no longer `OFFERED`, at or past its

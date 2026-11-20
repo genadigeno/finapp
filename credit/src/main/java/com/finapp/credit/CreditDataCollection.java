@@ -368,8 +368,8 @@ public final class CreditDataCollection {
         requireMoved(store.markUnavailable(uow, id, attempt));
         store.insertAttempt(uow, id, attempt, UNRECORDED);
         if (keepBytes) {
-            evidenceOf(answer).ifPresent(bytes ->
-                    store.insertEvidence(uow, evidence(row, attempt, false, Optional.of(bytes))));
+            evidenceOf(answer).ifPresent(found ->
+                    store.insertEvidence(uow, evidence(row, attempt, false, Optional.of(found))));
         }
         observer.answered(row.kind(), row.providerCode(), CreditDataObserver.Outcome.UNAVAILABLE);
         return CreditDataRequestStatus.UNAVAILABLE;
@@ -393,9 +393,9 @@ public final class CreditDataCollection {
                 .orElseThrow(() -> new IllegalArgumentException("no credit data request has this identifier"));
         if (row.status() != CreditDataRequestStatus.REQUESTED) {
             // Answered already, withdrawn, or reclaimed: the bytes are kept as evidence, never a second record.
-            evidenceOf(answer).ifPresent(bytes -> store.insertEvidence(uow, evidence(
+            evidenceOf(answer).ifPresent(found -> store.insertEvidence(uow, evidence(
                     row, Math.max(row.attempts(), 1), true,
-                    row.status() == CreditDataRequestStatus.CONSENT_WITHDRAWN ? Optional.empty() : Optional.of(bytes))));
+                    row.status() == CreditDataRequestStatus.CONSENT_WITHDRAWN ? Optional.empty() : Optional.of(found))));
             observer.answered(row.kind(), row.providerCode(), CreditDataObserver.Outcome.DUPLICATE);
             return row.status();
         }
@@ -406,15 +406,15 @@ public final class CreditDataCollection {
         return switch (answer) {
             case CreditDataAnswer.Received received -> collected(uow, row, attempt, received.providerCode(),
                     received.normaliserVersion(), true, received.retrievedAt(), received.attributes(),
-                    received.evidence().bytes(), "RECEIVED", correlation);
+                    received.evidence(), "RECEIVED", correlation);
             case CreditDataAnswer.Partial partial -> collected(uow, row, attempt, partial.providerCode(),
                     partial.normaliserVersion(), false, partial.retrievedAt(), partial.attributes(),
-                    partial.evidence().bytes(), "PARTIAL", correlation);
+                    partial.evidence(), "PARTIAL", correlation);
             case CreditDataAnswer.Unavailable unavailable -> {
                 requireMoved(store.markUnavailable(uow, id, attempt));
                 store.insertAttempt(uow, id, attempt, unavailable.cause().name());
-                unavailable.evidence().ifPresent(bytes ->
-                        store.insertEvidence(uow, evidence(row, attempt, false, Optional.of(bytes.bytes()))));
+                unavailable.evidence().ifPresent(found ->
+                        store.insertEvidence(uow, evidence(row, attempt, false, Optional.of(found))));
                 observer.answered(row.kind(), row.providerCode(), CreditDataObserver.Outcome.UNAVAILABLE);
                 yield CreditDataRequestStatus.UNAVAILABLE;
             }
@@ -430,7 +430,7 @@ public final class CreditDataCollection {
             boolean complete,
             Instant retrievedAt,
             List<CreditAttribute> attributes,
-            byte[] bytes,
+            CreditEvidence delivered,
             String outcome,
             CorrelationId correlation) {
         if (!providerCode.equals(row.providerCode())) {
@@ -442,7 +442,7 @@ public final class CreditDataCollection {
         store.insertAttempt(uow, row.id(), attempt, outcome);
         store.insertRecord(uow, CreditRecordId.next(ids), row, providerCode, normaliserVersion, complete, retrievedAt,
                 attributes);
-        store.insertEvidence(uow, evidence(row, attempt, false, Optional.of(bytes)));
+        store.insertEvidence(uow, evidence(row, attempt, false, Optional.of(delivered)));
         announce(uow, COLLECTED_EVENT, row.id(), EventPayload.of()
                 .with("dataRequest", row.id().value().toString())
                 .with("decisionRequest", row.decisionRequestId().toString())
@@ -507,8 +507,9 @@ public final class CreditDataCollection {
     // ------------------------------------------------------------------ plumbing
 
     private CreditDataRequestStore.NewEvidence evidence(
-            CreditDataRequestStore.Row row, int attempt, boolean duplicate, Optional<byte[]> bytes) {
+            CreditDataRequestStore.Row row, int attempt, boolean duplicate, Optional<CreditEvidence> delivered) {
         CreditEvidenceId id = CreditEvidenceId.next(ids);
+        Optional<byte[]> bytes = delivered.map(CreditEvidence::bytes);
         return new CreditDataRequestStore.NewEvidence(
                 id,
                 row.id(),
@@ -517,14 +518,15 @@ public final class CreditDataCollection {
                 bytes.map(content -> cipher.encrypt(id, content)),
                 bytes.map(CreditDataCollection::sha256),
                 bytes.map(content -> content.length).orElse(0),
-                (int) row.product().evidenceRetention().toTotalMonths());
+                (int) row.product().evidenceRetention().toTotalMonths(),
+                delivered.map(CreditEvidence::mediaType));
     }
 
-    private static Optional<byte[]> evidenceOf(CreditDataAnswer answer) {
+    private static Optional<CreditEvidence> evidenceOf(CreditDataAnswer answer) {
         return switch (answer) {
-            case CreditDataAnswer.Received received -> Optional.of(received.evidence().bytes());
-            case CreditDataAnswer.Partial partial -> Optional.of(partial.evidence().bytes());
-            case CreditDataAnswer.Unavailable unavailable -> unavailable.evidence().map(CreditEvidence::bytes);
+            case CreditDataAnswer.Received received -> Optional.of(received.evidence());
+            case CreditDataAnswer.Partial partial -> Optional.of(partial.evidence());
+            case CreditDataAnswer.Unavailable unavailable -> unavailable.evidence();
         };
     }
 

@@ -169,13 +169,26 @@ public final class BnplInvestigationDesk {
     public record BnplExplainedFeeView(String assessmentId, String instalmentId, String kind, String businessDate,
             String amount, String journalEntryId) {}
 
-    /** A waiver. */
+    /** A waiver, and who proposed it (`P17-TSK-116`, the raw actor id). */
     public record BnplExplainedWaiverView(String waiverId, String assessmentId, String amount, String status,
-            String decidedAt, String journalEntryId) {}
+            String decidedAt, String journalEntryId, String proposedBy) {}
 
-    /** A repayment reversal. */
+    /** A repayment reversal, and who proposed it (`P17-TSK-116`, the raw actor id). */
     public record BnplExplainedReversalView(String reversalId, String repaymentId, String status, String valueDate,
-            String decidedAt, String journalEntryId) {}
+            String decidedAt, String journalEntryId, String proposedBy) {}
+
+    /**
+     * An agreement as a servicing agent reads it to service it (`P17-TSK-116`; {@code BNPL_SERVICE}: "read any obligation,
+     * audited"): its latest version and state, and what servicing acts on - the repayments (a reversal's subject), the late
+     * fees (a waiver's), and the waivers and reversals with their proposers, so the agent approving one sees what they
+     * approve and the console disables a proposer's own approval in advance. Never the journal or the replay - those are
+     * the investigator's ({@code BNPL_INVESTIGATE}). Amounts are decimal strings in its currency.
+     */
+    public record BnplServicingAgreementView(String agreementId, int agreementVersion, String obligationId,
+            String purchaseId, String merchantId, String product, String plan, String status, String closureReason,
+            String currency, String purchaseDate, String openedAt, List<BnplExplainedRepaymentView> repayments,
+            List<BnplExplainedFeeView> fees, List<BnplExplainedWaiverView> waivers,
+            List<BnplExplainedReversalView> reversals) {}
 
     /** A payoff quote. */
     public record BnplExplainedPayoffView(String quoteId, String businessDate, String goodThrough, String amount) {}
@@ -225,6 +238,33 @@ public final class BnplInvestigationDesk {
     /** {@code rawId} explained, audited. */
     public BnplExplanationView explain(String rawId) {
         return view(explained(rawId, false));
+    }
+
+    /**
+     * {@code rawId} read by a servicing agent to service it (`P17-TSK-116`), audited {@code bnpl.ServicingAgreementRead} in
+     * the read's own {@code REPEATABLE READ} transaction; the agent's own party's agreement refused, recorded.
+     */
+    public BnplServicingAgreementView servicing(String rawId) {
+        BnplAgreementId agreement = agreementId(rawId);
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        BnplExplanations.Explanation explanation;
+        try {
+            explanation = transactions.inTransaction(unitOfWork -> {
+                repeatableRead(unitOfWork);
+                return explanations.serviced(unitOfWork, agreement, actor, correlation);
+            });
+        } catch (BnplRepaymentReversals.SelfDealingRefused selfDealing) {
+            throw refusedAndRecorded(selfDealing, actor, correlation);
+        } catch (BnplExplanations.AgreementNotFound unknown) {
+            throw notFound();
+        }
+        BnplExplanationView explained = view(explanation);
+        BnplAgreement latest = explanation.record().agreements().get(explanation.record().agreements().size() - 1).row();
+        return new BnplServicingAgreementView(explained.agreementId(), latest.version(), explained.obligationId(),
+                explained.purchaseId(), explained.merchantId(), explained.product(), explained.plan(), explained.status(),
+                explained.closureReason(), explained.currency(), explained.purchaseDate(), explained.openedAt(),
+                explained.repayments(), explained.fees(), explained.waivers(), explained.reversals());
     }
 
     /** {@code rawId} replayed with {@code reason}, the verdict answered once recorded. */
@@ -369,11 +409,13 @@ public final class BnplInvestigationDesk {
                 stamped.row().entry().value().toString())).toList();
         List<BnplExplainedWaiverView> waivers = record.waivers().stream().map(waiver -> new BnplExplainedWaiverView(
                 waiver.id().toString(), waiver.assessment().toString(), decimal(waiver.amount()), waiver.status().name(),
-                waiver.decidedAt().map(Instant::toString).orElse(null), entry(waiver.entry()))).toList();
+                waiver.decidedAt().map(Instant::toString).orElse(null), entry(waiver.entry()), waiver.proposedBy()))
+                .toList();
         List<BnplExplainedReversalView> reversals = record.reversals().stream().map(reversal ->
                 new BnplExplainedReversalView(reversal.row().id().toString(), reversal.row().repayment().toString(),
                         reversal.row().status().name(), reversal.row().valueDate().map(LocalDate::toString).orElse(null),
-                        reversal.row().decidedAt().map(Instant::toString).orElse(null), entry(reversal.row().entry())))
+                        reversal.row().decidedAt().map(Instant::toString).orElse(null), entry(reversal.row().entry()),
+                        reversal.row().proposedBy()))
                 .toList();
         List<BnplExplainedPayoffView> quotes = record.quotes().stream().map(stamped -> new BnplExplainedPayoffView(
                 stamped.row().id().toString(), stamped.row().businessDate().toString(),

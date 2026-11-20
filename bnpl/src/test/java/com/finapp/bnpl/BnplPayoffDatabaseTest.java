@@ -528,7 +528,7 @@ class BnplPayoffDatabaseTest {
                 new JdbcOutboxWriter(), IDS, CLOCK);
         final BnplRefunds refunds = new BnplRefunds(REFUNDS, SERVICING, PURCHASES, TERMS_STORE, ports, ports, book,
                 closures, (uow, actor) -> BnplKeyIssuer.partyOf(actor), new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS,
-                CLOCK);
+                CLOCK, (unitOfWork, cumulative) -> Optional.empty());
         final BnplAccruals accruals = new BnplAccruals(SERVICING, ACCRUALS, PURCHASES, TERMS_STORE, book, IDS);
         final BnplPayoffs payoffs = new BnplPayoffs(REPAYMENTS, PAYOFFS, SERVICING, PURCHASES, TERMS_STORE, ACCRUALS,
                 ports, book, servicing, repayments, closures, IDS);

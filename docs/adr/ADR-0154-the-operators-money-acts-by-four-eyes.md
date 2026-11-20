@@ -107,3 +107,54 @@ Financial impact: none to the accounting - the same entries, by the same code, o
 - `P17-TSK-123`: fee-schedule versions and merchant fee assignment by four eyes.
 - Four-eyes doors for the two thresholds' versions (today a migration).
 - The approvers' pending queues (§7 lists) and a read of one proposal, for the console.
+
+## Amendment — two BNPL acts on the same pattern, the reads an approver lacks, proposers named (`P17-TSK-116`, 2026-11-20)
+
+Taken under the owner's standing ruling of 2026-11-20, verbatim: "if you rise questions, my answer is your recommended
+options" - each *(ruling)* below is this task's recommendation. Decisions 1-7 are unchanged; these extend them.
+
+9. **The operator's BNPL refund: four eyes above a threshold** (finapp-admin-panel ADR-C135 decision 3 - a refund is a refund;
+   OQ-9's "no four-eyes and no threshold review" for `POST /v1/operator/bnpl-purchases/{id}/refunds` is superseded). A
+   threshold of its own, `bnpl.refund_four_eyes_threshold` (bnpl V023, versioned per currency, seeded as payments V043's
+   values *(ruling)*: bnpl reads no other module's table). Judged **cumulatively** - with the purchase's committed refunds of
+   every door - in T-ref under B5, the purchase's `FOR UPDATE` that already serialises its refunds, after the self-dealing rule
+   and the bound, before B4: nothing further is locked or written, and T-ref rolls back whole. The **operator's door only**
+   *(ruling)*: the merchant's refund is its own sale (ADR-0105 decision 9), a dispute's refund is the dispute's resolution
+   (ADR-0106's own four eyes above its threshold). The proposal is `bnpl.refund_proposal` (decision 1's shape). **The approval
+   locks the proposal first** *(ruling)*, then runs T-ref by the approver (self-dealing judged for them; no threshold - this is
+   the second person) with the decision as a step right after the refund row, naming it: a second approver, or an approval
+   racing a rejection, waits on the proposal and is answered `409 bnpl.RefundProposalAlreadyDecided`, never a refund refusal of
+   a race it lost. The step's `admit` (decision 4's admit-before-judging, `P17-TSK-031`'s hook) runs under B5 right after the
+   key's arbiter and before self-dealing and the bound, so the approver's own second approval under a new key is refused as
+   decided too - never by the bound or the purchase's `FULLY_REFUNDED` its first refund brought. No proposer, T-ref or T-dsp takes a proposal's lock, so proposal → B5 closes no cycle. The approval's key is
+   the approver's in the refund's own scope; a lapsed claim's retry converges on the refund row's arbiter
+   (`UNIQUE (merchant_id, requested_by, refund_key)`), and under another key the step's decision refuses it. The door's answer
+   gains `status` and `proposalId`.
+
+10. **A merchant's BNPL fee-schedule assignment: four eyes** (ADR-C135 decision 3, merchant fee assignment; the BNPL half of
+    decision 8 - the card fee schedule's versions and assignment stay `P17-TSK-123`'s). `PUT
+    /v1/operator/merchants/{merchantId}/bnpl-fee-schedules/{product}` (`FEE_ADMINISTER`) now requires an `Idempotency-Key`
+    *(ruling: the precedent of decision 7, replaced in place)* and proposes - judged first by `BnplPricing.assign`'s own rules
+    on an unlocked read, so what would be refused is refused at once, and a pointer already there converges, `ASSIGNED`,
+    nothing proposed. `merchant.bnpl_fee_assignment_proposal` (merchant V021), one open per (merchant, product), the index the
+    arbiter (the proposer takes no lock). The approval (`FEE_SCHEDULE_APPROVE`, `FINANCIAL_CONTROLLER`) locks the proposal,
+    performs `BnplPricing.assign` unchanged under the approver - every rule re-judged under the merchant's `FOR UPDATE`, merchant
+    V010's trigger for every writer - and decides it in the same transaction.
+
+11. **The reads an approver lacks, each under the decider's own permission** *(ruling)*: a lending terms version by id
+    (`LENDING_ADMINISTER`), a capital contribution by id (`LENDING_CAPITAL_ADMINISTER` - a treasury officer read nothing
+    before), a merchant's BNPL enablement by id under its merchant (`MERCHANT_ADMINISTER`), a review case by id
+    (`CREDIT_UNDERWRITE`, audited `credit.ReviewCaseRead` as the queue is), and the agreement a servicing agent services
+    (`BNPL_SERVICE`, `GET /v1/operator/bnpl-agreements/{id}/servicing`, audited `bnpl.ServicingAgreementRead`, the agent's own
+    party refused - never the journal or the replay, which stay `BNPL_INVESTIGATE`'s). The reads keep their neighbours'
+    footing: no step-up, as the queue and the investigation reads. The credit policy version by id is `P17-TSK-035`'s.
+
+12. **Proposers named** (the raw actor id, the write-off attestations' precedent) on the loan and BNPL waivers and repayment
+    reversals, loan amendments, both terms views and capital contributions - last in each keyed answer, so a receipt stored
+    before it replays with none. BNPL amendments do not exist: nothing to name.
+
+13. **Credit evidence names its media type** *(ruling)*: `credit.credit_evidence.media_type` (credit V027, nullable, its CHECK
+    `NOT VALID` - expand-only), the provider's `Content-Type` as the adapter received it, `application/octet-stream` when
+    absent or not a media type's shape and for every row before V027. Read through a **column grant**, not a new
+    `SECURITY DEFINER` function - it is metadata, never the content, and `MigrationLint` refuses replacing a released body.
+

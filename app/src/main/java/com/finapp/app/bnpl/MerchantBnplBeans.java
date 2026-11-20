@@ -3,7 +3,9 @@ package com.finapp.app.bnpl;
 import com.finapp.bnpl.BnplMerchants;
 import com.finapp.ledger.JdbcLedgerAccountStore;
 import com.finapp.merchant.BnplEnablements;
+import com.finapp.merchant.BnplFeeAssignments;
 import com.finapp.merchant.BnplPricing;
+import com.finapp.merchant.JdbcBnplFeeAssignmentProposalStore;
 import com.finapp.merchant.JdbcBnplEnablementStore;
 import com.finapp.merchant.JdbcBnplPricingStore;
 import com.finapp.merchant.JdbcFeeScheduleStore;
@@ -43,12 +45,20 @@ public class MerchantBnplBeans {
         return new MerchantBnplMerchants(bnplPricing, new JdbcLedgerAccountStore());
     }
 
+    /** A merchant's BNPL fee assignment by four eyes (`P17-TSK-116`, ADR-0154's shape). */
+    @Bean
+    BnplFeeAssignments bnplFeeAssignments(BnplPricing bnplPricing, AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator, Clock clock) {
+        return new BnplFeeAssignments(new JdbcBnplFeeAssignmentProposalStore(), bnplPricing, auditWriter, idGenerator,
+                clock);
+    }
+
     @Bean
     MerchantBnplDesk merchantBnplDesk(
             BnplEnablements bnplEnablements,
-            BnplPricing bnplPricing,
             IdempotentExecutor idempotentExecutor,
-            BnplTransactions bnplTransactions) {
-        return new MerchantBnplDesk(bnplEnablements, bnplPricing, idempotentExecutor, bnplTransactions);
+            BnplTransactions bnplTransactions,
+            BnplFeeAssignments bnplFeeAssignments) {
+        return new MerchantBnplDesk(bnplEnablements, idempotentExecutor, bnplTransactions, bnplFeeAssignments);
     }
 }

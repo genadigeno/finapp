@@ -48,6 +48,16 @@ public class UnderwritingCaseController {
         return desk.queue(status);
     }
 
+    /**
+     * One review case by its identifier, with its basis (`P17-TSK-116`): the case an underwriter decides, in any status -
+     * the queue above serves only the oldest fifty. Audited {@code credit.ReviewCaseRead}.
+     */
+    @GetMapping(path = "/{id}")
+    @RequiresPermission(PermissionName.CREDIT_UNDERWRITE)
+    public UnderwritingCaseDesk.ReviewCaseView readReviewCase(@PathVariable("id") String id) {
+        return desk.reviewCase(id);
+    }
+
     /** Takes an open case - of two underwriters, one; the other {@code 409 credit.CaseTaken}. */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/assignment")

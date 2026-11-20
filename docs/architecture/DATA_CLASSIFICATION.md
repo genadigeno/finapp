@@ -681,6 +681,19 @@ and its record (ADR-0044); the money itself is the ledger posting `journal_entry
 | `refund_proposal`, `payout_proposal` | `amount_minor`, `currency`, `scale`, `cumulative_minor` | `RESTRICTED-FINANCIAL` | The money asked - `journal_line.amount_minor`'s reasoning |
 | each threshold | `version`, `currency`, `scale`, `threshold_minor`, `recorded_at` | `INTERNAL` | Platform configuration, not a fact about anybody |
 
+### The BNPL money-act proposals, the BNPL refund threshold and the evidence's media type — *added by `P17-TSK-116`*
+
+**Two more acts on ADR-0154's pattern**: `bnpl.refund_proposal` and `merchant.bnpl_fee_assignment_proposal` take
+`P17-TSK-031`'s table above column for column (the subject's id is `purchase_id`, or `merchant_id` with `product` and
+`fee_schedule_id`, all `INTERNAL`; the BNPL refund proposal's money `RESTRICTED-FINANCIAL`, its `refund_id` `INTERNAL`);
+`bnpl.refund_four_eyes_threshold` is the payments threshold's twin (`INTERNAL`, platform configuration).
+
+**Served to staff** (`P17-TSK-116`): the raw actor id that proposed a servicing correction, a terms version or a capital
+contribution (`proposedBy`) to the holders of the permission that decides it - the write-off attestations' precedent - so
+an approver's console disables a proposer's own approval in advance; never a reason. `credit.credit_evidence.media_type`
+(credit V027) is `INTERNAL`: the provider's own name for the bytes, metadata - the content stays `RESTRICTED`, reachable
+only through `credit.read_evidence` with a reason.
+
 ### `transfers.beneficiary` — *added by `P4-TSK-006`*
 
 **A person's saved address book.** The row is a convenience, never a trust decision — and its

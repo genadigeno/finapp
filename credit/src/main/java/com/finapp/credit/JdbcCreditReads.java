@@ -93,6 +93,23 @@ public final class JdbcCreditReads {
         }
     }
 
+    /**
+     * The evidence's media type (`P17-TSK-116`), through credit V027's column grant - metadata, never the content: what a
+     * provider called the bytes, or {@link CreditEvidence#OCTET_STREAM} for a row before V027 (NULL).
+     */
+    public String mediaTypeOf(Connection unitOfWork, CreditEvidenceId evidence) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(
+                "SELECT media_type FROM credit.credit_evidence WHERE id = ?")) {
+            select.setObject(1, evidence.value());
+            try (ResultSet row = select.executeQuery()) {
+                String stored = row.next() ? row.getString(1) : null;
+                return stored == null ? CreditEvidence.OCTET_STREAM : stored;
+            }
+        } catch (SQLException failure) {
+            throw new CreditStorageException(DatabaseFailure.describe("reading credit evidence's media type", failure));
+        }
+    }
+
     /** The evidence's ciphertext through {@code credit.read_evidence} - the definer, with the reason it demands. */
     public Optional<CreditEvidenceCipher.Encrypted> readEvidence(Connection unitOfWork, CreditEvidenceId evidence, String reason) {
         try (PreparedStatement select = unitOfWork.prepareStatement(

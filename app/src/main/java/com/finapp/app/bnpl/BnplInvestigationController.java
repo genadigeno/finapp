@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
  * replay with a reason - each served audited ({@code bnpl.AgreementRead}, {@code bnpl.ExplanationRead},
  * {@code bnpl.Replayed}), none changing anything, never of the investigator's own party's agreement
  * ({@code 403 bnpl.SelfDealingRefused}, recorded). An unknown agreement is the uniform {@code 404 bnpl.NotFound}.
+ * Beside them (`P17-TSK-116`), the servicing agent's read of the same agreement, under {@code BNPL_SERVICE}.
  */
 @RestController
 @RequestMapping(path = "/operator/bnpl-agreements", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -43,6 +44,18 @@ public class BnplInvestigationController {
     @RequiresPermission(PermissionName.BNPL_INVESTIGATE)
     public BnplInvestigationDesk.BnplExplanationView explainBnplAgreement(@PathVariable("id") String id) {
         return desk.explain(id);
+    }
+
+    /**
+     * The agreement as a servicing agent reads it to service it (`P17-TSK-116`): its state, repayments, late fees, waivers
+     * and reversals with their proposers - audited per serving ({@code bnpl.ServicingAgreementRead}). Under
+     * {@code BNPL_SERVICE}: {@code BNPL_SERVICING_AGENT} proposes and approves servicing without {@code BNPL_INVESTIGATE};
+     * never the agent's own party's agreement ({@code 403 bnpl.SelfDealingRefused}, recorded).
+     */
+    @GetMapping("/{id}/servicing")
+    @RequiresPermission(PermissionName.BNPL_SERVICE)
+    public BnplInvestigationDesk.BnplServicingAgreementView readBnplAgreementForServicing(@PathVariable("id") String id) {
+        return desk.servicing(id);
     }
 
     /** The agreement replayed by its pinned engines and terms - IDENTICAL or DIVERGED; audited with its reason. */

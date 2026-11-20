@@ -5,11 +5,13 @@ import com.finapp.bnpl.BnplBook;
 import com.finapp.bnpl.BnplClosures;
 import com.finapp.bnpl.BnplMerchants;
 import com.finapp.bnpl.BnplPurchaseStore;
+import com.finapp.bnpl.BnplRefundProposals;
 import com.finapp.bnpl.BnplRefundStore;
 import com.finapp.bnpl.BnplRefunds;
 import com.finapp.bnpl.BnplServicingStore;
 import com.finapp.bnpl.BnplTermsStore;
 import com.finapp.bnpl.BnplWallets;
+import com.finapp.bnpl.JdbcBnplRefundProposalStore;
 import com.finapp.bnpl.JdbcBnplRefundStore;
 import com.finapp.identity.IdentityStore;
 import com.finapp.platform.audit.AuditWriter;
@@ -54,7 +56,9 @@ public class BnplRefundBeans {
             Clock clock) {
         return new BnplRefunds(bnplRefundStore, bnplServicingStore, bnplPurchaseStore, bnplTermsStore, bnplMerchants,
                 bnplWallets, bnplBook, bnplClosures, new com.finapp.app.credit.IdentityActingParty(identityStore),
-                outboxWriter, auditWriter, idGenerator, clock);
+                outboxWriter, auditWriter, idGenerator, clock,
+                // P17-TSK-116 (ADR-0154's shape): the operator door's four-eyes threshold, versioned in bnpl V023.
+                new com.finapp.bnpl.JdbcBnplRefundThresholds());
     }
 
     /** {@code finapp.bnpl.refund{kind, outcome}} - every series eager. */
@@ -63,13 +67,21 @@ public class BnplRefundBeans {
         return new BnplRefundMetrics(meterRegistry);
     }
 
+    /** The operator's BNPL refund above the threshold, by four eyes (`P17-TSK-116`, ADR-0154's shape). */
+    @Bean
+    BnplRefundProposals bnplRefundProposals(AuditWriter<Connection> auditWriter, IdGenerator idGenerator, Clock clock) {
+        return new BnplRefundProposals(new JdbcBnplRefundProposalStore(), auditWriter, idGenerator, clock);
+    }
+
     @Bean
     BnplRefundDesk bnplRefundDesk(
             BnplRefunds bnplRefunds,
             BnplAccruals bnplAccruals,
             IdempotentExecutor idempotentExecutor,
             BnplTransactions bnplTransactions,
-            BnplRefundMetrics bnplRefundMetrics) {
-        return new BnplRefundDesk(bnplRefunds, bnplAccruals, idempotentExecutor, bnplTransactions, bnplRefundMetrics);
+            BnplRefundMetrics bnplRefundMetrics,
+            BnplRefundProposals bnplRefundProposals) {
+        return new BnplRefundDesk(bnplRefunds, bnplAccruals, idempotentExecutor, bnplTransactions, bnplRefundMetrics,
+                bnplRefundProposals);
     }
 }

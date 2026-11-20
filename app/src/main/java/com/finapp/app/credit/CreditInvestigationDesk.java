@@ -86,7 +86,7 @@ public final class CreditInvestigationDesk {
             int engineVersion) {}
 
     /** A record's evidence, as its provider delivered it. */
-    public record CreditEvidenceView(String recordId, String evidenceId, String contentBase64) {}
+    public record CreditEvidenceView(String recordId, String evidenceId, String contentBase64, String mediaType) {}
 
     public CreditExplanationView explain(String rawId) {
         CreditDecisionId id;
@@ -157,7 +157,8 @@ public final class CreditInvestigationDesk {
         }
         return switch (read) {
             case CreditInvestigations.EvidenceRead.Served served -> new CreditEvidenceView(rawId,
-                    served.evidence().value().toString(), Base64.getEncoder().encodeToString(served.content()));
+                    served.evidence().value().toString(), Base64.getEncoder().encodeToString(served.content()),
+                    served.mediaType());
             case CreditInvestigations.EvidenceRead.NotFound absent -> throw notFound();
             case CreditInvestigations.EvidenceRead.Unreadable unreadable -> throw new ApiException(
                     CreditErrorCode.EVIDENCE_UNREADABLE, "Credit evidence could not be decrypted",

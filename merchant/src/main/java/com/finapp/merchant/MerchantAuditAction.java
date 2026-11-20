@@ -328,6 +328,33 @@ public enum MerchantAuditAction implements AuditableAction {
             "An operator assigned a merchant's BNPL product to a fee schedule whose versions return"
                     + " their fee on refund; the record names the merchant, the product and both"
                     + " schedules; the reason is required.",
+            true),
+
+    /**
+     * An operator proposed which fee schedule prices a merchant's BNPL product (`P17-TSK-116`; ADR-C135: merchant fee
+     * assignment by four eyes). Nothing changes until a second person approves.
+     */
+    BNPL_FEE_ASSIGNMENT_PROPOSED(
+            "merchant.BnplFeeAssignmentProposed",
+            "An operator proposed, with a reason, the fee schedule that prices a merchant's BNPL product"
+                    + " (PUT /v1/operator/merchants/{merchantId}/bnpl-fee-schedules/{product}); nothing changes until"
+                    + " a second person approves. The record names the proposal, the product and the schedule.",
+            true),
+
+    /**
+     * A holder of {@code FEE_SCHEDULE_APPROVE} who did not propose it approved a BNPL fee assignment (`P17-TSK-116`):
+     * written in the assignment's transaction, beside {@link #MERCHANT_BNPL_FEE_SCHEDULE_ASSIGNED}.
+     */
+    BNPL_FEE_ASSIGNMENT_APPROVED(
+            "merchant.BnplFeeAssignmentApproved",
+            "A BNPL fee assignment proposal was approved by a second person with a reason; the assignment was"
+                    + " made in the same transaction. The record names the proposal and its proposer.",
+            true),
+
+    /** A holder of {@code FEE_SCHEDULE_APPROVE} rejected a BNPL fee assignment it did not propose (`P17-TSK-116`). */
+    BNPL_FEE_ASSIGNMENT_REJECTED(
+            "merchant.BnplFeeAssignmentRejected",
+            "A BNPL fee assignment proposal was rejected by a second person with a reason; nothing changed.",
             true);
 
     private final String code;

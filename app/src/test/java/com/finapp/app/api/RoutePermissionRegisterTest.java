@@ -106,6 +106,22 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/refund-proposals/{id}/rejection", PermissionName.PAYMENT_REFUND_APPROVE),
                     entry("POST /v1/operator/payout-proposals/{id}/approval", PermissionName.MERCHANT_PAYOUT_APPROVE),
                     entry("POST /v1/operator/payout-proposals/{id}/rejection", PermissionName.MERCHANT_PAYOUT_APPROVE),
+                    // P17-TSK-116: an operator's BNPL refund above the threshold and a merchant's BNPL fee assignment,
+                    // decided by a second person (ADR-C135 decision 3, ADR-0154's shape).
+                    entry("POST /v1/operator/bnpl-refund-proposals/{id}/approval", PermissionName.PAYMENT_REFUND_APPROVE),
+                    entry("POST /v1/operator/bnpl-refund-proposals/{id}/rejection", PermissionName.PAYMENT_REFUND_APPROVE),
+                    entry("POST /v1/operator/bnpl-fee-schedule-proposals/{id}/approval",
+                            PermissionName.FEE_SCHEDULE_APPROVE),
+                    entry("POST /v1/operator/bnpl-fee-schedule-proposals/{id}/rejection",
+                            PermissionName.FEE_SCHEDULE_APPROVE),
+                    // P17-TSK-116: the reads an approver lacks, each under the decider's own permission.
+                    entry("GET /v1/operator/lending/terms/{versionId}", PermissionName.LENDING_ADMINISTER),
+                    entry("GET /v1/operator/lending/capital-contributions/{contributionId}",
+                            PermissionName.LENDING_CAPITAL_ADMINISTER),
+                    entry("GET /v1/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}",
+                            PermissionName.MERCHANT_ADMINISTER),
+                    entry("GET /v1/operator/credit/review-cases/{id}", PermissionName.CREDIT_UNDERWRITE),
+                    entry("GET /v1/operator/bnpl-agreements/{id}/servicing", PermissionName.BNPL_SERVICE),
                     // P17-TSK-017: the audit trail, read - the AUDITOR's alone (ADR-C134; the owner, 2026-11-18).
                     entry("GET /v1/operator/audit-records", PermissionName.AUDIT_READ),
                     entry("GET /v1/operator/audit-records/{id}", PermissionName.AUDIT_READ),
@@ -800,6 +816,11 @@ class RoutePermissionRegisterTest {
             "POST /v1/operator/refund-proposals/{id}/rejection",
             "POST /v1/operator/payout-proposals/{id}/approval",
             "POST /v1/operator/payout-proposals/{id}/rejection",
+            // P17-TSK-116: deciding a BNPL refund or a merchant's BNPL fee assignment - on a factor, as every privileged act.
+            "POST /v1/operator/bnpl-refund-proposals/{id}/approval",
+            "POST /v1/operator/bnpl-refund-proposals/{id}/rejection",
+            "POST /v1/operator/bnpl-fee-schedule-proposals/{id}/approval",
+            "POST /v1/operator/bnpl-fee-schedule-proposals/{id}/rejection",
             // P17-TSK-014: who holds the privileged roles, one of them, and who a login names - the same map, not on a password.
             "GET /v1/operator/identities",
             "GET /v1/operator/identities/{id}",

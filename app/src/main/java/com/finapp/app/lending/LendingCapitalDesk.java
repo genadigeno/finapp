@@ -92,7 +92,10 @@ public final class LendingCapitalDesk {
             long writtenOffMinor,
             boolean proofHolds) {}
 
-    /** One contribution: the proposal, its decision, and - once approved - its derived recognition. */
+    /**
+     * One contribution: the proposal, its decision, and - once approved - its derived recognition; who proposed it
+     * (`P17-TSK-116`, the raw actor id), so an approver's console disables a proposer's own approval in advance.
+     */
     public record ContributionView(
             String id,
             String currency,
@@ -101,6 +104,7 @@ public final class LendingCapitalDesk {
             String reference,
             String status,
             String recognition,
+            String proposedBy,
             String proposedAt,
             String decidedAt,
             String expectedBy,
@@ -171,21 +175,7 @@ public final class LendingCapitalDesk {
                             .toList());
             List<ContributionView> contributions = new ArrayList<>();
             for (CapitalContributionStore.ContributionRow row : served) {
-                Optional<CapitalRecognitions.ExpectationReading> reading =
-                        row.expectationRef().map(readings::get);
-                contributions.add(new ContributionView(
-                        row.id().value().toString(),
-                        row.currency().code(),
-                        row.amount().scale(),
-                        row.amount().minorUnits(),
-                        row.reference(),
-                        row.status().name(),
-                        reading.map(found -> found.status().name()).orElse(null),
-                        row.proposedAt().toString(),
-                        row.decidedAt().map(Instant::toString).orElse(null),
-                        reading.map(found -> found.expectedBy().toString()).orElse(null),
-                        reading.flatMap(CapitalRecognitions.ExpectationReading::recognisedOn)
-                                .map(LocalDate::toString).orElse(null)));
+                contributions.add(view(row, row.expectationRef().map(readings::get)));
             }
             audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, Instant.now(clock),
                     LendingAuditAction.REPORT_READ, "lending_report", "capital", Optional.empty(), AuditOutcome.SUCCEEDED,
@@ -194,6 +184,40 @@ public final class LendingCapitalDesk {
                             + contributions.size() + ", truncated=" + truncated)));
             return new CapitalReport(List.copyOf(currencies), List.copyOf(contributions), truncated);
         });
+    }
+
+    /**
+     * One contribution by its identifier (`P17-TSK-116`): what its approver reads before deciding - the proposal, its
+     * proposer, its decision and its recognition. Under {@code LENDING_CAPITAL_ADMINISTER}, the approver's own permission
+     * (a treasury officer holds nothing else). Unkeyed; the platform's own capital, no party's - not audited, as the terms'
+     * version reads are not.
+     */
+    public ContributionView contribution(String rawId) {
+        CapitalContributionId id = contributionId(rawId);
+        return transactions.inTransaction(unitOfWork -> {
+            CapitalContributionStore.ContributionRow row = store.find(unitOfWork, id).orElseThrow(LendingCapitalDesk::notFound);
+            Map<String, CapitalRecognitions.ExpectationReading> readings =
+                    recognitions.expectations(unitOfWork, row.expectationRef().stream().toList());
+            return view(row, row.expectationRef().map(readings::get));
+        });
+    }
+
+    private static ContributionView view(CapitalContributionStore.ContributionRow row,
+            Optional<CapitalRecognitions.ExpectationReading> reading) {
+        return new ContributionView(
+                row.id().value().toString(),
+                row.currency().code(),
+                row.amount().scale(),
+                row.amount().minorUnits(),
+                row.reference(),
+                row.status().name(),
+                reading.map(found -> found.status().name()).orElse(null),
+                row.proposedBy(),
+                row.proposedAt().toString(),
+                row.decidedAt().map(Instant::toString).orElse(null),
+                reading.map(found -> found.expectedBy().toString()).orElse(null),
+                reading.flatMap(CapitalRecognitions.ExpectationReading::recognisedOn)
+                        .map(LocalDate::toString).orElse(null));
     }
 
     // ------------------------------------------------------------------ plumbing

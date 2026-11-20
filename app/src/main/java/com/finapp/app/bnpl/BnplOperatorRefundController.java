@@ -28,7 +28,11 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code PAYMENT_REFUND} - the payments refund's one permission, the money-operating population (the ADR's default);
  * keyed per operator ({@code bnpl.refund:<keyed type>:<id>} - {@code CUSTOMER} for any person, {@code Actor.keyedType}), a
  * reason required and audited with actor, target, reason, correlation and outcome; an operator's refund of their own party's purchase is {@code 403 bnpl.SelfDealingRefused},
- * recorded {@code FAILED}. The same T-ref body as the merchant's door: no four-eyes and no threshold review (OQ-9).
+ * recorded {@code FAILED}. The same T-ref body as the merchant's door. <em>Four eyes above a threshold since
+ * `P17-TSK-116`</em> (ADR-C135 decision 3: a refund is a refund - OQ-9's "no four-eyes and no threshold review" is
+ * superseded): an operator's refund whose amount, with the purchase's committed refunds, is above bnpl V023's threshold
+ * for its currency answers {@code 201} with {@code status: PROPOSED} and the {@code proposalId}, nothing written, for a
+ * holder of {@code PAYMENT_REFUND_APPROVE} ({@link BnplRefundProposalController}).
  */
 @RestController
 @RequestMapping(path = "/operator/bnpl-purchases", produces = MediaType.APPLICATION_JSON_VALUE)

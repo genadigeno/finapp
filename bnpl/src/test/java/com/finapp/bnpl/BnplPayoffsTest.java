@@ -88,7 +88,7 @@ class BnplPayoffsTest {
                 world.wallets, world.book, closures, world.outbox, IDS, CLOCK);
         refunds = new BnplRefunds(world.refunds, world.servicing, world.purchases, world.terms.store(), world.merchants,
                 world.wallets, world.book, closures, (uow, actor) -> BnplKeyIssuer.partyOf(actor), world.outbox, world.audit,
-                IDS, CLOCK);
+                IDS, CLOCK, (unitOfWork, cumulative) -> Optional.empty());
         accruals = new BnplAccruals(world.servicing, world.accruals, world.purchases, world.terms.store(), world.book,
                 IDS);
         payoffs = world.payoffsOver(servicing, repayments, closures, IDS);

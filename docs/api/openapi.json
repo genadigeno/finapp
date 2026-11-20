@@ -3178,6 +3178,111 @@
           }
         }
       },
+      "bnpl.RefundProposalAlreadyDecided": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.RefundProposalAlreadyDecided"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.RefundProposalAlreadyDecided"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The BNPL refund proposal is already decided.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "bnpl.RefundProposalAlreadyOpen": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.RefundProposalAlreadyOpen"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.RefundProposalAlreadyOpen"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The BNPL purchase already has an open refund proposal; decide it first.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "bnpl.RefundProposalSelfDecision": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "bnpl.RefundProposalSelfDecision"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/bnpl.RefundProposalSelfDecision"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A BNPL refund proposal is decided by a person who did not propose it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "bnpl.RefundScopeRequired": {
         "content": {
           "application/problem+json": {
@@ -9233,6 +9338,111 @@
           }
         }
       },
+      "merchant.BnplFeeProposalAlreadyDecided": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.BnplFeeProposalAlreadyDecided"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.BnplFeeProposalAlreadyDecided"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The BNPL fee assignment proposal is already decided.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.BnplFeeProposalAlreadyOpen": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.BnplFeeProposalAlreadyOpen"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.BnplFeeProposalAlreadyOpen"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The merchant's BNPL product already has an open fee assignment proposal; decide it first.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.BnplFeeProposalSelfDecision": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.BnplFeeProposalSelfDecision"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.BnplFeeProposalSelfDecision"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A BNPL fee assignment proposal is decided by a person who did not propose it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "merchant.BnplScheduleNotReturning": {
         "content": {
           "application/problem+json": {
@@ -14215,6 +14425,9 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "remainingInstalments": {
             "format": "int32",
             "type": "integer"
@@ -15383,6 +15596,38 @@
         },
         "type": "object"
       },
+      "BnplEnablementView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "withdrawnAt": {
+            "type": "string"
+          },
+          "withdrawnBy": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BnplExplainedAccrualView": {
         "properties": {
           "agreementVersion": {
@@ -15949,6 +16194,9 @@
           "journalEntryId": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "repaymentId": {
             "type": "string"
           },
@@ -16003,6 +16251,9 @@
             "type": "string"
           },
           "journalEntryId": {
+            "type": "string"
+          },
+          "proposedBy": {
             "type": "string"
           },
           "status": {
@@ -16169,6 +16420,19 @@
         },
         "type": "object"
       },
+      "BnplFeeAssignmentDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
       "BnplFeeScheduleAssignmentRequest": {
         "properties": {
           "feeScheduleId": {
@@ -16196,6 +16460,12 @@
             "type": "string"
           },
           "product": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "status": {
             "type": "string"
           }
         },
@@ -16629,6 +16899,9 @@
           "payableDebit": {
             "type": "string"
           },
+          "proposalId": {
+            "type": "string"
+          },
           "purchaseId": {
             "type": "string"
           },
@@ -16636,6 +16909,9 @@
             "type": "string"
           },
           "refundId": {
+            "type": "string"
+          },
+          "status": {
             "type": "string"
           },
           "valueDate": {
@@ -16956,6 +17232,19 @@
         ],
         "type": "object"
       },
+      "BnplRefundDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
       "BnplRefundReport": {
         "properties": {
           "date": {
@@ -17214,6 +17503,9 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "repaymentId": {
             "type": "string"
           },
@@ -17294,6 +17586,72 @@
           "sequence": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BnplServicingAgreementView": {
+        "properties": {
+          "agreementId": {
+            "type": "string"
+          },
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "closureReason": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "fees": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedFeeView"
+            },
+            "type": "array"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "obligationId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "purchaseDate": {
+            "type": "string"
+          },
+          "purchaseId": {
+            "type": "string"
+          },
+          "repayments": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedRepaymentView"
+            },
+            "type": "array"
+          },
+          "reversals": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedReversalView"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "waivers": {
+            "items": {
+              "$ref": "#/components/schemas/BnplExplainedWaiverView"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -17668,6 +18026,9 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "refundAllocationEngine": {
             "type": "string"
           },
@@ -17765,6 +18126,9 @@
             "type": "string"
           },
           "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
             "type": "string"
           },
           "status": {
@@ -18911,6 +19275,9 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "recognisedOn": {
             "type": "string"
           },
@@ -19588,6 +19955,9 @@
             "type": "string"
           },
           "evidenceId": {
+            "type": "string"
+          },
+          "mediaType": {
             "type": "string"
           },
           "recordId": {
@@ -24618,6 +24988,9 @@
             "type": "string"
           },
           "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
             "type": "string"
           },
           "rateType": {
@@ -29848,6 +30221,9 @@
           "proposedAt": {
             "type": "string"
           },
+          "proposedBy": {
+            "type": "string"
+          },
           "repaymentId": {
             "type": "string"
           },
@@ -34919,6 +35295,9 @@
             "type": "string"
           },
           "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
             "type": "string"
           },
           "status": {
@@ -41741,6 +42120,33 @@
         }
       }
     },
+    "/v1/operator/bnpl-agreements/{id}/servicing": {
+      "get": {
+        "operationId": "readBnplAgreementForServicing",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplServicingAgreementView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/bnpl-agreements/{id}/waivers": {
       "post": {
         "operationId": "proposeBnplWaiver",
@@ -42275,6 +42681,96 @@
         }
       }
     },
+    "/v1/operator/bnpl-fee-schedule-proposals/{id}/approval": {
+      "post": {
+        "operationId": "approveBnplFeeAssignment",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplFeeAssignmentDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplFeeScheduleView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl-fee-schedule-proposals/{id}/rejection": {
+      "post": {
+        "operationId": "rejectBnplFeeAssignment",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplFeeAssignmentDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplFeeScheduleView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/bnpl-purchases/{id}/refunds": {
       "post": {
         "operationId": "refundBnplPurchaseForMerchant",
@@ -42316,6 +42812,96 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl-refund-proposals/{id}/approval": {
+      "post": {
+        "operationId": "approveBnplRefundProposal",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplRefundDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplOperatorRefundView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl-refund-proposals/{id}/rejection": {
+      "post": {
+        "operationId": "rejectBnplRefundProposal",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BnplRefundDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplOperatorRefundView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }
@@ -42790,6 +43376,33 @@
                     "$ref": "#/components/schemas/ReviewCaseView"
                   },
                   "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/review-cases/{id}": {
+      "get": {
+        "operationId": "readReviewCase",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewCaseView"
                 }
               }
             },
@@ -44897,6 +45510,33 @@
         }
       }
     },
+    "/v1/operator/lending/capital-contributions/{contributionId}": {
+      "get": {
+        "operationId": "readCapitalContribution",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "contributionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContributionView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/lending/capital-contributions/{contributionId}/approval": {
       "post": {
         "operationId": "approveCapitalContribution",
@@ -45053,6 +45693,33 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/lending/terms/{versionId}": {
+      "get": {
+        "operationId": "readLoanTermsVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanTermsView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }
@@ -46368,6 +47035,41 @@
         }
       }
     },
+    "/v1/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}": {
+      "get": {
+        "operationId": "readMerchantBnplEnablement",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "merchantId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "enablementId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplEnablementView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}/approval": {
       "post": {
         "operationId": "approveMerchantBnplEnablement",
@@ -46542,6 +47244,14 @@
           {
             "in": "path",
             "name": "product",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
             "required": true,
             "schema": {
               "type": "string"

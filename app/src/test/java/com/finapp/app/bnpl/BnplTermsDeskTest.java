@@ -82,7 +82,8 @@ class BnplTermsDeskTest {
     }
 
     @Test
-    @DisplayName("the view serves the whole term set and the machine row - never a reason or a person")
+    @DisplayName("the view serves the whole term set and the machine row - never a reason or a decider; its proposer named"
+            + " (P17-TSK-116), so an approver's console disables a proposer's own approval")
     void theViewServesTheTermSet() {
         BnplTerms terms = BnplTermsDesk.terms(request(payInN(), Map.of()));
         BnplTermsVersionId id = BnplTermsVersionId.of(UUID.fromString("01900000-0000-7000-8000-000000000001"));
@@ -97,8 +98,9 @@ class BnplTermsDeskTest {
         assertThat(view.instalmentCount()).isNull();
         assertThat(view.disputeFourEyesThresholdMinor()).isEqualTo(25_000L);
         assertThat(Arrays.stream(BnplTermsDesk.BnplTermsView.class.getRecordComponents()).map(RecordComponent::getName))
-                .noneMatch(name -> name.contains("reason") || name.endsWith("By"));
-        assertThat(view.toString()).doesNotContain("alice").doesNotContain("bob");
+                .noneMatch(name -> name.contains("reason") || (name.endsWith("By") && !name.equals("proposedBy")));
+        assertThat(view.proposedBy()).isEqualTo("alice");
+        assertThat(view.toString()).doesNotContain("bob");
     }
 
     // -----------------------------------------------------------------

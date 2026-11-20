@@ -501,6 +501,28 @@ class UnderwritingCaseDatabaseTest {
     }
 
     @Test
+    @DisplayName("P17-TSK-116: a review case read by its identifier over HTTP in any status, with its basis as the queue serves"
+            + " it - never raw evidence - recorded credit.ReviewCaseRead; closed to a role without CREDIT_UNDERWRITE and to"
+            + " no session; the unknown and the malformed one 404")
+    void aReviewCaseIsReadByItsIdentifier() throws Exception {
+        UnderwritingCaseId id = caseOf(referred(UUID.randomUUID(), eur(500_000), WEEK));
+        String underwriter = sessionWith(RoleName.UNDERWRITER);
+        String path = "/v1/operator/credit/review-cases/" + id.value();
+        HttpResponse<String> read = client.get(path, underwriter);
+        assertThat(read.statusCode()).as(read.body()).isEqualTo(200);
+        assertThat(read.body()).contains("\"caseId\":\"" + id.value() + "\"").contains("\"status\":\"OPEN\"")
+                .contains("\"basisAttributes\":[").contains("\"basisRules\":[");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'credit.ReviewCaseRead'"
+                + " AND target_id = ? AND outcome = 'SUCCEEDED'", id.value().toString())).isEqualTo(1);
+        assertThat(client.get(path, sessionWith(RoleName.LENDING_OFFICER)).statusCode()).as("no CREDIT_UNDERWRITE")
+                .isEqualTo(403);
+        assertThat(client.get(path, null).statusCode()).as("no session").isEqualTo(401);
+        assertThat(client.get("/v1/operator/credit/review-cases/" + UUID.randomUUID(), underwriter).statusCode())
+                .isEqualTo(404);
+        assertThat(client.get("/v1/operator/credit/review-cases/not-a-uuid", underwriter).statusCode()).isEqualTo(404);
+    }
+
+    @Test
     @DisplayName("over HTTP, a customer who is also an underwriter cannot take their own referral - 403"
             + " credit.SelfDealingRefused, the case OPEN, and the attempt recorded FAILED credit.ReviewOwnCaseRefused")
     void aCustomerUnderwriterCannotTakeTheirOwnReferralOverHttp() throws Exception {

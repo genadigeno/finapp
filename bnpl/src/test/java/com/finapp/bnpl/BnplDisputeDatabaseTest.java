@@ -573,7 +573,7 @@ class BnplDisputeDatabaseTest {
                 });
         BnplRefunds waitingRefunds = new BnplRefunds(REFUNDS, SERVICING, PURCHASES, TERMS_STORE, world.ports, world.ports,
                 heldPayable, world.closures, (uow, actor) -> BnplKeyIssuer.partyOf(actor), new JdbcOutboxWriter(),
-                new JdbcAuditWriter(), IDS, CLOCK);
+                new JdbcAuditWriter(), IDS, CLOCK, (unitOfWork, cumulative) -> Optional.empty());
         BnplDisputes waiting = new BnplDisputes(DISPUTES, REFUNDS, SERVICING, PURCHASES, TERMS_STORE, waitingRefunds,
                 world.ports, heldPayable, actingParties, new JdbcOutboxWriter(), new JdbcAuditWriter(), IDS, CLOCK);
         Duration twoSecondsBefore = BnplClockFrame.frameTo(deadline.minusSeconds(2));

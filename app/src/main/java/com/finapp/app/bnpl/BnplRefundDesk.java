@@ -7,6 +7,9 @@ import com.finapp.bnpl.BnplErrorCode;
 import com.finapp.bnpl.BnplPurchaseId;
 import com.finapp.bnpl.BnplReasons;
 import com.finapp.bnpl.BnplRefund;
+import com.finapp.bnpl.BnplRefundProposal;
+import com.finapp.bnpl.BnplRefundProposals;
+import com.finapp.bnpl.BnplRefundRequiresApprovalException;
 import com.finapp.bnpl.BnplRefunds;
 import com.finapp.bnpl.BnplWrittenOffRefused;
 import com.finapp.merchant.AuthenticatedMerchant;
@@ -26,11 +29,15 @@ import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
+import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.transaction.TransactionSystemException;
@@ -57,11 +64,28 @@ import org.springframework.transaction.TransactionSystemException;
  * <p><strong>What the merchant sees</strong> is its own refund's purchase-level figures - the amount, the fee returned,
  * the payable's debit and the purchase's status - never which instalments were cancelled, the customer's excess or where
  * it went, or the agreement's closure (the closed view `-014` drew). The operator sees the split.
+ *
+ * <p><strong>The operator's door above the four-eyes threshold</strong> (`P17-TSK-116`, ADR-0154 decision 4's shape;
+ * finapp-admin-panel ADR-C135 decision 3): T-ref judges the operator's refund, with the purchase's committed refunds, against
+ * the versioned per-currency threshold under B5; above it nothing is written and the answer is a keyed proposal,
+ * {@code PROPOSED}, under {@value #PROPOSAL_SCOPE} - a retry is judged above the threshold again and replays it. A holder of
+ * {@code PAYMENT_REFUND_APPROVE} who did not propose it approves through the same T-ref, under their own key in the refund's
+ * scope - the proposal locked first, its decision written right after the refund row - or rejects under
+ * {@value #REJECTION_SCOPE}, and nothing moves. The merchant's door is unchanged: its own sale (ADR-0105 decision 9).
  */
 @RequiredArgsConstructor
 public final class BnplRefundDesk {
 
     static final String REFUND_SCOPE = "bnpl.refund:";
+
+    /** A refund the threshold made a proposal: its key's scope (`P17-TSK-116`). */
+    static final String PROPOSAL_SCOPE = "bnpl.refund-proposal:";
+
+    /** A refund proposal's rejection: its key's scope (`P17-TSK-116`). */
+    static final String REJECTION_SCOPE = "bnpl.refund-rejection:";
+
+    /** The operator's answer for a refund applied. */
+    static final String APPLIED = "APPLIED";
 
     /** The most T-acc catch-ups one request runs before it answers - each accrues up to 92 dates. */
     static final int ACCRUAL_ROUNDS = 8;
@@ -71,6 +95,7 @@ public final class BnplRefundDesk {
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final BnplTransactions transactions;
     @NonNull private final BnplRefundMetrics metrics;
+    @NonNull private final BnplRefundProposals proposals;
 
     /** A refund as its merchant reads it - purchase-level figures only. Amounts are exact decimal strings. */
     public record BnplMerchantRefundView(
@@ -85,7 +110,9 @@ public final class BnplRefundDesk {
 
     /**
      * A refund as the operator reads it: the merchant's figures and the split - the principal cancelled unbilled and billed,
-     * the excess and where it went, the interest released, the agreement version in force and any closure's reason.
+     * the excess and where it went, the interest released, the agreement version in force and any closure's reason - and
+     * (`P17-TSK-116`) its {@code status}: {@code APPLIED}, or {@code PROPOSED} / {@code REJECTED} for a refund above the
+     * four-eyes threshold, whose {@code proposalId} it names; a proposal carries no refund's figures, only what it asks.
      */
     public record BnplOperatorRefundView(
             String refundId,
@@ -101,8 +128,10 @@ public final class BnplRefundDesk {
             String excess,
             String excessTo,
             String interestReleased,
-            int agreementVersion,
-            String closure) {}
+            Integer agreementVersion,
+            String closure,
+            String status,
+            String proposalId) {}
 
     // ------------------------------------------------------------------ the doors
 
@@ -158,7 +187,59 @@ public final class BnplRefundDesk {
                     .orElseGet(() -> replayedOperator(keyed.replayed().orElseThrow()));
         } catch (BnplRefunds.SelfDealingRefused selfDealing) {
             throw selfDealing(selfDealing, actor, correlation);
+        } catch (BnplRefundRequiresApprovalException above) {
+            // ADR-0154 decision 4's shape (`P17-TSK-116`): T-ref rolled back whole - the claim with it - and the answer is
+            // the keyed proposal, judged above the threshold again on a retry and replayed.
+            IdempotencyKey key = new IdempotencyKey(PROPOSAL_SCOPE + actor.keyedType().name() + ":" + actor.id(),
+                    idempotencyKey);
+            RequestFingerprint fingerprint = RequestFingerprint.sha256(String.join("|", "bnpl.refund-proposal",
+                    purchase.value().toString(), Long.toString(amount.minorUnits()), Integer.toString(amount.scale()),
+                    amount.currency().code(), digest(body.reason())).getBytes(StandardCharsets.UTF_8));
+            return proposalAct(key, fingerprint,
+                    uow -> proposals.propose(uow, purchase, amount, body.reason(), above, actor, correlation));
         }
+    }
+
+    /**
+     * Approves a refund proposal the caller did not propose (`P17-TSK-116`): in ONE transaction, the proposal locked and
+     * judged decidable, then T-ref by the approver - self-dealing judged for them, the bound and every refusal on the state
+     * now, no threshold - with the decision written right after the refund row, naming it. Keyed in the refund's own scope,
+     * so a lost approval, retried, replays the one refund.
+     */
+    public BnplOperatorRefundView approve(String idempotencyKey, String rawProposalId, String reason) {
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        BnplRefundProposal.Id id = proposalId(rawProposalId);
+        IdempotencyKey key = new IdempotencyKey(REFUND_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
+        RequestFingerprint fingerprint = RequestFingerprint.sha256(String.join("|", "bnpl.refund-approval",
+                id.value().toString(), digest(reason)).getBytes(StandardCharsets.UTF_8));
+        String proposal = id.value().toString();
+        try {
+            Keyed keyed = proposalRefused(() -> keyedAs(key, fingerprint, uow -> {
+                BnplRefundProposal locked = proposals.lockForApproval(uow, id, actor).orElseThrow(BnplRefundDesk::noProposal);
+                BnplRefunds.Request request = new BnplRefunds.Request(idempotencyKey, locked.amount(),
+                        locked.proposalReason(), Optional.empty());
+                return refunds.byOperator(uow, locked.purchaseId(), request, actor, correlation,
+                        proposals.approval(id, reason, actor, correlation));
+            }, refunded -> stored(operatorView(refunded, proposal))));
+            return keyed.refunded().map(refunded -> operatorView(refunded, proposal))
+                    .orElseGet(() -> replayedOperator(keyed.replayed().orElseThrow()));
+        } catch (BnplRefunds.SelfDealingRefused selfDealing) {
+            throw selfDealing(selfDealing, actor, correlation);
+        }
+    }
+
+    /** Rejects a refund proposal the caller did not propose (`P17-TSK-116`): nothing moves. */
+    public BnplOperatorRefundView reject(String idempotencyKey, String rawProposalId, String reason) {
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        BnplRefundProposal.Id id = proposalId(rawProposalId);
+        IdempotencyKey key = new IdempotencyKey(REJECTION_SCOPE + actor.keyedType().name() + ":" + actor.id(),
+                idempotencyKey);
+        RequestFingerprint fingerprint = RequestFingerprint.sha256(String.join("|", "bnpl.refund-rejection",
+                id.value().toString(), digest(reason)).getBytes(StandardCharsets.UTF_8));
+        return proposalAct(key, fingerprint, uow -> proposals.reject(uow, id, reason, actor, correlation)
+                .orElseThrow(BnplRefundDesk::noProposal));
     }
 
     /**
@@ -194,6 +275,37 @@ public final class BnplRefundDesk {
     private record Keyed(Optional<BnplRefunds.Refunded> refunded, Optional<byte[]> replayed) {}
 
     /**
+     * A proposal act - the proposal above the threshold, or its rejection - keyed, in one transaction: the answer stored with
+     * the claim; a refusal, which writes nothing, rolls the claim back with it.
+     */
+    private BnplOperatorRefundView proposalAct(IdempotencyKey key, RequestFingerprint fingerprint,
+            Function<Connection, BnplRefundProposal> act) {
+        IdempotentExecutor.ExecutionOutcome outcome;
+        try {
+            outcome = proposalRefused(() -> transactions.inTransaction(unitOfWork -> executor.execute(unitOfWork, key,
+                    fingerprint, claimed -> CommandResult.succeeded(stored(proposalView(act.apply(claimed)))))));
+        } catch (BnplReasons.ReasonRequired reason) {
+            throw reasonRequired();
+        }
+        return replayedOperator(outcome.body().orElseThrow(() -> new IllegalStateException("a proposal act stores its answer")));
+    }
+
+    /** The proposal's refusals, in the API's words (`P17-TSK-116`). */
+    private static <R> R proposalRefused(Supplier<R> work) {
+        try {
+            return work.get();
+        } catch (BnplRefundProposal.Refused refused) {
+            BnplErrorCode code = switch (refused.reason()) {
+                case ALREADY_PROPOSED -> BnplErrorCode.REFUND_PROPOSAL_ALREADY_OPEN;
+                case ALREADY_DECIDED -> BnplErrorCode.REFUND_PROPOSAL_ALREADY_DECIDED;
+                case SELF_DECISION -> BnplErrorCode.REFUND_PROPOSAL_SELF_DECISION;
+            };
+            throw new ApiException(code, "A BNPL refund proposal act was refused", refused.getMessage() + "; nothing was"
+                    + " written.");
+        }
+    }
+
+    /**
      * One keyed refund in one transaction, T-acc first when the record is behind: the receipt stored with the claim, the
      * refusals mapped, the meter told after the commit - a replay (the claim's or the arbiter's) counts nothing.
      */
@@ -205,6 +317,12 @@ public final class BnplRefundDesk {
                         purchase.value().toString(), Long.toString(amount.minorUnits()), Integer.toString(amount.scale()),
                         amount.currency().code(), body.reason() == null ? "" : body.reason())
                 .getBytes(StandardCharsets.UTF_8));
+        return keyedAs(key, fingerprint, act, receipt);
+    }
+
+    /** {@link #keyed} under a key and fingerprint the caller made - a proposal's approval's (`P17-TSK-116`). */
+    private Keyed keyedAs(IdempotencyKey key, RequestFingerprint fingerprint, Function<Connection, BnplRefunds.Refunded> act,
+            Function<BnplRefunds.Refunded, StoredResponse> receipt) {
         AtomicReference<BnplRefunds.Refunded> acted = new AtomicReference<>();
         IdempotentExecutor.ExecutionOutcome outcome = null;
         for (int round = 0; outcome == null; round++) {
@@ -231,9 +349,7 @@ public final class BnplRefundDesk {
             } catch (BnplRefunds.AmountInvalid invalid) {
                 throw invalid("the amount must be a positive amount in the purchase's currency, at its minor units.");
             } catch (BnplReasons.ReasonRequired reason) {
-                throw new ApiException(BnplErrorCode.REASON_REQUIRED, "A reason is required",
-                        "a reason of 1 to " + BnplReasons.BOUND + " characters, holding no card or account number, is"
-                                + " required.");
+                throw reasonRequired();
             } catch (BnplRefunds.PurchaseFullyRefunded fully) {
                 metrics.record(fully.kind(), BnplRefundMetrics.Outcome.FULLY_REFUNDED);
                 throw new ApiException(BnplErrorCode.PURCHASE_FULLY_REFUNDED, "The BNPL purchase is fully refunded",
@@ -288,13 +404,25 @@ public final class BnplRefundDesk {
     }
 
     static BnplOperatorRefundView operatorView(BnplRefunds.Refunded refunded) {
+        return operatorView(refunded, null);
+    }
+
+    /** A refund applied - by the door, or by a proposal's approval naming {@code proposalId} (`P17-TSK-116`). */
+    static BnplOperatorRefundView operatorView(BnplRefunds.Refunded refunded, String proposalId) {
         BnplRefund refund = refunded.refund();
         return new BnplOperatorRefundView(refund.id().toString(), refund.purchase().value().toString(),
                 decimal(refund.amount()), refund.amount().currency().code(), decimal(refund.feeReturned()),
                 decimal(refund.payableDebit()), purchaseStatus(refunded), refund.valueDate().toString(),
                 decimal(refund.cancelledUnbilled()), decimal(refund.cancelledBilled()), decimal(refund.excess()),
                 refund.excessTo().name(), decimal(refund.interestReleased()), refund.agreementVersion(),
-                refunded.closure().map(closure -> closure.reason().name()).orElse(null));
+                refunded.closure().map(closure -> closure.reason().name()).orElse(null), APPLIED, proposalId);
+    }
+
+    /** A proposal above the threshold, or its rejection (`P17-TSK-116`): what it asks, never a refund's figures. */
+    static BnplOperatorRefundView proposalView(BnplRefundProposal proposal) {
+        return new BnplOperatorRefundView(null, proposal.purchaseId().value().toString(), decimal(proposal.amount()),
+                proposal.amount().currency().code(), null, null, null, null, null, null, null, null, null, null, null,
+                proposal.status().name(), proposal.id().value().toString());
     }
 
     /** {@code FULLY_REFUNDED} when this refund completed the purchase, else {@code PARTIALLY_REFUNDED} - derived. */
@@ -312,12 +440,21 @@ public final class BnplRefundDesk {
                 .getBytes(StandardCharsets.UTF_8), "text/plain");
     }
 
+    /**
+     * The operator's receipt: {@code O|...} for a refund applied - sixteen fields as before, then (`P17-TSK-116`) the status
+     * and the proposal, so a receipt stored before them replays {@code APPLIED} - or {@code P|...} for a proposal act.
+     */
     static StoredResponse stored(BnplOperatorRefundView view) {
+        if (view.refundId() == null) {
+            return StoredResponse.of(String.join("|", "P", view.proposalId(), view.purchaseId(), view.amount(),
+                    view.currency(), view.status()).getBytes(StandardCharsets.UTF_8), "text/plain");
+        }
         return StoredResponse.of(String.join("|", "O", view.refundId(), view.purchaseId(), view.amount(), view.currency(),
                 view.feeReturned(), view.payableDebit(), view.purchaseStatus(), view.valueDate(),
                 view.cancelledUnbilled(), view.cancelledBilled(), view.excess(), view.excessTo(),
                 view.interestReleased(), Integer.toString(view.agreementVersion()),
-                view.closure() == null ? "" : view.closure()).getBytes(StandardCharsets.UTF_8), "text/plain");
+                view.closure() == null ? "" : view.closure(), view.status(),
+                view.proposalId() == null ? "" : view.proposalId()).getBytes(StandardCharsets.UTF_8), "text/plain");
     }
 
     static BnplMerchantRefundView replayedMerchant(byte[] body) {
@@ -328,9 +465,15 @@ public final class BnplRefundDesk {
 
     static BnplOperatorRefundView replayedOperator(byte[] body) {
         String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", -1);
+        if ("P".equals(fields[0])) {
+            return new BnplOperatorRefundView(null, fields[2], fields[3], fields[4], null, null, null, null, null, null,
+                    null, null, null, null, null, fields[5], fields[1]);
+        }
+        boolean decided = fields.length > 16;
         return new BnplOperatorRefundView(fields[1], fields[2], fields[3], fields[4], fields[5], fields[6], fields[7],
                 fields[8], fields[9], fields[10], fields[11], fields[12], fields[13], Integer.parseInt(fields[14]),
-                fields[15].isEmpty() ? null : fields[15]);
+                fields[15].isEmpty() ? null : fields[15], decided ? fields[16] : APPLIED,
+                decided && !fields[17].isEmpty() ? fields[17] : null);
     }
 
     // ------------------------------------------------------------------ plumbing
@@ -381,6 +524,38 @@ public final class BnplRefundDesk {
     private static ApiException notFound() {
         return new ApiException(BnplErrorCode.NOT_FOUND, "No BNPL purchase matches the requested identifier",
                 "no such BNPL purchase.");
+    }
+
+    /** A canonical UUIDv7 (ADR-0013), or the uniform 404 - anything else names no proposal. */
+    private static BnplRefundProposal.Id proposalId(String raw) {
+        try {
+            UUID parsed = UUID.fromString(raw);
+            if (parsed.toString().equals(raw) && parsed.version() == 7 && parsed.variant() == 2) {
+                return BnplRefundProposal.Id.of(parsed);
+            }
+        } catch (IllegalArgumentException | NullPointerException malformed) {
+            // the uniform 404 below
+        }
+        throw noProposal();
+    }
+
+    private static ApiException noProposal() {
+        return new ApiException(BnplErrorCode.NOT_FOUND, "No BNPL refund proposal matches the requested identifier",
+                "no such BNPL refund proposal.");
+    }
+
+    private static ApiException reasonRequired() {
+        return new ApiException(BnplErrorCode.REASON_REQUIRED, "A reason is required",
+                "a reason of 1 to " + BnplReasons.BOUND + " characters, holding no card or account number, is required.");
+    }
+
+    private static String digest(String text) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(String.valueOf(text).getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is a required JDK algorithm", impossible);
+        }
     }
 
     private static ApiException invalid(String detail) {
