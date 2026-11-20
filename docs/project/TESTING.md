@@ -147,6 +147,13 @@ them:
 - the battery's run there, the seven mandatory scenarios from a fresh run (`P17-TST-001`), which
   is a cluster run like Phase 16's and is run or owed at the owner's word.
 
+*(2026-11-20, `P17-TST-001`.)* **The battery** is the kind rehearsal's `battery` scope (`OPERATIONS_RUNBOOK.md` §11.69): release N
+at three replicas, the console built and its specs run from one console commit, each of the seven scenarios its spec through
+the battery's own proxy (`infra/scripts/kind-rehearsal/Battery.java`, which drops scenario 4's approval answer after the commit) and
+judged from the run's records - the console's Playwright report, the proxy's journal, a reading of the database - with the census
+after. Three classes hold its hermetic half: `BatteryProxyTest` and `BatteryContractTest` (architecture) and `E2eBatteryDatabaseTest`
+(database). The run itself is owed (`POSTPONED_ISSUES.md` PI-025), and so are the console's seven `@battery-s<n>` specs.
+
 *(2026-11-18, `P17-TSK-106`.)* **The seed** is `infra/scripts/e2e-seed.sh <scenario>`, M2's four:
 `abandoned-event`, `parked-record`, `parsed-file`, `fee-break`. It prints only `KEY=value` lines
 on stdout, and every run makes fresh rows, identities and references. Its targets are this

@@ -33003,7 +33003,7 @@ in this section.
   the same series under N instances and every rule takes `max()`; nothing holds a lease, a decision or state, and a probe or watcher
   lost is read (the probe's absent half pages; the watcher's is `ClusterWatchBlind`'s). The run that shows it on a cluster is owed.
 
-**P17-TST-001 — The end-to-end battery on `kind` at three replicas: the seven mandatory scenarios** — `PLANNED`
+**P17-TST-001 — The end-to-end battery on `kind` at three replicas: the seven mandatory scenarios** — `READY` (2026-11-20; marked `READY` at its design on the coordinator's assignment, on the owner's "continue with the next tasks in parallel"; branch `P17-TST-001` from `P17-MERGE-116`) *(read "`PLANNED`" until then)*
 - **Context**: the plan's §13 and §19 criteria 2-4; B11.2; both repositories.
 - **Scope**: the seven mandatory scenarios against the real application on `kind` at three replicas, through the operator
   edge: (1) an unauthorised privileged operation; (2) a permission revoked during a session; (3) two administrators
