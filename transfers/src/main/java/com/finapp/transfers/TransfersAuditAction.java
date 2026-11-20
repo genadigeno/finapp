@@ -102,6 +102,13 @@ public enum TransfersAuditAction implements AuditableAction {
             "transfers.TransferRead",
             "An operator read a transfer and its journal entry's reference; the transfer, its customer and status recorded,"
                     + " never an amount.",
+            false),
+
+    /** An overview reader was served the transfers report (`P17-TSK-039`, PLATFORM_OVERVIEW_READ) - totals, never a transfer. */
+    TRANSFERS_REPORT_READ(
+            "transfers.TransfersReportRead",
+            "An overview reader was served a day's transfers report - counts and totals by outcome and currency, never a"
+                    + " transfer (PLATFORM_OVERVIEW_READ); every serving is recorded, in the read's transaction.",
             false);
 
     private final String code;

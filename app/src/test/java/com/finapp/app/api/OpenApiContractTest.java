@@ -859,6 +859,9 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/payments/{intentId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/parties/{partyId}/payment-methods",
                         ApiVersion.CURRENT_PREFIX + "/operator/reports/payments",
+                        // P17-TSK-039: the overview's customers and transfers reports (PLATFORM_OVERVIEW_READ).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/customers",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/transfers",
                         ApiVersion.CURRENT_PREFIX + "/operator/disputes",
                         ApiVersion.CURRENT_PREFIX + "/operator/held-payments",
                         ApiVersion.CURRENT_PREFIX + "/operator/routing-policy/versions/{version}",
@@ -996,6 +999,15 @@ class OpenApiContractTest {
                         // P17-TSK-118: a corridor enable request read by its approver (CROSSBORDER_ADMINISTER).
                         ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-enable-requests/{rid}",
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/corridors",
+                        // P17-TSK-037: the FX and cross-border operator reads.
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/rates",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/pairs",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/providers",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/enable-requests",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/trades",
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridors",
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-enable-requests",
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/payments",
                         // P9-TSK-016: the counterparty reviewer's door (COUNTERPARTY_SCREENING_REVIEW).
                         ApiVersion.CURRENT_PREFIX + "/operator/kyc/counterparty-screenings/{id}/decision",
                         // P10-TSK-011: the scorecard doors (CREDIT_POLICY_ADMINISTER, keyed).

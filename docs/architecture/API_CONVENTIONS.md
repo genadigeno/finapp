@@ -313,6 +313,10 @@ The operator collections that implement this section exactly, the first two from
 | `GET /v1/operator/risk/alerts` (`P17-TSK-042`) | `RISK_INVESTIGATE` | raised at ascending, alert id ascending | 20 / 50 | `status` (`OPEN` unless named), `kind`. The reader's own party's alerts withheld; every page recorded as the audit action risk.AlertRead; a cursor naming no alert `422 risk.QueueRequestInvalid` |
 | `GET /v1/operator/risk/cases` (`P17-TSK-042`) | `RISK_INVESTIGATE` | opened at ascending, case id ascending | 20 / 50 | `status` (every open one unless named), `kind`. As the alert queue, recorded as the audit action risk.CaseRead |
 | `GET /v1/operator/accounting/periods` (`P17-TSK-042`) | `ACCOUNTING_READ` | month descending | 24 / 120 | none. Unrecorded, as before |
+| `GET /v1/operator/fx/enable-requests` (`P17-TSK-037`) | `FX_ADMINISTER` | proposed at descending, request id descending | 50 / 200 | `status` (`PROPOSED`, `APPROVED` or `REJECTED` - the machine's words; `PROPOSED` is the approver's queue). Configuration, unrecorded |
+| `GET /v1/operator/fx/trades` (`P17-TSK-037`) | `FX_INVESTIGATE` | booked at descending, trade id descending | 50 / 200 | `from`, `to` (instants, `[from, to)`, required, 31 days at most); `pair` (`SOURCE-DESTINATION`), `status` (`BOOKED` or `REVERSED`). Every page recorded as the audit action fx.TradesListed |
+| `GET /v1/operator/cross-border/corridor-enable-requests` (`P17-TSK-037`) | `CROSSBORDER_ADMINISTER` | proposed at descending, request id descending | 50 / 200 | `status` (`PROPOSED`, `APPROVED` or `REJECTED`). Configuration, unrecorded |
+| `GET /v1/operator/cross-border/payments` (`P17-TSK-037`) | `FX_INVESTIGATE` | created at descending, payment id descending | 50 / 200 | `from`, `to` (instants, `[from, to)`, required, 31 days at most); `corridor` (`S-D-CC`), `status` (a payment status). Every page recorded as the audit action crossborder.CrossBorderPaymentsListed |
 
 All are keyset reads. `app`'s `OperatorCollection` is the one implementation of the request rules: the limit is refused above
 its maximum rather than reduced, and the cursor names its collection, so one collection's cursor is refused by another. Every
@@ -350,6 +354,12 @@ published contract that could not then be changed.
 A total order is what makes this well-defined at all, and ADR-0013 already supplies it — aggregate
 identifiers are UUIDv7 and therefore time-ordered, which is why keyset pagination is natural here
 rather than a compromise.
+
+### 7a. Every operator report states its as-of (`P17-TSK-039`, finapp-admin-panel ADR-C133 decision 5, gap G-04)
+
+An operator report - a `GET` under `/v1/operator/reports/`, the dead-letter queues and the accounting operational reports - answers a record with **`asOf`**, an ISO-8601 instant: **the database's**, never the serving instance's clock (ADR-0063). It is read as the report transaction's first statement (`DatabaseTime.now`, `statement_timestamp()`), so in a `REPEATABLE READ` snapshot it is the snapshot's instant and in a `READ COMMITTED` report every figure is at least that fresh; the risk reports and the operational reports read their own database instant. The console shows it on every tile of the overview. `EveryOperatorReportStatesItsAsOfTest` holds the reports to a register, each answering a record with a `String asOf`. The payments report's `generatedAt`, an instance's clock, was replaced in place by `asOf`; the FX position's `asOf` now reads the database.
+
+**The overview** is three reports under `PLATFORM_OVERVIEW_READ` (`OPERATIONS_VIEWER`'s one permission, gap G-151): `GET /v1/operator/reports/customers?date=` - every lifecycle status's standing count now, and the UTC day's openings and status changes after an opening (the platform keeps each customer's current status only, so a past day's standing counts are not served); `GET /v1/operator/reports/transfers?date=` - the UTC day's transfers by status and failure reason, counted and totalled exactly per currency at its stored scale, the day an identifier range on the UUIDv7 primary key; and `GET /v1/operator/reports/payments?date=` (`P17-TSK-032`'s, moved from `PAYMENT_READ`). `date` is required, an ISO date from 2000-01-01, else `422`. Each serving is recorded.
 
 ## 8. Deprecation — **Decided, not yet implemented** (first deprecation)
 

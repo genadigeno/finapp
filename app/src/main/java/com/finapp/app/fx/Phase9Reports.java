@@ -12,6 +12,7 @@ import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.audit.AuditableAction;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -86,7 +87,7 @@ public final class Phase9Reports {
 
     /** {@code FX_POSITION} by currency, and every cover leg not yet executed or voided - the oldest first. */
     public FxPositionReport fxPosition() {
-        return read(FxAuditAction.FX_POSITION_REPORT_READ, "fx_position", "fx-position", "asOf=now", uow -> {
+        return read(FxAuditAction.FX_POSITION_REPORT_READ, "fx_position", "fx-position", "asOf=now", (uow, asOf) -> {
             List<CurrencyPositionRow> positions = new ArrayList<>();
             try (PreparedStatement select = uow.prepareStatement(
                     "SELECT a.currency, COALESCE(SUM(CASE l.direction WHEN 'DEBIT' THEN l.amount_minor ELSE -l.amount_minor"
@@ -119,7 +120,7 @@ public final class Phase9Reports {
                     }
                 }
             }
-            return new FxPositionReport(Instant.now(clock).toString(), positions, legs, truncated);
+            return new FxPositionReport(asOf, positions, legs, truncated);
         });
     }
 
@@ -131,7 +132,7 @@ public final class Phase9Reports {
 
     public record RealisedRow(String currency, ReportAmount gains, ReportAmount losses) {}
 
-    public record FxRevenueReport(String month, List<PairRow> pairs, List<RealisedRow> realised, long offPlanCovers,
+    public record FxRevenueReport(String month, String asOf, List<PairRow> pairs, List<RealisedRow> realised, long offPlanCovers,
             boolean truncated) {}
 
     /**
@@ -141,7 +142,7 @@ public final class Phase9Reports {
      */
     public FxRevenueReport fxRevenue(String month) {
         YearMonth period = period(month);
-        return read(FxAuditAction.FX_REVENUE_REPORT_READ, "fx_revenue", period.toString(), "month=" + period, uow -> {
+        return read(FxAuditAction.FX_REVENUE_REPORT_READ, "fx_revenue", period.toString(), "month=" + period, (uow, asOf) -> {
             Timestamp from = start(period);
             Timestamp to = start(period.plusMonths(1));
             List<PairRow> pairs = new ArrayList<>();
@@ -193,7 +194,7 @@ public final class Phase9Reports {
                     offPlan = rows.getLong(1);
                 }
             }
-            return new FxRevenueReport(period.toString(), pairs, realised, offPlan, truncated);
+            return new FxRevenueReport(period.toString(), asOf, pairs, realised, offPlan, truncated);
         });
     }
 
@@ -205,7 +206,7 @@ public final class Phase9Reports {
 
     public record CorridorCostRow(String source, ReportAmount costs) {}
 
-    public record CorridorReport(String month, List<CorridorRow> corridors, List<CorridorCostRow> providerCosts,
+    public record CorridorReport(String month, String asOf, List<CorridorRow> corridors, List<CorridorCostRow> providerCosts,
             boolean truncated) {}
 
     /**
@@ -215,7 +216,7 @@ public final class Phase9Reports {
     public CorridorReport corridors(String month) {
         YearMonth period = period(month);
         return read(CrossborderAuditAction.CORRIDOR_REPORT_READ, "crossborder_corridor", period.toString(),
-                "month=" + period, uow -> {
+                "month=" + period, (uow, asOf) -> {
             Timestamp from = start(period);
             Timestamp to = start(period.plusMonths(1));
             List<CorridorRow> corridors = new ArrayList<>();
@@ -259,7 +260,7 @@ public final class Phase9Reports {
                     }
                 }
             }
-            return new CorridorReport(period.toString(), corridors, costs, truncated);
+            return new CorridorReport(period.toString(), asOf, corridors, costs, truncated);
         });
     }
 
@@ -293,7 +294,7 @@ public final class Phase9Reports {
             throw new ApiException(CrossborderErrorCode.PAYMENT_NOT_FOUND, "No payment matches the requested identifier",
                     "no such payment.");
         }
-        return read(CrossborderAuditAction.PAYMENT_TRACE_READ, "crossborder_payment", paymentId.toString(), "trace", uow -> {
+        return read(CrossborderAuditAction.PAYMENT_TRACE_READ, "crossborder_payment", paymentId.toString(), "trace", (uow, asOf) -> {
             String[] payment = one(uow, "SELECT owner_party::text, corridor, status, quote_id::text, offer_id::text,"
                     + " outbound_credit_id::text FROM crossborder.payment WHERE id = ?", paymentId, 6)
                     .orElseThrow(() -> new ApiException(CrossborderErrorCode.PAYMENT_NOT_FOUND,
@@ -365,7 +366,7 @@ public final class Phase9Reports {
 
     @FunctionalInterface
     private interface Read<R> {
-        R in(Connection unitOfWork) throws SQLException;
+        R in(Connection unitOfWork, String asOf) throws SQLException;
     }
 
     /** One snapshot, read-only, with its audit record in the same transaction. */
@@ -376,7 +377,9 @@ public final class Phase9Reports {
                 try (Statement snapshot = unitOfWork.createStatement()) {
                     snapshot.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
                 }
-                R result = work.in(unitOfWork);
+                // The snapshot's first statement: the database's instant of the snapshot every figure is read from.
+                String asOf = DatabaseTime.now(unitOfWork).toString();
+                R result = work.in(unitOfWork, asOf);
                 audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, Instant.now(clock), action, targetType,
                         target, Optional.empty(), AuditOutcome.SUCCEEDED, CorrelationContext.current()
                                 .orElseThrow(() -> new IllegalStateException("a report runs inside a correlation scope"))

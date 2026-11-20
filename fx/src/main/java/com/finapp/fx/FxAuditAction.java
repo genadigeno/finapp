@@ -153,6 +153,13 @@ public enum FxAuditAction implements AuditableAction {
             "fx.TradeReversalRead",
             "An operator read a trade reversal and the conversion it would reverse - the customer's amounts"
                     + " (FX_TRADE_REVERSE); a read of a customer's trade, so every serving is recorded.",
+            false),
+
+    /** An investigator was served a page of the booked trades (`P17-TSK-037`, FX_INVESTIGATE) - every page recorded. */
+    TRADES_LISTED(
+            "fx.TradesListed",
+            "An investigator was served a page of the booked trades in a window - customers' conversions and cross-border"
+                    + " legs (FX_INVESTIGATE); every page is recorded, in the read's transaction.",
             false);
 
     private final String code;

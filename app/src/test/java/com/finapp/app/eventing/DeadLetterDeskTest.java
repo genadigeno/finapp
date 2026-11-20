@@ -31,7 +31,6 @@ import com.finapp.sharedkernel.correlation.Correlation;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.lang.reflect.Method;
-import java.lang.reflect.Proxy;
 import java.security.SecureRandom;
 import java.sql.Connection;
 import java.time.Clock;
@@ -61,10 +60,8 @@ class DeadLetterDeskTest {
 
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-11-08T10:00:00Z"), ZoneOffset.UTC);
     private static final IdGenerator IDS = new IdGenerator(CLOCK, new SecureRandom());
-    private static final Connection UOW = (Connection) Proxy.newProxyInstance(Connection.class.getClassLoader(),
-            new Class<?>[] {Connection.class}, (proxy, method, args) -> {
-                throw new UnsupportedOperationException("the fakes never touch the connection");
-            });
+    /** The fakes never touch the connection - but for the database's clock, the read's {@code asOf} (`P17-TSK-039`). */
+    private static final Connection UOW = com.finapp.app.api.ClockOnlyConnection.answering(CLOCK.instant());
     private static final Actor OPERATOR = new Actor("operator-1", ActorType.EMPLOYEE);
     private static final Actor SECOND = new Actor("operator-2", ActorType.EMPLOYEE);
 

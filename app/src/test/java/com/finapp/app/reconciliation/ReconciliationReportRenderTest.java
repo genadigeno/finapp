@@ -56,7 +56,7 @@ class ReconciliationReportRenderTest {
                         0L);
 
         ReconciliationReportController.PositionsReport served =
-                ReconciliationReportController.render(report);
+                ReconciliationReportController.render(report, "2026-11-20T09:00:00Z");
 
         assertThat(served.positions()).hasSize(ReconciliationReportController.BOUND);
         assertThat(served.truncated()).as("the 101st row is announced, never silent").isTrue();
@@ -76,7 +76,7 @@ class ReconciliationReportRenderTest {
                         0L);
 
         ReconciliationReportController.PositionsReport served =
-                ReconciliationReportController.render(report);
+                ReconciliationReportController.render(report, "2026-11-20T09:00:00Z");
 
         assertThat(served.truncated()).isFalse();
         assertThat(served.positions()).hasSize(1);

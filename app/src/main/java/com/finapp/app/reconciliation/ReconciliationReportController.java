@@ -8,6 +8,7 @@ import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.reconciliation.ReconciliationAuditAction;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -93,7 +94,7 @@ public class ReconciliationReportController {
 
     /** The positions, and — added at the end (ADR-0015: additive) — the cash rows. */
     public record PositionsReport(
-            List<PositionRow> positions, boolean truncated, List<CashRow> cash) {}
+            String asOf, List<PositionRow> positions, boolean truncated, List<CashRow> cash) {}
 
     /** The positions report — audited per serving, in the reading's own transaction. */
     @GetMapping("/positions")
@@ -103,6 +104,8 @@ public class ReconciliationReportController {
                 unitOfWork -> {
                     unitOfWork.setTransactionIsolation(
                             Connection.TRANSACTION_REPEATABLE_READ);
+                    // The snapshot's first statement: the database's instant of the snapshot.
+                    String asOf = DatabaseTime.now(unitOfWork).toString();
                     PositionProof.Report report = proof.sweep(unitOfWork);
                     audit.append(
                             unitOfWork,
@@ -127,7 +130,7 @@ public class ReconciliationReportController {
                                     Optional.of(
                                             "report=positions, rows="
                                                     + report.verdicts().size())));
-                    return render(report);
+                    return render(report, asOf);
                 });
     }
 
@@ -182,7 +185,7 @@ public class ReconciliationReportController {
 
     // Package-private: the bound's ceiling in production is ~12 rows (four purposes times
     // the supported currencies), so the truncation branch is proven here, hermetically.
-    static PositionsReport render(PositionProof.Report report) {
+    static PositionsReport render(PositionProof.Report report, String asOf) {
         List<PositionRow> rows =
                 report.verdicts().stream()
                         .limit(BOUND)
@@ -237,7 +240,7 @@ public class ReconciliationReportController {
                                                 verdict.unbroken(),
                                                 verdict.explained()))
                         .toList();
-        return new PositionsReport(rows, report.verdicts().size() > BOUND, cash);
+        return new PositionsReport(asOf, rows, report.verdicts().size() > BOUND, cash);
     }
 
     private <R> R inOneTransaction(SqlFunction<R> work) {

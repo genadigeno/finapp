@@ -348,7 +348,10 @@ class BnplReportsTest {
         return new BnplProofs.Proven(subledger, replay);
     }
 
-    /** The two units, recording their order - the connection is never touched by these reads. */
+    /**
+     * The two units, recording their order - the connection is never touched by these reads but for the database's clock, the
+     * snapshot's first statement (`P17-TSK-039`'s {@code asOf}).
+     */
     private static final class Units implements BnplReports.Units {
         final List<String> calls = new ArrayList<>();
         /** Whether a snapshot is open now. */
@@ -359,7 +362,7 @@ class BnplReportsTest {
             calls.add("snapshot");
             inside[0] = true;
             try {
-                return work.apply(null);
+                return work.apply(com.finapp.app.api.ClockOnlyConnection.answering(java.time.Instant.parse("2026-11-20T09:00:00Z")));
             } finally {
                 inside[0] = false;
             }

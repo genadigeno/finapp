@@ -50,6 +50,7 @@ class ReconciliationReportsFoldTest {
     private static final CurrencyCode GBP = CurrencyCode.of("GBP");
     private static final CurrencyCode CHF = CurrencyCode.of("CHF");
     private static final LocalDate TODAY = LocalDate.parse("2026-10-01");
+    private static final String AS_OF = "2026-10-01T09:00:00Z";
     private static final String PSP = "simulated-psp.settlement";
     private static final String BANK = "simulated-bank.statement";
 
@@ -63,7 +64,7 @@ class ReconciliationReportsFoldTest {
             fold.accept(suspense(SuspenseSide.CREDIT, 100, EUR, TODAY.minusDays(200 - i)));
         }
 
-        ReconciliationReports.SuspenseReport report = fold.report(List.of());
+        ReconciliationReports.SuspenseReport report = fold.report(List.of(), AS_OF);
 
         assertThat(report.items()).hasSize(ReconciliationReports.BOUND);
         assertThat(report.truncated()).as("the 101st item is announced, never silent").isTrue();
@@ -92,7 +93,8 @@ class ReconciliationReportsFoldTest {
                                         GBP, Money.ofPersisted(0, GBP, 2),
                                         Money.ofPersisted(0, GBP, 2),
                                         Money.ofPersisted(0, GBP, 2),
-                                        Money.ofPersisted(0, GBP, 2), 0, true)));
+                                        Money.ofPersisted(0, GBP, 2), 0, true)),
+                        AS_OF);
 
         assertThat(report.truncated()).isFalse();
         assertThat(report.items()).hasSize(4);
@@ -147,7 +149,7 @@ class ReconciliationReportsFoldTest {
         fold.openBreak(breakLine(psp, BreakType.UNKNOWN_EXTERNAL, Severity.MEDIUM, 1_00,
                 BreakStatus.INVESTIGATING, TODAY, Optional.empty()));
 
-        ReconciliationReports.UnmatchedReport report = fold.report();
+        ReconciliationReports.UnmatchedReport report = fold.report(AS_OF);
 
         assertThat(report.truncated()).isFalse();
         assertThat(report.items()).hasSize(5);
@@ -255,7 +257,7 @@ class ReconciliationReportsFoldTest {
         fold.approved(new ReportReadings.ApprovedResolutionLine(
                 Optional.empty(), ResolutionKind.ACKNOWLEDGE, eur(0), false));
 
-        ReconciliationReports.DailySummaryReport report = fold.report();
+        ReconciliationReports.DailySummaryReport report = fold.report(AS_OF);
 
         assertThat(report.date()).isEqualTo("2026-10-01");
         assertThat(report.truncated()).isFalse();

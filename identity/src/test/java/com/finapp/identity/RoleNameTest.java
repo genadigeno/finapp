@@ -410,11 +410,12 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("OPERATIONS_VIEWER grants exactly PLATFORM_OVERVIEW_READ, and needs a factor while it guards no route")
+    @DisplayName("OPERATIONS_VIEWER grants exactly PLATFORM_OVERVIEW_READ, and needs no factor now that it only reads")
     void operationsViewerGrantsExactlyTheOverviewRead() {
         // The twenty-fourth (P17-TSK-025; ADR-C132 decision 2's permission; the reports are P17-TSK-039's).
         assertThat(RoleName.OPERATIONS_VIEWER.permissions()).containsExactly(PermissionName.PLATFORM_OVERVIEW_READ);
-        assertThat(RoleName.OPERATIONS_VIEWER.requiresEnrolledFactor()).isTrue();
+        assertThat(RoleName.OPERATIONS_VIEWER.requiresEnrolledFactor())
+                .as("P17-TSK-039: every route under PLATFORM_OVERVIEW_READ reads, so it guards no act").isFalse();
     }
 
     @Test

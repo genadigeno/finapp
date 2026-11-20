@@ -70,7 +70,7 @@ public class PaymentReadController {
      * status, and the unknown-state backlog as it stands, with the instant it was generated. Recorded.
      */
     @GetMapping("/reports/payments")
-    @RequiresPermission(PermissionName.PAYMENT_READ)
+    @RequiresPermission(PermissionName.PLATFORM_OVERVIEW_READ)
     public PaymentReadDesk.PaymentsReportView readPaymentsReport(@RequestParam(name = "date", required = false) String date) {
         return desk.report(date);
     }

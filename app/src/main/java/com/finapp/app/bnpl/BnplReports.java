@@ -13,6 +13,7 @@ import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -162,15 +163,15 @@ public final class BnplReports {
             List<String> divergedAgreements, boolean truncated) {}
 
     public record BnplPortfolioReport(
-            String date, boolean known, List<BnplPortfolioRow> rows, List<BnplBookTie> currencies,
+            String date, String asOf, boolean known, List<BnplPortfolioRow> rows, List<BnplBookTie> currencies,
             BnplProofCounts proofs) {}
 
     /** The BNPL book as of the end of {@code date}, tied to the ledger and carrying the proofs. */
     public BnplPortfolioReport portfolio(String date) {
         LocalDate day = date(date);
-        return read("portfolio", day, (uow, known) -> {
+        return read("portfolio", day, (uow, known, asOf) -> {
             if (!known) {
-                return new Served<>(new BnplPortfolioReport(day.toString(), false, List.of(), List.of(), null), 0);
+                return new Served<>(new BnplPortfolioReport(day.toString(), asOf, false, List.of(), List.of(), null), 0);
             }
             Map<String, long[]> states = new TreeMap<>();
             for (BnplReportReads.ObligationCount count : reads.obligations(uow, day)) {
@@ -218,7 +219,7 @@ public final class BnplReports {
                         verdict.map(found -> List.copyOf(found.failures())).orElse(List.of())));
             }
             BnplProofCounts counted = proofCounts(uow, reading);
-            return new Served<>(new BnplPortfolioReport(day.toString(), true, List.copyOf(rows),
+            return new Served<>(new BnplPortfolioReport(day.toString(), asOf, true, List.copyOf(rows),
                     List.copyOf(currencies), counted), rows.size());
         });
     }
@@ -236,14 +237,14 @@ public final class BnplReports {
             long netFinancedMinor, long refunds, long refundedMinor, long feeReturnedMinor, long payableDebitMinor,
             long exposureMinor, long ledgerPayableMinor, boolean tiesToLedger, long merchantLegsFailing) {}
 
-    public record BnplMerchantFinancingReport(String date, boolean known, List<BnplMerchantFinancingRow> rows) {}
+    public record BnplMerchantFinancingReport(String date, String asOf, boolean known, List<BnplMerchantFinancingRow> rows) {}
 
     /** The merchant financing exposure as of the end of {@code date}, tied to the merchant payables' lines. */
     public BnplMerchantFinancingReport merchantFinancing(String date) {
         LocalDate day = date(date);
-        return read("merchant-financing", day, (uow, known) -> {
+        return read("merchant-financing", day, (uow, known, asOf) -> {
             if (!known) {
-                return new Served<>(new BnplMerchantFinancingReport(day.toString(), false, List.of()), 0);
+                return new Served<>(new BnplMerchantFinancingReport(day.toString(), asOf, false, List.of()), 0);
             }
             Map<String, Balances> payables = new TreeMap<>();
             for (BnplReportReads.Balance balance : reads.payableLines(uow, day)) {
@@ -270,7 +271,7 @@ public final class BnplReports {
                         exact(financing.refunded()), exact(financing.feeReturned()), payableDebit, exposure, ledger,
                         ledger == exposure, failingLegs.getOrDefault(currency, 0L)));
             }
-            return new Served<>(new BnplMerchantFinancingReport(day.toString(), true, List.copyOf(rows)), rows.size());
+            return new Served<>(new BnplMerchantFinancingReport(day.toString(), asOf, true, List.copyOf(rows)), rows.size());
         });
     }
 
@@ -289,14 +290,14 @@ public final class BnplReports {
             long excessToCreditBalanceMinor, long feeReturnedMinor, long payableDebitMinor, long lateFeesReleasedMinor,
             long outstandingReducedMinor, boolean tiesToLedger) {}
 
-    public record BnplRefundReport(String date, boolean known, List<BnplRefundRow> rows) {}
+    public record BnplRefundReport(String date, String asOf, boolean known, List<BnplRefundRow> rows) {}
 
     /** The refunds valued on {@code date} and their impact on outstanding, tied to each refund's own entry. */
     public BnplRefundReport refunds(String date) {
         LocalDate day = date(date);
-        return read("refunds", day, (uow, known) -> {
+        return read("refunds", day, (uow, known, asOf) -> {
             if (!known) {
-                return new Served<>(new BnplRefundReport(day.toString(), false, List.of()), 0);
+                return new Served<>(new BnplRefundReport(day.toString(), asOf, false, List.of()), 0);
             }
             List<BnplRefundRow> rows = new ArrayList<>();
             for (BnplReportReads.RefundSum sum : reads.refunds(uow, day)) {
@@ -310,7 +311,7 @@ public final class BnplReports {
                         exact(sum.payableDebit()), fees, Math.addExact(receivables, fees),
                         Math.addExact(principal, interest) == receivables));
             }
-            return new Served<>(new BnplRefundReport(day.toString(), true, List.copyOf(rows)), rows.size());
+            return new Served<>(new BnplRefundReport(day.toString(), asOf, true, List.copyOf(rows)), rows.size());
         });
     }
 
@@ -325,14 +326,14 @@ public final class BnplReports {
             String product, String currency, int scale, String bucket, long obligations, long defaulted,
             long principalDueMinor, long interestDueMinor, long feesDueMinor, long dueMinor) {}
 
-    public record BnplDelinquencyReport(String date, boolean known, List<BnplDelinquencyRow> rows) {}
+    public record BnplDelinquencyReport(String date, String asOf, boolean known, List<BnplDelinquencyRow> rows) {}
 
     /** The active book by days-past-due bucket as of the end of {@code date}, with its due sums from the ledger. */
     public BnplDelinquencyReport delinquency(String date) {
         LocalDate day = date(date);
-        return read("delinquency", day, (uow, known) -> {
+        return read("delinquency", day, (uow, known, asOf) -> {
             if (!known) {
-                return new Served<>(new BnplDelinquencyReport(day.toString(), false, List.of()), 0);
+                return new Served<>(new BnplDelinquencyReport(day.toString(), asOf, false, List.of()), 0);
             }
             Map<String, Balances> dues = new TreeMap<>();
             for (BnplReportReads.Balance balance : reads.dues(uow, day)) {
@@ -350,7 +351,7 @@ public final class BnplReports {
                         tag(count.bucket()), count.obligations(), count.defaulted(), principal, interest, fees,
                         Math.addExact(Math.addExact(principal, interest), fees)));
             }
-            return new Served<>(new BnplDelinquencyReport(day.toString(), true, List.copyOf(rows)), rows.size());
+            return new Served<>(new BnplDelinquencyReport(day.toString(), asOf, true, List.copyOf(rows)), rows.size());
         });
     }
 
@@ -361,7 +362,7 @@ public final class BnplReports {
 
     @FunctionalInterface
     private interface Read<R> {
-        Served<R> in(Connection snapshot, boolean known);
+        Served<R> in(Connection snapshot, boolean known, String asOf);
     }
 
     /**
@@ -375,8 +376,10 @@ public final class BnplReports {
                 .correlationId();
         boolean[] known = new boolean[1];
         Served<R> served = units.inSnapshot(snapshot -> {
+            // The snapshot's first statement: the database's instant of the snapshot every figure is read from.
+            String asOf = DatabaseTime.now(snapshot).toString();
             known[0] = reportable(snapshot, day);
-            return work.in(snapshot, known[0]);
+            return work.in(snapshot, known[0], asOf);
         });
         units.inTransaction(unitOfWork -> {
             audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, Instant.now(clock),

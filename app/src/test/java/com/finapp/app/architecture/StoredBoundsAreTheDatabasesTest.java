@@ -196,7 +196,16 @@ class StoredBoundsAreTheDatabasesTest {
                         "JdbcPaymentCollections#respond_by",
                         // P17-TSK-027: a customer's transfer list - the window an operator named and its keyset cursor, a row's
                         // own stored stamp - history read, never a deadline judged on an instance's clock.
-                        "JdbcTransferStore#initiated_at")) {
+                        "JdbcTransferStore#initiated_at",
+                        // P17-TSK-037: the trade search's and the cross-border payment search's windows, instants an investigator
+                        // named, and their keyset cursors, a row's own stored stamp - history read, never a deadline judged on an
+                        // instance's clock.
+                        "JdbcFxCollections#booked_at",
+                        "JdbcCrossBorderCollections#created_at",
+                        // P17-TSK-039: the customers report's day, a date an overview reader named - the openings and the last
+                        // changes it places in that day, history read, never a deadline judged on an instance's clock.
+                        "JdbcCustomerReports#opened_at",
+                        "JdbcCustomerReports#status_changed_at")) {
             census.put(asked, Kind.ASKED_ABOUT);
         }
         for (String databases :

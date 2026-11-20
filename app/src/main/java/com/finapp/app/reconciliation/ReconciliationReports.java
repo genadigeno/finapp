@@ -16,6 +16,7 @@ import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.reconciliation.BreakStatus;
 import com.finapp.reconciliation.BreakType;
@@ -156,6 +157,7 @@ public class ReconciliationReports {
 
     /** The suspense report: per currency, then the oldest items, bounded. */
     public record SuspenseReport(
+            String asOf,
             List<SuspenseReportCurrency> currencies,
             List<SuspenseReportItem> items,
             boolean truncated) {}
@@ -167,11 +169,11 @@ public class ReconciliationReports {
      */
     public SuspenseReport suspense() {
         return inOneTransaction(
-                unitOfWork -> {
+                (unitOfWork, asOf) -> {
                     PositionProof.Report swept = proof.sweep(unitOfWork);
                     SuspenseFold fold = new SuspenseFold(today());
                     readings.eachOpenSuspenseItem(unitOfWork, fold);
-                    SuspenseReport report = fold.report(swept.suspenseVerdicts());
+                    SuspenseReport report = fold.report(swept.suspenseVerdicts(), asOf);
                     recordServing(unitOfWork, "suspense", "none",
                             report.currencies().size() + report.items().size());
                     return report;
@@ -219,7 +221,7 @@ public class ReconciliationReports {
                     .add(line.unreleased());
         }
 
-        SuspenseReport report(List<PositionProof.SuspenseVerdict> verdicts) {
+        SuspenseReport report(List<PositionProof.SuspenseVerdict> verdicts, String asOf) {
             Map<String, PositionProof.SuspenseVerdict> proven = new TreeMap<>();
             verdicts.forEach(verdict -> proven.put(verdict.currency().code(), verdict));
             Set<String> currencies = new java.util.TreeSet<>(proven.keySet());
@@ -245,6 +247,7 @@ public class ReconciliationReports {
                                         .orElse(null)));
             }
             return new SuspenseReport(
+                    asOf,
                     bounded(perCurrency), List.copyOf(rows),
                     seen > BOUND || perCurrency.size() > BOUND);
         }
@@ -294,6 +297,7 @@ public class ReconciliationReports {
 
     /** The unmatched report: groups, the open breaks' value at issue, the oldest items. */
     public record UnmatchedReport(
+            String asOf,
             List<UnmatchedReportGroup> groups,
             boolean groupsTruncated,
             List<UnmatchedReportBreaks> openBreaks,
@@ -308,12 +312,12 @@ public class ReconciliationReports {
      */
     public UnmatchedReport unmatched() {
         return inOneTransaction(
-                unitOfWork -> {
+                (unitOfWork, asOf) -> {
                     UnmatchedFold fold = new UnmatchedFold(sourceCodes(unitOfWork), today());
                     readings.eachUnexplainedItem(unitOfWork, fold::item);
                     readings.eachOpenExpectation(unitOfWork, fold::expectation);
                     readings.eachOpenBreak(unitOfWork, fold::openBreak);
-                    UnmatchedReport report = fold.report();
+                    UnmatchedReport report = fold.report(asOf);
                     recordServing(unitOfWork, "unmatched", "none",
                             report.groups().size() + report.openBreaks().size()
                                     + report.items().size());
@@ -405,7 +409,7 @@ public class ReconciliationReports {
                     absent -> new Group());
         }
 
-        UnmatchedReport report() {
+        UnmatchedReport report(String asOf) {
             List<UnmatchedReportGroup> grouped = new ArrayList<>();
             groups.forEach(
                     (key, group) -> {
@@ -432,6 +436,7 @@ public class ReconciliationReports {
                                             rendered(sum.orZero(
                                                     CurrencyCode.of(key.currency()))))));
             return new UnmatchedReport(
+                    asOf,
                     bounded(grouped),
                     grouped.size() > BOUND,
                     bounded(breakGroups),
@@ -478,7 +483,7 @@ public class ReconciliationReports {
 
     /** The summary of one UTC business date, per source code. */
     public record DailySummaryReport(
-            String date, List<DailySummarySource> sources, boolean truncated) {}
+            String date, String asOf, List<DailySummarySource> sources, boolean truncated) {}
 
     /**
      * The summary of one UTC business date ({@code YYYY-MM-DD}; today when absent; ADR-0072
@@ -494,7 +499,7 @@ public class ReconciliationReports {
         Instant from = businessDate.atStartOfDay(ZoneOffset.UTC).toInstant();
         Instant until = businessDate.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
         return inOneTransaction(
-                unitOfWork -> {
+                (unitOfWork, asOf) -> {
                     SummaryFold fold =
                             new SummaryFold(sourceCodes(unitOfWork), businessDate, from, until);
                     readings.acceptedBatchesOfBusinessDate(unitOfWork, businessDate)
@@ -503,7 +508,7 @@ public class ReconciliationReports {
                     readings.eachBreakAround(unitOfWork, from, until, fold::breakLine);
                     readings.resolutionsApprovedBetween(unitOfWork, from, until)
                             .forEach(fold::approved);
-                    DailySummaryReport report = fold.report();
+                    DailySummaryReport report = fold.report(asOf);
                     recordServing(
                             unitOfWork, "summary", businessDate.toString(),
                             report.sources().size());
@@ -632,7 +637,7 @@ public class ReconciliationReports {
             return ageDays <= 30 ? 2 : 3;
         }
 
-        DailySummaryReport report() {
+        DailySummaryReport report(String asOf) {
             List<DailySummarySource> rows = new ArrayList<>();
             for (Map.Entry<String, SourceDay> entry : days.entrySet()) {
                 SourceDay day = entry.getValue();
@@ -673,7 +678,7 @@ public class ReconciliationReports {
                                 List.copyOf(approved),
                                 List.copyOf(bands)));
             }
-            return new DailySummaryReport(date.toString(), bounded(rows), rows.size() > BOUND);
+            return new DailySummaryReport(date.toString(), asOf, bounded(rows), rows.size() > BOUND);
         }
 
         private static List<SummaryBreaks> breakRows(Map<BreakKey, Sum> breaks) {
@@ -739,6 +744,7 @@ public class ReconciliationReports {
     /** The provider-costs report for one calendar month of posting dates. */
     public record ProviderCostsReport(
             String month,
+            String asOf,
             String from,
             String until,
             List<ProviderCostRow> costs,
@@ -767,7 +773,7 @@ public class ReconciliationReports {
         Instant fromInstant = from.atStartOfDay(ZoneOffset.UTC).toInstant();
         Instant untilInstant = until.atStartOfDay(ZoneOffset.UTC).toInstant();
         return inOneTransaction(
-                unitOfWork -> {
+                (unitOfWork, asOf) -> {
                     Map<CurrencyCode, Optional<LedgerAccountId>> costAccounts = new HashMap<>();
                     ProviderCostFold fold =
                             new ProviderCostFold(
@@ -841,6 +847,7 @@ public class ReconciliationReports {
                     ProviderCostsReport report =
                             new ProviderCostsReport(
                                     period.toString(),
+                                    asOf,
                                     from.toString(),
                                     until.toString(),
                                     bounded(rows),
@@ -1177,7 +1184,9 @@ public class ReconciliationReports {
                         // set before the transaction's first statement.
                         unitOfWork.setTransactionIsolation(
                                 Connection.TRANSACTION_REPEATABLE_READ);
-                        return work.apply(unitOfWork);
+                        // The snapshot's first statement: the database's instant of the snapshot every
+                        // figure is read from.
+                        return work.apply(unitOfWork, DatabaseTime.now(unitOfWork).toString());
                     } catch (java.sql.SQLException failure) {
                         throw new IllegalStateException(
                                 "a reconciliation report could not set its snapshot", failure);
@@ -1189,6 +1198,6 @@ public class ReconciliationReports {
 
     @FunctionalInterface
     private interface SqlFunction<R> {
-        R apply(Connection connection) throws java.sql.SQLException;
+        R apply(Connection connection, String asOf) throws java.sql.SQLException;
     }
 }

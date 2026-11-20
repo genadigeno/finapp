@@ -29,6 +29,7 @@ import com.finapp.payments.UnknownDisputeException;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.PlatformErrorCode;
+import com.finapp.platform.persistence.DatabaseTime;
 import java.sql.Connection;
 import java.util.Base64;
 import java.util.List;
@@ -135,6 +136,7 @@ public class DisputeOperations {
      */
     public record ChargebackRatioReport(
             String month,
+            String asOf,
             String windowStart,
             String windowEnd,
             List<MerchantChargebackRatio> merchants,
@@ -718,6 +720,8 @@ public class DisputeOperations {
                         .collect(Collectors.toSet());
         return inOneTransaction(
                 unitOfWork -> {
+                    // The transaction's first statement: the database's instant the counts are at least as fresh as.
+                    String asOf = DatabaseTime.now(unitOfWork).toString();
                     List<DisputeStore.CreditedCounts> counts =
                             reads.chargebackCountsForOperator(
                                     unitOfWork, chargebackRails, from, to, period.toString());
@@ -764,6 +768,7 @@ public class DisputeOperations {
                                     .toList();
                     return new ChargebackRatioReport(
                             period.toString(),
+                            asOf,
                             from.toString(),
                             to.toString(),
                             ranked.subList(0, Math.min(ranked.size(), RATIO_REPORT_BOUND)),
