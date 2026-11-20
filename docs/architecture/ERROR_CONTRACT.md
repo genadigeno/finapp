@@ -138,6 +138,7 @@ visible rather than quietly approximated.
 |---|---|---|
 | `identity.AuthenticationFailed` | 401 | Authentication failed. |
 | `identity.AssuranceRequired` | 403 | This operation requires a stronger authentication. |
+| `identity.CsrfRejected` | 403 | The request was refused as a possible cross-site request. |
 | `identity.FactorRequiredForRole` | 409 | This role cannot be granted until its holder has enrolled a second factor. |
 | `identity.RoleConflict` | 409 | This role cannot be held together with a role the identity already holds. |
 | `identity.LastRoleGranter` | 409 | This would leave no active identity that can grant roles. |

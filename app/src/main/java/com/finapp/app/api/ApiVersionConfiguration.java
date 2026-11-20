@@ -35,6 +35,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 class ApiVersionConfiguration implements WebMvcConfigurer {
 
+    @NonNull private final com.finapp.app.session.SessionCookieGuard sessionCookieGuard;
     @NonNull private final SessionAuthenticationInterceptor sessionAuthentication;
     @NonNull private final com.finapp.app.merchant.MerchantKeyAuthenticationInterceptor merchantKey;
     @NonNull private final com.finapp.app.abuse.SourceLimitInterceptor sourceLimit;
@@ -86,6 +87,8 @@ class ApiVersionConfiguration implements WebMvcConfigurer {
         // unauthenticated caller would otherwise be able to demand. No endpoint declares both
         // annotations today, so this is a decision recorded before it can matter rather than one
         // anybody currently observes.
+        // The cookie's CSRF check (`X-TSK-029`, ADR-0156) before any session is looked up, counted or extended.
+        registry.addInterceptor(sessionCookieGuard);
         registry.addInterceptor(sessionAuthentication);
 
         // The merchant key's door (`P6-TSK-002`), registered AFTER the session interceptor so

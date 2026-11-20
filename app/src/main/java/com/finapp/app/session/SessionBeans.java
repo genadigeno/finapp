@@ -90,6 +90,25 @@ class SessionBeans {
      * {@code GET /v1/operator/me}'s reads (`X-TSK-019`), on the session's template: the session row and the factor read in
      * one transaction of their own.
      */
+    /**
+     * The cookie carrier (`X-TSK-029`, ADR-0156): its allow-list from {@code finapp.session.cookie.allowed-origins}, or -
+     * unset where nothing is deployed - the customer application's local origins; unset on a deployed instance, none.
+     */
+    @Bean
+    SessionCookieCarrier sessionCookieCarrier(
+            com.finapp.app.surface.RequestSurfaces requestSurfaces,
+            @org.springframework.beans.factory.annotation.Value("${finapp.session.cookie.allowed-origins:}")
+                    String allowedOrigins) {
+        return new SessionCookieCarrier(
+                requestSurfaces,
+                SessionCookieCarrier.allowedOrigins(allowedOrigins, requestSurfaces.nothingDeployed()));
+    }
+
+    @Bean
+    SessionCookieGuard sessionCookieGuard(SessionCookieCarrier sessionCookieCarrier) {
+        return new SessionCookieGuard(sessionCookieCarrier);
+    }
+
     @Bean
     OperatorSelfQueries operatorSelfQueries(
             SessionStore<Connection> sessionStore,

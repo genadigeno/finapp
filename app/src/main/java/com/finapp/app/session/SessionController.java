@@ -5,6 +5,7 @@ import com.finapp.identity.SessionId;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -51,6 +52,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SessionController {
 
     @NonNull private final SessionQueries sessions;
+    @NonNull private final SessionCookieCarrier cookies;
 
     /** Every live session of the authenticated identity, newest first. */
     @GetMapping
@@ -68,7 +70,8 @@ public class SessionController {
      */
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void revokeSession(@PathVariable String id, HttpServletRequest request) {
+    public void revokeSession(
+            @PathVariable String id, HttpServletRequest request, HttpServletResponse response) {
         Session current = current(request);
         SessionId target = parse(id);
         if (!sessions.revokeOwnedBy(current, target)) {
@@ -76,17 +79,33 @@ public class SessionController {
             throw new ApiException(
                     PlatformErrorCode.NOT_FOUND, "No live session of this identity matched");
         }
+        if (target.equals(current.id())) {
+            clearCookie(request, response);
+        }
     }
 
     /** Ends the session that made this request. */
     @DeleteMapping("/current")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void logout(HttpServletRequest request) {
+    public void logout(HttpServletRequest request, HttpServletResponse response) {
         Session current = current(request);
         // The result is deliberately ignored. A session that has just been revoked concurrently is
         // gone, which is what the caller asked for - reporting 404 for a successful logout would be
         // telling somebody their logout failed when they are, in fact, logged out.
         sessions.revokeOwnedBy(current, current.id());
+        clearCookie(request, response);
+    }
+
+    /**
+     * Ending the current session on the public surface also clears its cookie (`X-TSK-029`, ADR-0156 decision 4). The
+     * revocation in PostgreSQL is what ends it - a cookie kept by a misbehaving browser names a revoked session, refused at
+     * its next request on every replica (`INV-IDN-03`). Not elsewhere: the cookie is never read there, and on one local host
+     * the console's sign-out would otherwise clear the customer application's cookie.
+     */
+    private void clearCookie(HttpServletRequest request, HttpServletResponse response) {
+        if (cookies.onPublicSurface(request)) {
+            response.addHeader(org.springframework.http.HttpHeaders.SET_COOKIE, SessionCookieCarrier.cleared());
+        }
     }
 
     // -----------------------------------------------------------------

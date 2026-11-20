@@ -501,6 +501,24 @@ front of the application (no edge network named and its database on loopback) th
 role-holder is any identity holding a live role, read from the grants on every request, so a staff member who is also a customer with
 the same login signs in on the operator surface only, their own accounts included.
 
+## 8b. The session cookie on the public surface — **Implemented** (`X-TSK-029`, ADR-0156)
+
+A session travels as `Authorization: Bearer <token>` everywhere. **On the public surface only**, it may travel instead in the
+cookie `__Host-fa_session` (`Path=/; Secure; HttpOnly; SameSite=Strict`, no `Domain`, no lifetime of its own - the server's idle
+and absolute bounds stay the only expiry), so the customer application never sees the token and a reload keeps the session.
+
+- **Opting in.** A request carrying `X-Finapp-Session-Carrier: cookie` receives the session as `Set-Cookie` from the three doors
+  that issue one - `POST /v1/authentications`, `POST /v1/authentications/mfa`, `POST /v1/me/credential` - and their body then
+  **omits `sessionToken`**. Without the header every answer is exactly as before. Each rotation replaces the cookie;
+  `DELETE /v1/sessions/current`, and revoking the current session by id, answer it with `Max-Age=0`.
+- **CSRF.** On the public surface every `POST`, `PUT`, `PATCH` and `DELETE` that presents the cookie or opts in must carry
+  `X-Finapp-Request: 1` and an `Origin` in `finapp.session.cookie.allowed-origins`; otherwise `403 identity.CsrfRejected`,
+  before any handler. The allow-list is empty on a deployed instance until it is set (fail closed); where nothing is deployed it
+  defaults to the customer application's local origins.
+- **One carrier.** A public request presenting both a bearer header and the cookie is `401 api.Unauthenticated`.
+- **Never staff's.** The cookie is ignored on the operator surface, an unmarked request and the single local port: the console's
+  bearer token alone authenticates there.
+
 ## 9. What is deliberately not decided here
 
 Recorded so their absence is not mistaken for an oversight.

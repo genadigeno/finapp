@@ -126,7 +126,7 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
         com.finapp.app.surface.OperatorsRefusedOnPublic door =
                 surface.admitsRoleHolders() ? null : annotation(handlerMethod, com.finapp.app.surface.OperatorsRefusedOnPublic.class);
         Established established =
-                presentedToken(request)
+                presentedToken(request, surface)
                         .flatMap(token -> authenticate(token, operatorAct != null || anyRole != null || door != null))
                         .orElseThrow(
                                 () ->
@@ -269,14 +269,33 @@ public final class SessionAuthenticationInterceptor implements HandlerIntercepto
      *
      * <p>A malformed header yields empty rather than its own error, so a client learns nothing from
      * the difference between "you sent nonsense" and "your session is gone".
+     *
+     * <p><strong>Or the cookie, on the public surface only</strong> (`X-TSK-029`, ADR-0156): {@value
+     * SessionCookieCarrier#COOKIE}, read there and ignored everywhere else, so staff never authenticate by it. Its CSRF check
+     * has already run, in {@link SessionCookieGuard}, ahead of this interceptor. A request on the public surface presenting
+     * <em>both</em> carriers is refused rather than read one way: which session acts is never a guess (decision 7).
      */
-    private static Optional<SessionToken> presentedToken(HttpServletRequest request) {
+    static Optional<SessionToken> presentedToken(
+            HttpServletRequest request, com.finapp.app.surface.Surface surface) {
+        Optional<String> bearer = bearer(request);
+        Optional<String> cookie =
+                surface == com.finapp.app.surface.Surface.PUBLIC
+                        ? SessionCookieCarrier.cookieValue(request)
+                        : Optional.empty();
+        if (bearer.isPresent() && cookie.isPresent()) {
+            throw new ApiException(
+                    PlatformErrorCode.UNAUTHENTICATED, "Both a bearer token and the session cookie were presented");
+        }
+        return bearer.or(() -> cookie).map(SessionToken::of);
+    }
+
+    private static Optional<String> bearer(HttpServletRequest request) {
         String header = request.getHeader("Authorization");
         if (header == null || !header.startsWith(SCHEME)) {
             return Optional.empty();
         }
         String presented = header.substring(SCHEME.length()).strip();
-        return presented.isEmpty() ? Optional.empty() : Optional.of(SessionToken.of(presented));
+        return presented.isEmpty() ? Optional.empty() : Optional.of(presented);
     }
 
     /**

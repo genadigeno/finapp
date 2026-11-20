@@ -28,9 +28,23 @@ package com.finapp.app.authentication;
  * session"* tells them what they already know. In particular it does **not** say whether MFA is
  * enrolled - the level is a property of this session, not of the identity - so `INV-IDN-07` is
  * untouched.
+ *
+ * <h2>The token is absent when the cookie carries it (`X-TSK-029`, ADR-0156)</h2>
+ *
+ * <p>A request on the public surface that opts in receives the token as an HttpOnly cookie, and this body without it -
+ * {@code sessionToken} is then omitted, never {@code null}, so no script ever sees the value.
  */
 public record AuthenticatedSession(
-        String sessionToken, String assurance, java.time.Instant expiresAt) {
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                String sessionToken,
+        String assurance,
+        java.time.Instant expiresAt)
+        implements com.finapp.app.session.IssuesSessionToken {
+
+    @Override
+    public AuthenticatedSession withoutSessionToken() {
+        return new AuthenticatedSession(null, assurance, expiresAt);
+    }
 
     /**
      * Masked, closing the half of `secretsAreWrapped` that still applies.

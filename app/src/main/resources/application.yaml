@@ -187,6 +187,13 @@ finapp:
       # plus a random 0 to the spread, whole seconds, so clients refused together by an outage do not return together.
       retry-after: ${FINAPP_API_DATABASE_UNREACHABLE_RETRY_AFTER:PT5S}
       retry-after-spread: ${FINAPP_API_DATABASE_UNREACHABLE_RETRY_AFTER_SPREAD:PT5S}
+  # The customer session's HttpOnly cookie on the public surface (X-TSK-029, ADR-0156): the exact origins (comma-separated) an
+  # unsafe cookie-carried request may come from. Blank: where nothing is deployed, the customer application's local origins
+  # (http://localhost:5180, :4180); on a deployed instance, NONE - every cookie request refused (403 identity.CsrfRejected), fail
+  # closed. A deployed public edge sets it to the public origin.
+  session:
+    cookie:
+      allowed-origins: ${FINAPP_SESSION_COOKIE_ALLOWED_ORIGINS:}
   shedding:
     # A public request is shed while this many threads already wait for a writer connection: about one pool's worth of queue.
     pool-waiters: ${FINAPP_SHEDDING_POOL_WAITERS:7}

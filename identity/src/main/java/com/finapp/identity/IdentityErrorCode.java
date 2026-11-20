@@ -53,6 +53,21 @@ public enum IdentityErrorCode implements ErrorCode {
             "This operation requires a stronger authentication."),
 
     /**
+     * An unsafe request carried by the session cookie, or opting in to it, lacked the custom header or an allowed
+     * {@code Origin} (`X-TSK-029`, ADR-0156 decision 5) - a possible cross-site request.
+     *
+     * <p><strong>One code for every reason</strong> - no header, a wrong value, no {@code Origin}, a foreign one - so a probe
+     * learns nothing about which check it failed. Refused before any handler, session lookup or count.
+     *
+     * <p><strong>403, not 401</strong>: the session, if any, is not the problem - a client that discarded it on this answer
+     * would sign a customer out because some page tried to forge a request.
+     */
+    CSRF_REJECTED(
+            "identity.CsrfRejected",
+            403,
+            "The request was refused as a possible cross-site request."),
+
+    /**
      * A role that can redirect a merchant's money was granted to an identity with no enrolled factor (`P15-TSK-039`;
      * {@code PRIVILEGED_ACCESS_REVIEW.md} §6).
      *

@@ -22,9 +22,21 @@ package com.finapp.app.mfa;
  * <p>The name is `sessionToken` - what it is - rather than something chosen to avoid a build rule.
  * If `secretsAreWrapped` refuses it, that is a decision to make out loud rather than to dodge, and
  * `P1-TSK-027` inherits whatever shape this settles on.
+ *
+ * <p><strong>Absent when the cookie carries it</strong> (`X-TSK-029`, ADR-0156): on the public surface an opted-in request
+ * receives the rotated token as the HttpOnly cookie, which replaces the old one, and this body without it.
  */
 public record ElevatedSession(
-        String sessionToken, String assurance, java.time.Instant expiresAt) {
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+                String sessionToken,
+        String assurance,
+        java.time.Instant expiresAt)
+        implements com.finapp.app.session.IssuesSessionToken {
+
+    @Override
+    public ElevatedSession withoutSessionToken() {
+        return new ElevatedSession(null, assurance, expiresAt);
+    }
 
     /**
      * Masked, and this is the half of `secretsAreWrapped` that still applies.

@@ -191,6 +191,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0153](ADR-0153-a-customer-accounts-restriction.md) | A customer account's restriction: suspension and reinstatement by four eyes, refusing new outflows at each command's own check | Accepted | 17 | Accounts (the agreement) · risk's account actions · transfers, payments, fx (their outflow checks) |
 | [0154](ADR-0154-the-operators-money-acts-by-four-eyes.md) | The operator's money acts: four eyes for a transfer reversal and a merchant closure, four eyes above a versioned per-currency threshold for a refund and an operator payout, and a key on every one | Accepted | 17 | Transfers · Payments · Merchant · Identity |
 | [0155](ADR-0155-a-kyc-case-awaits-the-customer.md) | A KYC case awaits the customer: a reviewer's request for information, its answer and its expiry | Accepted | 17 | KYC |
+| [0155](ADR-0156-the-customer-session-in-an-httponly-cookie.md) | The customer session in an HttpOnly cookie on the public surface, with a CSRF defence (finapp-front-end ADR-F02 adopted) | Accepted | 17 | Identity (sessions) · the API's session carrier · the Customer Application |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch

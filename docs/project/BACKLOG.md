@@ -33179,6 +33179,32 @@ applied and verified 2026-09-23; criterion 5 met by the Phase 6 → 7 transition
   **Risk**: Medium - dropped early, a retry of a request made before the move acts again. **Cx**: S.
   **DoD**: `DOD-FIN`, `DOD-SEC`, `DOD-TEST`
 
+**X-TSK-029 — The customer session in an HttpOnly cookie on the public surface, with a CSRF defence** — `IN PROGRESS`
+*(2026-11-20; pulled forward from Phase 18 by the owner: asked for "the most secured way" to keep a customer signed in across a
+reload and told it was Phase 18's (`What Phase 17 must not implement`: cookie sessions, D-4), the owner said "do it"; branch
+`X-TSK-029`)*
+- **Context**: `app` (`session`, `authentication`, `mfa`, `api`) and `identity` (`IdentityErrorCode`); finapp-front-end ADR-F02,
+  its `FINAPP_BACKEND_WORK.md` **B0.2** (adopt ADR-F02 here) and **B1.1** (the carrier and the CSRF defence, gap G-04).
+- **Description**: ADR-0156. On the public surface only, a request opting in (`X-Finapp-Session-Carrier: cookie`) receives its
+  session as `__Host-fa_session` (`Path=/; Secure; HttpOnly; SameSite=Strict`, no lifetime of its own) from sign-in, step-up and
+  password change, the body without `sessionToken` (`SessionCookieAdvice` over `IssuesSessionToken`); rotation replaces it, signing
+  out clears it. Every unsafe request presenting the cookie or opting in needs `X-Finapp-Request: 1` and an `Origin` in
+  `finapp.session.cookie.allowed-origins` - `403 identity.CsrfRejected` otherwise, before any handler (`SessionCookieGuard`, ahead
+  of the session interceptor). Both carriers at once on the public surface: `401 api.Unauthenticated`. The cookie is ignored on
+  the operator surface, an unmarked request and the single port. The allow-list is empty on a deployed instance until set (fail
+  closed); where nothing is deployed it defaults to the customer application's local origins. The customer application's dev
+  server selects the cookie carrier and marks its proxied requests `X-Finapp-Surface: public`, and restores a session on start-up
+  from `GET /v1/sessions`.
+- **Deps**: none. **Owner decisions** (the standing ruling of 2026-11-20, "my answer is your recommended options"): the
+  `__Host-` name and `Path=/` over ADR-F02's `fa_session; Path=/v1` (the prefix forbids a planted or overwritten cookie; a path is
+  no boundary within one origin); the local allow-list default; the CSRF refusal under `identity.` as ADR-F02 proposed.
+- **Accept** (B1.1's): a cross-site form post, a cross-origin request without the header, a foreign or missing `Origin` and a
+  forced sign-in refused `403 identity.CsrfRejected`; the cookie ignored on the operator surface and the single port; both
+  carriers refused; the cookie issued on an opted-in sign-in and replaced on step-up, the body then without the token; without
+  the opt-in every answer unchanged; signing out clears it; a revoked session refused at its next request (`INV-IDN-03`, the
+  cookie a carrier only). **Risk**: High - a CSRF surface where there was none. **Cx**: M.
+  **DoD**: `DOD-SEC`, `DOD-API`
+
 **X-TSK-004 — A second verified contact channel is refused, not a `500`** — `COMPLETE`
 *(2026-09-24. See **Result**)*
 - **Context**: `identity` (contact channels, `P1-TSK-023`) and `app` (the verification endpoint).
