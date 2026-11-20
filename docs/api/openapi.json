@@ -14460,6 +14460,47 @@
         },
         "type": "object"
       },
+      "BnplAgreementHeadView": {
+        "properties": {
+          "agreementId": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "closureReason": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "obligationId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "purchaseId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BnplAgreementListView": {
         "properties": {
           "agreements": {
@@ -14467,6 +14508,20 @@
               "$ref": "#/components/schemas/BnplAgreementSummaryView"
             },
             "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "BnplAgreementPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BnplAgreementHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -14637,6 +14692,58 @@
         ],
         "type": "object"
       },
+      "BnplApplicationHeadView": {
+        "properties": {
+          "applicationId": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "closureReason": {
+            "type": "string"
+          },
+          "decisionRequestId": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string"
+          },
+          "termsVersionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplApplicationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BnplApplicationHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BnplApplicationView": {
         "properties": {
           "applicationId": {
@@ -14760,6 +14867,9 @@
       },
       "BnplDelinquencyReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -15961,6 +16071,9 @@
       },
       "BnplMerchantFinancingReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -16450,6 +16563,9 @@
       },
       "BnplPortfolioReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "currencies": {
             "items": {
               "$ref": "#/components/schemas/BnplBookTie"
@@ -16583,6 +16699,93 @@
         },
         "type": "object"
       },
+      "BnplPurchaseRefundPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BnplPurchaseRefundView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplPurchaseRefundView": {
+        "properties": {
+          "agreementId": {
+            "type": "string"
+          },
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "cancelledBilled": {
+            "type": "string"
+          },
+          "cancelledUnbilled": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "door": {
+            "type": "string"
+          },
+          "excess": {
+            "type": "string"
+          },
+          "excessTo": {
+            "type": "string"
+          },
+          "feeReturned": {
+            "type": "string"
+          },
+          "interestAccruedReleased": {
+            "type": "string"
+          },
+          "interestDueReleased": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "payableDebit": {
+            "type": "string"
+          },
+          "purchaseId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "refundId": {
+            "type": "string"
+          },
+          "refundedBefore": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "scheduleVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BnplRefundBody": {
         "properties": {
           "amount": {
@@ -16610,6 +16813,9 @@
       },
       "BnplRefundReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -16946,6 +17152,52 @@
           "sequence": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BnplServicingRequestPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BnplServicingRequestView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplServicingRequestView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reasonSummary": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -17975,6 +18227,9 @@
       },
       "ChargebackRatioReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "merchants": {
             "items": {
               "$ref": "#/components/schemas/MerchantChargebackRatio"
@@ -18578,6 +18833,57 @@
         ],
         "type": "object"
       },
+      "CorridorAvailabilityItem": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "changedAt": {
+            "type": "string"
+          },
+          "changedBy": {
+            "type": "string"
+          },
+          "corridor": {
+            "type": "string"
+          },
+          "deliveryEstimateHours": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "maximumAmount": {
+            "type": "string"
+          },
+          "maximumCurrency": {
+            "type": "string"
+          },
+          "rails": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CorridorAvailabilityList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CorridorAvailabilityItem"
+            },
+            "type": "array"
+          },
+          "policyVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "CorridorAvailabilityReceipt": {
         "properties": {
           "corridor": {
@@ -18642,6 +18948,52 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CorridorEnableRequestItem": {
+        "properties": {
+          "corridor": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CorridorEnableRequestPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CorridorEnableRequestItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -18758,6 +19110,9 @@
       },
       "CorridorReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "corridors": {
             "items": {
               "$ref": "#/components/schemas/CorridorRow"
@@ -19182,6 +19537,71 @@
           "currency",
           "product"
         ],
+        "type": "object"
+      },
+      "CreditDecisionRequestHeadView": {
+        "properties": {
+          "closureReason": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "pinnedModelVersionId": {
+            "type": "string"
+          },
+          "pinnedPolicyVersionId": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "requestedAmount": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string"
+          },
+          "termMonths": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CreditDecisionRequestPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CreditDecisionRequestHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "CreditDecisionRequestView": {
@@ -19618,6 +20038,73 @@
         },
         "type": "object"
       },
+      "CreditPolicyVersionHeadView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreditPolicyVersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CreditPolicyVersionHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreditPolicyVersionView": {
+        "properties": {
+          "policy": {
+            "$ref": "#/components/schemas/CreditPolicyView"
+          },
+          "version": {
+            "$ref": "#/components/schemas/CreditPolicyVersionHeadView"
+          }
+        },
+        "type": "object"
+      },
       "CreditPolicyView": {
         "properties": {
           "assessmentRateBps": {
@@ -19873,6 +20360,64 @@
         },
         "type": "object"
       },
+      "CrossBorderPaymentItem": {
+        "properties": {
+          "beneficiaryId": {
+            "type": "string"
+          },
+          "corridor": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "deliveredAmount": {
+            "type": "string"
+          },
+          "destinationCurrency": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "feeAmount": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ownerPartyId": {
+            "type": "string"
+          },
+          "sentAmount": {
+            "type": "string"
+          },
+          "sourceCurrency": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "totalDebitAmount": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CrossBorderPaymentPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CrossBorderPaymentItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CrossBorderPaymentRequest": {
         "properties": {
           "quoteId": {
@@ -20101,8 +20646,52 @@
         },
         "type": "object"
       },
+      "CustomerStatusRow": {
+        "properties": {
+          "changedOnDay": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "openedOnDay": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "standing": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CustomersReportView": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/CustomerStatusRow"
+            },
+            "type": "array"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "DailySummaryReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -21879,6 +22468,37 @@
         },
         "type": "object"
       },
+      "FxAvailabilityItem": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "changedAt": {
+            "type": "string"
+          },
+          "changedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FxAvailabilityList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FxAvailabilityItem"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "FxDecisionRequest": {
         "properties": {
           "reason": {
@@ -21890,6 +22510,55 @@
         "required": [
           "reason"
         ],
+        "type": "object"
+      },
+      "FxEnableRequestItem": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FxEnableRequestPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FxEnableRequestItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "FxPositionReport": {
@@ -21953,8 +22622,52 @@
         },
         "type": "object"
       },
+      "FxRateList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FxRateView"
+            },
+            "type": "array"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FxRateView": {
+        "properties": {
+          "ageSeconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "base": {
+            "type": "string"
+          },
+          "observedAt": {
+            "type": "string"
+          },
+          "pair": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "FxRevenueReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "month": {
             "type": "string"
           },
@@ -21976,6 +22689,67 @@
           },
           "truncated": {
             "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "FxTradeItem": {
+        "properties": {
+          "bookedAt": {
+            "type": "string"
+          },
+          "bookedOn": {
+            "type": "string"
+          },
+          "destinationAmount": {
+            "type": "string"
+          },
+          "destinationCurrency": {
+            "type": "string"
+          },
+          "executedRate": {
+            "type": "string"
+          },
+          "fixedSide": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ownerPartyId": {
+            "type": "string"
+          },
+          "pair": {
+            "type": "string"
+          },
+          "providerCode": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "sourceAmount": {
+            "type": "string"
+          },
+          "sourceCurrency": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FxTradePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FxTradeItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -23127,6 +23901,9 @@
       },
       "LendingAccrualReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -23204,6 +23981,9 @@
       },
       "LendingCapitalReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -23257,6 +24037,9 @@
       },
       "LendingDelinquencyReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -23316,6 +24099,9 @@
       },
       "LendingPortfolioReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "currencies": {
             "items": {
               "$ref": "#/components/schemas/LendingBookTie"
@@ -23759,6 +24545,49 @@
         ],
         "type": "object"
       },
+      "LoanApplicationHeadView": {
+        "properties": {
+          "applicationId": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "decisionRequestId": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string"
+          },
+          "termsVersionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoanApplicationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LoanApplicationHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "LoanApplicationView": {
         "properties": {
           "applicationId": {
@@ -23960,6 +24789,41 @@
         },
         "type": "object"
       },
+      "LoanHeadView": {
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "defaulted": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "loanId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "LoanListView": {
         "properties": {
           "loans": {
@@ -24057,6 +24921,20 @@
         },
         "type": "object"
       },
+      "LoanPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LoanHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "LoanRepaymentBody": {
         "properties": {
           "amount": {
@@ -24102,6 +24980,52 @@
             "type": "integer"
           },
           "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoanServicingRequestPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LoanServicingRequestView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoanServicingRequestView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reasonSummary": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectKind": {
             "type": "string"
           }
         },
@@ -24343,6 +25267,62 @@
           "version": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "LoanTermsVersionHeadView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoanTermsVersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LoanTermsVersionHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -25771,6 +26751,9 @@
       },
       "OutcomesReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "decisions": {
             "format": "int64",
             "type": "integer"
@@ -26468,10 +27451,10 @@
       },
       "PaymentsReportView": {
         "properties": {
-          "date": {
+          "asOf": {
             "type": "string"
           },
-          "generatedAt": {
+          "date": {
             "type": "string"
           },
           "outcomes": {
@@ -27168,6 +28151,9 @@
       },
       "PositionsReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "cash": {
             "items": {
               "$ref": "#/components/schemas/CashRow"
@@ -27894,6 +28880,9 @@
       },
       "ProviderCostsReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "costs": {
             "items": {
               "$ref": "#/components/schemas/ProviderCostRow"
@@ -28103,6 +29092,9 @@
       },
       "ReasonsReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "decisions": {
             "format": "int64",
             "type": "integer"
@@ -33453,6 +34445,50 @@
         },
         "type": "object"
       },
+      "ScorecardAttributeView": {
+        "properties": {
+          "absentPoints": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "bands": {
+            "items": {
+              "$ref": "#/components/schemas/ScorecardBandView"
+            },
+            "type": "array"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ScorecardBandView": {
+        "properties": {
+          "codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lower": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "points": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "upper": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "ScorecardDecisionRequest": {
         "properties": {
           "reason": {
@@ -33509,6 +34545,80 @@
           "version": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ScorecardVersionHeadView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ScorecardVersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScorecardVersionHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ScorecardVersionView": {
+        "properties": {
+          "attributes": {
+            "items": {
+              "$ref": "#/components/schemas/ScorecardAttributeView"
+            },
+            "type": "array"
+          },
+          "basePoints": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "version": {
+            "$ref": "#/components/schemas/ScorecardVersionHeadView"
           }
         },
         "type": "object"
@@ -34048,6 +35158,9 @@
       },
       "SourcesReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "dataRequests": {
             "format": "int64",
             "type": "integer"
@@ -34324,6 +35437,9 @@
       },
       "SuspenseReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "currencies": {
             "items": {
               "$ref": "#/components/schemas/SuspenseReportCurrency"
@@ -34627,6 +35743,27 @@
         },
         "type": "object"
       },
+      "TransferOutcomeRow": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "TransferPage": {
         "properties": {
           "items": {
@@ -34720,6 +35857,23 @@
         },
         "type": "object"
       },
+      "TransfersReportView": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/TransferOutcomeRow"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "UnlockDecisionRequest": {
         "properties": {
           "reason": {
@@ -34756,6 +35910,9 @@
       },
       "UnmatchedReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "groups": {
             "items": {
               "$ref": "#/components/schemas/UnmatchedReportGroup"
@@ -41809,6 +42966,100 @@
         }
       }
     },
+    "/v1/operator/bnpl-agreements": {
+      "get": {
+        "operationId": "listBnplAgreementsForOperator",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "merchantId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplAgreementPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl-agreements/servicing-requests": {
+      "get": {
+        "operationId": "listBnplServicingRequests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplServicingRequestPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/bnpl-agreements/write-offs": {
       "get": {
         "operationId": "listPendingBnplWriteOffs",
@@ -42416,6 +43667,49 @@
         }
       }
     },
+    "/v1/operator/bnpl-applications": {
+      "get": {
+        "operationId": "listBnplApplications",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplApplicationPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/bnpl-disputes": {
       "get": {
         "operationId": "listBnplDisputes",
@@ -42622,6 +43916,47 @@
       }
     },
     "/v1/operator/bnpl-purchases/{id}/refunds": {
+      "get": {
+        "operationId": "listBnplPurchaseRefunds",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplPurchaseRefundPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "refundBnplPurchaseForMerchant",
         "parameters": [
@@ -42853,6 +44188,57 @@
         }
       }
     },
+    "/v1/operator/credit/decision-requests": {
+      "get": {
+        "operationId": "listCreditDecisionRequests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "product",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditDecisionRequestPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/credit/decisions/{id}/explanation": {
       "get": {
         "operationId": "explanation",
@@ -42983,6 +44369,84 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/policies/versions": {
+      "get": {
+        "operationId": "listCreditPolicyVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "product",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditPolicyVersionPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/policies/versions/{versionId}": {
+      "get": {
+        "operationId": "readCreditPolicyVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditPolicyVersionView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }
@@ -43318,6 +44782,47 @@
       }
     },
     "/v1/operator/credit/scorecards": {
+      "get": {
+        "operationId": "listScorecardVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScorecardVersionPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "proposeScorecard",
         "parameters": [
@@ -43350,6 +44855,33 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/scorecards/{versionId}": {
+      "get": {
+        "operationId": "readScorecardVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScorecardVersionView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }
@@ -43436,6 +44968,49 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ScorecardReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/cross-border/corridor-enable-requests": {
+      "get": {
+        "operationId": "listCorridorEnableRequests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorridorEnableRequestPage"
                 }
               }
             },
@@ -43689,6 +45264,23 @@
         }
       }
     },
+    "/v1/operator/cross-border/corridors": {
+      "get": {
+        "operationId": "listOperatorCorridors",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorridorAvailabilityList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/cross-border/corridors/{corridor}/availability": {
       "post": {
         "operationId": "setCorridorAvailability",
@@ -43726,6 +45318,73 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CorridorAvailabilityReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/cross-border/payments": {
+      "get": {
+        "operationId": "listOperatorCrossBorderPayments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "corridor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossBorderPaymentPage"
                 }
               }
             },
@@ -44599,6 +46258,49 @@
         }
       }
     },
+    "/v1/operator/fx/enable-requests": {
+      "get": {
+        "operationId": "listFxEnableRequests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxEnableRequestPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/fx/enable-requests/{rid}": {
       "get": {
         "operationId": "readFxEnableRequest",
@@ -44692,6 +46394,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EnableReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/fx/pairs": {
+      "get": {
+        "operationId": "listFxPairs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxAvailabilityList"
                 }
               }
             },
@@ -44889,6 +46608,23 @@
         }
       }
     },
+    "/v1/operator/fx/providers": {
+      "get": {
+        "operationId": "listFxProviders",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxAvailabilityList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/fx/providers/{code}/availability": {
       "post": {
         "operationId": "setFxProviderAvailability",
@@ -44926,6 +46662,90 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AvailabilityReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/fx/rates": {
+      "get": {
+        "operationId": "listFxReferenceRates",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxRateList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/fx/trades": {
+      "get": {
+        "operationId": "listFxTrades",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pair",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxTradePage"
                 }
               }
             },
@@ -45834,6 +47654,57 @@
         }
       }
     },
+    "/v1/operator/lending/terms/versions": {
+      "get": {
+        "operationId": "listLoanTermsVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "product",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanTermsVersionPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/lending/terms/{versionId}/approval": {
       "post": {
         "operationId": "approveLoanTerms",
@@ -45916,6 +47787,151 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LoanTermsReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loan-applications": {
+      "get": {
+        "operationId": "listLoanApplications",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanApplicationPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans": {
+      "get": {
+        "operationId": "listLoansForOperator",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "partyId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/servicing-requests": {
+      "get": {
+        "operationId": "listLoanServicingRequests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanServicingRequestPage"
                 }
               }
             },
@@ -46337,6 +48353,68 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LoanReplayView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}/schedule": {
+      "get": {
+        "operationId": "readLoanScheduleForOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}/statements": {
+      "get": {
+        "operationId": "readLoanStatementsForOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementListView"
                 }
               }
             },
@@ -50065,6 +52143,33 @@
         }
       }
     },
+    "/v1/operator/reports/customers": {
+      "get": {
+        "operationId": "readCustomersReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomersReportView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/reports/fx/position": {
       "get": {
         "operationId": "readFxPositionReport",
@@ -50449,6 +52554,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RiskVelocityReportView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/transfers": {
+      "get": {
+        "operationId": "readTransfersReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransfersReportView"
                 }
               }
             },
