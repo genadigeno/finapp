@@ -409,6 +409,15 @@ CRITICAL; T35, T38, T43 and T44 to HIGH. Each had understated a likelihood the d
 impact they call SEVERE. T42 moved from B8 to B9, because the image pull is the cluster's. T45, T46 and T47 were
 added.)*
 
+*(Re-read 2026-11-20 by P17-DOC-002, the Phase 17 exit review (draft, `reviews/PHASE_17_REVIEW.md`): Phase 17's threats,
+T48-T56, read again against §1.3's words and what the phase built. **No likelihood, impact or rating changes**: a rating is
+inherent and does not fall as controls land. Two were read twice. T49 stays HIGH: a framed approval completes a money act
+only with an insider's proposal already pending, so reading its impact as SEVERE makes it two footholds (LOW × SEVERE), HIGH
+either way. T56 stays HIGH: every plant is made under the seed's own named identities and its doors' records, so nothing is
+altered without detection, and no posting is planted. What stays open: T53's residual on §6 item 73 (a), awaiting the owner;
+T48's and T54's cluster rows `PLANNED` on `P17-TST-001`, which the owner stopped on 2026-11-20; T50's fee-schedule row
+`PLANNED` on `P17-TSK-123`.)*
+
 ---
 
 ## 4. Controls and evidence
@@ -1210,6 +1219,13 @@ What a threat's controls leave open, stated so it is not mistaken for coverage. 
   faulty console's storm meets the operator edge's per-source rate limit and in-flight bound first (T52) *(read "so until
   P17-TSK-103 a faulty console's storm meets only the pool's own wait" until then)*. A workstation compromised while its session is live is answered by none of them
   (owner item 73).
+  *(Re-read 2026-11-20 by P17-DOC-002, the Phase 17 exit review, draft: the ratings stand (§3's note). Built since P17-INIT
+  and evidenced in §4: no-store on every operator answer (T55), a factor on every act and a factor at grant (T50, T53), the
+  operator edge's per-source bounds (T52), the console's image admitted signed and attested (T54), and four eyes on the
+  operator's money doors (T50, ADR-0154). No run on a cluster exists for any of them: the end-to-end battery, `P17-TST-001`,
+  was stopped by the owner on 2026-11-20. Item 73 (a) asked the exit review whether operator sessions outlast the console's
+  work. No measurement of operator use exists, so the review cannot find that they do, and recommendation (i) stands. The
+  acceptance is the owner's.)*
 
 ---
 
