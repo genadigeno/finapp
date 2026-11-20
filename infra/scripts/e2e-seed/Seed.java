@@ -26,13 +26,16 @@ import javax.net.ssl.TrustManagerFactory;
 
 /**
  * TEST-ONLY. The HTTP half of the Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112,
- * P17-TSK-115, P17-TSK-117): every
+ * P17-TSK-113, P17-TSK-115, P17-TSK-117, P17-TSK-119): every
  * effect the platform has a door for, through that door - registration, a second factor, a step-up, a role grant, a risk policy
  * proposed and activated, a case opened and taken; and the books' finance acts - a GL mapping version, a manual adjustment, a month's
  * nil reports, a month locked and closed by four eyes, a prior-period adjustment, a regulatory obligation and its validated return. And
  * the merchant desks' - a merchant onboarded and keyed, a card top-up, and the card PSP's own word that it is disputed (P17-TSK-115).
  * And the credit desks' - the reference scorecard approved, a credit policy, lending terms and BNPL terms proposed and decided by four
- * eyes, and a customer's stepped-up credit request (P17-TSK-117). A single source file run by {@code infra/scripts/e2e-seed.sh}
+ * eyes, and a customer's stepped-up credit request (P17-TSK-117). And the FX controller's - a pricing policy and a corridor policy
+ * proposed and decided by four eyes, a pair and a corridor disabled and their enabling proposed, and a customer's conversion
+ * (P17-TSK-119). And a customer's consent to KYC processing, which every case's customer has given (P17-TSK-113). A single source
+ * file run by {@code infra/scripts/e2e-seed.sh}
  * ({@code java --source 21}), never compiled into anything and named by no module's main source set (E2eSeedStaysTestOnlyTest).
  *
  * <p>It has no route to the database and must not have one. What only the database can answer - a test identity's id, which no API
@@ -109,6 +112,11 @@ public final class Seed {
             case "propose-version" -> seed.proposeVersion(rest[0], rest[1], rest[2]);
             case "decide-version" -> seed.decideVersion(rest[0], rest[1], rest[2], rest[3]);
             case "credit-request" -> seed.creditRequest(one(rest));
+            case "disable" -> seed.disable(rest[0], rest[1], rest[2]);
+            case "propose-enable" -> seed.proposeEnable(rest[0], rest[1], rest[2]);
+            case "decide-enable" -> seed.decideEnable(rest[0], rest[1], rest[2], rest[3]);
+            case "fx-trade" -> seed.fxTrade(one(rest));
+            case "kyc-consent" -> seed.kycConsent(one(rest));
             default -> throw new IllegalArgumentException("unknown command " + args[3]);
         }
     }
@@ -743,13 +751,108 @@ public final class Seed {
                 + "\"agreementTemplateVersion\":1,\"reason\":\"" + reason + "\"}";
     }
 
+    /** The five postable currencies, as the ledger supports them (SupportedCurrencies). */
+    private static final java.util.List<String> CURRENCIES = java.util.List.of("EUR", "GBP", "USD", "JPY", "BHD");
+
+    /**
+     * The FX pricing policy's version 1 as OPERATIONS_RUNBOOK section 2 has two FX controllers propose and approve it (P9-TSK-007,
+     * the phase plan's O7; no migration seeds it, D26), so a stack's pricing never narrows when the console approves the seed's
+     * proposal: every directional pair of the five currencies under both purposes, 40 rows, on fx-sim-a; spread 0.003500 and markup
+     * 0.001500; rate scale 10 from JPY and 6 otherwise, the rate towards zero and amounts and margin half-even; a 30 s window for a
+     * conversion and 60 s across a border, a 10 s cover margin; a 150 bps band among EUR, GBP and USD and 300 bps with JPY or BHD; the
+     * reference at most 120 s old; five open quotes; notional bounds EUR, GBP and USD 1.00-50,000.00, JPY 100-7,500,000 and BHD
+     * 0.500-20,000.000. Amounts and fractions are decimal strings, never JSON numbers.
+     */
+    static String fxPricingPolicy(String reason) {
+        java.util.List<String> pairs = new java.util.ArrayList<>();
+        for (String purpose : java.util.List.of("CONVERSION", "CROSS_BORDER")) {
+            for (String source : CURRENCIES) {
+                for (String destination : CURRENCIES) {
+                    if (source.equals(destination)) {
+                        continue;
+                    }
+                    boolean tight = !source.equals("JPY") && !source.equals("BHD") && !destination.equals("JPY")
+                            && !destination.equals("BHD");
+                    pairs.add("{\"source\":\"" + source + "\",\"destination\":\"" + destination + "\",\"purpose\":\"" + purpose
+                            + "\",\"providers\":[\"fx-sim-a\"],\"spread\":\"0.003500\",\"markup\":\"0.001500\",\"rateScale\":"
+                            + (source.equals("JPY") ? 10 : 6) + ",\"rateRounding\":\"TOWARDS_ZERO\",\"amountRounding\":\"HALF_EVEN\","
+                            + "\"marginRounding\":\"HALF_EVEN\",\"windowSeconds\":" + (purpose.equals("CONVERSION") ? 30 : 60)
+                            + ",\"coverMarginSeconds\":10,\"band\":\"" + (tight ? "0.015" : "0.03") + "\",\"referenceMaxAgeSeconds\":120,"
+                            + "\"sourceMinimum\":\"" + minimum(source) + "\",\"sourceMaximum\":\"" + maximum(source)
+                            + "\",\"destinationMinimum\":\"" + minimum(destination) + "\",\"destinationMaximum\":\""
+                            + maximum(destination) + "\"}");
+                }
+            }
+        }
+        return "{\"pairs\":[" + String.join(",", pairs) + "],\"openQuoteCap\":5,\"reason\":\"" + reason + "\"}";
+    }
+
+    private static String minimum(String currency) {
+        return switch (currency) {
+            case "JPY" -> "100";
+            case "BHD" -> "0.500";
+            default -> "1.00";
+        };
+    }
+
+    private static String maximum(String currency) {
+        return switch (currency) {
+            case "JPY" -> "7500000";
+            case "BHD" -> "20000.000";
+            default -> "50000.00";
+        };
+    }
+
+    /**
+     * The corridor policy's version 1 as the runbook has two controllers propose and activate it (P9-TSK-015, ADR-0080 section 4, O7;
+     * never a seed, D26): EUR to USD in the US, EUR to JPY in Japan, USD to BHD in Bahrain and GBP to USD in the US, on corridor-sim-a;
+     * fees EUR 2.50, GBP 2.00 and USD 3.00 and no margin, half-even; maxima USD 10,000.00, JPY 1,500,000 and BHD 4,000.000; screening
+     * valid 168 hours; delivery estimated at 24; the beneficiary's name and entity type required.
+     */
+    static String corridorPolicy(String reason) {
+        String[][] rows = {
+            {"EUR", "USD", "US", "2.50", "10000.00"},
+            {"EUR", "JPY", "JP", "2.50", "1500000"},
+            {"USD", "BHD", "BH", "3.00", "4000.000"},
+            {"GBP", "USD", "US", "2.00", "10000.00"}};
+        java.util.List<String> corridors = new java.util.ArrayList<>();
+        for (String[] row : rows) {
+            corridors.add("{\"source\":\"" + row[0] + "\",\"destination\":\"" + row[1] + "\",\"country\":\"" + row[2]
+                    + "\",\"rails\":[\"corridor-sim-a\"],\"feeFixed\":\"" + row[3] + "\",\"feeMargin\":\"0\","
+                    + "\"feeRounding\":\"HALF_EVEN\",\"maximum\":\"" + row[4] + "\",\"screeningValidityHours\":168,"
+                    + "\"deliveryEstimateHours\":24,\"requiredData\":[\"BENEFICIARY_NAME\",\"ENTITY_TYPE\"]}");
+        }
+        return "{\"corridors\":[" + String.join(",", corridors) + "],\"reason\":\"" + reason + "\"}";
+    }
+
+    /** Where a kind of availability is set: an FX pair ({@code fx-pair}, BASE-QUOTE) or a corridor ({@code corridor}, S-D-CC). */
+    static String availabilityPath(String kind, String subject) {
+        return switch (kind) {
+            case "fx-pair" -> "/v1/operator/fx/pairs/" + subject + "/availability";
+            case "corridor" -> "/v1/operator/cross-border/corridors/" + subject + "/availability";
+            default -> throw new IllegalArgumentException("an availability is fx-pair or corridor, not " + kind);
+        };
+    }
+
+    /** Where a kind's enable requests are decided under their id. */
+    static String enableRequestsPath(String kind) {
+        return switch (kind) {
+            case "fx-pair" -> "/v1/operator/fx/enable-requests";
+            case "corridor" -> "/v1/operator/cross-border/corridor-enable-requests";
+            default -> throw new IllegalArgumentException("an availability is fx-pair or corridor, not " + kind);
+        };
+    }
+
     /** Where a kind of version is proposed, and decided under its id. */
     static String versionsPath(String kind) {
         return switch (kind) {
             case "credit-policy" -> "/v1/operator/credit/policies";
             case "lending-terms" -> "/v1/operator/lending/terms";
             case "bnpl-terms" -> "/v1/operator/bnpl/terms";
-            default -> throw new IllegalArgumentException("a version is credit-policy, lending-terms or bnpl-terms, not " + kind);
+            case "fx-pricing" -> "/v1/operator/fx/pricing-policies";
+            case "corridor-policy" -> "/v1/operator/cross-border/corridor-policies";
+            default -> throw new IllegalArgumentException(
+                    "a version is credit-policy, lending-terms, bnpl-terms, fx-pricing or corridor-policy, not " + kind);
         };
     }
 
@@ -773,7 +876,11 @@ public final class Seed {
      */
     private void proposeVersion(String who, String kind, String purpose) throws Exception {
         String reason = switch (purpose) {
-            case "seed" -> "e2e seed: the version the seeded review case is judged under";
+            case "seed" -> switch (kind) {
+                case "fx-pricing" -> "e2e seed: the version in force, under which the seeded conversion is priced";
+                case "corridor-policy" -> "e2e seed: the version in force, which the console's approval of the proposal retires";
+                default -> "e2e seed: the version the seeded review case is judged under";
+            };
             case "proposal" -> "e2e seed: a proposal the console's second officer approves";
             default -> throw new IllegalArgumentException("propose-version seed or proposal, not " + purpose);
         };
@@ -781,7 +888,10 @@ public final class Seed {
             case "credit-policy" -> referringPolicy(reason);
             case "lending-terms" -> lendingTerms(reason);
             case "bnpl-terms" -> bnplTerms(reason);
-            default -> throw new IllegalArgumentException("a version is credit-policy, lending-terms or bnpl-terms, not " + kind);
+            case "fx-pricing" -> fxPricingPolicy(reason);
+            case "corridor-policy" -> corridorPolicy(reason);
+            default -> throw new IllegalArgumentException(
+                    "a version is credit-policy, lending-terms, bnpl-terms, fx-pricing or corridor-policy, not " + kind);
         };
         String session = elevated(who);
         Answer proposed = expect(kind + " proposal by " + who, post(operatorBase, versionsPath(kind), body, session, key()), 201);
@@ -803,7 +913,7 @@ public final class Seed {
             default -> throw new IllegalArgumentException("decide-version approval or rejection, not " + decision);
         };
         String reason = "approval".equals(decision) ? "e2e seed: the seed's version, reviewed by a second officer"
-                : "e2e seed: a pending version withdrawn, so the run's own may be proposed (one PROPOSED per product)";
+                : "e2e seed: a pending version withdrawn, so the run's own may be proposed (one PROPOSED at a time)";
         String session = elevated(who);
         Answer decided = expect(kind + " " + decision + " by " + who, post(operatorBase, versionsPath(kind) + "/" + versionId + "/"
                 + decision, "{\"reason\":\"" + reason + "\"}", session, key()), 200);
@@ -827,6 +937,100 @@ public final class Seed {
             throw new IllegalStateException("the credit request answered no requestId: " + submitted.body());
         }
         System.out.println("CREDIT_REQUEST_ID=" + id);
+    }
+
+    /**
+     * {@code subject} disabled by {@code who} (an FX_CONTROLLER) - one person's act, at once, and keyed. A subject with no fact is
+     * available, and only an unavailable one can have its enabling proposed. Prints its OUTCOME: DISABLED, or UNCHANGED when it
+     * already was (a run before left it so).
+     */
+    private void disable(String who, String kind, String subject) throws Exception {
+        String session = elevated(who);
+        Answer answered = expect(kind + " " + subject + " disabled by " + who, post(operatorBase, availabilityPath(kind, subject),
+                "{\"available\":false,\"reason\":\"e2e seed: disabled, so its enabling can be proposed for the console to approve\"}",
+                session, key()), 200);
+        String outcome = field(answered.body(), "outcome");
+        if (!"DISABLED".equals(outcome) && !"UNCHANGED".equals(outcome)) {
+            throw new IllegalStateException("the disabling did not answer DISABLED or UNCHANGED: " + answered.body());
+        }
+        System.out.println("OUTCOME=" + outcome);
+    }
+
+    /**
+     * {@code subject}'s enabling proposed by {@code who} - nothing is enabled until a second controller approves (four eyes). Keyed.
+     * Prints its REQUEST_ID.
+     */
+    private void proposeEnable(String who, String kind, String subject) throws Exception {
+        String session = elevated(who);
+        Answer answered = expect(kind + " " + subject + " enabling proposed by " + who, post(operatorBase,
+                availabilityPath(kind, subject), "{\"available\":true,\"reason\":\"e2e seed: enabling proposed, the console's second"
+                        + " controller's to approve\"}", session, key()), 200);
+        String request = field(answered.body(), "requestId");
+        if (!"ENABLE_PROPOSED".equals(field(answered.body(), "outcome")) || request == null) {
+            throw new IllegalStateException("the enabling was not proposed: " + answered.body());
+        }
+        System.out.println("REQUEST_ID=" + request);
+    }
+
+    /**
+     * The enable request {@code requestId} decided by {@code who}: {@code approval} - a second controller, never its proposer - or
+     * {@code rejection}, which any controller may make: the seed's withdrawal of a request a run before left pending (one per subject).
+     */
+    private void decideEnable(String who, String kind, String requestId, String decision) throws Exception {
+        String expected = switch (decision) {
+            case "approval" -> "APPROVED";
+            case "rejection" -> "REJECTED";
+            default -> throw new IllegalArgumentException("decide-enable approval or rejection, not " + decision);
+        };
+        String reason = "approval".equals(decision) ? "e2e seed: the enabling, reviewed by a second controller"
+                : "e2e seed: a pending enable request withdrawn, so the run's own may be proposed (one per subject)";
+        String session = elevated(who);
+        Answer decided = expect(kind + " enable request " + decision + " by " + who, post(operatorBase, enableRequestsPath(kind) + "/"
+                + requestId + "/" + decision, "{\"reason\":\"" + reason + "\"}", session, null), 200);
+        if (!expected.equals(field(decided.body(), "status"))) {
+            throw new IllegalStateException("the " + decision + " did not answer " + expected + ": " + decided.body());
+        }
+    }
+
+    /** The seeded conversion: 10.00 EUR, inside the 12.50 EUR top-up and above version 1's 1.00 EUR minimum. */
+    static final String FX_AMOUNT = "10.00";
+
+    /**
+     * A conversion of 10.00 EUR to USD by {@code who}, a customer the shell made ACTIVE and funded: a quote fixed on its source side,
+     * priced under the ACTIVE pricing policy from the stack's own reference rate and FX provider, then accepted - synchronous and
+     * final, the trade BOOKED with its entry. Both keyed. The rate is the provider's, never the seed's: neither body has a rate
+     * field. Prints its FX_TRADE_ID.
+     */
+    private void fxTrade(String who) throws Exception {
+        String session = signIn(publicBase, who);
+        Answer quoted = expect("FX quote for " + who, post(publicBase, "/v1/me/fx/quotes", "{\"sourceCurrency\":\"EUR\","
+                + "\"destinationCurrency\":\"USD\",\"fixedSide\":\"FIXED_SOURCE\",\"amount\":\"" + FX_AMOUNT + "\"}", session,
+                key()), 201);
+        String quote = field(quoted.body(), "id");
+        if (quote == null) {
+            throw new IllegalStateException("the FX quote answered no id: " + quoted.body());
+        }
+        Answer converted = expect("FX conversion for " + who, post(publicBase, "/v1/me/fx/conversions",
+                "{\"quoteId\":\"" + quote + "\"}", session, key()), 201);
+        String trade = field(converted.body(), "id");
+        if (trade == null || !"BOOKED".equals(field(converted.body(), "status"))) {
+            throw new IllegalStateException("the conversion did not answer a BOOKED trade: " + converted.body());
+        }
+        System.out.println("FX_TRADE_ID=" + trade);
+    }
+
+    /**
+     * The customer's consent to KYC processing, through the consent door, against the text's first version: the grant a case's
+     * opening requires (KycCaseService), so the case the shell plants for this customer has the consent a real one has.
+     */
+    private void kycConsent(String who) throws Exception {
+        String session = signIn(publicBase, who);
+        Answer granted = expect("KYC consent of " + who, post(publicBase, "/v1/me/consents",
+                "{\"purpose\":\"KYC_PROCESSING\",\"textVersion\":1}", session, null), 201);
+        if (!"KYC_PROCESSING".equals(field(granted.body(), "purpose"))) {
+            throw new IllegalStateException("the consent door answered another purpose: " + granted.body());
+        }
+        System.out.println("CONSENTED=KYC_PROCESSING");
     }
 
     private static String letters(int count) {

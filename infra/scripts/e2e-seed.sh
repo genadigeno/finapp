@@ -1,6 +1,7 @@
 #!/bin/sh
-# TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112, P17-TSK-115,
-# P17-TSK-117; finapp-admin-panel docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4, B5.5, B7.4, B8.6).
+# TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112, P17-TSK-113,
+# P17-TSK-115, P17-TSK-117, P17-TSK-119; finapp-admin-panel docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4, B5.5, B6.7, B7.4, B8.6,
+# B9.4).
 #
 #   infra/scripts/e2e-seed.sh <scenario>...
 #
@@ -78,6 +79,27 @@
 #                     BNPL_TERMS_PROPOSER_ID
 #   credit            each of the four once
 #
+# The FX scenarios (P17-TSK-119) - each proposal by the seed's own FX controller, never by the console's people, so the console's
+# FX_CONTROLLER approves it; on both stacks but booked-trade:
+#   proposed-fx-policy  an FX pricing policy version PROPOSED - the runbook's version 1: a different FX controller, the console's,
+#                     approves it -> FX_POLICY_VERSION_ID, FX_POLICY_PROPOSER_ID
+#   proposed-corridor-policy  a corridor policy version PROPOSED - the runbook's version 1: the console's FX controller approves it
+#                     -> CORRIDOR_POLICY_VERSION_ID, CORRIDOR_POLICY_PROPOSER_ID
+#   fx-enable-request  the pair BHD-JPY disabled and its enabling proposed: the console's FX controller approves it
+#                     -> FX_ENABLE_REQUEST_ID, FX_ENABLE_SUBJECT (PAIR:BHD-JPY), FX_ENABLE_PROPOSER_ID
+#   corridor-enable-request  the corridor GBP-USD-US disabled and its enabling proposed: the console's FX controller approves it
+#                     -> CORRIDOR_ENABLE_REQUEST_ID, CORRIDOR_ENABLE_CORRIDOR (GBP-USD-US), CORRIDOR_ENABLE_PROPOSER_ID
+#   fx                each of the four once
+#   booked-trade      KIND ONLY, and only where the rehearsal named an FX provider and a reference feed. A fresh customer's 10.00 EUR
+#                     conversion to USD, funded by a 12.50 EUR card top-up and priced from the stack's own reference rate and FX
+#                     provider: a BOOKED trade, whose provenance the console's RECONCILIATION_OPERATOR reads -> FX_TRADE_ID
+#   kyc-review        a fresh customer, consented to KYC processing, whose case is IN_REVIEW on one sanctions check answered HIT, with
+#                     that check's open review task: the console's KYC_REVIEWER resolves the task, then decides the case
+#                     -> KYC_CASE_ID, KYC_REVIEW_TASK_ID, KYC_CHECK_ID, KYC_CUSTOMER_ID
+#   screening-review  a counterparty screening IN_REVIEW on a HIT, requested by a fresh customer: the console's KYC_REVIEWER releases
+#                     or blocks it -> COUNTERPARTY_SCREENING_ID
+#   kyc               each of the two once
+#
 # THE CREDIT SCENARIOS CHANGE THE STACK'S PERSONAL_LOAN POLICY, AND HOLD ONE VERSION PER PRODUCT PENDING. No test stack has a credit
 # bureau or a financial-data provider - the platform refuses either's URL until it holds what a pull needs (unresolved questions
 # #13 and #14) - so a request is scored on absent data. The first credit scenario of a run therefore approves the platform's own
@@ -94,6 +116,36 @@
 # waiver and a write-off would also need time to pass (a billed instalment, a default); and planting the chain would write loans,
 # schedules and postings no financial event made. They wait for a bureau (#13); until then the console tests those acts against its
 # own stubs (P17-TSK-117's record).
+#
+# THE FX SCENARIOS CHANGE THE STACK'S PRICING AND CORRIDOR POLICIES, AND DISABLE ONE PAIR AND ONE CORRIDOR. The first FX scenario of
+# a run makes two FX controllers of the seed's and, when no pricing policy or no corridor policy is ACTIVE, one proposes the runbook's
+# version 1 (OPERATIONS_RUNBOOK section 2; Seed.java's fxPricingPolicy and corridorPolicy) and the other approves it, so a proposal the
+# console approves retires a version in force, and a stack's pricing and corridors never narrow - every proposal is version 1 again.
+# One pricing version and one corridor version can be PROPOSED at a time, platform-wide, and one enable request per subject, so
+# before proposing the seed withdraws through the rejection door what an earlier run left pending; two runs at once on one stack
+# would withdraw each other's - run them one after another, as the console's harness does. The enable requests' subjects, the pair
+# BHD-JPY and the corridor GBP-USD-US, are used by nothing else seeded: each stays disabled until the console approves its enabling.
+#
+# THE BOOKED TRADE NEEDS AN FX PROVIDER AND A REFERENCE FEED, AND ONLY KIND'S FX SCOPES HAVE THEM. A conversion is priced from a
+# reference rate the platform fetched within the last 120 seconds and the provider's own quote - no rate is ever typed, and the
+# trade is booked with its entry - so nothing can plant one. A local stack configures neither; the kind rehearsal names both, its
+# simulator behind each, only under REHEARSAL_SCOPE signals, incidents or experiments. booked-trade is refused on compose, and on a
+# kind stack whose Secret (finapp-app-secrets) holds no FINAPP_FX_PROVIDER_URL or no FINAPP_FX_REFERENCE_URL - judged before anything
+# is touched, by their presence alone. The customer is made ACTIVE and funded as the dispute's payer is.
+#
+# NOT SEEDED: A CROSS-BORDER PAYMENT, AND SO ITS TRACE. A payment across a border is screened and leaves on a corridor rail, and no test
+# stack configures a corridor provider or a verification provider - neither compose nor any kind scope - so none can be made; a
+# planted one would book an outflow no customer made. Its trace waits for a stack with both; until then the console tests the trace
+# against its own stubs (P17-TSK-119's record).
+#
+# THE KYC SCENARIOS ARE PLANTED: NO TEST STACK RUNS A CASE'S CHECKS OR SCREENS A COUNTERPARTY. A case's checks are run by no
+# production path and asked of a verification provider no test stack configures; a screening is requested only by a cross-border
+# beneficiary's registration, which needs a corridor provider as well. So both review states are planted as the platform leaves them
+# (kyc-review.sql, counterparty-screening.sql) - new kyc rows only, on both stacks - while the customers and the consent go through
+# their doors. Everything the console does to them is the platform's own doors, as E2eSeedKycDatabaseTest proves.
+#
+# NOT SEEDED YET: THE KYC CUSTOMER'S ACCOUNT, TRANSFERS AND CONSENT HISTORY (P17-TSK-121). They are read through the operator doors
+# P17-TSK-026 and P17-TSK-027 add, which this script's line does not have yet; they follow once both are merged.
 #
 # THE DISPUTE NEEDS THE CARD PSP, AND ONLY KIND HAS ONE. A local stack configures no card or tokenisation provider, so no card payment
 # exists there; open-dispute is refused on compose. On kind the rehearsal's simulator is the card PSP. A dispute is the network's word
@@ -153,7 +205,7 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 SEED="$ROOT/infra/scripts/e2e-seed"
 TARGET=${E2E_SEED_TARGET:-compose}
-SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy, all, closable-period, prior-period-adjustment, proposed-mapping, draft-submission, accounting-break, finance, onboardable-organisation, active-merchant, proposed-destination, merchants, open-dispute, review-case, proposed-credit-policy, proposed-lending-terms, proposed-bnpl-terms or credit"
+SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy, all, closable-period, prior-period-adjustment, proposed-mapping, draft-submission, accounting-break, finance, onboardable-organisation, active-merchant, proposed-destination, merchants, open-dispute, review-case, proposed-credit-policy, proposed-lending-terms, proposed-bnpl-terms, credit, proposed-fx-policy, proposed-corridor-policy, fx-enable-request, corridor-enable-request, fx, booked-trade, kyc-review, screening-review or kyc"
 
 say() { printf '%s\n' "e2e-seed: $*" >&2; }
 refuse() { printf '%s\n' "e2e-seed: refused: $*" >&2; exit 2; }
@@ -175,6 +227,12 @@ for scenario in "$@"; do
         onboardable-organisation) ;;
         active-merchant|proposed-destination|merchants) HTTP=yes ;;
         review-case|proposed-credit-policy|proposed-lending-terms|proposed-bnpl-terms|credit) HTTP=yes ;;
+        proposed-fx-policy|proposed-corridor-policy|fx-enable-request|corridor-enable-request|fx) HTTP=yes ;;
+        kyc-review|screening-review|kyc) HTTP=yes ;;
+        booked-trade)
+            HTTP=yes
+            [ "$TARGET" = kind ] || refuse "booked-trade needs an FX provider and a reference feed, and only kind's FX scopes have them (its simulator): a local stack configures neither, so no conversion can be priced"
+            ;;
         open-dispute)
             HTTP=yes
             [ "$TARGET" = kind ] || refuse "open-dispute needs a card PSP, and only kind has one (its simulator): a local stack configures no card provider, so no card payment exists to dispute"
@@ -807,6 +865,170 @@ seed_proposed_bnpl_terms() {
     printf 'BNPL_TERMS_PROPOSER_ID=%s\n' "$bnpl"
 }
 
+# ---------------------------------------------------------------------------------------------------
+# The FX controller's rows (P17-TSK-119).
+
+# The enable requests' subjects: a pair and a corridor nothing else seeded uses.
+ENABLE_PAIR=BHD-JPY
+ENABLE_CORRIDOR=GBP-USD-US
+
+# proposed_one <table>: the one version PROPOSED platform-wide, or nothing. The table is this script's own literal.
+proposed_one() {
+    found=$(psql_seed -c "SELECT id FROM $1 WHERE status = 'PROPOSED'" | tr -d '[:space:]')
+    [ -z "$found" ] || uuid_like "$found" || { say "a pending version in $1 came out '$found'"; exit 1; }
+    printf '%s\n' "$found"
+}
+
+# withdraw_version <kind> <table>: the version left PROPOSED, rejected through the door by the seed's FX controller.
+withdraw_version() {
+    left=$(proposed_one "$2")
+    [ -z "$left" ] || { seed_http decide-version fxcontroller "$1" "$left" rejection >/dev/null; say "withdrew the pending $1 version $left"; }
+}
+
+# in_force <kind> <table>: when no version is ACTIVE, the runbook's version 1 proposed by one of the seed's FX controllers and approved
+# by the other (four eyes).
+in_force() {
+    active=$(psql_seed -c "SELECT count(*) FROM $2 WHERE status = 'ACTIVE'" | tr -d '[:space:]')
+    [ "$active" = 0 ] || return 0
+    withdraw_version "$1" "$2"
+    proposed=$(value VERSION_ID "$(seed_http propose-version fxcontroller "$1" seed)")
+    uuid_like "$proposed" || { say "the seed's $1 proposal printed '$proposed'"; exit 1; }
+    seed_http decide-version fxapprover "$1" "$proposed" approval >/dev/null
+    say "$1 version $proposed ACTIVE: the runbook's version 1"
+}
+
+# The run's FX desks: two FX controllers - the second the first's approver - and a pricing and a corridor policy in force.
+FX_READY=no
+fx_desks() {
+    [ "$FX_READY" = no ] || return 0
+    administrator
+    controller=$(operator fxcontroller)
+    FX_CONTROLLER_ID=${controller%% *}
+    approver=$(operator fxapprover)
+    seed_http grant admin FX_CONTROLLER "$FX_CONTROLLER_ID" "${approver%% *}" >/dev/null
+    in_force fx-pricing fx.pricing_policy_version
+    in_force corridor-policy crossborder.corridor_policy_version
+    say "the run's FX desks: controllers $FX_CONTROLLER_ID and ${approver%% *}"
+    FX_READY=yes
+}
+
+seed_proposed_fx_policy() {
+    fx_desks
+    withdraw_version fx-pricing fx.pricing_policy_version
+    pending_fx=$(value VERSION_ID "$(seed_http propose-version fxcontroller fx-pricing proposal)")
+    uuid_like "$pending_fx" || { say "the FX pricing policy proposal printed '$pending_fx'"; exit 1; }
+    say "FX pricing policy version $pending_fx PROPOSED by FX controller $FX_CONTROLLER_ID: an FX controller other than its proposer approves it"
+    printf 'FX_POLICY_VERSION_ID=%s\n' "$pending_fx"
+    printf 'FX_POLICY_PROPOSER_ID=%s\n' "$FX_CONTROLLER_ID"
+}
+
+seed_proposed_corridor_policy() {
+    fx_desks
+    withdraw_version corridor-policy crossborder.corridor_policy_version
+    pending_corridors=$(value VERSION_ID "$(seed_http propose-version fxcontroller corridor-policy proposal)")
+    uuid_like "$pending_corridors" || { say "the corridor policy proposal printed '$pending_corridors'"; exit 1; }
+    say "corridor policy version $pending_corridors PROPOSED by FX controller $FX_CONTROLLER_ID: an FX controller other than its proposer approves it"
+    printf 'CORRIDOR_POLICY_VERSION_ID=%s\n' "$pending_corridors"
+    printf 'CORRIDOR_POLICY_PROPOSER_ID=%s\n' "$FX_CONTROLLER_ID"
+}
+
+# enable_requested <kind> <subject> <left>: <left>, the subject's enable request an earlier run left pending (one per subject), withdrawn
+# through the rejection door; the subject disabled - UNCHANGED when it already is - and its enabling proposed by the seed's FX
+# controller. Sets REQUESTED.
+enable_requested() {
+    [ -z "$3" ] || uuid_like "$3" || { say "a pending enable request of $2 came out '$3'"; exit 1; }
+    [ -z "$3" ] || { seed_http decide-enable fxcontroller "$1" "$3" rejection >/dev/null; say "withdrew $2's pending enable request $3"; }
+    seed_http disable fxcontroller "$1" "$2" >/dev/null
+    REQUESTED=$(value REQUEST_ID "$(seed_http propose-enable fxcontroller "$1" "$2")")
+    uuid_like "$REQUESTED" || { say "the enabling of $2 printed '$REQUESTED'"; exit 1; }
+}
+
+seed_fx_enable_request() {
+    fx_desks
+    left=$(psql_seed -c "SELECT id FROM fx.availability_enable_request WHERE subject_kind = 'PAIR' AND subject = '$ENABLE_PAIR' AND status = 'PROPOSED'" | tr -d '[:space:]')
+    enable_requested fx-pair "$ENABLE_PAIR" "$left"
+    say "pair $ENABLE_PAIR disabled, its enabling $REQUESTED PROPOSED by FX controller $FX_CONTROLLER_ID: an FX controller other than its proposer approves it"
+    printf 'FX_ENABLE_REQUEST_ID=%s\n' "$REQUESTED"
+    printf 'FX_ENABLE_SUBJECT=PAIR:%s\n' "$ENABLE_PAIR"
+    printf 'FX_ENABLE_PROPOSER_ID=%s\n' "$FX_CONTROLLER_ID"
+}
+
+seed_corridor_enable_request() {
+    fx_desks
+    left=$(psql_seed -c "SELECT id FROM crossborder.corridor_enable_request WHERE corridor = '$ENABLE_CORRIDOR' AND status = 'PROPOSED'" | tr -d '[:space:]')
+    enable_requested corridor "$ENABLE_CORRIDOR" "$left"
+    say "corridor $ENABLE_CORRIDOR disabled, its enabling $REQUESTED PROPOSED by FX controller $FX_CONTROLLER_ID: an FX controller other than its proposer approves it"
+    printf 'CORRIDOR_ENABLE_REQUEST_ID=%s\n' "$REQUESTED"
+    printf 'CORRIDOR_ENABLE_CORRIDOR=%s\n' "$ENABLE_CORRIDOR"
+    printf 'CORRIDOR_ENABLE_PROPOSER_ID=%s\n' "$FX_CONTROLLER_ID"
+}
+
+# fx_feeds: booked-trade's FX provider and reference feed, as the stack's Secret delivers them to the application. Their presence is
+# read, never printed.
+fx_feeds() {
+    for name in FINAPP_FX_PROVIDER_URL FINAPP_FX_REFERENCE_URL; do
+        delivered=$(kube -n finapp get secret finapp-app-secrets -o jsonpath="{.data.$name}" 2>/dev/null || true)
+        [ -n "$delivered" ] || refuse "booked-trade needs the FX provider and the reference feed, and the stack's Secret holds no $name: run the kind rehearsal with REHEARSAL_SCOPE signals, incidents or experiments"
+    done
+}
+
+# Kind only, with the FX provider and the reference feed: refused before anything was touched.
+seed_booked_trade() {
+    fx_desks
+    trader_login=$(value LOGIN "$(seed_http register-bare trader)")
+    trader=$(identity_of "$trader_login")
+    uuid_like "$trader" || { say "the trader's id came out '$trader'"; exit 1; }
+    verdict=$(plant customer-verdict.sql -v identity="$trader" | tr -d '[:space:]')
+    uuid_like "$verdict" || { say "the trader's verdict printed '$verdict'"; exit 1; }
+    funded=$(value PAYMENT_ID "$(seed_http top-up trader)")
+    uuid_like "$funded" || { say "the trader's top-up printed '$funded'"; exit 1; }
+    trade=$(value FX_TRADE_ID "$(seed_http fx-trade trader)")
+    uuid_like "$trade" || { say "the conversion printed '$trade'"; exit 1; }
+    say "FX trade $trade BOOKED: 10.00 EUR to USD by customer $trader, funded by top-up $funded - read its provenance"
+    printf 'FX_TRADE_ID=%s\n' "$trade"
+}
+
+# A fresh customer, consented through the consent door, and its case planted IN_REVIEW on a HIT with the check's open task.
+seed_kyc_review() {
+    administrator
+    applicant_login=$(value LOGIN "$(seed_http register-bare applicant)")
+    applicant=$(identity_of "$applicant_login")
+    uuid_like "$applicant" || { say "the applicant's id came out '$applicant'"; exit 1; }
+    consented=$(value CONSENTED "$(seed_http kyc-consent applicant)")
+    [ "$consented" = KYC_PROCESSING ] || { say "the applicant's consent printed '$consented'"; exit 1; }
+    task=$(plant kyc-review.sql -v identity="$applicant" | tr -d '[:space:]')
+    uuid_like "$task" || { say "the case's plant printed '$task'"; exit 1; }
+    reviewed=$(psql_seed -c "SELECT case_id FROM kyc.review_task WHERE id = '$task'" | tr -d '[:space:]')
+    hit=$(psql_seed -c "SELECT check_id FROM kyc.review_task WHERE id = '$task'" | tr -d '[:space:]')
+    uuid_like "$reviewed" && uuid_like "$hit" || { say "the task's case and check came out '$reviewed' '$hit'"; exit 1; }
+    customer=$(psql_seed -c "SELECT customer_id FROM kyc.kyc_case WHERE id = '$reviewed'" | tr -d '[:space:]')
+    uuid_like "$customer" || { say "the case's customer came out '$customer'"; exit 1; }
+    say "KYC case $reviewed IN_REVIEW for customer $customer: sanctions check $hit HIT, review task $task OPEN - resolve it, then decide"
+    printf 'KYC_CASE_ID=%s
+KYC_REVIEW_TASK_ID=%s
+KYC_CHECK_ID=%s
+KYC_CUSTOMER_ID=%s
+' "$reviewed" "$task" "$hit" "$customer"
+}
+
+# A screening planted IN_REVIEW on a HIT, requested by a fresh customer - so the console's reviewer is another person.
+seed_screening_review() {
+    administrator
+    remitter_login=$(value LOGIN "$(seed_http register-bare remitter)")
+    remitter=$(identity_of "$remitter_login")
+    uuid_like "$remitter" || { say "the remitter's id came out '$remitter'"; exit 1; }
+    screening=$(plant counterparty-screening.sql -v requester="$remitter" | tr -d '[:space:]')
+    uuid_like "$screening" || { say "the screening's plant printed '$screening'"; exit 1; }
+    say "counterparty screening $screening IN_REVIEW on a HIT, requested by customer $remitter - release or block it"
+    printf 'COUNTERPARTY_SCREENING_ID=%s
+' "$screening"
+}
+
+# booked-trade's provider and feed, judged before any scenario touches the stack.
+for scenario in "$@"; do
+    [ "$scenario" != booked-trade ] || fx_feeds
+done
+
 for scenario in "$@"; do
     case "$scenario" in
         abandoned-event) seed_abandoned_event ;;
@@ -835,6 +1057,15 @@ for scenario in "$@"; do
         proposed-lending-terms) seed_proposed_lending_terms ;;
         proposed-bnpl-terms) seed_proposed_bnpl_terms ;;
         credit) seed_review_case; seed_proposed_credit_policy; seed_proposed_lending_terms; seed_proposed_bnpl_terms ;;
+        proposed-fx-policy) seed_proposed_fx_policy ;;
+        proposed-corridor-policy) seed_proposed_corridor_policy ;;
+        fx-enable-request) seed_fx_enable_request ;;
+        corridor-enable-request) seed_corridor_enable_request ;;
+        fx) seed_proposed_fx_policy; seed_proposed_corridor_policy; seed_fx_enable_request; seed_corridor_enable_request ;;
+        booked-trade) seed_booked_trade ;;
+        kyc-review) seed_kyc_review ;;
+        screening-review) seed_screening_review ;;
+        kyc) seed_kyc_review; seed_screening_review ;;
         all) seed_abandoned_event; seed_parked_record; seed_parsed_file; seed_fee_break; seed_factorless_holding; seed_sod_conflict
              seed_open_alert; seed_investigated_case; seed_overridable_assessment; seed_proposed_policy ;;
     esac
