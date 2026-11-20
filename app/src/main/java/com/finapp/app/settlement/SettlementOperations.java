@@ -73,9 +73,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 @RequiredArgsConstructor
 public class SettlementOperations {
 
-    /** The listings' bound: the newest this many, and {@code truncated} says when more exist. */
-    static final int LISTING_BOUND = 100;
-
     private static final String UPLOAD_SCOPE_PREFIX = "settlement.upload:";
 
     /** The readmission's idempotency scope, per principal (`P8-TSK-022`). */
@@ -641,14 +638,38 @@ public class SettlementOperations {
                 row.active());
     }
 
-    /** {@code GET /files}: the newest 100, `truncated` when more exist — metadata only. */
-    public FileList listFiles() {
+    /** The file list's and the refused-delivery list's collection names, inside their cursors (`P17-TSK-042`). */
+    static final String FILES = "settlement.files";
+    static final String REFUSALS = "settlement.refused-deliveries";
+
+    /**
+     * {@code GET /files} (`P17-TSK-042`; read "the newest 100, `truncated` when more exist" until then): a section 7 page of
+     * the files across every source, received newest first, the file's id breaking the tie - metadata only. {@code limit}
+     * {@value #BROWSE_DEFAULT_LIMIT} unless named, {@value #BROWSE_MAXIMUM_LIMIT} at most, refused above.
+     */
+    public FilePage listFiles(String cursor, String limit) {
+        int size = OperatorCollection.limit(limit, BROWSE_DEFAULT_LIMIT, BROWSE_MAXIMUM_LIMIT);
+        Optional<SettlementFileStore.NewestFirst> after = newestFirst(FILES, cursor);
         List<SettlementFileStore.FileRow> found =
-                inOneTransaction(unitOfWork -> store.newestFiles(unitOfWork, LISTING_BOUND + 1));
-        boolean truncated = found.size() > LISTING_BOUND;
-        return new FileList(
-                found.stream().limit(LISTING_BOUND).map(SettlementOperations::fileView).toList(),
-                truncated);
+                inOneTransaction(unitOfWork -> store.newestFiles(unitOfWork, after, size + 1));
+        List<SettlementFileStore.FileRow> served = found.subList(0, Math.min(size, found.size()));
+        String next = found.size() > size
+                ? OperatorCollection.cursor(FILES, served.get(served.size() - 1).receivedAt().toString(),
+                        served.get(served.size() - 1).id().toString())
+                : null;
+        return new FilePage(served.stream().map(SettlementOperations::fileView).toList(), next);
+    }
+
+    /** The position {@code cursor} names in {@code collection}'s newest-first order, or none for the first page. */
+    static Optional<SettlementFileStore.NewestFirst> newestFirst(String collection, String cursor) {
+        return OperatorCollection.key(collection, cursor, 2)
+                .map(key -> {
+                    try {
+                        return new SettlementFileStore.NewestFirst(Instant.parse(key.get(0)), UUID.fromString(key.get(1)));
+                    } catch (RuntimeException unreadable) {
+                        throw OperatorCollection.invalidCursor();
+                    }
+                });
     }
 
     /** {@code GET /files/'{id}'}: one file — unknown and malformed are one 404. */
@@ -659,18 +680,21 @@ public class SettlementOperations {
                 .orElseThrow(SettlementOperations::fileNotFound);
     }
 
-    /** {@code GET /refused-deliveries}: the newest 100 metadata rows — never a value. */
-    public RefusalList listRefusedDeliveries() {
+    /**
+     * {@code GET /refused-deliveries} (`P17-TSK-042`; read "the newest 100" until then): a section 7 page of the refused
+     * deliveries, refused newest first, the refusal's id breaking the tie - metadata rows, never a value.
+     */
+    public RefusalPage listRefusedDeliveries(String cursor, String limit) {
+        int size = OperatorCollection.limit(limit, BROWSE_DEFAULT_LIMIT, BROWSE_MAXIMUM_LIMIT);
+        Optional<SettlementFileStore.NewestFirst> after = newestFirst(REFUSALS, cursor);
         List<SettlementFileStore.RefusalRow> found =
-                inOneTransaction(
-                        unitOfWork -> store.newestRefusals(unitOfWork, LISTING_BOUND + 1));
-        boolean truncated = found.size() > LISTING_BOUND;
-        return new RefusalList(
-                found.stream()
-                        .limit(LISTING_BOUND)
-                        .map(SettlementOperations::refusalView)
-                        .toList(),
-                truncated);
+                inOneTransaction(unitOfWork -> store.newestRefusals(unitOfWork, after, size + 1));
+        List<SettlementFileStore.RefusalRow> served = found.subList(0, Math.min(size, found.size()));
+        String next = found.size() > size
+                ? OperatorCollection.cursor(REFUSALS, served.get(served.size() - 1).refusedAt().toString(),
+                        served.get(served.size() - 1).id().toString())
+                : null;
+        return new RefusalPage(served.stream().map(SettlementOperations::refusalView).toList(), next);
     }
 
     /**
@@ -737,7 +761,9 @@ public class SettlementOperations {
             List<String> channels,
             boolean active) {}
 
-    public record FileList(List<FileView> files, boolean truncated) {}
+    /** A page of the file list (`P17-TSK-042`): {@code nextCursor} absent, not null, on the last one. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record FilePage(List<FileView> items, String nextCursor) {}
 
     public record FileView(
             String fileId,
@@ -755,7 +781,9 @@ public class SettlementOperations {
             String attestedAt,
             String receivedAt) {}
 
-    public record RefusalList(List<RefusalView> refusedDeliveries, boolean truncated) {}
+    /** A page of the refused-delivery list (`P17-TSK-042`): {@code nextCursor} absent, not null, on the last one. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record RefusalPage(List<RefusalView> items, String nextCursor) {}
 
     public record RefusalView(
             String refusalId,

@@ -1,18 +1,25 @@
 package com.finapp.app.administration;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.IdentityAdministration;
+import com.finapp.identity.IdentityId;
 import com.finapp.identity.PermissionName;
 import com.finapp.identity.RoleAssignmentStore;
+import com.finapp.identity.RoleName;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -34,16 +41,48 @@ public class AccessReviewController {
     /** A review reads this, so it need never be paged; a page full of holdings says so and the rest wait for the next. */
     private static final int MOST_SERVED = 200;
 
+    /** The factorless review's collection name, inside its cursors (`P17-TSK-042`). */
+    static final String FACTORLESS = "identity.factorless-holdings";
+
+    static final int FACTORLESS_DEFAULT_LIMIT = 50;
+    static final int FACTORLESS_MAXIMUM_LIMIT = 200;
+
     @NonNull private final IdentityAdministrationService administration;
 
-    /** The live holdings of a role that needs an enrolled factor, by a holder with none, oldest first. */
+    /**
+     * The live holdings of a role that needs an enrolled factor, by a holder with none, as a section 7 collection
+     * (`P17-TSK-042`; read "at most 200 with {@code truncated}" until then): oldest first, the identity and then the role
+     * breaking the tie; {@code limit} 50 unless named, 200 at most; the opaque {@code cursor} of the page before. Every page
+     * recorded.
+     */
     @GetMapping("/factorless-holdings")
     @RequiresPermission(PermissionName.ROLE_ASSIGN)
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
-    public FactorlessHoldingsView listFactorlessHoldings() {
-        IdentityAdministration.FactorlessHoldings served = administration.factorlessHoldings(MOST_SERVED);
-        return new FactorlessHoldingsView(
-                served.holdings().stream().map(FactorlessHoldingView::of).toList(), served.truncated());
+    public FactorlessHoldingPage listFactorlessHoldings(
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        int size = OperatorCollection.limit(limit, FACTORLESS_DEFAULT_LIMIT, FACTORLESS_MAXIMUM_LIMIT);
+        Optional<RoleAssignmentStore.FactorlessHolding> after = factorlessCursor(cursor);
+        IdentityAdministration.FactorlessHoldings served = administration.factorlessHoldings(after, size);
+        String next = null;
+        if (served.more() && !served.holdings().isEmpty()) {
+            RoleAssignmentStore.FactorlessHolding tail = served.holdings().get(served.holdings().size() - 1);
+            next = OperatorCollection.cursor(FACTORLESS, tail.assignedAt().toString(), tail.identityId().value().toString(),
+                    tail.role().name());
+        }
+        return new FactorlessHoldingPage(served.holdings().stream().map(FactorlessHoldingView::of).toList(), next);
+    }
+
+    /** The holding {@code cursor} names as the last one served, or none for the first page; anything else refused. */
+    static Optional<RoleAssignmentStore.FactorlessHolding> factorlessCursor(String cursor) {
+        return OperatorCollection.key(FACTORLESS, cursor, 3).map(key -> {
+            try {
+                return new RoleAssignmentStore.FactorlessHolding(IdentityId.of(UUID.fromString(key.get(1))),
+                        RoleName.valueOf(key.get(2)), Instant.parse(key.get(0)));
+            } catch (RuntimeException unreadable) {
+                throw OperatorCollection.invalidCursor();
+            }
+        });
     }
 
     /**
@@ -70,8 +109,9 @@ public class AccessReviewController {
         }
     }
 
-    /** The holdings served and whether there were more. */
-    public record FactorlessHoldingsView(List<FactorlessHoldingView> holdings, boolean truncated) {}
+    /** A page of the factorless review (`P17-TSK-042`): {@code nextCursor} absent, not null, on the last one. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record FactorlessHoldingPage(List<FactorlessHoldingView> items, String nextCursor) {}
 
     /** Who, which role, since when: nothing else about the person. */
     public record FactorlessHoldingView(String identityId, String role, Instant assignedAt) {

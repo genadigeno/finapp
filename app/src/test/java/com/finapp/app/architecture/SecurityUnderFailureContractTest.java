@@ -107,7 +107,7 @@ class SecurityUnderFailureContractTest {
         assertThat(look).as("no credential and a forged one at a customer's, an operator's and a merchant's route")
                 .contains("customer-none %{http_code}\\n\" \"$u/me\"")
                 .contains("customer-forged %{http_code}\\n\" -H \"Authorization: Bearer $stranger\" \"$u/me\"")
-                .contains("operator-forged %{http_code}\\n\" -H \"Authorization: Bearer $stranger\" \"$u/operator/events/dead-letters\"")
+                .contains("operator-forged %{http_code}\\n\" -H \"Authorization: Bearer $stranger\" \"$u/operator/events/abandoned\"")
                 .contains("merchant-forged %{http_code}\\n\" -H \"Authorization: Bearer $forged\" \"$u/merchant/me\"");
         assertThat(look).as("the held credentials read from stdin, never a command line")
                 .contains("IFS= read -r customer").contains("IFS= read -r operator").contains("IFS= read -r merchant")

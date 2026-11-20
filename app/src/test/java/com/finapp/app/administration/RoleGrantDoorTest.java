@@ -52,7 +52,8 @@ class RoleGrantDoorTest {
         }
 
         @Override
-        public IdentityAdministration.FactorlessHoldings factorlessHoldings(int limit) {
+        public IdentityAdministration.FactorlessHoldings factorlessHoldings(
+                java.util.Optional<RoleAssignmentStore.FactorlessHolding> after, int limit) {
             limits.add(limit);
             List<RoleAssignmentStore.FactorlessHolding> holdings = new ArrayList<>();
             for (int i = 0; i < Math.min(served, limit); i++) {
@@ -87,19 +88,29 @@ class RoleGrantDoorTest {
     }
 
     @Test
-    @DisplayName("the check names each holding and says when there were more than it served")
+    @DisplayName("the check names each holding, a page at a time (P17-TSK-042): 50 unless named, 200 at most and refused above,"
+            + " the next page's cursor only when more follow")
     void theCheckNamesTheHoldings() {
         AccessReviewController door = new AccessReviewController(service);
 
         served = 2;
-        assertThat(door.listFactorlessHoldings().holdings()).hasSize(2);
-        assertThat(door.listFactorlessHoldings().truncated()).isFalse();
+        var few = door.listFactorlessHoldings(null, null);
+        assertThat(few.items()).hasSize(2);
+        assertThat(few.nextCursor()).as("the last page carries no cursor").isNull();
 
         served = 500;
-        var many = door.listFactorlessHoldings();
-        assertThat(many.holdings()).hasSize(200);
-        assertThat(many.truncated()).isTrue();
-        assertThat(limits).as("the page the door serves, and not one row past it").allMatch(limit -> limit == 200);
+        var page = door.listFactorlessHoldings(null, null);
+        assertThat(page.items()).hasSize(50);
+        assertThat(page.nextCursor()).isNotNull();
+        var resumed = AccessReviewController.factorlessCursor(page.nextCursor()).orElseThrow();
+        assertThat(resumed.identityId().value().toString()).isEqualTo(page.items().get(49).identityId());
+        assertThat(door.listFactorlessHoldings(null, "200").items()).hasSize(200);
+        assertThat(limits).as("the page the door serves, and not one row past it").containsExactly(50, 50, 200);
+
+        assertThatThrownBy(() -> door.listFactorlessHoldings(null, "201")).isInstanceOfSatisfying(ApiException.class,
+                refused -> assertThat(refused.errorCode().code()).isEqualTo("api.ValidationFailed"));
+        assertThatThrownBy(() -> door.listFactorlessHoldings("not-a-cursor", null)).isInstanceOf(ApiException.class);
+        assertThat(limits).as("a refused page reads nothing").hasSize(3);
     }
 
     @Test

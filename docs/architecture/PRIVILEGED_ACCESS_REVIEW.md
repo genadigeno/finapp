@@ -157,7 +157,8 @@ list held five since `P15-TSK-039`)*:
 4. Was every grant since the last review made by a different person than its holder, with a reason that names a need?
 5. Does any holder of a role that needs an enrolled factor - every role that can act since `P17-TSK-102` *(read "one that can
    redirect a merchant's money, `ADMINISTRATOR`, or the risk desk's approver (`RISK_ANALYST`)" until then)*, §6 - have none? `GET
-   /v1/operator/access-review/factorless-holdings`, on a `MULTI_FACTOR` session, names them, from the live rows of both tables: each is resolved by
+   /v1/operator/access-review/factorless-holdings`, on a `MULTI_FACTOR` session, names them, from the live rows of both tables, a page at a
+   time to the end of its `nextCursor` (`P17-TSK-042`; read "at most 200, `truncated` saying when there were more" until then): each is resolved by
    the holder enrolling, or the role being revoked with a reason. The rule below refuses new ones; this finds the ones
    that stood before it (§6).
 6. For every **first** role granted since the last review - an `identity.RoleAssigned` record saying `firstRole=true` -

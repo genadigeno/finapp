@@ -557,14 +557,18 @@ public final class IdentityAdministration {
 
     /**
      * The check of the holdings the factor rule found standing (`P15-TSK-039`): who holds a role that needs a factor
-     * and has none, at most {@code mostServed}, and whether there were more. It grants nothing and revokes nothing; the
-     * review (§5) resolves what it names. Recorded in this read's transaction, with what was served.
+     * and has none, at most {@code mostServed} after {@code after} (a page of the review since `P17-TSK-042`), and whether
+     * more follow. It grants nothing and revokes nothing; the review (§5) resolves what it names. Every page recorded in
+     * this read's transaction, with what was served.
      */
-    public FactorlessHoldings factorlessHoldings(Connection unitOfWork, int mostServed) {
+    public FactorlessHoldings factorlessHoldings(
+            Connection unitOfWork, Optional<RoleAssignmentStore.FactorlessHolding> after, int mostServed) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
-        List<RoleAssignmentStore.FactorlessHolding> found = authorization.holdingsWithoutFactor(unitOfWork, mostServed + 1);
-        boolean truncated = found.size() > mostServed;
-        List<RoleAssignmentStore.FactorlessHolding> served = truncated ? found.subList(0, mostServed) : found;
+        Objects.requireNonNull(after, "after must not be null");
+        List<RoleAssignmentStore.FactorlessHolding> found =
+                authorization.holdingsWithoutFactor(unitOfWork, after, mostServed + 1);
+        boolean more = found.size() > mostServed;
+        List<RoleAssignmentStore.FactorlessHolding> served = more ? found.subList(0, mostServed) : found;
         auditWriter.append(
                 unitOfWork,
                 new AuditRecord(
@@ -577,12 +581,12 @@ public final class IdentityAdministration {
                         Optional.empty(),
                         AuditOutcome.SUCCEEDED,
                         currentCorrelation().correlationId(),
-                        Optional.of("served=" + served.size() + ", truncated=" + truncated)));
-        return new FactorlessHoldings(served, truncated);
+                        Optional.of("served=" + served.size() + ", continued=" + after.isPresent() + ", more=" + more)));
+        return new FactorlessHoldings(served, more);
     }
 
-    /** The holdings served and whether there were more than were. */
-    public record FactorlessHoldings(List<RoleAssignmentStore.FactorlessHolding> holdings, boolean truncated) {}
+    /** A page of the holdings: those served, and whether more follow the last of them. */
+    public record FactorlessHoldings(List<RoleAssignmentStore.FactorlessHolding> holdings, boolean more) {}
 
     /**
      * The live holdings that conflict under the segregation-of-duties table (`P17-TSK-016`): those granted before the rule, which

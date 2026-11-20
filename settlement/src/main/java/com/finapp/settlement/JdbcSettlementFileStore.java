@@ -174,14 +174,29 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
         }
     }
 
+    /** Binds a newest-first page's resume point, when there is one; the next parameter's index. */
+    private static int resumeAfter(PreparedStatement read, Optional<NewestFirst> after) throws SQLException {
+        if (after.isEmpty()) {
+            return 1;
+        }
+        read.setObject(1, java.time.OffsetDateTime.ofInstant(after.get().at(), java.time.ZoneOffset.UTC));
+        read.setObject(2, after.get().id());
+        return 3;
+    }
+
     @Override
-    public List<FileRow> newestFiles(Connection unitOfWork, int limit) {
+    public List<FileRow> newestFiles(Connection unitOfWork, Optional<NewestFirst> after, int limit) {
         // The id beside the timestamp: two files received in the same instant still list in
-        // one stable order on every instance.
+        // one stable order on every instance - descending like the instant (P17-TSK-042; read
+        // "f.id" ascending until then), so a page resumes by one row comparison, served by
+        // V022's index read backwards.
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
-                        FILE_ROW_COLUMNS + " ORDER BY f.received_at DESC, f.id LIMIT ?")) {
-            read.setInt(1, limit);
+                        FILE_ROW_COLUMNS
+                                + (after.isPresent() ? " WHERE (f.received_at, f.id) < (?, ?)" : "")
+                                + " ORDER BY f.received_at DESC, f.id DESC LIMIT ?")) {
+            int index = resumeAfter(read, after);
+            read.setInt(index, limit);
             try (ResultSet rows = read.executeQuery()) {
                 List<FileRow> files = new ArrayList<>();
                 while (rows.next()) {
@@ -195,7 +210,7 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
     }
 
     @Override
-    public List<RefusalRow> newestRefusals(Connection unitOfWork, int limit) {
+    public List<RefusalRow> newestRefusals(Connection unitOfWork, Optional<NewestFirst> after, int limit) {
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
                         "SELECT r.id, s.code AS source_code, r.content_sha256,"
@@ -204,8 +219,10 @@ public final class JdbcSettlementFileStore implements SettlementFileStore<Connec
                                 + " r.correlation_id"
                                 + " FROM settlement.refused_delivery r"
                                 + " JOIN settlement.source s ON s.id = r.source_id"
-                                + " ORDER BY r.refused_at DESC, r.id LIMIT ?")) {
-            read.setInt(1, limit);
+                                + (after.isPresent() ? " WHERE (r.refused_at, r.id) < (?, ?)" : "")
+                                + " ORDER BY r.refused_at DESC, r.id DESC LIMIT ?")) {
+            int index = resumeAfter(read, after);
+            read.setInt(index, limit);
             try (ResultSet rows = read.executeQuery()) {
                 List<RefusalRow> refusals = new ArrayList<>();
                 while (rows.next()) {

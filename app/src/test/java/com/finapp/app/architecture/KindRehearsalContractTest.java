@@ -268,7 +268,7 @@ class KindRehearsalContractTest {
         assertThat(client).contains("case \"console\" -> rehearsal.console();")
                 .contains("Answer page = get(operatorBase, \"/console/\", null);")
                 .contains("page.raw().headers().allValues(\"content-security-policy\")")
-                .contains("Answer api = get(operatorBase, \"/v1/operator/events/dead-letters\", null);")
+                .contains("Answer api = get(operatorBase, \"/v1/operator/events/abandoned\", null);")
                 .contains("for (String path : List.of(\"/console/\", \"/console\")) {").contains("Answer onPublic = get(publicBase, path, null);")
                 .contains("\"console page-on-operator status=\" + page.status() + \" csp-count=\" + pagePolicies.size()")
                 .contains("\"console api-on-operator status=\" + api.status() + \" csp-count=\" + apiPolicies.size()")
@@ -404,7 +404,7 @@ class KindRehearsalContractTest {
                     .contains("  volumeClaimTemplates:\n    - metadata:\n        name: data\n").doesNotContain("- name: data\n          emptyDir");
         }
         assertThat(read("infra/scripts/kind-rehearsal/Rehearsal.java")).as("the operator host read under its controllers' roll")
-                .contains("\"operator-edge\".equals(System.getenv(\"WORKLOAD_EDGE\"))").contains("get(operatorBase, \"/v1/operator/events/dead-letters\", null), 401");
+                .contains("\"operator-edge\".equals(System.getenv(\"WORKLOAD_EDGE\"))").contains("get(operatorBase, \"/v1/operator/events/abandoned\", null), 401");
         assertThat(read(".github/workflows/ci.yml")).as("CI runs the scope nightly, on a runner of its own")
                 .contains("          - scope: rolls\n            timeout: 150\n            nightly: true");
     }

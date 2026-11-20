@@ -1,5 +1,7 @@
 package com.finapp.app.eventing;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.deadletter.DeadLetterErrorCode;
@@ -78,8 +80,24 @@ public final class DeadLetterDesk {
         }
     }
 
-    /** The queues and the decisions waiting on them, oldest first. */
-    public record DeadLettersView(List<AbandonedView> abandoned, List<ParkedView> parked, List<DiscardView> standingDiscards) {}
+    /** A page of the abandoned events (`P17-TSK-042`): {@code nextCursor} absent, not null, on the last one. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record AbandonedPage(List<AbandonedView> items, String nextCursor) {}
+
+    /** A page of the parked records (`P17-TSK-042`): {@code nextCursor} absent, not null, on the last one. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ParkedPage(List<ParkedView> items, String nextCursor) {}
+
+    /** A page of the discards awaiting a second person (`P17-TSK-042`): {@code nextCursor} absent, not null, on the last one. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record DiscardPage(List<DiscardView> items, String nextCursor) {}
+
+    /** The three queues' collection names, inside their cursors (`P17-TSK-042`). */
+    static final String ABANDONED = "deadletter.abandoned";
+    static final String PARKED = "deadletter.parked";
+    static final String DISCARDS = "deadletter.discards";
+
+    static final int DEFAULT_LIMIT = 50;
 
     /** An act's receipt. */
     public record ActReceipt(String subject, String status) {}
@@ -87,26 +105,83 @@ public final class DeadLetterDesk {
     /** A replay's receipt: what it requeued. Requeued, not yet delivered. */
     public record ReplayReceipt(String eventType, String from, String to, int requeued) {}
 
-    // ------------------------------------------------------------------ the read
+    // ------------------------------------------------------------------ the reads (P17-TSK-042: three section 7 collections)
 
-    /** The queues. Recorded in the transaction of the read, so nothing is served unrecorded. */
-    public DeadLettersView read() {
+    /**
+     * A page of the abandoned events, oldest abandonment first, the event's id breaking the tie: {@code limit}
+     * {@value #DEFAULT_LIMIT} unless named, {@value DeadLetterOperations#MAX_PAGE} at most and refused above; the opaque
+     * {@code cursor} of the page before. Recorded in the transaction of the read, so nothing is served unrecorded.
+     */
+    public AbandonedPage abandoned(String cursor, String limit) {
+        int size = OperatorCollection.limit(limit, DEFAULT_LIMIT, DeadLetterOperations.MAX_PAGE);
+        Optional<DeadLetterStore.Position> after = position(ABANDONED, cursor);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        DeadLetterOperations.DeadLetters read =
-                spans.within("deadletter.read", Map.of(), () -> transactions.inTransaction(uow -> operations.read(uow, actor, correlation)));
-        return new DeadLettersView(
-                read.abandoned().stream()
+        DeadLetterOperations.Page<DeadLetterStore.AbandonedEvent> page = spans.within("deadletter.read", Map.of(),
+                () -> transactions.inTransaction(uow -> operations.abandoned(uow, after, size, actor, correlation)));
+        return new AbandonedPage(
+                page.rows().stream()
                         .map(row -> new AbandonedView(row.eventId().toString(), row.aggregateId().toString(), row.eventType(), row.attempts(),
                                 row.abandonedAt().toString(), row.failureClass()))
                         .toList(),
-                read.parked().stream()
+                next(ABANDONED, page, row -> new DeadLetterStore.Position(row.abandonedAt(), row.eventId())));
+    }
+
+    /** A page of the parked records, oldest first, the park's id breaking the tie; the abandoned page's rules. Recorded. */
+    public ParkedPage parked(String cursor, String limit) {
+        int size = OperatorCollection.limit(limit, DEFAULT_LIMIT, DeadLetterOperations.MAX_PAGE);
+        Optional<DeadLetterStore.Position> after = position(PARKED, cursor);
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        DeadLetterOperations.Page<DeadLetterStore.ParkedRecord> page = spans.within("deadletter.read", Map.of(),
+                () -> transactions.inTransaction(uow -> operations.parked(uow, after, size, actor, correlation)));
+        return new ParkedPage(
+                page.rows().stream()
                         .map(row -> new ParkedView(row.parkId().toString(), row.consumer(), row.dedupeKey(), row.group(), row.messageType(), row.attempts(),
                                 row.parkedAt().toString(), row.failureClass()))
                         .toList(),
-                read.proposals().stream()
+                next(PARKED, page, row -> new DeadLetterStore.Position(row.parkedAt(), row.parkId())));
+    }
+
+    /**
+     * A page of the discards awaiting a second person, oldest proposal first, the discard's id breaking the tie: {@code status}
+     * {@code PROPOSED} or unnamed - the queue holds nothing else - and the abandoned page's rules. Recorded.
+     */
+    public DiscardPage discards(String status, String cursor, String limit) {
+        if (status != null && !"PROPOSED".equals(status)) {
+            throw OperatorCollection.invalid("status is PROPOSED: the queue holds the discards awaiting a second person.");
+        }
+        int size = OperatorCollection.limit(limit, DEFAULT_LIMIT, DeadLetterOperations.MAX_PAGE);
+        Optional<DeadLetterStore.Position> after = position(DISCARDS, cursor);
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        DeadLetterOperations.Page<DeadLetterStore.Proposal> page = spans.within("deadletter.read", Map.of(),
+                () -> transactions.inTransaction(uow -> operations.standingDiscards(uow, after, size, actor, correlation)));
+        return new DiscardPage(
+                page.rows().stream()
                         .map(row -> new DiscardView(row.discardId().toString(), row.kind().name(), row.subjectId().toString(), row.proposedAt().toString(), row.reason()))
-                        .toList());
+                        .toList(),
+                next(DISCARDS, page, row -> new DeadLetterStore.Position(row.proposedAt(), row.discardId())));
+    }
+
+    /** The row {@code cursor} names as the last one {@code collection} served, or none for the first page; anything else refused. */
+    static Optional<DeadLetterStore.Position> position(String collection, String cursor) {
+        return OperatorCollection.key(collection, cursor, 2).map(key -> {
+            try {
+                return new DeadLetterStore.Position(Instant.parse(key.get(0)), UUID.fromString(key.get(1)));
+            } catch (RuntimeException unreadable) {
+                throw OperatorCollection.invalidCursor();
+            }
+        });
+    }
+
+    /** The cursor to the page after {@code page}, or none when nothing follows it. */
+    private static <T> String next(String collection, DeadLetterOperations.Page<T> page, Function<T, DeadLetterStore.Position> keyOf) {
+        if (!page.more() || page.rows().isEmpty()) {
+            return null;
+        }
+        DeadLetterStore.Position tail = keyOf.apply(page.rows().get(page.rows().size() - 1));
+        return OperatorCollection.cursor(collection, tail.at().toString(), tail.id().toString());
     }
 
     // ------------------------------------------------------------------ the acts

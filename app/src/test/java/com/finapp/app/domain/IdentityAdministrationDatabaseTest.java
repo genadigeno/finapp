@@ -986,7 +986,7 @@ class IdentityAdministrationDatabaseTest {
         assertThat(get("/operator/access-review/factorless-holdings", givenAPasswordSessionFor(admin)).statusCode())
                 .as("a list of privileged holders with no second factor is not served on a password alone")
                 .isEqualTo(403);
-        String before = get("/operator/access-review/factorless-holdings", session).body();
+        String before = get("/operator/access-review/factorless-holdings?limit=200", session).body();
         assertThat(before).contains(standing.value().toString()).contains("LEDGER_OPERATOR");
         assertThat(before).as("every role guards an act now, the reviewer's too").contains(reviewer.value().toString())
                 .contains("KYC_REVIEWER");
@@ -994,7 +994,7 @@ class IdentityAdministrationDatabaseTest {
 
         givenAConfirmedFactorFor(standing);
         givenAConfirmedFactorFor(reviewer);
-        assertThat(get("/operator/access-review/factorless-holdings", session).body())
+        assertThat(get("/operator/access-review/factorless-holdings?limit=200", session).body())
                 .doesNotContain(standing.value().toString()).doesNotContain(reviewer.value().toString());
     }
 

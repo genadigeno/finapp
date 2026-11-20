@@ -417,16 +417,23 @@ class DeadLetterOperationsTest {
     // ----------------------------------------------------------------- reads and refusals
 
     @Test
-    @DisplayName("the read serves the queues and is recorded, with no payload to serve")
+    @DisplayName("a page of a queue is served and recorded against its queue, with no payload to serve; one more row is read than"
+            + " served, to say whether more follow (P17-TSK-042)")
     void theReadIsRecorded() {
         store.abandoned(UUID.randomUUID());
-        store.parked(UUID.randomUUID(), "probe.consumer", UUID.randomUUID().toString());
+        store.abandoned(UUID.randomUUID());
 
-        DeadLetterOperations.DeadLetters read = operations.read(UOW, FIRST, FLOW);
+        DeadLetterOperations.Page<DeadLetterStore.AbandonedEvent> page =
+                operations.abandoned(UOW, java.util.Optional.empty(), 1, FIRST, FLOW);
 
-        assertThat(read.abandoned()).hasSize(1);
-        assertThat(read.parked()).hasSize(1);
+        assertThat(page.rows()).hasSize(1);
+        assertThat(page.more()).isTrue();
         assertThat(onlyRecord().operation()).isEqualTo(PlatformAuditAction.DEAD_LETTERS_READ);
+        assertThat(onlyRecord().targetId()).isEqualTo("abandoned");
+        assertThat(onlyRecord().changeSummary()).hasValue("served=1, continued=false, more=true");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> operations.parked(
+                        UOW, java.util.Optional.empty(), DeadLetterOperations.MAX_PAGE + 1, FIRST, FLOW))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

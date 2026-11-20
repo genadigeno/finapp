@@ -131,10 +131,10 @@ class RoleGrantNeedsAFactorTest {
         IdentityAdministration.FactorlessHoldings found = read(200);
 
         assertThat(found.holdings()).singleElement().satisfies(holding -> assertThat(holding.role()).isEqualTo(RoleName.LEDGER_OPERATOR));
-        assertThat(found.truncated()).isFalse();
+        assertThat(found.more()).isFalse();
         assertThat(written).singleElement().satisfies(record -> {
             assertThat(record.operation()).isEqualTo(IdentityAuditAction.FACTORLESS_HOLDINGS_READ);
-            assertThat(record.changeSummary()).hasValue("served=1, truncated=false");
+            assertThat(record.changeSummary()).hasValue("served=1, continued=false, more=false");
         });
     }
 
@@ -146,14 +146,14 @@ class RoleGrantNeedsAFactorTest {
         IdentityAdministration.FactorlessHoldings found = read(2);
 
         assertThat(found.holdings()).hasSize(2);
-        assertThat(found.truncated()).isTrue();
-        assertThat(written).singleElement().satisfies(record -> assertThat(record.changeSummary()).hasValue("served=2, truncated=true"));
+        assertThat(found.more()).isTrue();
+        assertThat(written).singleElement().satisfies(record -> assertThat(record.changeSummary()).hasValue("served=2, continued=false, more=true"));
     }
 
     private IdentityAdministration.FactorlessHoldings read(int mostServed) {
         try (var correlation = CorrelationContext.enter(Correlation.startingWith(CorrelationId.of("the-check")));
                 var actor = SecurityContext.enter(new Actor(ADMINISTRATOR.value().toString(), ActorType.EMPLOYEE))) {
-            return administration().factorlessHoldings(UNIT_OF_WORK, mostServed);
+            return administration().factorlessHoldings(UNIT_OF_WORK, Optional.empty(), mostServed);
         }
     }
 

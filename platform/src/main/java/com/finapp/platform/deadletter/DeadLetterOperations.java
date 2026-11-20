@@ -39,8 +39,8 @@ public final class DeadLetterOperations {
     /** Replay at volume is Phase 16's. One command is one transaction, so it is bounded and refused above. */
     public static final int MAX_REPLAY_EVENTS = 1000;
 
-    /** The bounded list of a read. */
-    public static final int MAX_LISTED = 100;
+    /** The most rows one page of a queue serves (`P17-TSK-042`; read "the bounded list of a read", 100, until then). */
+    public static final int MAX_PAGE = 200;
 
     private static final int MAX_EVENT_TYPE_LENGTH = 200;
     private static final String TARGET_EVENT = "outbox.event";
@@ -76,21 +76,53 @@ public final class DeadLetterOperations {
                 Objects.requireNonNull(everyConsumerNaturallyIdempotent, "everyConsumerNaturallyIdempotent must not be null");
     }
 
-    /** What the abandoned and parked queues hold, oldest first; the read is recorded in this transaction. */
-    public DeadLetters read(Connection uow, Actor actor, CorrelationId correlation) {
-        List<DeadLetterStore.AbandonedEvent> abandoned = store.abandoned(uow, MAX_LISTED);
-        List<DeadLetterStore.ParkedRecord> parked = store.parked(uow, MAX_LISTED);
-        List<DeadLetterStore.Proposal> proposals = store.standingProposals(uow, MAX_LISTED);
-        record(uow, PlatformAuditAction.DEAD_LETTERS_READ, "deadletter.queues", "all", Optional.empty(), actor, correlation,
-                "abandoned=" + abandoned.size() + ", parked=" + parked.size() + ", standing=" + proposals.size(), AuditOutcome.SUCCEEDED);
-        return new DeadLetters(abandoned, parked, proposals);
+    /**
+     * A page of the abandoned events, oldest first, strictly after {@code after} when one is named (`P17-TSK-042`); the page is
+     * recorded in this transaction, every one of them.
+     */
+    public Page<DeadLetterStore.AbandonedEvent> abandoned(
+            Connection uow, Optional<DeadLetterStore.Position> after, int limit, Actor actor, CorrelationId correlation) {
+        return page(uow, "abandoned", after, limit, actor, correlation, size -> store.abandoned(uow, after, size));
     }
 
-    /** The two queues and the decisions waiting on them. */
-    public record DeadLetters(
-            List<DeadLetterStore.AbandonedEvent> abandoned,
-            List<DeadLetterStore.ParkedRecord> parked,
-            List<DeadLetterStore.Proposal> proposals) {}
+    /** A page of the parked records, oldest first, strictly after {@code after}; recorded in this transaction. */
+    public Page<DeadLetterStore.ParkedRecord> parked(
+            Connection uow, Optional<DeadLetterStore.Position> after, int limit, Actor actor, CorrelationId correlation) {
+        return page(uow, "parked", after, limit, actor, correlation, size -> store.parked(uow, after, size));
+    }
+
+    /** A page of the discards awaiting a second person, oldest proposal first, strictly after {@code after}; recorded. */
+    public Page<DeadLetterStore.Proposal> standingDiscards(
+            Connection uow, Optional<DeadLetterStore.Position> after, int limit, Actor actor, CorrelationId correlation) {
+        return page(uow, "discards", after, limit, actor, correlation, size -> store.standingProposals(uow, after, size));
+    }
+
+    /** A page of one queue: the rows served, and whether more follow the last of them. */
+    public record Page<T>(List<T> rows, boolean more) {
+
+        public Page {
+            rows = List.copyOf(rows);
+        }
+    }
+
+    /**
+     * One queue's page: one row read past {@code limit} to learn whether more follow, never served nor counted; the read
+     * recorded {@code deadletter.Read} against the queue it was, with what was served (`P17-TSK-042`; read "one record of the
+     * three queues together, target {@code all}" until then).
+     */
+    private <T> Page<T> page(Connection uow, String queue, Optional<DeadLetterStore.Position> after, int limit, Actor actor,
+            CorrelationId correlation, java.util.function.IntFunction<List<T>> read) {
+        Objects.requireNonNull(after, "after must not be null");
+        if (limit < 1 || limit > MAX_PAGE) {
+            throw new IllegalArgumentException("a page of a dead-letter queue is 1 to " + MAX_PAGE + " rows: " + limit);
+        }
+        List<T> found = read.apply(limit + 1);
+        boolean more = found.size() > limit;
+        List<T> served = more ? found.subList(0, limit) : found;
+        record(uow, PlatformAuditAction.DEAD_LETTERS_READ, "deadletter.queues", queue, Optional.empty(), actor, correlation,
+                "served=" + served.size() + ", continued=" + after.isPresent() + ", more=" + more, AuditOutcome.SUCCEEDED);
+        return new Page<>(served, more);
+    }
 
     /** Clears an abandonment: the relay takes the row again, in its order, under the row lock's arbitration. */
     public void retry(Connection uow, UUID eventId, Actor actor, String reason, CorrelationId correlation) {

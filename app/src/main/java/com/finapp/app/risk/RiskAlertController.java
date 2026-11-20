@@ -41,18 +41,19 @@ public class RiskAlertController {
     @NonNull private final RiskAlertDesk desk;
 
     /**
-     * A page of the alert queue: {@code status} one {@code AlertStatus} ({@code OPEN} unless named), {@code kind} one
-     * {@code AlertKind}, {@code after} the last alert of the previous page, {@code limit} the page's size (20 unless
-     * named, at most 50).
+     * A page of the alert queue, a section 7 collection (`P17-TSK-042`; read "{@code after} the last alert of the previous
+     * page" and a larger {@code limit} reduced to 50 until then): {@code status} one {@code AlertStatus} ({@code OPEN} unless
+     * named), {@code kind} one {@code AlertKind}, {@code cursor} the opaque cursor of the page before, {@code limit} the
+     * page's size (20 unless named, at most 50, refused above) - raised oldest first, the id breaking the tie.
      */
     @GetMapping
     @RequiresPermission(PermissionName.RISK_INVESTIGATE)
     public RiskQueueDesk.RiskAlertPageView readRiskAlertQueue(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "kind", required = false) String kind,
-            @RequestParam(name = "after", required = false) String after,
-            @RequestParam(name = "limit", required = false) Integer limit) {
-        return queue.alerts(status, kind, after, limit);
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return queue.alerts(status, kind, cursor, limit);
     }
 
     /**

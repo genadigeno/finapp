@@ -4,6 +4,7 @@ import com.finapp.platform.security.Actor;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -95,8 +96,25 @@ public interface UnderwritingCaseStore {
      */
     boolean move(Connection unitOfWork, UnderwritingCase from, Edge edge, Actor actor);
 
-    /** At most {@code limit} cases, oldest first - every status, or only {@code status}. */
-    List<UnderwritingCase> queue(Connection unitOfWork, Optional<UnderwritingCaseStatus> status, int limit);
+    /**
+     * Where a page of the queue resumes (`P17-TSK-042`, `API_CONVENTIONS.md` section 7): after the case opened at
+     * {@code openedAt} with {@code id} - both fixed at the case's opening, so a page boundary never moves while cases are
+     * opened, taken or decided around it.
+     */
+    record QueuePosition(Instant openedAt, UnderwritingCaseId id) {
+
+        public QueuePosition {
+            java.util.Objects.requireNonNull(openedAt, "openedAt");
+            java.util.Objects.requireNonNull(id, "id");
+        }
+    }
+
+    /**
+     * At most {@code limit} cases, oldest first, the id breaking the tie - every status, or only {@code status} - strictly
+     * after {@code after} when one is named: a keyset page, never an offset.
+     */
+    List<UnderwritingCase> queue(
+            Connection unitOfWork, Optional<UnderwritingCaseStatus> status, Optional<QueuePosition> after, int limit);
 
     /** How long the oldest {@code OPEN} case has waited, on the database's clock; empty when none waits. */
     Optional<Duration> oldestOpenAge(Connection unitOfWork);

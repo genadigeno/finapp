@@ -58,7 +58,10 @@ class RoutePermissionRegisterTest {
                     // Dead letters and replay (P15-TSK-028): one permission, EVENT_OPERATE; every act MULTI_FACTOR; the
                     // discard's second person is a domain refusal and platform V011's CHECK; the negatives are
                     // DeadLetterDeskTest's route declarations.
-                    entry("GET /v1/operator/events/dead-letters", PermissionName.EVENT_OPERATE),
+                    // P17-TSK-042: the read as three section 7 collections, one per queue (read "GET /dead-letters" until then).
+                    entry("GET /v1/operator/events/abandoned", PermissionName.EVENT_OPERATE),
+                    entry("GET /v1/operator/events/parked", PermissionName.EVENT_OPERATE),
+                    entry("GET /v1/operator/events/discards", PermissionName.EVENT_OPERATE),
                     entry("POST /v1/operator/events/abandoned/{eventId}/retry", PermissionName.EVENT_OPERATE),
                     entry("POST /v1/operator/events/parked/{parkId}/release", PermissionName.EVENT_OPERATE),
                     entry("POST /v1/operator/events/discards", PermissionName.EVENT_OPERATE),

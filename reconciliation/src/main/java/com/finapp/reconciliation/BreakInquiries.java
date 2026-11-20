@@ -34,8 +34,25 @@ public interface BreakInquiries {
         }
     }
 
-    /** The newest breaks matching {@code filter}, at most {@code limit}. */
-    List<BreakCaseStore.BreakRow> breaks(Connection unitOfWork, BreakFilter filter, int limit);
+    /**
+     * Where a page of the listing resumes (`P17-TSK-042`, `API_CONVENTIONS.md` section 7): after the break whose
+     * {@code (raised_at, id)} this is, in the listing's newest-first order. Both are fixed at the break's birth, so a page
+     * boundary never moves while breaks are raised or resolved around it.
+     */
+    record BreakCursor(Instant raisedAt, UUID id) {
+
+        public BreakCursor {
+            Objects.requireNonNull(raisedAt, "raisedAt must not be null");
+            Objects.requireNonNull(id, "id must not be null");
+        }
+    }
+
+    /**
+     * The breaks matching {@code filter}, at most {@code limit}: raised newest first, the id breaking the tie (descending
+     * too), so the order is total; strictly after {@code after} when one is named - a keyset read, never an offset.
+     */
+    List<BreakCaseStore.BreakRow> breaks(
+            Connection unitOfWork, BreakFilter filter, Optional<BreakCursor> after, int limit);
 
     Optional<BreakCaseStore.BreakRow> breakById(Connection unitOfWork, UUID breakId);
 

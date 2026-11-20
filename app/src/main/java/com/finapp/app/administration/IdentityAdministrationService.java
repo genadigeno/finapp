@@ -77,9 +77,13 @@ public class IdentityAdministrationService {
                 unitOfWork -> administration.revokeRole(unitOfWork, subject, role, actor, reason));
     }
 
-    /** The check of standing holdings without a factor (`P15-TSK-039`), read and recorded in one transaction. */
-    public IdentityAdministration.FactorlessHoldings factorlessHoldings(int mostServed) {
-        return inOneTransaction(unitOfWork -> administration.factorlessHoldings(unitOfWork, mostServed));
+    /**
+     * A page of the check of standing holdings without a factor (`P15-TSK-039`; paged by `P17-TSK-042`), read and recorded in
+     * one transaction.
+     */
+    public IdentityAdministration.FactorlessHoldings factorlessHoldings(
+            java.util.Optional<com.finapp.identity.RoleAssignmentStore.FactorlessHolding> after, int mostServed) {
+        return inOneTransaction(unitOfWork -> administration.factorlessHoldings(unitOfWork, after, mostServed));
     }
 
     /** The holdings that conflict under the segregation-of-duties table, recorded (`P17-TSK-016`). */

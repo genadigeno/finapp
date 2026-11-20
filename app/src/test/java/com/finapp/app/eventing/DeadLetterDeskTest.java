@@ -101,7 +101,7 @@ class DeadLetterDeskTest {
         List<Method> doors = Arrays.stream(DeadLetterController.class.getDeclaredMethods())
                 .filter(method -> method.isAnnotationPresent(PostMapping.class) || method.isAnnotationPresent(GetMapping.class))
                 .toList();
-        assertThat(doors).hasSize(7);
+        assertThat(doors).as("six acts - retry, release, replay, a discard's proposal, approval and rejection - and the three reads: abandoned, parked, discards").hasSize(9);
         for (Method door : doors) {
             assertThat(door.getAnnotation(RequiresPermission.class).value()).as(door.getName()).isEqualTo(PermissionName.EVENT_OPERATE);
             if (door.isAnnotationPresent(PostMapping.class)) {
@@ -220,11 +220,63 @@ class DeadLetterDeskTest {
         store.abandoned(discardable);
         try (var ignored = as(OPERATOR); var flow = flow()) {
             desk.proposeDiscard("p-2", "OUTBOX_EVENT", discardable.toString(), "cannot be sent");
-            DeadLetterDesk.DeadLettersView view = desk.read();
+            DeadLetterDesk.AbandonedPage abandoned = desk.abandoned(null, null);
 
-            assertThat(view.abandoned()).hasSize(2);
-            assertThat(view.standingDiscards()).singleElement().satisfies(discard -> assertThat(discard.reason()).isEqualTo("cannot be sent"));
-            assertThat(view.abandoned().getFirst().failureClass()).doesNotContain(":");
+            assertThat(abandoned.items()).hasSize(2);
+            assertThat(abandoned.nextCursor()).as("one page holds them all: no cursor").isNull();
+            assertThat(desk.discards(null, null, null).items())
+                    .singleElement().satisfies(discard -> assertThat(discard.reason()).isEqualTo("cannot be sent"));
+            assertThat(abandoned.items().getFirst().failureClass()).doesNotContain(":");
+        }
+    }
+
+    @Test
+    @DisplayName("each queue is a section 7 collection (P17-TSK-042): walked a page at a time, each row once, every page recorded;"
+            + " a limit outside 1..200, another queue's cursor or a status the queue does not hold refused 422 with nothing read")
+    void eachQueueIsWalkedAPageAtATime() {
+        java.util.Set<String> planted = new java.util.HashSet<>();
+        for (int i = 0; i < 5; i++) {
+            UUID id = UUID.randomUUID();
+            store.abandoned(id);
+            planted.add(id.toString());
+            store.parked(UUID.randomUUID(), "probe.consumer", UUID.randomUUID().toString());
+        }
+        try (var ignored = as(OPERATOR); var flow = flow()) {
+            int before = audited.size();
+            java.util.List<String> walked = new java.util.ArrayList<>();
+            String cursor = null;
+            int pages = 0;
+            do {
+                DeadLetterDesk.AbandonedPage page = desk.abandoned(cursor, "2");
+                page.items().forEach(item -> walked.add(item.eventId()));
+                cursor = page.nextCursor();
+                pages++;
+            } while (cursor != null);
+            assertThat(walked).as("every row once").doesNotHaveDuplicates().containsExactlyInAnyOrderElementsOf(planted);
+            assertThat(pages).isEqualTo(3);
+            assertThat(audited.size() - before).as("every page recorded").isEqualTo(3);
+            assertThat(audited.getLast().changeSummary()).hasValue("served=1, continued=true, more=false");
+
+            String parkedCursor = desk.parked(null, "4").nextCursor();
+            assertThat(parkedCursor).isNotNull();
+            assertThat(desk.parked(parkedCursor, "4").items()).hasSize(1);
+            DeadLetterDesk.ParkedPage whole = desk.parked(null, "5");
+            assertThat(whole.items()).hasSize(5);
+            assertThat(whole.nextCursor()).as("a last page exactly full names no next one: the row read past it is what says so")
+                    .isNull();
+            assertThat(audited.getLast().changeSummary()).hasValue("served=5, continued=false, more=false");
+
+            int recorded = audited.size();
+            for (Runnable refused : java.util.List.<Runnable>of(
+                    () -> desk.abandoned(null, "201"),
+                    () -> desk.abandoned(null, "0"),
+                    () -> desk.abandoned(parkedCursor, null),
+                    () -> desk.discards("APPROVED", null, null),
+                    () -> desk.parked("not-a-cursor", null))) {
+                assertThatThrownBy(refused::run).isInstanceOfSatisfying(com.finapp.platform.api.ApiException.class,
+                        problem -> assertThat(problem.errorCode().code()).isEqualTo("api.ValidationFailed"));
+            }
+            assertThat(audited).as("a refused page reads and records nothing").hasSize(recorded);
         }
     }
 

@@ -40,12 +40,18 @@ public class UnderwritingCaseController {
 
     @NonNull private final UnderwritingCaseDesk desk;
 
-    /** The queue, oldest first - every status, or only {@code status}. */
+    /**
+     * The queue, as a section 7 collection (`P17-TSK-042`; read "oldest first, at most 50, a bare array" until then): opened
+     * oldest first, the case's id breaking the tie - every status, or only {@code status}; {@code limit} 20 unless named, 50 at
+     * most; the opaque {@code cursor} of the page before.
+     */
     @GetMapping
     @RequiresPermission(PermissionName.CREDIT_UNDERWRITE)
-    public List<UnderwritingCaseDesk.ReviewCaseView> listReviewCases(
-            @RequestParam(name = "status", required = false) String status) {
-        return desk.queue(status);
+    public UnderwritingCaseDesk.ReviewCasePage listReviewCases(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.queue(status, cursor, limit);
     }
 
     /** Takes an open case - of two underwriters, one; the other {@code 409 credit.CaseTaken}. */

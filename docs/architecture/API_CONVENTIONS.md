@@ -264,10 +264,11 @@ writes an audit record in an HTTP flow, so there is nothing to record it *on*. W
 key travels as a normal command parameter rather than as ambient state, so no context mechanism is
 needed for it (the distinction `P0-TSK-032` drew for the actor, in the opposite direction).
 
-## 7. Pagination — **Implemented** for the operator collections that follow it (`P17-TSK-107`, finapp-admin-panel ADR-C133)
+## 7. Pagination — **Implemented** for operator lists (`P17-TSK-107`, `P17-TSK-042`; finapp-admin-panel ADR-C133)
 
 *(Read "Decided, not yet implemented (first collection endpoint, Phase 3+)" and "No endpoint returns a collection today" until
-`P17-TSK-107`, 2026-11-18.)* The operator collections that implement this section exactly, the first two from `P17-TSK-107`:
+`P17-TSK-107`, 2026-11-18; and "**Implemented** for the operator collections that follow it" until `P17-TSK-042`, 2026-11-20.)*
+The operator collections that implement this section exactly, the first two from `P17-TSK-107`:
 
 | Endpoint | Permission | Declared total order | `limit` default / maximum | Filters |
 |---|---|---|---|---|
@@ -287,12 +288,30 @@ needed for it (the distinction `P0-TSK-032` drew for the actor, in the opposite 
 | `GET /v1/operator/accounting/mapping-versions` (`P17-TSK-023`) | `ACCOUNTING_MAPPING_APPROVE` | version descending | 50 / 200 | `status` (`PROPOSED` is the approver's queue); each row marks whether the caller proposed it |
 | `GET /v1/operator/accounting/valuation-rate-sets` (`P17-TSK-023`) | `ACCOUNTING_CLOSE_APPROVE` | captured at descending, set id descending | 50 / 200 | `periodId`, `status` (`PROPOSED` is the approver's queue); each row marks whether the caller captured it; never a rate |
 | `GET /v1/operator/accounting/valuation-rate-sets/mine` (`P17-TSK-023`) | `ACCOUNTING_CLOSE_PROPOSE` | captured at descending, set id descending | 50 / 200 | `status`. The sets the caller captured, every period's |
+| `GET /v1/operator/reconciliation/breaks` (`P17-TSK-042`, G-121) | `RECONCILIATION_INVESTIGATE` | raised at descending, break id descending | 50 / 200 | `type`, `status`, `severity`, `source`, `assignee`, `agedOver`, as before. Unrecorded, as the desk's other reads |
+| `GET /v1/operator/events/abandoned` (`P17-TSK-042`) | `EVENT_OPERATE` | abandoned at ascending, event id ascending | 50 / 200 | none. Every page recorded as the audit action deadletter.Read against its queue; never a payload |
+| `GET /v1/operator/events/parked` (`P17-TSK-042`) | `EVENT_OPERATE` | parked at ascending, park id ascending | 50 / 200 | none. Every page recorded, as the abandoned events' |
+| `GET /v1/operator/events/discards` (`P17-TSK-042`) | `EVENT_OPERATE` | proposed at ascending, discard id ascending | 50 / 200 | `status` (`PROPOSED` only: the discards awaiting a second person). Every page recorded |
+| `GET /v1/operator/settlement/files` (`P17-TSK-042`) | `RECONCILIATION_INVESTIGATE` | received at descending, file id descending | 50 / 200 | none. Metadata, never content |
+| `GET /v1/operator/settlement/refused-deliveries` (`P17-TSK-042`) | `RECONCILIATION_INVESTIGATE` | refused at descending, refusal id descending | 50 / 200 | none. The reason and position, never the value |
+| `GET /v1/operator/access-review/factorless-holdings` (`P17-TSK-042`) | `ROLE_ASSIGN`, on a `MULTI_FACTOR` session | assigned at ascending, identity id ascending, role ascending | 50 / 200 | none. Every page recorded as the audit action identity.FactorlessHoldingsRead |
+| `GET /v1/operator/credit/review-cases` (`P17-TSK-042`) | `CREDIT_UNDERWRITE` | opened at ascending, case id ascending | 20 / 50 | `status`. Each case with its basis, so the page stays small; every page recorded as the audit action credit.ReviewCasesRead |
+| `GET /v1/operator/risk/alerts` (`P17-TSK-042`) | `RISK_INVESTIGATE` | raised at ascending, alert id ascending | 20 / 50 | `status` (`OPEN` unless named), `kind`. The reader's own party's alerts withheld; every page recorded as the audit action risk.AlertRead; a cursor naming no alert `422 risk.QueueRequestInvalid` |
+| `GET /v1/operator/risk/cases` (`P17-TSK-042`) | `RISK_INVESTIGATE` | opened at ascending, case id ascending | 20 / 50 | `status` (every open one unless named), `kind`. As the alert queue, recorded as the audit action risk.CaseRead |
+| `GET /v1/operator/accounting/periods` (`P17-TSK-042`) | `ACCOUNTING_READ` | month descending | 24 / 120 | none. Unrecorded, as before |
 
 All are keyset reads. `app`'s `OperatorCollection` is the one implementation of the request rules: the limit is refused above
 its maximum rather than reduced, and the cursor names its collection, so one collection's cursor is refused by another. Every
-refusal is `422 api.ValidationFailed`. A page record carries `nextCursor` only when there is a next page. Older operator lists
-were built before this section was implemented: some take `after`/`limit`, and some are capped with `truncated`. They are
-retrofitted by `P17-TSK-042` (ADR-C133 decision 2), and until then they are what their own entries say.
+refusal is `422 api.ValidationFailed`. A page record carries `nextCursor` only when there is a next page.
+
+**The retrofit** (`P17-TSK-042`, ADR-C133 decision 2, gaps G-03 and G-121). The operator lists built before this section was
+implemented - the last eleven rows above - were capped with `truncated`, capped with nothing saying so, or paged by `after`/`limit`.
+Each was replaced in place by the collection its row describes: the operator surface is internal and the Operator Console is its
+one client (§8). The dead-letter queues, which one `GET /v1/operator/events/dead-letters` answered together, are three
+collections, one per queue. `OperatorListsAreCollectionsTest` holds the operator surface to this section from the routes the
+application serves: no `GET` there answers a bare array, a top-level `truncated` or takes `after` unless its register names the
+route with its reason - a list bounded by what it is (a closed vocabulary, one subject's children, one period's report), or one
+this section has not reached yet, named there so it is owed - and the table above lists exactly the routes answering a page.
 
 **Cursor-based, never offset.** `?limit=&cursor=`. The reason is correctness before performance:
 an offset re-reads a moving set, so when rows are inserted or removed between page 1 and page 2, a
@@ -328,6 +347,14 @@ building one now would be untested machinery.
 | Announce | `Deprecation` (RFC 9745) and `Sunset` (RFC 8594) response headers, plus `Link rel="deprecation"` to the replacement |
 | Wait | At least **6 months** from the first `Deprecation` header to removal. A superseded **version** is served at least **12 months** after its successor is generally available |
 | Remove | Only in the next version, never inside the current one |
+
+**The operator surface's one recorded exception** (`P17-TSK-042`, finapp-admin-panel ADR-C133 decision 2). The operator lists
+`P17-TSK-042` retrofitted to section 7 were replaced in place, not versioned or deprecated: the operator surface is internal
+(§8a), reached only from the internal network, and the Operator Console - which generates its types from the published contract -
+is its one client, changed in the same milestone. Each change is a documented breaking change, listed in the task's record and in
+section 7's table: the routes keep their paths and permissions, and their answers became `{ items, nextCursor }` - except
+`GET /v1/operator/events/dead-letters`, which became three collections, one per queue. Nothing on the public surface changed,
+and this is not a precedent for it: a public route still evolves additively and is retired only by the steps above.
 
 **A money-moving endpoint carries one further obligation:** before removal, the reconciliation and
 audit consequences are considered explicitly. Records referencing it remain, and operations that

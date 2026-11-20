@@ -204,10 +204,15 @@ class E2eSeedPlantsDatabaseTest {
         }
     }
 
-    private DeadLetterOperations.DeadLetters listed() throws SQLException {
+    /** The first page of the abandoned and of the parked queue, as the console reads them (`P17-TSK-042`: two collections). */
+    private record Listed(java.util.List<DeadLetterStore.AbandonedEvent> abandoned, java.util.List<DeadLetterStore.ParkedRecord> parked) {}
+
+    private Listed listed() throws SQLException {
         try (Connection connection = DatabaseRoles.application()) {
             connection.setAutoCommit(false);
-            DeadLetterOperations.DeadLetters letters = operations.read(connection, FIRST, FLOW);
+            Listed letters = new Listed(
+                    operations.abandoned(connection, java.util.Optional.empty(), DeadLetterOperations.MAX_PAGE, FIRST, FLOW).rows(),
+                    operations.parked(connection, java.util.Optional.empty(), DeadLetterOperations.MAX_PAGE, FIRST, FLOW).rows());
             connection.commit();
             return letters;
         }

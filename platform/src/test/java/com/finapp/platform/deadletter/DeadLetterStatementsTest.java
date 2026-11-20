@@ -68,6 +68,25 @@ class DeadLetterStatementsTest {
     }
 
     @Test
+    @DisplayName("each queue is a section 7 page (P17-TSK-042): a total order - its instant, then the row's own id - and a page resumes"
+            + " strictly after the last row served, by that same key")
+    void eachQueueIsPagedInATotalOrder() {
+        assertThat(JdbcDeadLetterStore.ABANDONED_SQL).endsWith(" ORDER BY dead_lettered_at, event_id LIMIT ?");
+        assertThat(JdbcDeadLetterStore.ABANDONED_AFTER_SQL).contains(" AND (dead_lettered_at, event_id) > (?, ?)")
+                .endsWith(" ORDER BY dead_lettered_at, event_id LIMIT ?");
+        assertThat(JdbcDeadLetterStore.PARKED_SQL).endsWith(" ORDER BY parked_at, park_id LIMIT ?");
+        assertThat(JdbcDeadLetterStore.PARKED_AFTER_SQL).contains(" AND (parked_at, park_id) > (?, ?)")
+                .endsWith(" ORDER BY parked_at, park_id LIMIT ?");
+        assertThat(JdbcDeadLetterStore.STANDING_SQL).endsWith(" ORDER BY proposed_at, discard_id LIMIT ?");
+        assertThat(JdbcDeadLetterStore.STANDING_AFTER_SQL).contains(" AND (proposed_at, discard_id) > (?, ?)")
+                .endsWith(" ORDER BY proposed_at, discard_id LIMIT ?");
+        for (String resumed : new String[] {JdbcDeadLetterStore.ABANDONED_AFTER_SQL, JdbcDeadLetterStore.PARKED_AFTER_SQL,
+                JdbcDeadLetterStore.STANDING_AFTER_SQL}) {
+            assertThat(resumed.chars().filter(character -> character == '?').count()).as(resumed).isEqualTo(3);
+        }
+    }
+
+    @Test
     @DisplayName("the failure's message never reaches an operator, only its class")
     void onlyTheFailureClassLeaves() {
         assertThat(JdbcDeadLetterStore.failureClass("org.apache.kafka.TimeoutException: broker-1.internal unreachable"))

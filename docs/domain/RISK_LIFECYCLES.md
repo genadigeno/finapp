@@ -456,7 +456,7 @@ as built, "and by the rescreening leg for its conclusions".)*
 | `OPEN → ATTACHED` | S, in the raising transaction (`-016`'s folding): an alert raised while its subject has an open case of the kind attaches to it — **the system's dedupe** — else T-mon opens the case (T-eval: the case `REVIEW`/`HOLD` opened); or P, `POST /v1/operator/risk/cases` from an alert, `RISK_INVESTIGATE`, key `risk.case:<actor>` (T-case) | (R4) the case row; (R5) the alert conditional `OPEN`; one open case per (subject, kind) — ten alerts, one open case (`CaseDatabaseTest#tenAlertsOneOpenCase`) | `409 risk.AlertNotOpen` | `CaseOpened` when the attach opened the case | `risk.CaseOpened` (when opened) |
 | `OPEN → SUPPRESSED` ★ | P only — never the system: `POST /v1/operator/risk/alerts/{id}/suppression` proposed by a `RISK_INVESTIGATE` holder with a reason, approved by a second holder with `RISK_CASE_APPROVE` at `…/suppression/approval` (or rejected at `…/suppression/rejection`), key `risk.alert:<actor>` (`-018`) | (R5) conditional `OPEN`; the reason code; the four-eyes `CHECK` | `409 risk.AlertNotOpen`, `422 risk.ReasonRequired`, `403 risk.SelfApprovalRefused` (audited `FAILED`) | — | `risk.AlertSuppressed` |
 
-The queue: `GET /v1/operator/risk/alerts?status=&kind=&after=` (`RISK_INVESTIGATE`, oldest first, keyset paged,
+The queue: `GET /v1/operator/risk/alerts?status=&kind=&cursor=` (`RISK_INVESTIGATE`, oldest first, keyset paged - an `API_CONVENTIONS.md` section 7 collection since `P17-TSK-042`, `after=` until then -
 audited). An alert is **never deleted** and never re-opened; a later observation of the same (subject, rule, window) is
 the same row, a later window a new alert — which attaches to the subject's open case of the kind rather than opening a
 second one (`-016`). The fail-safe's `RiskEvaluationUnavailable` / `RiskPolicyNoneActive`, the
@@ -584,7 +584,7 @@ Every act of the investigation is an **investigator action** — append-only, re
 taken, note, evidence attached, escalation, action proposed/approved/rejected, disposition proposed/approved/rejected,
 report drafted - *`TAKEN` omitted until P13-DOC-001; `risk V012`'s `risk_case_action_kind_is_known`, a take the one
 unreasoned act*) — and both concurrent investigators' actions are kept while one answers `409` (mandatory scenario 5). The
-queue: `GET /v1/operator/risk/cases?status=&kind=&after=` and `GET …/{id}` (`RISK_INVESTIGATE`, audited; never the
+queue: `GET /v1/operator/risk/cases?status=&kind=&cursor=` (section 7 since `P17-TSK-042`, `after=` until then) and `GET …/{id}` (`RISK_INVESTIGATE`, audited; never the
 operator's own party). An investigator who leaves mid-case changes no state: the SLA gauge and alert find the case, the
 queue is oldest-first. **The tipping-off control** (`INV-RSK-08`, `-018`): no customer or merchant route reads a case,
 an alert or a report; no response differs with a case open (a timing difference outside this phase's claims); no event,

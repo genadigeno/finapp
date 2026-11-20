@@ -88,7 +88,7 @@ class AlertSuppressionDeskTest {
                     .extracting(RequiresAssurance::value).isEqualTo(AssuranceLevel.MULTI_FACTOR);
         });
         Method queue = RiskAlertController.class.getMethod("readRiskAlertQueue", String.class, String.class,
-                String.class, Integer.class);
+                String.class, String.class);
         assertThat(queue.getAnnotation(GetMapping.class)).isNotNull();
         assertThat(queue.getAnnotation(RequiresAssurance.class)).isNull();
         assertThat(queue.getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.RISK_INVESTIGATE);

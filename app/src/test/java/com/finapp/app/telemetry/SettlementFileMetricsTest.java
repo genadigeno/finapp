@@ -98,12 +98,12 @@ class SettlementFileMetricsTest {
         }
 
         @Override
-        public List<FileRow> newestFiles(Connection unitOfWork, int limit) {
+        public List<FileRow> newestFiles(Connection unitOfWork, Optional<NewestFirst> after, int limit) {
             throw new UnsupportedOperationException("the gauges read pendingBySource alone");
         }
 
         @Override
-        public List<RefusalRow> newestRefusals(Connection unitOfWork, int limit) {
+        public List<RefusalRow> newestRefusals(Connection unitOfWork, Optional<NewestFirst> after, int limit) {
             throw new UnsupportedOperationException("the gauges read pendingBySource alone");
         }
 

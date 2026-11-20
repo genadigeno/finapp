@@ -32525,7 +32525,7 @@ showing how fresh it is. Both say what is missing.
 - **Risk**: Medium - breadth, and lists converted in place (the console is their only client). **Cx**: L. **DoD**:
   `DOD-API`, `DOD-SEC`.
 
-**P17-TSK-042 — The §7 retrofit of capped operator lists (G-03, G-121)** — `PLANNED`
+**P17-TSK-042 — The §7 retrofit of capped operator lists (G-03, G-121)** — `COMPLETE` (2026-11-20; marked `READY` 2026-11-19 before its design on the owner's "every task whose dependencies are met in parallel", no dependencies; branch `P17-TSK-042` from `P17-TSK-120`) *(read "`PLANNED`" until 2026-11-19, then "`READY`" until its gate)*
 - **Context**: every module with a capped operator list; `API_CONVENTIONS.md` §7; ADR-C133; B10.3. Several operator lists are
   capped, some with a `truncated` flag and some without, and some page by `after`/`limit`. The console shows each as capped and
   never as complete, but cannot page past the cap.
@@ -32539,6 +32539,56 @@ showing how fresh it is. Both say what is missing.
 - **Multi-instance**: keyset cursors stay stable while rows are inserted, which offset paging does not. `PASS` by
   construction.
 - **Risk**: Medium - contracts changed in place. **Cx**: M. **DoD**: `DOD-API`.
+- **As built (2026-11-20, gate `COMPLETE`)**: **the owner's ruling, 2026-11-20: "Replace in place (Recommended)"** - each list's
+  shape replaced in place (ADR-C133 decision 2), a documented breaking change and the operator surface's one recorded exception
+  in `API_CONVENTIONS.md` §8; `OpenApiChange`'s BREAKING labels on these paths (the removed `BreakList`, `DeadLettersView`,
+  `FactorlessHoldingsView`, `FileList`, `RefusalList` and the risk pages' renamed members) accepted in this record. Each list,
+  `{ items, nextCursor }`, `nextCursor` absent on the last page, the limit refused above its maximum (`422 api.ValidationFailed`),
+  never reduced, and an opaque cursor naming its collection:
+  - **reconciliation breaks** (capped 100, `truncated`; G-121): raised at, then id, both descending; 50 a page, 200 at most; the
+    filters as before; reconciliation `V027` (`break (raised_at, id)`);
+  - **dead letters** (`GET /v1/operator/events/dead-letters`, the three queues in one answer, capped with nothing saying so): three
+    collections on the acts' own paths - `GET .../events/abandoned`, `.../parked` and `.../discards` (`status=PROPOSED`) - each oldest
+    first by its instant, then id; 50/200; every page `deadletter.Read` (`served`, `continued`, `more`); no index on
+    `platform.outbox_event`, the relay's hottest table, the abandoned set being rare;
+  - **settlement files and refused deliveries** (capped 100): newest first by receipt and by refusal, then id - the files' tiebreak
+    was id ascending, flipped so one row comparison resumes; 50/200; settlement `V022` (two indexes);
+  - **the factorless-holdings review** (capped 200, `truncated`): assigned at, identity, role, ascending (the order unchanged);
+    50/200; `identity.FactorlessHoldingsRead` per page, `truncated` become `more`;
+  - **the credit underwriting queue** (capped 50, no flag): opened at, then id, ascending; 20/50, each case carrying its basis;
+    `credit.ReviewCasesRead` per page with `continued`; credit `V025` (`underwriting_case (opened_at, id)`, the unfiltered queue);
+  - **the risk alert and case queues** (`after`/`limit`): `cursor`/`limit`, the opaque cursor wrapping the last id served; a limit
+    over 50 and an unreadable cursor `422 api.ValidationFailed` at the desk, a well-formed cursor naming no row still
+    `risk.QueueRequestInvalid`; risk's statements unchanged;
+  - **the FX pricing policy list**: not here - `P17-TSK-118` pages it on its own branch (its session's answer, 2026-11-20);
+  - **periods** (capped 120, a bare array): newest month first; 24/120; `AccountingPeriodStore.recentBefore`.
+
+  Every index-only migration is expand-only, built in its migration's transaction (`IF NOT EXISTS`). `API_CONVENTIONS.md` §7
+  marked implemented for operator lists, eleven rows added. Callers changed in step: `infra/scripts/e2e-seed/Seed.java`'s
+  `awaitBreak` alone (it follows `nextCursor`), the kind rehearsal's `Rehearsal.java` and `experiments.sh` (the operator-edge
+  probes moved to `/events/abandoned`), `docs/api/openapi.json` and `deploy/edge/base/operator-routes.yaml` regenerated.
+  **Guards**: `OperatorListsAreCollectionsTest` (slice) - no operator `GET` answers a bare array, a top-level `truncated` or takes
+  `after` unless its register names the route with its reason, every page takes `cursor` and `limit` and is `NON_NULL`, and §7's
+  table lists exactly the routes answering one; `OperatorListKeysetsTest` (unit) - every resumed read's keyset is its order's
+  columns, compared in its order's direction. **Tests**: `OperatorListRetrofitApiDatabaseTest` (new: every list resumes, refuses
+  and keeps its readers; the factorless tie and the refused deliveries walked; two rows a page at a time are the first page of
+  two, in every list holding two); the desks' and the stores' cases in step (`DeadLetterDeskTest`, `DeadLetterOperationsTest`,
+  `DeadLetterStatementsTest`, `RoleGrantDoorTest`, `RoleGrantNeedsAFactorTest`, `OperatorReadRecordsTest`, `RiskQueueDeskTest`,
+  `AccountingPeriodDeskTest`, `QueueApiTest`, `UnderwritingCaseDatabaseTest`, the factorless reads of three database suites).
+  **Probe**: recorded in `MUTATION_TESTING.md` (`P17-TSK-042`'s row).
+  **Fresh**: The in-JVM tiers (2026-11-19, 20:49-22:45 UTC): app's unit tier 2,115 tests in 360 classes - 2 failed: `DeadLetterDeskTest`'s door count (7, now 9), corrected and re-run 10 of 10, and finding (2)'s flake - its slice tier 326 in 56 (`OperatorListsAreCollectionsTest` among them) and architecture tier 1,285 in 119; platform's unit tier 448 in 49, identity's 215 in 25, credit's 131 in 22, settlement's 240 in 41, reconciliation's 197 in 37, accounting's 785 in 80, risk's 576 in 85, each module's architecture tier (2 to 4), migrator's 119 in 9 - 0 failed. The database classes this task added or changed (22:49-22:59 UTC): `E2eSeedReviewsDatabaseTest` 2, `QueueApiTest` 2, `IdentityAdministrationDatabaseTest` 33 with 1 failed (finding (1)), and `OperatorListRetrofitApiDatabaseTest` 5 with 2 failed, each its own defect - a far cursor of a nil UUID, which the identifier types refuse, and a tie planted in 1001, which a `Timestamp` reads in the Julian calendar - corrected, the walk added, re-run 6 of 6 (23:02); own-container `UnderwritingCaseDatabaseTest` 28, `LastAdministratorDatabaseTest` 5, `E2eSeedDoorsDatabaseTest` 2 (the seed's `awaitBreak` over pages); platform's `E2eSeedPlantsDatabaseTest` 5 - 0 failed. Last (23:10 UTC): `OperatorListKeysetsTest` 2, `DeadLetterDeskTest` 10 (its exactly full last page added after the probe), `BnplMerchantDrillDownTest` 8, `TestTaxonomyTest` 17 - 0 failed; over the gate's own records, the fourteen guards reading them (`MutationDemonstrationTest`, `ApiConventionsAreAccurateTest`, `ThreatModelIsCompleteTest` among them) 120 tests, 0 failed (23:22 UTC). Whole database, Kafka, own-container and kind tiers not run (the owner's standing instruction)..
+  **Findings, not this task's**: (1) `IdentityAdministrationDatabaseTest`'s accounting-roles case is red since `P17-TSK-016` made
+  `ACCOUNTANT` with `FINANCIAL_CONTROLLER` a refused pair - its last loop grants both to one identity (409); (2)
+  `BnplMerchantDrillDownTest#everyOriginIsLabelledBeforeAnyReferenceIsRead` is flaky on a loaded machine - its payout's 700 ms
+  timeout to the local stub ends the payout `UNKNOWN`, one movement short (one pass in three re-runs); (3) the corridor policies
+  (`GET /v1/operator/cross-border/corridor-policies`) are capped at 100 with `truncated` always false (`P17-TSK-118`'s session);
+  (4) a risk queue page that reaches its scan bound with every row withheld serves none and names no next page, though rows may
+  follow. **Owed**: `edge-check.sh` over the regenerated routes; the seed and the rehearsal on a compose stack and on `kind`; the
+  section 7 retrofit's second batch - the lists `OperatorListsAreCollectionsTest` registers as not reached (the SoD-conflict
+  review, the corridor policies, the reconciliation runs, expectations and rule sets, the regulatory obligations; and, paged by
+  `after`, the accounting breaks, GL activity, a report run's lines, BNPL disputes and regulatory submissions), proposed at this
+  gate; on merging `P17-TSK-118`, its register entry for the FX list deleted. **Multi-instance**: `PASS` - reads only; a keyset
+  position is a row's own key, so a row inserted or removed between pages moves no other, on any instance.
 
 *M17.11 — Hardening and exit*
 

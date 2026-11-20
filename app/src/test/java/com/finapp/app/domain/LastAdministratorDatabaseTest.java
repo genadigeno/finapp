@@ -214,7 +214,7 @@ class LastAdministratorDatabaseTest {
         IdentityId reader = givenAnAdministrator();
         givenAConfirmedFactorFor(reader);
 
-        HttpResponse<String> named = get("/operator/access-review/factorless-holdings",
+        HttpResponse<String> named = get("/operator/access-review/factorless-holdings?limit=200",
                 givenASessionAt(reader, AssuranceLevel.MULTI_FACTOR));
 
         assertThat(named.statusCode()).isEqualTo(200);
