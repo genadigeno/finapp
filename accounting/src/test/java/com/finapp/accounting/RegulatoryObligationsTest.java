@@ -183,9 +183,9 @@ class RegulatoryObligationsTest {
     @DisplayName("a controller's list excludes their own; a person's only; a reader sees whether the build still holds the adapter - the statement's filter is pinned in the statements suite")
     void aControllersListExcludesTheirOwn() {
         RegulatoryObligations.Acted acted = proposed(1);
-        assertThat(machine.awaitingActivation(UOW, APPROVER)).extracting(RegulatoryObligationStore.Row::id).containsExactly(acted.id());
-        assertThat(machine.awaitingActivation(UOW, PREPARER)).isEmpty();
-        assertThatThrownBy(() -> machine.awaitingActivation(UOW, Actor.SYSTEM)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(machine.awaitingActivation(UOW, APPROVER, Optional.empty(), 50)).extracting(RegulatoryObligationStore.Row::id).containsExactly(acted.id());
+        assertThat(machine.awaitingActivation(UOW, PREPARER, Optional.empty(), 50)).isEmpty();
+        assertThatThrownBy(() -> machine.awaitingActivation(UOW, Actor.SYSTEM, Optional.empty(), 50)).isInstanceOf(IllegalArgumentException.class);
         assertThat(machine.recent(UOW, Optional.empty(), 2)).hasSize(1);
         assertThat(machine.view(UOW, acted.id()).adapterHeld()).isTrue();
         assertThat(machine.view(UOW, acted.id()).configuration()).isEqualTo(RegulatoryWorld.configuration());

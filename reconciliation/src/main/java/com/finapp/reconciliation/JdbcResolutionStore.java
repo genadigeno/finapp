@@ -147,7 +147,7 @@ public final class JdbcResolutionStore implements ResolutionStore {
         String sql = "SELECT id, break_id, settlement_batch_id, kind, reason_code, proposed_by, proposed_at"
                 + " FROM reconciliation.resolution WHERE status = 'PROPOSED'"
                 + (after.isPresent() ? " AND (proposed_at, id) > (?, ?)" : "")
-                + " ORDER BY proposed_at, id LIMIT ?";
+                + " ORDER BY proposed_at ASC, id ASC LIMIT ?";
         try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
             int at = 1;
             if (after.isPresent()) {

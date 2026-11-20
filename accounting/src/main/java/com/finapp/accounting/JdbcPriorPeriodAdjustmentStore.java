@@ -44,7 +44,10 @@ public final class JdbcPriorPeriodAdjustmentStore implements PriorPeriodAdjustme
     static final String OF_CORRECTED_SQL = ROW + " WHERE a.corrected_period_id = ? ORDER BY a.id";
 
     /** Selected in the statement: the filter is the database's, before the {@code LIMIT}. */
-    static final String PENDING_SQL = ROW + " WHERE a.status = 'PROPOSED' ORDER BY a.proposed_at, a.id LIMIT ?";
+    static final String PENDING_SQL = ROW + " WHERE a.status = 'PROPOSED' ORDER BY a.proposed_at ASC, a.id ASC LIMIT ?";
+
+    /** The next page: strictly after the last row served, in the order's own key (`P17-TSK-040`). */
+    static final String PENDING_AFTER_SQL = ROW + " WHERE a.status = 'PROPOSED' AND (a.proposed_at, a.id) > (?, ?) ORDER BY a.proposed_at ASC, a.id ASC LIMIT ?";
 
     static final String POST_SQL = "UPDATE accounting.prior_period_adjustment SET status = 'POSTED', journal_entry_id = ?, decided_by = ?, decided_by_type = ?,"
             + " decided_at = clock_timestamp(), decision_reason = ? WHERE id = ? AND status = 'PROPOSED'";
@@ -110,9 +113,14 @@ public final class JdbcPriorPeriodAdjustmentStore implements PriorPeriodAdjustme
     }
 
     @Override
-    public List<Row> pending(Connection unitOfWork, int limit) {
-        try (PreparedStatement read = unitOfWork.prepareStatement(PENDING_SQL)) {
-            read.setInt(1, limit);
+    public List<Row> pending(Connection unitOfWork, Optional<AccountingCollections.PendingCursor> after, int limit) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(after.isPresent() ? PENDING_AFTER_SQL : PENDING_SQL)) {
+            int next = 1;
+            if (after.isPresent()) {
+                read.setTimestamp(next++, java.sql.Timestamp.from(after.get().proposedAt()));
+                read.setObject(next++, after.get().id());
+            }
+            read.setInt(next, limit);
             return rows(read);
         } catch (SQLException failure) {
             throw failed("reading the prior-period adjustments standing", failure);

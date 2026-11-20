@@ -72,8 +72,11 @@ public final class InMemoryRegulatoryObligationStore implements RegulatoryObliga
     }
 
     @Override
-    public List<Row> awaitingActivation(Connection unitOfWork, String reader, int limit) {
-        return rows.values().stream().filter(row -> row.status() == RegulatoryObligationStatus.PROPOSED && !row.proposedBy().equals(reader)).sorted(Comparator.comparing(Row::proposedAt)).limit(limit).toList();
+    public List<Row> awaitingActivation(Connection unitOfWork, String reader, Optional<com.finapp.accounting.AccountingCollections.PendingCursor> after, int limit) {
+        return rows.values().stream().filter(row -> row.status() == RegulatoryObligationStatus.PROPOSED && !row.proposedBy().equals(reader))
+                .filter(row -> after.map(cursor -> row.proposedAt().isAfter(cursor.proposedAt())
+                        || row.proposedAt().equals(cursor.proposedAt()) && com.finapp.accounting.JournalReads.LineCursor.compareIds(row.id().value(), cursor.id()) > 0).orElse(true))
+                .sorted(Comparator.comparing(Row::proposedAt).thenComparing((Row row) -> row.id().value(), com.finapp.accounting.JournalReads.LineCursor::compareIds)).limit(limit).toList();
     }
 
     @Override

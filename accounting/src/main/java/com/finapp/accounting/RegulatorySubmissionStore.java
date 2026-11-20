@@ -123,8 +123,11 @@ public interface RegulatorySubmissionStore {
         }
     }
 
-    /** Those {@code VALIDATED} and prepared by anyone but {@code reader}, oldest first: the filter is the statement's, before its limit. */
-    List<Row> awaitingApproval(Connection unitOfWork, String reader, int limit);
+    /**
+     * Those {@code VALIDATED} and prepared by anyone but {@code reader}, oldest validation first - validated at ascending, the id
+     * ascending - strictly after {@code after} when given (`P17-TSK-040`): the filter is the statement's, before its limit.
+     */
+    List<Row> awaitingApproval(Connection unitOfWork, String reader, Optional<AccountingCollections.PendingCursor> after, int limit);
 
     /** The counts behind {@code finapp.accounting.regulatory.attention}, on the database's clock, one statement. */
     Attention attention(Connection connection, int maxResends);

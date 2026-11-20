@@ -6,6 +6,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -121,5 +123,47 @@ public final class JdbcAccountRestrictionStore implements AccountRestrictionStor
                 RestrictionKind.valueOf(row.getString("kind")), RestrictionReason.valueOf(row.getString("reason_code")),
                 row.getString("proposal_reason"), row.getString("proposed_by"), row.getString("proposed_by_type"),
                 row.getTimestamp("proposed_at").toInstant(), row.getString("proposal_correlation_id"), status, decision);
+    }
+
+    @Override
+    public List<PendingProposal> pendingRestrictions(Connection unitOfWork, Optional<PendingPosition> after, int limit) {
+        return pending(unitOfWork,
+                "SELECT id, proposed_by, proposed_at, proposal_reason AS reason, account_id::text AS subject"
+                        + " FROM accounts.account_restriction WHERE status = 'PROPOSED'",
+                after, limit, "listing the restrictions awaiting a decision");
+    }
+
+    /** A queue's page: the pending rows of {@code select}, oldest first, strictly after {@code after}. */
+    private static List<PendingProposal> pending(
+            Connection unitOfWork, String select, Optional<PendingPosition> after, int limit, String doing) {
+        Objects.requireNonNull(after, "after must not be null");
+        StringBuilder sql = new StringBuilder(select);
+        List<Object> arguments = new ArrayList<>();
+        after.ifPresent(position -> {
+            sql.append(" AND (proposed_at, id) > (?, ?)");
+            arguments.add(java.sql.Timestamp.from(position.proposedAt()));
+            arguments.add(position.id());
+        });
+        sql.append(" ORDER BY proposed_at ASC, id ASC LIMIT ?");
+        arguments.add(limit);
+        try (PreparedStatement statement = unitOfWork.prepareStatement(sql.toString())) {
+            for (int i = 0; i < arguments.size(); i++) {
+                statement.setObject(i + 1, arguments.get(i));
+            }
+            List<PendingProposal> page = new ArrayList<>();
+            try (ResultSet row = statement.executeQuery()) {
+                while (row.next()) {
+                    page.add(new PendingProposal(
+                            row.getObject("id", java.util.UUID.class),
+                            row.getString("proposed_by"),
+                            row.getTimestamp("proposed_at").toInstant(),
+                            row.getString("reason"),
+                            row.getString("subject")));
+                }
+            }
+            return List.copyOf(page);
+        } catch (SQLException failure) {
+            throw new AccountsStorageException(DatabaseFailure.describe(doing, failure));
+        }
     }
 }

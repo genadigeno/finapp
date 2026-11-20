@@ -2,6 +2,7 @@ package com.finapp.app.reconciliation;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.correlation.CorrelationContext;
@@ -370,6 +371,37 @@ public class BreakResolutionDesk {
                 (ofABatch ? row.settlementBatchId() : row.breakId()).map(UUID::toString).orElseThrow(),
                 ofABatch ? "SETTLEMENT_BATCH" : "BREAK",
                 row.proposedBy().equals(caller));
+    }
+
+    /** The pending-decision queue's cursor collection (`P17-TSK-040`). */
+    static final String PENDING_DECISIONS = "pending.reconciliation.resolutions";
+
+    /**
+     * {@code GET /v1/operator/pending-decisions/reconciliation/resolutions} (`P17-TSK-040`, gap G-140; finapp-admin-panel ADR-C133
+     * decision 3): the resolutions awaiting a second person in the one pending-decision shape - oldest proposal first, the id the
+     * tiebreak; {@code status} {@code PROPOSED} or absent. A break's resolution is {@code reconciliation.BreakResolution}, its
+     * subject the break; a batch's repudiation {@code reconciliation.BatchRepudiation}, its subject the settlement batch - both
+     * decided at {@code /v1/operator/reconciliation/resolutions/{id}}. The reason summary is the reason code; the narrative,
+     * the proposer's confidential account, stays on the resolution's own page and is never selected here. One {@code REPEATABLE READ} snapshot, recording nothing, as the resolution's own
+     * read and {@link #pendingResolutions}.
+     */
+    public PendingDecisions.PendingDecisionPage resolutionDecisions(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        Optional<ResolutionStore.PendingCursor> after = PendingDecisions.position(PENDING_DECISIONS, cursor)
+                .map(position -> new ResolutionStore.PendingCursor(position.proposedAt(), position.id()));
+        List<ResolutionStore.PendingRow> rows = reconciliationSnapshotReads.execute(
+                snapshot -> onConnection(uow -> machine.pending(uow, after, size + 1)));
+        return PendingDecisions.page(PENDING_DECISIONS,
+                rows.stream().map(BreakResolutionDesk::decisionView).toList(), size);
+    }
+
+    static PendingDecisions.PendingDecision decisionView(ResolutionStore.PendingRow row) {
+        boolean ofABatch = row.settlementBatchId().isPresent();
+        return PendingDecisions.of(row.id(),
+                ofABatch ? "reconciliation.BatchRepudiation" : "reconciliation.BreakResolution",
+                row.proposedBy(), row.proposedAt(), row.reasonCode().name(),
+                (ofABatch ? row.settlementBatchId() : row.breakId()).orElse(null));
     }
 
     /** One proposal in the approver's queue: ADR-C133's pending-decision shape, with its subject's kind and the caller's mark. */

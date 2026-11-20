@@ -100,6 +100,84 @@ public final class JdbcRiskCollections implements RiskCollections {
         return read(unitOfWork, sql.toString(), arguments, "listing the screening list versions", JdbcScreeningListStore::read);
     }
 
+    @Override
+    public List<PendingProposal> pendingSuppressions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+        return pending(unitOfWork, "SELECT id, suppression_proposed_by AS proposed_by,"
+                + " suppression_proposed_at AS proposed_at, suppression_reason AS reason, id::text AS subject"
+                + " FROM risk.risk_alert WHERE status = 'OPEN' AND suppression_proposed_by IS NOT NULL"
+                + " AND suppression_decided_by IS NULL",
+                "suppression_proposed_at", "id", after, limit, "listing the suppressions awaiting approval");
+    }
+
+    @Override
+    public List<PendingProposal> pendingDispositions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+        return pending(unitOfWork, "SELECT c.disposition_id AS id, c.disposition_proposed_by AS proposed_by,"
+                + " c.disposition_proposed_at AS proposed_at, a.text AS reason, c.id::text AS subject"
+                + " FROM risk.risk_case c JOIN risk.risk_case_action a ON a.id = c.disposition_id AND a.case_id = c.id"
+                + " WHERE c.disposition_id IS NOT NULL AND c.disposition_approved_by IS NULL",
+                "c.disposition_proposed_at", "c.disposition_id", after, limit, "listing the dispositions awaiting approval");
+    }
+
+    @Override
+    public List<PendingProposal> pendingRiskActions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+        return pending(unitOfWork, "SELECT r.id, r.proposed_by, r.proposed_at, a.text AS reason, r.case_id::text AS subject"
+                + " FROM risk.risk_action r JOIN risk.risk_case_action a ON a.id = r.id AND a.case_id = r.case_id"
+                + " WHERE r.source = 'CASE' AND r.status = 'PROPOSED'",
+                "r.proposed_at", "r.id", after, limit, "listing the risk actions awaiting approval");
+    }
+
+    @Override
+    public List<PendingProposal> pendingOverrides(Connection unitOfWork, Optional<Cursor> after, int limit) {
+        return pending(unitOfWork, "SELECT id, proposed_by, proposed_at, reason, assessment_id::text AS subject"
+                + " FROM risk.decision_override WHERE status = 'PROPOSED'",
+                "proposed_at", "id", after, limit, "listing the overrides awaiting a decision");
+    }
+
+    @Override
+    public List<PendingProposal> pendingReports(Connection unitOfWork, Optional<Cursor> after, int limit) {
+        return pending(unitOfWork, "SELECT id, drafted_by AS proposed_by, drafted_at AS proposed_at,"
+                + " NULL::text AS reason, case_id::text AS subject FROM risk.regulatory_report WHERE status = 'DRAFT'",
+                "drafted_at", "id", after, limit, "listing the reports awaiting approval");
+    }
+
+    @Override
+    public List<PendingProposal> pendingPolicyVersions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+        return pending(unitOfWork, "SELECT id, proposed_by, proposed_at, proposal_reason AS reason, operation AS subject"
+                + " FROM risk.risk_policy_version WHERE status = 'PROPOSED'",
+                "proposed_at", "id", after, limit, "listing the policy versions awaiting activation");
+    }
+
+    @Override
+    public List<PendingProposal> pendingScreeningListVersions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+        return pending(unitOfWork, "SELECT id, recorded_by AS proposed_by, recorded_at AS proposed_at, NULL::text AS reason,"
+                + " list AS subject FROM risk.screening_list_version WHERE status = 'RECORDED'",
+                "recorded_at", "id", after, limit, "listing the screening list versions awaiting activation");
+    }
+
+    /**
+     * A queue of proposals awaiting a decision: {@code select}'s rows oldest first by {@code (stamp, id)}, strictly after the
+     * cursor - the row comparison in the order's own direction.
+     */
+    private static List<PendingProposal> pending(Connection unitOfWork, String select, String stamp, String id,
+            Optional<Cursor> after, int limit, String what) {
+        Objects.requireNonNull(after, "after");
+        StringBuilder sql = new StringBuilder(select);
+        List<Object> arguments = new ArrayList<>();
+        after.ifPresent(cursor -> {
+            sql.append(" AND (").append(stamp).append(", ").append(id).append(") > (?, ?)");
+            arguments.add(Timestamp.from(cursor.at()));
+            arguments.add(cursor.id());
+        });
+        sql.append(" ORDER BY ").append(stamp).append(" ASC, ").append(id).append(" ASC LIMIT ?");
+        arguments.add(bounded(limit));
+        return read(unitOfWork, sql.toString(), arguments, what, rows -> new PendingProposal(
+                rows.getObject("id", UUID.class),
+                rows.getString("proposed_by"),
+                rows.getTimestamp("proposed_at").toInstant(),
+                Optional.ofNullable(rows.getString("reason")),
+                rows.getString("subject")));
+    }
+
     /** Strictly before the cursor in the collection's order: the row comparison the index walks. */
     private static void keyset(StringBuilder sql, List<Object> arguments, String stamp, Optional<Cursor> after) {
         after.ifPresent(cursor -> {

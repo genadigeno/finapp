@@ -829,10 +829,17 @@ public final class RegulatorySubmissions {
         return new Standing(page.stream().map(RegulatorySubmissionStore.Placed::row).toList(), more ? Optional.of(page.get(limit - 1).cursor()) : Optional.empty());
     }
 
-    /** Those waiting on a decision {@code reader} could make: never their own - excluded in the statement, before its limit. Fail closed: only a person has such a list. */
-    public List<Row> awaitingApproval(Connection unitOfWork, Actor reader) {
+    /**
+     * Those waiting on a decision {@code reader} could make, a page at a time (`P17-TSK-040`): never their own - excluded in the
+     * statement, before its limit. Fail closed: only a person has such a list.
+     */
+    public List<Row> awaitingApproval(Connection unitOfWork, Actor reader, Optional<AccountingCollections.PendingCursor> after, int limit) {
         person(reader);
-        return store.awaitingApproval(unitOfWork, reader.id(), LIST_LIMIT);
+        Objects.requireNonNull(after, "after");
+        if (limit < 1) {
+            throw new IllegalArgumentException("a page holds at least one row, not " + limit);
+        }
+        return store.awaitingApproval(unitOfWork, reader.id(), after, limit);
     }
 
     /**

@@ -2,6 +2,7 @@ package com.finapp.app.credit;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.RecordedReads;
 import com.finapp.credit.CreditAuditAction;
 import com.finapp.credit.CreditCollections;
@@ -50,6 +51,9 @@ public final class CreditCollectionDesk {
     static final String DECISION_REQUESTS = "credit.decision-requests";
     static final String POLICY_VERSIONS = "credit.policy-versions";
     static final String SCORECARDS = "credit.scorecards";
+    static final String PENDING_POLICY_VERSIONS = "pending.credit.policy-versions";
+    static final String PENDING_SCORECARD_VERSIONS = "pending.credit.scorecard-versions";
+    static final String PENDING_SECOND_APPROVALS = "pending.credit.review-case-decisions";
     static final int DEFAULT_LIMIT = 50;
     static final int MAXIMUM_LIMIT = 200;
 
@@ -225,6 +229,77 @@ public final class CreditCollectionDesk {
             return new ScorecardVersionView(scorecardHead(head, caller), scorecard.basePoints(),
                     scorecard.attributes().stream().map(CreditCollectionDesk::attribute).toList());
         });
+    }
+
+    // ------------------------------------------------------------------ the approver's pending-decision queues (`P17-TSK-040`)
+
+    /**
+     * A page of the credit policy versions awaiting a decision, proposed oldest first, in the one pending-decision shape
+     * ({@link PendingDecisions}); recorded {@code credit.PolicyRead}, as the version list is.
+     */
+    public PendingDecisions.PendingDecisionPage pendingPolicyVersions(String status, String cursor, String limit) {
+        return pending(status, cursor, limit, PENDING_POLICY_VERSIONS, "credit.PolicyVersion", CreditAuditAction.POLICY_READ,
+                "credit_policy_versions", collections::pendingPolicyVersions);
+    }
+
+    /**
+     * A page of the scorecard model versions awaiting a decision, proposed oldest first, in the one pending-decision shape;
+     * recorded {@code credit.ScorecardRead}, as the scorecard list is.
+     */
+    public PendingDecisions.PendingDecisionPage pendingScorecardVersions(String status, String cursor, String limit) {
+        return pending(status, cursor, limit, PENDING_SCORECARD_VERSIONS, "credit.ScorecardVersion",
+                CreditAuditAction.SCORECARD_READ, "scorecard_model_versions", collections::pendingScorecardVersions);
+    }
+
+    /**
+     * A page of the review cases whose first decision awaits a different underwriter's second approval, first decided oldest
+     * first, in the one pending-decision shape: the case its id (the second-approval door's), the first underwriter its
+     * proposer, their reason its summary, the decision request its subject; {@code status} {@code AWAITING_SECOND} or absent.
+     * Recorded {@code credit.ReviewCasesRead}, as the review queue is.
+     */
+    public PendingDecisions.PendingDecisionPage pendingSecondApprovals(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "AWAITING_SECOND");
+        int size = PendingDecisions.limit(limit);
+        Optional<CreditCollections.Cursor> after = PendingDecisions.position(PENDING_SECOND_APPROVALS, cursor)
+                .map(position -> new CreditCollections.Cursor(position.proposedAt(), position.id()));
+        List<CreditCollections.PendingSecondApproval> rows = transactions.inTransaction(uow -> {
+            List<CreditCollections.PendingSecondApproval> read = collections.pendingSecondApprovals(uow, after, size + 1);
+            reads.record(uow, CreditAuditAction.REVIEW_CASES_READ, "review_queue", "AWAITING_SECOND", "status=AWAITING_SECOND,"
+                    + " continued=" + after.isPresent() + ", served=" + Math.min(size, read.size()));
+            return read;
+        });
+        return PendingDecisions.page(PENDING_SECOND_APPROVALS, rows.stream()
+                .map(row -> PendingDecisions.of(row.caseId(), "credit.ReviewCaseDecision", row.firstDecidedBy(),
+                        row.firstDecidedAt(), row.firstReason(), row.decisionRequest()))
+                .toList(), size);
+    }
+
+    @FunctionalInterface
+    private interface PendingRead {
+        List<CreditCollections.VersionHead> read(java.sql.Connection unitOfWork, Optional<CreditCollections.Cursor> after,
+                int limit);
+    }
+
+    /**
+     * One pending-decision page: its subject the product or family the version would govern, its proposer and reason the
+     * proposal's.
+     */
+    private PendingDecisions.PendingDecisionPage pending(String status, String cursor, String limit, String collection,
+            String kind, CreditAuditAction action, String targetType, PendingRead pending) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        Optional<CreditCollections.Cursor> after = PendingDecisions.position(collection, cursor)
+                .map(position -> new CreditCollections.Cursor(position.proposedAt(), position.id()));
+        List<CreditCollections.VersionHead> rows = transactions.inTransaction(uow -> {
+            List<CreditCollections.VersionHead> read = pending.read(uow, after, size + 1);
+            reads.record(uow, action, targetType, "pending", "status=PROPOSED, continued=" + after.isPresent() + ", served="
+                    + Math.min(size, read.size()));
+            return read;
+        });
+        return PendingDecisions.page(collection, rows.stream()
+                .map(head -> PendingDecisions.of(head.id(), kind, head.proposedBy(), head.proposedAt(), head.reason(),
+                        head.subject()))
+                .toList(), size);
     }
 
     // ------------------------------------------------------------------ the views

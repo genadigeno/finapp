@@ -148,7 +148,41 @@ public final class JdbcLendingOperatorLists implements LendingOperatorLists {
         before(sql, arguments, "proposed_at", "id", after);
         sql.append(" ORDER BY proposed_at DESC, id DESC LIMIT ?");
         arguments.add(bounded(limit));
-        return read(unitOfWork, sql.toString(), arguments, "listing the terms versions", rows -> new TermsVersionHead(
+        return read(unitOfWork, sql.toString(), arguments, "listing the terms versions", JdbcLendingOperatorLists::termsHead);
+    }
+
+    @Override
+    public List<TermsVersionHead> pendingTermsVersions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+        Objects.requireNonNull(after, "after");
+        List<Object> arguments = new ArrayList<>();
+        String sql = "SELECT id, product, version, status, proposed_by, proposed_at, proposal_reason, decided_at,"
+                + " decision_reason, effective_from, effective_to FROM lending.loan_terms_version t WHERE t.status = 'PROPOSED'"
+                + beyond("t", arguments, after) + " ORDER BY t.proposed_at ASC, t.id ASC LIMIT ?";
+        arguments.add(bounded(limit));
+        return read(unitOfWork, sql, arguments, "listing the terms versions awaiting a decision",
+                JdbcLendingOperatorLists::termsHead);
+    }
+
+    @Override
+    public List<PendingContribution> pendingCapitalContributions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+        Objects.requireNonNull(after, "after");
+        List<Object> arguments = new ArrayList<>();
+        String sql = "SELECT c.id, c.proposed_by, c.proposed_at, c.reason, c.currency FROM lending.capital_contribution c"
+                + " WHERE NOT EXISTS (SELECT 1 FROM lending.capital_contribution_event d WHERE d.contribution_id = c.id"
+                + " AND d.to_status <> 'PROPOSED')" + beyond("c", arguments, after)
+                + " ORDER BY c.proposed_at ASC, c.id ASC LIMIT ?";
+        arguments.add(bounded(limit));
+        return read(unitOfWork, sql, arguments, "listing the capital contributions awaiting a decision",
+                rows -> new PendingContribution(
+                        CapitalContributionId.of(rows.getObject("id", UUID.class)),
+                        rows.getString("proposed_by"),
+                        rows.getTimestamp("proposed_at").toInstant(),
+                        rows.getString("reason"),
+                        CurrencyCode.of(rows.getString("currency").strip())));
+    }
+
+    private static TermsVersionHead termsHead(ResultSet rows) throws SQLException {
+        return new TermsVersionHead(
                 LoanTermsVersionId.of(rows.getObject("id", UUID.class)),
                 LoanProduct.valueOf(rows.getString("product")),
                 rows.getInt("version"),
@@ -159,7 +193,7 @@ public final class JdbcLendingOperatorLists implements LendingOperatorLists {
                 instant(rows.getTimestamp("decided_at")),
                 Optional.ofNullable(rows.getString("decision_reason")),
                 instant(rows.getTimestamp("effective_from")),
-                instant(rows.getTimestamp("effective_to"))));
+                instant(rows.getTimestamp("effective_to")));
     }
 
     private static Optional<Instant> instant(Timestamp stamp) {

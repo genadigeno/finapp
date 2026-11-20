@@ -1,6 +1,9 @@
 package com.finapp.app.bnpl;
 
+import com.finapp.app.api.PendingDecisions;
+import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
+import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -61,14 +64,60 @@ public class BnplListController {
 
     /**
      * The waivers and repayment reversals awaiting a decision, oldest first ({@code status} {@code PROPOSED} or absent): the
-     * approver's queue, each naming its proposer; recorded {@code bnpl.ServicingRequestsRead}.
+     * approver's queue in the one pending-decision shape (`P17-TSK-040`), under the approve doors' permission and assurance;
+     * recorded {@code bnpl.ServicingRequestsRead}.
      */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @GetMapping("/bnpl-agreements/servicing-requests")
     @RequiresPermission(PermissionName.BNPL_SERVICE_APPROVE)
-    public BnplListDesk.BnplServicingRequestPage listBnplServicingRequests(
+    public PendingDecisions.PendingDecisionPage listBnplServicingRequests(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,
             @RequestParam(name = "limit", required = false) String limit) {
         return desk.servicingRequests(status, cursor, limit);
+    }
+
+    /**
+     * The BNPL terms versions awaiting a decision, oldest first, in the one pending-decision shape (`P17-TSK-040`), under the
+     * approve door's permission and assurance. Unrecorded, as the terms reads are.
+     */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+    @GetMapping("/pending-decisions/bnpl/terms-versions")
+    @RequiresPermission(PermissionName.BNPL_ADMINISTER)
+    public PendingDecisions.PendingDecisionPage listPendingBnplTermsVersions(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.pendingTermsVersions(status, cursor, limit);
+    }
+
+    /**
+     * The operator BNPL refunds proposed above the four-eyes threshold and awaiting a decision, oldest first, in the one
+     * pending-decision shape (`P17-TSK-040`), under the approve door's permission and assurance; recorded
+     * {@code bnpl.RefundsRead}.
+     */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+    @GetMapping("/pending-decisions/bnpl/refund-proposals")
+    @RequiresPermission(PermissionName.PAYMENT_REFUND_APPROVE)
+    public PendingDecisions.PendingDecisionPage listPendingBnplRefundProposals(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.pendingRefundProposals(status, cursor, limit);
+    }
+
+    /**
+     * The BNPL disputes whose resolution awaits a second operator's approval, oldest first, in the one pending-decision shape
+     * (`P17-TSK-040`; until then no list said which), under the approve door's permission and assurance; recorded
+     * {@code bnpl.DisputeQueueRead}.
+     */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+    @GetMapping("/pending-decisions/bnpl/dispute-resolutions")
+    @RequiresPermission(PermissionName.BNPL_DISPUTE_RESOLVE)
+    public PendingDecisions.PendingDecisionPage listPendingBnplDisputeResolutions(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.pendingDisputeResolutions(status, cursor, limit);
     }
 }

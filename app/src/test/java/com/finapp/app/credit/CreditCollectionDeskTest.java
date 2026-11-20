@@ -305,5 +305,20 @@ class CreditCollectionDeskTest {
         public Optional<VersionHead> scorecardVersion(Connection unitOfWork, ScorecardModelVersionId id) {
             return scorecards.stream().filter(head -> head.id().equals(id.value())).findFirst();
         }
+
+        @Override
+        public List<VersionHead> pendingPolicyVersions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+            throw new UnsupportedOperationException("the pending queues are not under test here");
+        }
+
+        @Override
+        public List<VersionHead> pendingScorecardVersions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+            throw new UnsupportedOperationException("the pending queues are not under test here");
+        }
+
+        @Override
+        public List<PendingSecondApproval> pendingSecondApprovals(Connection unitOfWork, Optional<Cursor> after, int limit) {
+            throw new UnsupportedOperationException("the pending queues are not under test here");
+        }
     }
 }

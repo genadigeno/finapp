@@ -75,17 +75,7 @@ class OperatorListsAreCollectionsTest {
             entry("GET /v1/operator/fee-schedules",
                     "the platform's own price list, every schedule served whole - never capped (ADR-C133's 'unbounded', complete)"),
             entry("GET /v1/operator/accounting/periods/{periodId}/prior-period-adjustments",
-                    "one month's corrections, served whole - a subject's children, never capped"),
-            entry("GET /v1/operator/accounting/prior-period-adjustments",
-                    "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape"),
-            entry("GET /v1/operator/bnpl-agreements/write-offs",
-                    "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape"),
-            entry("GET /v1/operator/loans/write-offs",
-                    "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape"),
-            entry("GET /v1/operator/regulatory/obligations/awaiting-activation",
-                    "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape"),
-            entry("GET /v1/operator/regulatory/submissions/awaiting-approval",
-                    "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape")));
+                    "one month's corrections, served whole - a subject's children, never capped")));
 
     /** Routes on the operator surface answering a top-level {@code truncated}, each with why it may. */
     static final Map<String, String> TRUNCATED = new TreeMap<>(Map.ofEntries(

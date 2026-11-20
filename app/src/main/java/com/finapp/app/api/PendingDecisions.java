@@ -47,9 +47,12 @@ public final class PendingDecisions {
      * @param reasonSummary the proposer's reason, cut to {@value #SUMMARY_LENGTH} characters; null where none is recorded
      * @param subjectId     what the proposal acts on (an account, a period, a version, ...); null where it acts on nothing
      *                      but itself
+     * @param relatedId     a second identifier the kind's decision doors name, where the subject alone is not enough to reach
+     *                      them - a repayment reversal's repayment, under {@code .../{subject}/repayments/{relatedId}/...};
+     *                      null for every other kind. The one addition to ADR-C133 decision 3's six fields (`P17-TSK-040`).
      */
     public record PendingDecision(String id, String kind, String proposedBy, String proposedAt, String reasonSummary,
-            String subjectId) {
+            String subjectId, String relatedId) {
 
         public PendingDecision {
             Objects.requireNonNull(id, "id");
@@ -69,8 +72,15 @@ public final class PendingDecisions {
 
     /** An item from a domain row: the ids and the proposer as stored, the instant as stored. */
     public static PendingDecision of(Object id, String kind, Object proposedBy, Instant proposedAt, String reason, Object subjectId) {
+        return of(id, kind, proposedBy, proposedAt, reason, subjectId, null);
+    }
+
+    /** An item whose decision doors also name a second identifier ({@code relatedId}). */
+    public static PendingDecision of(Object id, String kind, Object proposedBy, Instant proposedAt, String reason, Object subjectId,
+            Object relatedId) {
         return new PendingDecision(String.valueOf(id), kind, proposedBy == null ? null : String.valueOf(proposedBy),
-                proposedAt.toString(), summary(reason), subjectId == null ? null : String.valueOf(subjectId));
+                proposedAt.toString(), summary(reason), subjectId == null ? null : String.valueOf(subjectId),
+                relatedId == null ? null : String.valueOf(relatedId));
     }
 
     /** The proposer's reason cut to {@value #SUMMARY_LENGTH} characters, or null where there is none. */

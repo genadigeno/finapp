@@ -128,4 +128,32 @@ public interface BnplOperatorLists {
      * proposed oldest first and the id breaking the tie: the approver's queue.
      */
     List<ServicingRequest> pendingServicing(Connection unitOfWork, UUID withheldParty, Optional<Cursor> after, int limit);
+
+    /**
+     * A proposal awaiting a decision as an approver's queue lists it (`P17-TSK-040`): the id its decision doors name, its
+     * proposer's identity id, stamp and reason, and what it acts on.
+     */
+    record PendingProposal(UUID id, String proposedBy, Instant proposedAt, String reason, String subject) {}
+
+    /**
+     * The terms versions awaiting a decision ({@code PROPOSED}), proposed oldest first and the id breaking the tie, strictly after
+     * {@code after}; each one's subject the product it would govern.
+     */
+    List<PendingProposal> pendingTermsVersions(Connection unitOfWork, Optional<Cursor> after, int limit);
+
+    /**
+     * The operator refunds proposed above the four-eyes threshold and awaiting a decision ({@code bnpl V024}'s
+     * {@code refund_proposal}, {@code PROPOSED}), proposed oldest first and the id breaking the tie, strictly after {@code after},
+     * never of {@code withheldParty}'s purchases; each one's subject the purchase.
+     */
+    List<PendingProposal> pendingRefundProposals(Connection unitOfWork, UUID withheldParty, Optional<Cursor> after, int limit);
+
+    /**
+     * The disputes whose resolution awaits a second operator's approval ({@code bnpl V015}'s {@code bnpl_dispute_proposal},
+     * {@code PROPOSED}), proposed oldest first and the dispute's id breaking the tie, strictly after {@code after}, never of
+     * {@code withheldParty}'s disputes: the id the dispute's (its doors are the dispute's), the proposer stripped of its
+     * {@code OPERATOR:} prefix, the subject the purchase.
+     */
+    List<PendingProposal> pendingDisputeResolutions(Connection unitOfWork, UUID withheldParty, Optional<Cursor> after,
+            int limit);
 }

@@ -18,6 +18,7 @@ import com.finapp.accounting.SubmissionStatus;
 import com.finapp.accounting.testing.RegulatoryWorld;
 import com.finapp.accounting.testing.ScriptedRegulatoryProvider;
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
@@ -148,7 +149,7 @@ class RegulatorySubmissionDeskTest {
     @Test
     @DisplayName("the routes are the partition: each role's read its own door; MULTI_FACTOR on every act since the owner's D-6"
             + " (P17-TSK-102) - the draft, the validation, the withdrawal, the attestation, the refusal, the sending and the"
-            + " non-delivery - and on no read; every POST keyed; no route asks ACCOUNTING_READ")
+            + " non-delivery - and on no read but the pending-decision queue, stepped up as the approval (P17-TSK-040); every POST keyed; no route asks ACCOUNTING_READ")
     void theRoutesAreThePartition() {
         Map<String, PermissionName> expected = Map.ofEntries(
                 Map.entry("draftRegulatorySubmission", PermissionName.REGULATORY_REPORT_PREPARE),
@@ -163,7 +164,7 @@ class RegulatorySubmissionDeskTest {
                 Map.entry("refuseRegulatorySubmission", PermissionName.REGULATORY_REPORT_APPROVE),
                 Map.entry("sendRegulatorySubmission", PermissionName.REGULATORY_REPORT_SUBMIT),
                 Map.entry("declareRegulatorySubmissionUndelivered", PermissionName.REGULATORY_REPORT_SUBMIT));
-        List<String> stepped = List.of("draftRegulatorySubmission", "validateRegulatorySubmission", "withdrawRegulatorySubmission",
+        List<String> stepped = List.of("listRegulatorySubmissionsAwaitingApproval", "draftRegulatorySubmission", "validateRegulatorySubmission", "withdrawRegulatorySubmission",
                 "approveRegulatorySubmission", "refuseRegulatorySubmission", "sendRegulatorySubmission", "declareRegulatorySubmissionUndelivered");
         int seen = 0;
         for (Method method : RegulatorySubmissionController.class.getDeclaredMethods()) {
@@ -616,11 +617,12 @@ class RegulatorySubmissionDeskTest {
     void theLists() {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt validated = validated();
 
-        assertThat(as(APPROVER, desk::awaitingApproval)).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::submissionId).containsExactly(validated.submissionId());
-        assertThat(as(PREPARER, desk::awaitingApproval)).isEmpty();
+        assertThat(as(APPROVER, () -> desk.awaitingApproval(null, null, null)).items()).extracting(PendingDecisions.PendingDecision::id).containsExactly(validated.submissionId());
+        assertThat(as(APPROVER, () -> desk.awaitingApproval(null, null, null)).items()).extracting(PendingDecisions.PendingDecision::kind).containsExactly("accounting.RegulatorySubmission");
+        assertThat(as(PREPARER, () -> desk.awaitingApproval(null, null, null)).items()).isEmpty();
         assertThat(as(PREPARER, () -> desk.standing(null, null)).items()).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::status).containsExactly("VALIDATED");
         assertThat(world.audit.stream().map(record -> record.changeSummary().orElse(""))).anyMatch(summary -> summary.contains("door=awaiting-approval")).anyMatch(summary -> summary.contains("door=standing"));
-        assertThat(as(APPROVER, desk::awaitingApproval).get(0).toString()).doesNotContain("10000");
+        assertThat(as(APPROVER, () -> desk.awaitingApproval(null, null, null)).items().get(0).toString()).doesNotContain("10000");
         assertThat(as(PREPARER, () -> desk.standing(null, null)).items().get(0).toString()).doesNotContain("10000");
     }
 

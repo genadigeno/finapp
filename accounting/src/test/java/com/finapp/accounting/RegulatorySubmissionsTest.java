@@ -1194,9 +1194,9 @@ class RegulatorySubmissionsTest {
     void aPendingListExcludesWhatItsReaderCannotDecide() {
         Acted validated = world.validated(world.drafted(obligation, JANUARY));
 
-        assertThat(machine.awaitingApproval(UOW, APPROVER)).extracting(RegulatorySubmissionStore.Row::id).containsExactly(validated.id());
-        assertThat(machine.awaitingApproval(UOW, PREPARER)).isEmpty();
-        assertThatThrownBy(() -> machine.awaitingApproval(UOW, Actor.SYSTEM)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(machine.awaitingApproval(UOW, APPROVER, Optional.empty(), 50)).extracting(RegulatorySubmissionStore.Row::id).containsExactly(validated.id());
+        assertThat(machine.awaitingApproval(UOW, PREPARER, Optional.empty(), 50)).isEmpty();
+        assertThatThrownBy(() -> machine.awaitingApproval(UOW, Actor.SYSTEM, Optional.empty(), 50)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

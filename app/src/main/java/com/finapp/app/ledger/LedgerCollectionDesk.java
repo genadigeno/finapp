@@ -3,6 +3,7 @@ package com.finapp.app.ledger;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.accounting.GlSnapshots;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.LedgerAccountId;
 import com.finapp.ledger.LedgerAuditAction;
@@ -324,6 +325,52 @@ public final class LedgerCollectionDesk {
             drifted.add("APPLIED_ENTRIES");
         }
         return drifted.isEmpty() ? "DRIFTED" : "DRIFTED:" + String.join(",", drifted);
+    }
+
+    // ------------------------------------------------------------------ the pending-decision queues (P17-TSK-040, G-140)
+
+    /** The two queues' cursor collections, in the one pending-decision shape. */
+    static final String PENDING_ADJUSTMENTS = "pending.ledger.adjustments";
+    static final String PENDING_REBUILDS = "pending.ledger.projection-rebuilds";
+
+    /**
+     * {@code GET /v1/operator/pending-decisions/ledger/adjustments}: the manual adjustments awaiting a second person in the one
+     * pending-decision shape - oldest first, the id the tiebreak; {@code status} {@code PROPOSED} or absent. The reason summary is
+     * the reason code - the proposer's prose stays on the proposal's own page, as in {@link #pendingAdjustments}; no subject: an
+     * adjustment's lines name several accounts. Recording nothing, as the proposal's own read records nothing.
+     */
+    public PendingDecisions.PendingDecisionPage adjustmentDecisions(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        Optional<LedgerCollections.PendingCursor> after = decisionCursor(PENDING_ADJUSTMENTS, cursor);
+        List<LedgerCollections.PendingAdjustment> rows = bounded(() -> snapshots.read(snapshot ->
+                collections.pendingAdjustments(snapshot, after, size + 1)));
+        return PendingDecisions.page(PENDING_ADJUSTMENTS, rows.stream()
+                .map(row -> PendingDecisions.of(row.id().value(), "ledger.Adjustment", row.proposedBy(), row.proposedAt(),
+                        row.reasonCode().name(), null))
+                .toList(), size);
+    }
+
+    /**
+     * {@code GET /v1/operator/pending-decisions/ledger/projection-rebuilds}: the projection rebuilds awaiting a second person in
+     * the one pending-decision shape, each subject the ledger account it would rebuild. A rebuild has no reason code, so its reason
+     * summary is which figures the proposer saw drift ({@link #drift}) - never the proposer's prose. Recording nothing.
+     */
+    public PendingDecisions.PendingDecisionPage rebuildDecisions(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        Optional<LedgerCollections.PendingCursor> after = decisionCursor(PENDING_REBUILDS, cursor);
+        List<LedgerCollections.PendingRebuild> rows = bounded(() -> snapshots.read(snapshot ->
+                collections.pendingRebuilds(snapshot, after, size + 1)));
+        return PendingDecisions.page(PENDING_REBUILDS, rows.stream()
+                .map(row -> PendingDecisions.of(row.id().value(), "ledger.ProjectionRebuild", row.proposedBy(), row.proposedAt(),
+                        drift(row), row.account().value()))
+                .toList(), size);
+    }
+
+    private static Optional<LedgerCollections.PendingCursor> decisionCursor(String collection, String cursor) {
+        return PendingDecisions.position(collection, cursor)
+                .map(position -> new LedgerCollections.PendingCursor(position.proposedAt(), position.id()));
     }
 
     static int queue(String status, String limit) {

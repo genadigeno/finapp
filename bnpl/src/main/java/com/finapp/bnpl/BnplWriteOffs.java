@@ -372,12 +372,26 @@ public final class BnplWriteOffs {
      * @throws UnplacedReaderRefused the actor has no party the platform knows
      */
     public List<BnplWriteOff> pending(Connection unitOfWork, Actor actor, CorrelationId correlation) {
+        return pending(unitOfWork, actor, correlation, Optional.empty(), PENDING_LIMIT);
+    }
+
+    /**
+     * A keyset page of the write-offs awaiting a decision (`P17-TSK-040`): oldest first and the id breaking the tie, strictly after
+     * {@code after}, at most {@code limit} - the caller reads one beyond its page - audited, the officer's own party withheld as
+     * {@link #pending(Connection, Actor, CorrelationId)} withholds it.
+     *
+     * @throws UnplacedReaderRefused the actor has no party the platform knows
+     */
+    public List<BnplWriteOff> pending(Connection unitOfWork, Actor actor, CorrelationId correlation,
+            Optional<BnplOperatorLists.Cursor> after, int limit) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
         Objects.requireNonNull(actor, "actor");
         Objects.requireNonNull(correlation, "correlation");
+        Objects.requireNonNull(after, "after");
         UUID own = actingParties.partyOf(unitOfWork, actor).orElseThrow(UnplacedReaderRefused::new);
-        List<BnplWriteOff> found = store.oldestPending(unitOfWork, own, PENDING_LIMIT);
-        auditRead(unitOfWork, actor, "pending", "pending=" + found.size(), correlation);
+        List<BnplWriteOff> found = store.oldestPending(unitOfWork, own, after, limit);
+        auditRead(unitOfWork, actor, "pending", "pending=" + found.size() + (after.isPresent() ? ", continued=true" : ""),
+                correlation);
         return found;
     }
 

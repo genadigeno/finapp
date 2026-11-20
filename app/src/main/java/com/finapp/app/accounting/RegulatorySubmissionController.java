@@ -1,6 +1,7 @@
 package com.finapp.app.accounting;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
@@ -9,7 +10,6 @@ import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.RequiresIdempotencyKey;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
-import java.util.List;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -62,11 +62,18 @@ public class RegulatorySubmissionController {
         return desk.standing(cursor, limit);
     }
 
-    /** What this controller can decide: those validated, never their own. Audited. */
+    /**
+     * What this controller can decide: those validated, never their own - the one pending-decision shape (`P17-TSK-040`), oldest
+     * validation first, {@code status} {@code VALIDATED} or absent, on a MULTI_FACTOR session as the approval door. Audited.
+     */
     @GetMapping("/awaiting-approval")
     @RequiresPermission(PermissionName.REGULATORY_REPORT_APPROVE)
-    public List<RegulatorySubmissionDesk.RegulatorySubmissionSummaryView> listRegulatorySubmissionsAwaitingApproval() {
-        return desk.awaitingApproval();
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+    public PendingDecisions.PendingDecisionPage listRegulatorySubmissionsAwaitingApproval(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.awaitingApproval(status, cursor, limit);
     }
 
     /** A return and its figures as a preparer reads it: each line traced to its run's figure, the validation, the provider's answers, whether its month moved. Audited. */

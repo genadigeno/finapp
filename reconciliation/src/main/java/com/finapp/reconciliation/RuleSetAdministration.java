@@ -377,6 +377,15 @@ public final class RuleSetAdministration {
         return store.versions(unitOfWork, sourceId, beforeVersion, limit);
     }
 
+    /**
+     * The versions awaiting a second controller, every source's, oldest proposal first (`P17-TSK-040`): a page of the one
+     * pending-decision queue, lock-free.
+     */
+    public List<RuleSetStore.PendingVersion> pending(
+            Connection unitOfWork, java.util.Optional<RuleSetStore.PendingCursor> after, int limit) {
+        return store.pending(unitOfWork, after, limit);
+    }
+
     // ------------------------------------------------------------------ plumbing
 
     /**

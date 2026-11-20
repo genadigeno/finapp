@@ -30,4 +30,10 @@ public class FxReadBeans {
                 clock,
                 fxTransactionRunner);
     }
+
+    /** FX's queues of proposals awaiting a decision (`P17-TSK-040`). */
+    @Bean
+    FxPendingDecisionDesk fxPendingDecisionDesk(TransactionRunner fxTransactionRunner) {
+        return new FxPendingDecisionDesk(new JdbcFxCollections(), fxTransactionRunner);
+    }
 }

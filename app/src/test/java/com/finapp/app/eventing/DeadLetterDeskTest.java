@@ -222,7 +222,11 @@ class DeadLetterDeskTest {
             assertThat(abandoned.items()).hasSize(2);
             assertThat(abandoned.nextCursor()).as("one page holds them all: no cursor").isNull();
             assertThat(desk.discards(null, null, null).items())
-                    .singleElement().satisfies(discard -> assertThat(discard.reason()).isEqualTo("cannot be sent"));
+                    .singleElement().satisfies(discard -> {
+                        assertThat(discard.kind()).isEqualTo("deadletter.Discard");
+                        assertThat(discard.subjectId()).isEqualTo(discardable.toString());
+                        assertThat(discard.reasonSummary()).isEqualTo("cannot be sent");
+                    });
             assertThat(abandoned.items().getFirst().failureClass()).doesNotContain(":");
         }
     }

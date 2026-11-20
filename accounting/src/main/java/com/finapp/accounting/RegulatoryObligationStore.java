@@ -33,8 +33,11 @@ public interface RegulatoryObligationStore {
      */
     List<Row> recent(Connection unitOfWork, Optional<ObligationCursor> after, int limit);
 
-    /** Those {@code PROPOSED} by anyone but {@code reader}, oldest first: the filter is the statement's, before its limit. */
-    List<Row> awaitingActivation(Connection unitOfWork, String reader, int limit);
+    /**
+     * Those {@code PROPOSED} by anyone but {@code reader}, oldest first - proposed at ascending, the id ascending - strictly after
+     * {@code after} when given (`P17-TSK-040`): the filter is the statement's, before its limit.
+     */
+    List<Row> awaitingActivation(Connection unitOfWork, String reader, Optional<AccountingCollections.PendingCursor> after, int limit);
 
     /** {@code PROPOSED -> ACTIVE}; {@code false} when it was not {@code PROPOSED}. */
     boolean markActive(Connection unitOfWork, RegulatoryObligationId id, Actor actor, String reason);

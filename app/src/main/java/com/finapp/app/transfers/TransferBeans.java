@@ -182,4 +182,12 @@ class TransferBeans {
         return new TransferReversalDesk(transferReversalProposals, idempotentExecutor, transferTransactions, dataSource,
                 transferMetrics);
     }
+
+    /** The transfer reversals awaiting a decision (`P17-TSK-040`), on the transfer transaction. */
+    @Bean
+    TransferReversalPendingDecisionDesk transferReversalPendingDecisionDesk(
+            TransactionTemplate transferTransactions, DataSource dataSource) {
+        return new TransferReversalPendingDecisionDesk(new JdbcTransferReversalProposalStore(), transferTransactions,
+                dataSource);
+    }
 }

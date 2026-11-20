@@ -9,6 +9,7 @@ import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * {@link AccountingCollections} over accounting's own tables (`P17-TSK-023`): each page one statement - the store's own row select,
@@ -116,6 +117,76 @@ public final class JdbcAccountingCollections implements AccountingCollections {
             return page;
         } catch (SQLException failure) {
             throw new AccountingStorageException(DatabaseFailure.describe("listing valuation rate sets", failure));
+        }
+    }
+
+    // ------------------------------------------------------------------ the pending-decision queues (`P17-TSK-040`)
+
+    /** A pending queue's select: id, proposer, instant and subject under one set of names, so one mapper reads every queue. */
+    static final String PENDING_MAPPING_VERSIONS = "SELECT id, proposed_by, proposed_at, CAST(NULL AS uuid) AS subject_id"
+            + " FROM accounting.gl_mapping_version WHERE status = 'PROPOSED'";
+
+    static final String PENDING_RATE_SETS = "SELECT id, captured_by AS proposed_by, captured_at AS proposed_at, period_id AS subject_id"
+            + " FROM accounting.valuation_rate_set WHERE status = 'PROPOSED'";
+
+    static final String PENDING_CLOSES = "SELECT id, proposed_by, proposed_at, period_id AS subject_id"
+            + " FROM accounting.period_close WHERE status = 'PROPOSED'";
+
+    static final String PENDING_REOPENS = "SELECT id, proposed_by, proposed_at, period_id AS subject_id"
+            + " FROM accounting.period_reopen WHERE status = 'PROPOSED'";
+
+    static final String PENDING_UNLOCKS = "SELECT id, unlock_proposed_by AS proposed_by, unlock_proposed_at AS proposed_at, id AS subject_id"
+            + " FROM accounting.accounting_period WHERE status = 'LOCKED' AND unlock_proposed_by IS NOT NULL AND unlock_approved_by IS NULL";
+
+    @Override
+    public List<PendingRow> pendingMappingVersions(Connection unitOfWork, Optional<PendingCursor> after, int limit) {
+        return pending(unitOfWork, PENDING_MAPPING_VERSIONS, "proposed_at", after, limit, "listing the GL mapping versions awaiting a decision");
+    }
+
+    @Override
+    public List<PendingRow> pendingRateSets(Connection unitOfWork, Optional<PendingCursor> after, int limit) {
+        return pending(unitOfWork, PENDING_RATE_SETS, "captured_at", after, limit, "listing the valuation rate sets awaiting a decision");
+    }
+
+    @Override
+    public List<PendingRow> pendingCloses(Connection unitOfWork, Optional<PendingCursor> after, int limit) {
+        return pending(unitOfWork, PENDING_CLOSES, "proposed_at", after, limit, "listing the close proposals awaiting a decision");
+    }
+
+    @Override
+    public List<PendingRow> pendingReopens(Connection unitOfWork, Optional<PendingCursor> after, int limit) {
+        return pending(unitOfWork, PENDING_REOPENS, "proposed_at", after, limit, "listing the reopen proposals awaiting a decision");
+    }
+
+    @Override
+    public List<PendingRow> pendingUnlocks(Connection unitOfWork, Optional<PendingCursor> after, int limit) {
+        return pending(unitOfWork, PENDING_UNLOCKS, "unlock_proposed_at", after, limit, "listing the unlock proposals awaiting a decision");
+    }
+
+    /** The queue's page: oldest first, the id the tiebreak, strictly after the cursor's row comparison; {@code at} a constant of this class. */
+    static String pendingSql(String select, String at, boolean continued) {
+        return select + (continued ? " AND (" + at + ", id) > (?, ?)" : "") + " ORDER BY " + at + " ASC, id ASC LIMIT ?";
+    }
+
+    private static List<PendingRow> pending(Connection unitOfWork, String select, String at, Optional<PendingCursor> after, int limit,
+            String operation) {
+        requirePage(limit);
+        List<Object> arguments = new ArrayList<>();
+        after.ifPresent(cursor -> {
+            arguments.add(Timestamp.from(cursor.proposedAt()));
+            arguments.add(cursor.id());
+        });
+        arguments.add(limit);
+        try (PreparedStatement read = prepared(unitOfWork, pendingSql(select, at, after.isPresent()), arguments);
+                ResultSet rows = read.executeQuery()) {
+            List<PendingRow> page = new ArrayList<>();
+            while (rows.next()) {
+                page.add(new PendingRow(rows.getObject("id", UUID.class), rows.getString("proposed_by"),
+                        rows.getTimestamp("proposed_at").toInstant(), Optional.ofNullable(rows.getObject("subject_id", UUID.class))));
+            }
+            return page;
+        } catch (SQLException failure) {
+            throw new AccountingStorageException(DatabaseFailure.describe(operation, failure));
         }
     }
 

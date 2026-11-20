@@ -13,6 +13,7 @@ import com.finapp.accounting.RegulatoryObligationId;
 import com.finapp.accounting.testing.RegulatoryWorld;
 import com.finapp.accounting.testing.ScriptedRegulatoryProvider;
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
@@ -111,7 +112,7 @@ class RegulatoryObligationDeskTest {
      */
     @Test
     @DisplayName("the routes: a preparer proposes and reads; a controller decides and reads their own door; every POST keyed and,"
-            + " since the owner's D-6 (P17-TSK-102), MULTI_FACTOR - the proposal, the activation and the rejection - and no read;"
+            + " since the owner's D-6 (P17-TSK-102), MULTI_FACTOR - the proposal, the activation and the rejection - and no read but the pending-decision queue, stepped up as the activation (P17-TSK-040);"
             + " no route asks ACCOUNTING_READ; the bodies closed")
     void theRoutes() {
         Map<String, PermissionName> expected = Map.of(
@@ -128,7 +129,8 @@ class RegulatoryObligationDeskTest {
                 seen++;
                 assertThat(method.getAnnotation(RequiresPermission.class).value()).as(method.getName()).isEqualTo(expected.get(method.getName()));
                 assertThat(method.isAnnotationPresent(RequiresIdempotencyKey.class)).as(method.getName()).isEqualTo(method.isAnnotationPresent(org.springframework.web.bind.annotation.PostMapping.class));
-                assertThat(method.isAnnotationPresent(RequiresAssurance.class)).as(method.getName()).isEqualTo(method.isAnnotationPresent(org.springframework.web.bind.annotation.PostMapping.class));
+                assertThat(method.isAnnotationPresent(RequiresAssurance.class)).as(method.getName()).isEqualTo(method.isAnnotationPresent(org.springframework.web.bind.annotation.PostMapping.class)
+                        || method.getName().equals("listRegulatoryObligationsAwaitingActivation"));
                 if (method.isAnnotationPresent(RequiresAssurance.class)) {
                     assertThat(method.getAnnotation(RequiresAssurance.class).value()).isEqualTo(AssuranceLevel.MULTI_FACTOR);
                 }
@@ -224,8 +226,9 @@ class RegulatoryObligationDeskTest {
         assertThat(controller.toString()).doesNotContain(REASON);
         assertThat(world.audit.get(1).changeSummary().orElseThrow()).doesNotContain(REASON);
 
-        assertThat(as(APPROVER, desk::awaitingActivation)).extracting(RegulatoryObligationDesk.RegulatoryObligationSummaryView::obligationId).containsExactly(proposed.obligationId());
-        assertThat(as(PREPARER, desk::awaitingActivation)).isEmpty();
+        assertThat(as(APPROVER, () -> desk.awaitingActivation(null, null, null)).items()).extracting(PendingDecisions.PendingDecision::id).containsExactly(proposed.obligationId());
+        assertThat(as(APPROVER, () -> desk.awaitingActivation(null, null, null)).items()).extracting(PendingDecisions.PendingDecision::kind).containsExactly("accounting.RegulatoryObligation");
+        assertThat(as(PREPARER, () -> desk.awaitingActivation(null, null, null)).items()).isEmpty();
         assertThat(as(PREPARER, () -> desk.recent(null, null)).items()).hasSize(1);
         assertThat(as(PREPARER, () -> desk.recent(null, null)).nextCursor()).as("one version: the last page").isNull();
         refused(() -> as(PREPARER, () -> desk.read("not-a-uuid")), AccountingErrorCode.NOT_FOUND);
@@ -237,7 +240,7 @@ class RegulatoryObligationDeskTest {
         world.auditRefuses = true;
         assertThatThrownBy(() -> as(PREPARER, () -> desk.read(proposed.obligationId()))).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
         assertThatThrownBy(() -> as(APPROVER, () -> desk.attestation(proposed.obligationId()))).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
-        assertThatThrownBy(() -> as(APPROVER, desk::awaitingActivation)).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
+        assertThatThrownBy(() -> as(APPROVER, () -> desk.awaitingActivation(null, null, null))).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
         assertThatThrownBy(() -> as(PREPARER, () -> desk.recent(null, null))).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
     }
 

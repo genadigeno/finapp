@@ -27,6 +27,27 @@ public interface AccountingCollections {
     /** Valuation rate sets, newest capture first ({@code captured_at}, then id, descending). */
     List<ValuationRateSetStore.SetRow> rateSets(Connection unitOfWork, SetFilter filter, Optional<SetCursor> after, int limit);
 
+    // ------------------------------------------------------------------ the pending-decision queues (`P17-TSK-040`)
+
+    /** GL mapping versions {@code PROPOSED}, oldest proposal first ({@code proposed_at}, then id, ascending); no subject. */
+    List<PendingRow> pendingMappingVersions(Connection unitOfWork, Optional<PendingCursor> after, int limit);
+
+    /** Valuation rate sets {@code PROPOSED}, oldest capture first ({@code captured_at}, then id); the subject the set's period. */
+    List<PendingRow> pendingRateSets(Connection unitOfWork, Optional<PendingCursor> after, int limit);
+
+    /** Close proposals {@code PROPOSED}, oldest first ({@code proposed_at}, then id); the subject the period. */
+    List<PendingRow> pendingCloses(Connection unitOfWork, Optional<PendingCursor> after, int limit);
+
+    /** Reopen proposals {@code PROPOSED}, oldest first ({@code proposed_at}, then id); the subject the period. */
+    List<PendingRow> pendingReopens(Connection unitOfWork, Optional<PendingCursor> after, int limit);
+
+    /**
+     * Unlock proposals standing - a {@code LOCKED} period with an unlock proposed and not approved, {@link
+     * AccountingPeriodStore.PeriodRow#unlockPending}'s predicate - oldest first ({@code unlock_proposed_at}, then the period's id). An
+     * unlock has no row of its own: its id and its subject are the period's.
+     */
+    List<PendingRow> pendingUnlocks(Connection unitOfWork, Optional<PendingCursor> after, int limit);
+
     /**
      * Which runs: of one period, in one status, of some definitions - each absent for any.
      *
@@ -58,4 +79,26 @@ public interface AccountingCollections {
 
     /** The last set a page served: the next page starts strictly before it. */
     record SetCursor(Instant capturedAt, UUID setId) {}
+
+    /** The last proposal a pending queue served: the next page starts strictly after it, {@code (proposed_at, id) > (?, ?)}. */
+    record PendingCursor(Instant proposedAt, UUID id) {
+        public PendingCursor {
+            Objects.requireNonNull(proposedAt, "proposedAt");
+            Objects.requireNonNull(id, "id");
+        }
+    }
+
+    /**
+     * A proposal awaiting a decision, as a queue serves it: its id, its proposer by identifier, when it was proposed and what it acts
+     * on. No reason is selected: an accounting proposal's reason is {@code RESTRICTED-PII} and never served
+     * ({@code DATA_CLASSIFICATION.md}).
+     */
+    record PendingRow(UUID id, String proposedBy, Instant proposedAt, Optional<UUID> subject) {
+        public PendingRow {
+            Objects.requireNonNull(id, "id");
+            Objects.requireNonNull(proposedBy, "proposedBy");
+            Objects.requireNonNull(proposedAt, "proposedAt");
+            Objects.requireNonNull(subject, "subject");
+        }
+    }
 }

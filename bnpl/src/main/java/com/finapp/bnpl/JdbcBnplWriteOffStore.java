@@ -147,13 +147,21 @@ public final class JdbcBnplWriteOffStore implements BnplWriteOffStore {
     }
 
     @Override
-    public List<BnplWriteOff> oldestPending(Connection unitOfWork, UUID excludedParty, int limit) {
+    public List<BnplWriteOff> oldestPending(Connection unitOfWork, UUID excludedParty,
+            Optional<BnplOperatorLists.Cursor> after, int limit) {
         Objects.requireNonNull(excludedParty, "excludedParty");
+        Objects.requireNonNull(after, "after");
         try (PreparedStatement select = unitOfWork.prepareStatement(
                 SELECT + " JOIN bnpl.bnpl_obligation o ON o.id = w.obligation_id WHERE d.id IS NULL AND o.party_id <> ?"
-                        + " ORDER BY w.proposed_at, w.id LIMIT ?")) {
-            select.setObject(1, excludedParty);
-            select.setInt(2, limit);
+                        + (after.isPresent() ? " AND (w.proposed_at, w.id) > (?, ?)" : "")
+                        + " ORDER BY w.proposed_at ASC, w.id ASC LIMIT ?")) {
+            int i = 0;
+            select.setObject(++i, excludedParty);
+            if (after.isPresent()) {
+                select.setTimestamp(++i, Timestamp.from(after.get().at()));
+                select.setObject(++i, after.get().id());
+            }
+            select.setInt(++i, limit);
             return writeOffs(select);
         } catch (SQLException failure) {
             throw failed("reading the pending write-offs", failure);

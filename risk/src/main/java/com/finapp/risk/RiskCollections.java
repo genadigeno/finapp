@@ -76,4 +76,61 @@ public interface RiskCollections {
     /** Up to {@code limit} screening list versions, newest first by {@code (recorded_at, id)}, of one list when named. */
     List<ScreeningListVersion> screeningListVersions(Connection unitOfWork, Optional<ScreeningList> list, Optional<Cursor> after,
             int limit);
+
+    // ------------------------------------------------------------------ the proposals awaiting a decision (`P17-TSK-040`)
+
+    /**
+     * A proposal awaiting a second person's decision: its id - the one its approve and reject doors name - its proposer and
+     * their reason (absent where the kind records none), when it was proposed, and what it acts on.
+     */
+    record PendingProposal(UUID id, String proposedBy, Instant proposedAt, Optional<String> reason, String subject) {
+        public PendingProposal {
+            Objects.requireNonNull(id, "id");
+            Objects.requireNonNull(proposedAt, "proposedAt");
+            Objects.requireNonNull(reason, "reason");
+        }
+    }
+
+    /**
+     * Up to {@code limit} alert suppressions awaiting approval - an {@code OPEN} alert's standing proposal - oldest first by
+     * {@code (suppression_proposed_at, id)}, strictly after {@code after}; each the alert's id, its subject the alert.
+     */
+    List<PendingProposal> pendingSuppressions(Connection unitOfWork, Optional<Cursor> after, int limit);
+
+    /**
+     * Up to {@code limit} case dispositions awaiting a second person - the standing proposal of a case's slot - oldest first by
+     * {@code (disposition_proposed_at, disposition_id)}; each the proposal's {@code DISPOSITION_PROPOSED} action, its reason
+     * that action's text, its subject the case.
+     */
+    List<PendingProposal> pendingDispositions(Connection unitOfWork, Optional<Cursor> after, int limit);
+
+    /**
+     * Up to {@code limit} case risk actions {@code PROPOSED}, oldest first by {@code (proposed_at, id)}; the reason the
+     * {@code ACTION_PROPOSED} action's text, the subject the case.
+     */
+    List<PendingProposal> pendingRiskActions(Connection unitOfWork, Optional<Cursor> after, int limit);
+
+    /**
+     * Up to {@code limit} decision overrides {@code PROPOSED}, oldest first by {@code (proposed_at, id)}; the subject the
+     * assessment.
+     */
+    List<PendingProposal> pendingOverrides(Connection unitOfWork, Optional<Cursor> after, int limit);
+
+    /**
+     * Up to {@code limit} regulatory reports in {@code DRAFT}, awaiting a second person's approval, oldest first by
+     * {@code (drafted_at, id)}; no reason - the narrative is never one - the subject the case.
+     */
+    List<PendingProposal> pendingReports(Connection unitOfWork, Optional<Cursor> after, int limit);
+
+    /**
+     * Up to {@code limit} policy versions {@code PROPOSED}, oldest first by {@code (proposed_at, id)}; the subject the
+     * operation.
+     */
+    List<PendingProposal> pendingPolicyVersions(Connection unitOfWork, Optional<Cursor> after, int limit);
+
+    /**
+     * Up to {@code limit} screening list versions {@code RECORDED}, awaiting a second person's activation, oldest first by
+     * {@code (recorded_at, id)}; no reason is recorded; the subject the list.
+     */
+    List<PendingProposal> pendingScreeningListVersions(Connection unitOfWork, Optional<Cursor> after, int limit);
 }

@@ -167,6 +167,64 @@ public final class JdbcBnplOperatorLists implements BnplOperatorLists {
                         Optional.ofNullable(rows.getObject("repayment_id", UUID.class))));
     }
 
+    @Override
+    public List<PendingProposal> pendingTermsVersions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+        Objects.requireNonNull(after, "after");
+        List<Object> arguments = new ArrayList<>();
+        String sql = "SELECT t.id, t.proposed_by, t.proposed_at, t.proposal_reason, t.product AS subject"
+                + " FROM bnpl.bnpl_terms_version t WHERE t.status = 'PROPOSED'" + beyond("t", "proposed_at", arguments, after)
+                + " ORDER BY t.proposed_at ASC, t.id ASC LIMIT ?";
+        arguments.add(bounded(limit));
+        return read(unitOfWork, sql, arguments, "listing the BNPL terms versions awaiting a decision",
+                JdbcBnplOperatorLists::pendingProposal);
+    }
+
+    @Override
+    public List<PendingProposal> pendingRefundProposals(Connection unitOfWork, UUID withheldParty, Optional<Cursor> after,
+            int limit) {
+        Objects.requireNonNull(withheldParty, "withheldParty");
+        Objects.requireNonNull(after, "after");
+        List<Object> arguments = new ArrayList<>(List.of(withheldParty));
+        String sql = "SELECT r.id, r.proposed_by, r.proposed_at, r.proposal_reason, r.purchase_id::text AS subject"
+                + " FROM bnpl.refund_proposal r JOIN bnpl.purchase p ON p.id = r.purchase_id"
+                + " WHERE r.status = 'PROPOSED' AND p.party_id <> ?" + beyond("r", "proposed_at", arguments, after)
+                + " ORDER BY r.proposed_at ASC, r.id ASC LIMIT ?";
+        arguments.add(bounded(limit));
+        return read(unitOfWork, sql, arguments, "listing the BNPL refund proposals awaiting a decision",
+                JdbcBnplOperatorLists::pendingProposal);
+    }
+
+    @Override
+    public List<PendingProposal> pendingDisputeResolutions(Connection unitOfWork, UUID withheldParty, Optional<Cursor> after,
+            int limit) {
+        Objects.requireNonNull(withheldParty, "withheldParty");
+        Objects.requireNonNull(after, "after");
+        List<Object> arguments = new ArrayList<>(List.of(withheldParty));
+        // The dispute's id, not the proposal's: the approval and rejection doors are the dispute's. One live proposal a
+        // dispute (bnpl_dispute_proposal_one_live), so (proposed_at, dispute id) is a total order.
+        StringBuilder sql = new StringBuilder("SELECT d.id, substr(p.proposed_by, char_length('OPERATOR:') + 1) AS proposed_by,"
+                + " p.proposed_at, p.proposal_reason, d.purchase_id::text AS subject FROM bnpl.bnpl_dispute_proposal p"
+                + " JOIN bnpl.bnpl_dispute d ON d.id = p.dispute_id WHERE p.status = 'PROPOSED' AND d.party_id <> ?");
+        after.ifPresent(cursor -> {
+            sql.append(" AND (p.proposed_at, d.id) > (?, ?)");
+            arguments.add(Timestamp.from(cursor.at()));
+            arguments.add(cursor.id());
+        });
+        sql.append(" ORDER BY p.proposed_at ASC, d.id ASC LIMIT ?");
+        arguments.add(bounded(limit));
+        return read(unitOfWork, sql.toString(), arguments, "listing the BNPL dispute resolutions awaiting approval",
+                JdbcBnplOperatorLists::pendingProposal);
+    }
+
+    private static PendingProposal pendingProposal(ResultSet rows) throws SQLException {
+        return new PendingProposal(
+                rows.getObject("id", UUID.class),
+                rows.getString("proposed_by"),
+                rows.getTimestamp("proposed_at").toInstant(),
+                rows.getString("proposal_reason"),
+                rows.getString("subject"));
+    }
+
     private static Money money(ResultSet rows, String column, CurrencyCode currency, int scale) throws SQLException {
         return Money.ofPersisted(rows.getLong(column), currency, scale);
     }

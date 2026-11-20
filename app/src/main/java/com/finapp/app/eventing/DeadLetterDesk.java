@@ -2,6 +2,7 @@ package com.finapp.app.eventing;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.deadletter.DeadLetterErrorCode;
@@ -37,8 +38,9 @@ import lombok.RequiredArgsConstructor;
  * act leaves a record and nothing else.
  *
  * <p><strong>A key's replay is the first answer</strong>: the same key and body return the stored receipt, a timeout then a retry
- * included. What leaves a read: identifiers, types, instants and a failure's class, and a proposal's reason, which the second person
- * has to read. Never a payload, a failure's message, a person, or the reasons of decided proposals.
+ * included. What leaves a read: identifiers, types, instants and a failure's class, and a standing proposal's proposer and reason,
+ * cut to the pending-decision shape's summary, which the second person has to read (`P17-TSK-040`). Never a payload, a failure's
+ * message, or the reasons of decided proposals.
  */
 @RequiredArgsConstructor
 public final class DeadLetterDesk {
@@ -71,15 +73,6 @@ public final class DeadLetterDesk {
     /** One parked record. */
     public record ParkedView(String parkId, String consumer, String dedupeKey, String consumerGroup, String messageType, int attempts, String parkedAt, String failureClass) {}
 
-    /** One discard waiting for a second person. The reason is served to whoever decides it, and never logged. */
-    public record DiscardView(String discardId, String subjectKind, String subjectId, String proposedAt, String reason) {
-
-        @Override
-        public String toString() {
-            return "DiscardView[" + discardId + ", " + subjectKind + "]";
-        }
-    }
-
     /** A page of the abandoned events (`P17-TSK-042`): {@code nextCursor} absent, not null, on the last one. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record AbandonedPage(List<AbandonedView> items, String nextCursor) {}
@@ -88,14 +81,14 @@ public final class DeadLetterDesk {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ParkedPage(List<ParkedView> items, String nextCursor) {}
 
-    /** A page of the discards awaiting a second person (`P17-TSK-042`): {@code nextCursor} absent, not null, on the last one. */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record DiscardPage(List<DiscardView> items, String nextCursor) {}
-
     /** The three queues' collection names, inside their cursors (`P17-TSK-042`). */
     static final String ABANDONED = "deadletter.abandoned";
     static final String PARKED = "deadletter.parked";
-    static final String DISCARDS = "deadletter.discards";
+    /** The discards' queue is a pending-decision queue (`P17-TSK-040`), its cursors that shape's collection. */
+    static final String DISCARDS = "pending.deadletter.discards";
+
+    /** A discard's kind in the pending-decision shape. */
+    static final String DISCARD_KIND = "deadletter.Discard";
 
     static final int DEFAULT_LIMIT = 50;
 
@@ -144,22 +137,25 @@ public final class DeadLetterDesk {
     }
 
     /**
-     * A page of the discards awaiting a second person, oldest proposal first, the discard's id breaking the tie: {@code status}
-     * {@code PROPOSED} or unnamed - the queue holds nothing else - and the abandoned page's rules. Recorded.
+     * A page of the discards awaiting a second person in the one pending-decision shape (`P17-TSK-040`, converted in place; read
+     * "a {@code DiscardPage} of {@code DiscardView}s - discard id, subject kind, subject id, proposed at and the whole reason" until
+     * then): oldest proposal first, the discard's id breaking the tie; {@code status} {@code PROPOSED} or unnamed - the queue holds
+     * nothing else; {@code limit} 50 unless named, 200 at most. Each a {@code deadletter.Discard}, its subject the abandoned event
+     * or parked record it would discard, its reason summary the proposer's reason cut. Recorded, as before.
      */
-    public DiscardPage discards(String status, String cursor, String limit) {
-        if (status != null && !"PROPOSED".equals(status)) {
-            throw OperatorCollection.invalid("status is PROPOSED: the queue holds the discards awaiting a second person.");
-        }
-        int size = OperatorCollection.limit(limit, DEFAULT_LIMIT, DeadLetterOperations.MAX_PAGE);
-        Optional<DeadLetterStore.Position> after = position(DISCARDS, cursor);
+    public PendingDecisions.PendingDecisionPage discards(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        Optional<DeadLetterStore.Position> after = PendingDecisions.position(DISCARDS, cursor)
+                .map(position -> new DeadLetterStore.Position(position.proposedAt(), position.id()));
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         DeadLetterOperations.Page<DeadLetterStore.Proposal> page = spans.within("deadletter.read", Map.of(),
                 () -> transactions.inTransaction(uow -> operations.standingDiscards(uow, after, size, actor, correlation)));
-        return new DiscardPage(
+        return new PendingDecisions.PendingDecisionPage(
                 page.rows().stream()
-                        .map(row -> new DiscardView(row.discardId().toString(), row.kind().name(), row.subjectId().toString(), row.proposedAt().toString(), row.reason()))
+                        .map(row -> PendingDecisions.of(row.discardId(), DISCARD_KIND, row.proposedBy(), row.proposedAt(), row.reason(),
+                                row.subjectId()))
                         .toList(),
                 next(DISCARDS, page, row -> new DeadLetterStore.Position(row.proposedAt(), row.discardId())));
     }

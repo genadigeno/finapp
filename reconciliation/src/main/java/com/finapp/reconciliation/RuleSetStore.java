@@ -156,4 +156,24 @@ public interface RuleSetStore {
      */
     List<VersionView> versions(
             Connection unitOfWork, UUID sourceId, java.util.OptionalInt beforeVersion, int limit);
+
+    /** Where a page of the pending versions ended: the last one served, by when it was proposed and its id. */
+    record PendingCursor(Instant proposedAt, UUID id) {
+        public PendingCursor {
+            Objects.requireNonNull(proposedAt, "proposedAt must not be null");
+            Objects.requireNonNull(id, "id must not be null");
+        }
+    }
+
+    /**
+     * A version awaiting its second controller (`P17-TSK-040`): its source, who proposed it and when. Never its reason - the
+     * proposer's CONFIDENTIAL prose, with no code beside it, is read on the version's own page - and never its content.
+     */
+    record PendingVersion(UUID id, UUID sourceId, int version, String proposedBy, Instant proposedAt) {}
+
+    /**
+     * The {@code PROPOSED} versions of every source, proposed at ({@code created_at}) ascending, the id the tiebreak, strictly
+     * after {@code after}, at most {@code limit} (`P17-TSK-040`). Lock-free; content not read - the version's own page serves it.
+     */
+    List<PendingVersion> pending(Connection unitOfWork, Optional<PendingCursor> after, int limit);
 }

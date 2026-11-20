@@ -39,8 +39,12 @@ public interface LoanWriteOffStore {
     /** The loan's approved write-off - at most one, ever. */
     Optional<LoanWriteOff> approvedOf(Connection unitOfWork, LoanId loan);
 
-    /** The oldest write-offs awaiting a decision, never of {@code excludedParty}, oldest first, at most {@code limit}: how a stale one is found. */
-    List<LoanWriteOff> oldestPending(Connection unitOfWork, UUID excludedParty, int limit);
+    /**
+     * The write-offs awaiting a decision, never of {@code excludedParty}, oldest first and the id breaking the tie, strictly after
+     * {@code after}, at most {@code limit}: the approver's pending-decision queue, and how a stale one is found (`P17-TSK-040`).
+     */
+    List<LoanWriteOff> oldestPending(Connection unitOfWork, UUID excludedParty, Optional<LendingOperatorLists.Cursor> after,
+            int limit);
 
     /** A proposal at birth; its instant is the database's. */
     record NewProposal(UUID id, LoanId loan, LoanWriteOffPosition position, UUID defaultEvent, int agreementVersion,

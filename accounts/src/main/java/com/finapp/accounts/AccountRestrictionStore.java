@@ -28,4 +28,26 @@ public interface AccountRestrictionStore<T> {
      * when the row is no longer {@code PROPOSED}.
      */
     boolean decide(T unitOfWork, AccountRestriction decided);
+
+    /** Where a queue of proposals awaiting a decision resumes (`P17-TSK-040`): the last row served, oldest first. */
+    record PendingPosition(java.time.Instant proposedAt, java.util.UUID id) {
+        public PendingPosition {
+            java.util.Objects.requireNonNull(proposedAt, "proposedAt must not be null");
+            java.util.Objects.requireNonNull(id, "id must not be null");
+        }
+    }
+
+    /** A proposal awaiting a decision (`P17-TSK-040`): its id, its proposer and their reason, when, and what it acts on. */
+    record PendingProposal(
+            java.util.UUID id, String proposedBy, java.time.Instant proposedAt, String reason, String subject) {
+        public PendingProposal {
+            java.util.Objects.requireNonNull(id, "id must not be null");
+            java.util.Objects.requireNonNull(proposedAt, "proposedAt must not be null");
+        }
+    }
+
+    /**
+     * The suspensions and reinstatements awaiting a decision, each naming its account: {@code PROPOSED} alone, oldest first, the id the tiebreak (`P17-TSK-040`).
+     */
+    java.util.List<PendingProposal> pendingRestrictions(T unitOfWork, java.util.Optional<PendingPosition> after, int limit);
 }

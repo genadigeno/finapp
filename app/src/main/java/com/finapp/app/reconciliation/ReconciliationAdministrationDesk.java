@@ -2,6 +2,7 @@ package com.finapp.app.reconciliation;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.correlation.CorrelationContext;
@@ -169,6 +170,29 @@ public class ReconciliationAdministrationDesk {
         }
         return new RuleSetPage(
                 served.stream().map(ReconciliationAdministrationDesk::version).toList(), next);
+    }
+
+    /** The pending-decision queue's cursor collection (`P17-TSK-040`). */
+    static final String PENDING_RULE_SETS = "pending.reconciliation.rule-sets";
+
+    /**
+     * {@code GET /v1/operator/pending-decisions/reconciliation/rule-sets} (`P17-TSK-040`, gap G-140; finapp-admin-panel ADR-C133
+     * decision 3): every source's rule set versions awaiting a second controller, in the one pending-decision shape - oldest
+     * proposal first, the id the tiebreak; {@code status} {@code PROPOSED} or absent. Each a {@code reconciliation.RuleSet}, its
+     * subject the source, decided at {@code /v1/operator/reconciliation/rule-sets/{id}}. No reason summary: a version's reason is
+     * CONFIDENTIAL prose with no code beside it, read on the version list. Recording nothing, as the version list beside it
+     * records nothing.
+     */
+    public PendingDecisions.PendingDecisionPage ruleSetDecisions(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        java.util.Optional<RuleSetStore.PendingCursor> after = PendingDecisions.position(PENDING_RULE_SETS, cursor)
+                .map(position -> new RuleSetStore.PendingCursor(position.proposedAt(), position.id()));
+        List<RuleSetStore.PendingVersion> rows = command(unitOfWork -> ruleSets.pending(unitOfWork, after, size + 1));
+        return PendingDecisions.page(PENDING_RULE_SETS, rows.stream()
+                .map(row -> PendingDecisions.of(row.id(), "reconciliation.RuleSet", row.proposedBy(), row.proposedAt(),
+                        null, row.sourceId()))
+                .toList(), size);
     }
 
     /** The version {@code cursor} names in a source's rule set list, or none for the first page; anything else refused. */

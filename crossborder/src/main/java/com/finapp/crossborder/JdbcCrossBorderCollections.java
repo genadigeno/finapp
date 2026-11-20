@@ -149,6 +149,55 @@ public final class JdbcCrossBorderCollections implements CrossBorderCollections 
         }
     }
 
+    @Override
+    public List<PendingProposal> pendingCorridorEnableRequests(
+            Connection unitOfWork, Optional<PendingPosition> after, int limit) {
+        return pending(unitOfWork,
+                "SELECT id, proposed_by, proposed_at, proposal_reason AS reason, corridor AS subject"
+                        + " FROM crossborder.corridor_enable_request WHERE status = 'PROPOSED'",
+                after, limit, "listing the corridor enable requests awaiting a decision");
+    }
+
+    @Override
+    public List<PendingProposal> pendingCorridorPolicies(Connection unitOfWork, Optional<PendingPosition> after, int limit) {
+        return pending(unitOfWork,
+                "SELECT id, proposed_by, proposed_at, proposal_reason AS reason, version::text AS subject"
+                        + " FROM crossborder.corridor_policy_version WHERE status = 'PROPOSED'",
+                after, limit, "listing the corridor policies awaiting a decision");
+    }
+
+    /** A queue's page: the pending rows of {@code select}, oldest first, strictly after {@code after}. */
+    private static List<PendingProposal> pending(
+            Connection unitOfWork, String select, Optional<PendingPosition> after, int limit, String doing) {
+        Objects.requireNonNull(after, "after must not be null");
+        StringBuilder sql = new StringBuilder(select);
+        List<Object> arguments = new ArrayList<>();
+        after.ifPresent(position -> {
+            sql.append(" AND (proposed_at, id) > (?, ?)");
+            arguments.add(Timestamp.from(position.proposedAt()));
+            arguments.add(position.id());
+        });
+        sql.append(" ORDER BY proposed_at ASC, id ASC LIMIT ?");
+        arguments.add(limit);
+        try (PreparedStatement statement = unitOfWork.prepareStatement(sql.toString())) {
+            bind(statement, arguments);
+            List<PendingProposal> page = new ArrayList<>();
+            try (ResultSet row = statement.executeQuery()) {
+                while (row.next()) {
+                    page.add(new PendingProposal(
+                            row.getObject("id", UUID.class),
+                            row.getString("proposed_by"),
+                            row.getTimestamp("proposed_at").toInstant(),
+                            row.getString("reason"),
+                            row.getString("subject")));
+                }
+            }
+            return List.copyOf(page);
+        } catch (SQLException failure) {
+            throw new CrossborderStorageException(DatabaseFailure.describe(doing, failure));
+        }
+    }
+
     private static void bind(PreparedStatement statement, List<Object> arguments) throws SQLException {
         for (int i = 0; i < arguments.size(); i++) {
             statement.setObject(i + 1, arguments.get(i));

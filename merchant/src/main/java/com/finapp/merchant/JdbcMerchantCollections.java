@@ -94,4 +94,78 @@ public final class JdbcMerchantCollections implements MerchantCollections {
             statement.setObject(i + 1, arguments.get(i));
         }
     }
+
+    @Override
+    public List<PendingProposal> pendingPayoutDestinations(Connection unitOfWork, Optional<PendingPosition> after, int limit) {
+        return pending(unitOfWork,
+                "SELECT id, proposed_by, proposed_at, proposal_reason AS reason, merchant_id::text AS subject"
+                        + " FROM merchant.payout_destination WHERE status = 'PROPOSED'",
+                after, limit, "listing the payout destination changes awaiting a decision");
+    }
+
+    @Override
+    public List<PendingProposal> pendingPayoutProposals(Connection unitOfWork, Optional<PendingPosition> after, int limit) {
+        return pending(unitOfWork,
+                "SELECT id, proposed_by, proposed_at, proposal_reason AS reason, merchant_id::text AS subject"
+                        + " FROM merchant.payout_proposal WHERE status = 'PROPOSED'",
+                after, limit, "listing the payout proposals awaiting a decision");
+    }
+
+    @Override
+    public List<PendingProposal> pendingClosures(Connection unitOfWork, Optional<PendingPosition> after, int limit) {
+        return pending(unitOfWork,
+                "SELECT id, proposed_by, proposed_at, proposal_reason AS reason, merchant_id::text AS subject"
+                        + " FROM merchant.merchant_closure_proposal WHERE status = 'PROPOSED'",
+                after, limit, "listing the merchant closures awaiting a decision");
+    }
+
+    @Override
+    public List<PendingProposal> pendingBnplFeeAssignments(Connection unitOfWork, Optional<PendingPosition> after, int limit) {
+        return pending(unitOfWork,
+                "SELECT id, proposed_by, proposed_at, proposal_reason AS reason, merchant_id::text AS subject"
+                        + " FROM merchant.bnpl_fee_assignment_proposal WHERE status = 'PROPOSED'",
+                after, limit, "listing the BNPL fee assignments awaiting a decision");
+    }
+
+    @Override
+    public List<PendingProposal> pendingBnplEnablements(Connection unitOfWork, Optional<PendingPosition> after, int limit) {
+        return pending(unitOfWork,
+                "SELECT id, proposed_by, proposed_at, proposal_reason AS reason, merchant_id::text AS subject"
+                        + " FROM merchant.merchant_bnpl_enablement WHERE status = 'PROPOSED'",
+                after, limit, "listing the merchant BNPL enablements awaiting a decision");
+    }
+
+    /** A queue's page: the pending rows of {@code select}, oldest first, strictly after {@code after}. */
+    private static List<PendingProposal> pending(
+            Connection unitOfWork, String select, Optional<PendingPosition> after, int limit, String doing) {
+        Objects.requireNonNull(after, "after must not be null");
+        StringBuilder sql = new StringBuilder(select);
+        List<Object> arguments = new ArrayList<>();
+        after.ifPresent(position -> {
+            sql.append(" AND (proposed_at, id) > (?, ?)");
+            arguments.add(java.sql.Timestamp.from(position.proposedAt()));
+            arguments.add(position.id());
+        });
+        sql.append(" ORDER BY proposed_at ASC, id ASC LIMIT ?");
+        arguments.add(limit);
+        try (PreparedStatement statement = unitOfWork.prepareStatement(sql.toString())) {
+            for (int i = 0; i < arguments.size(); i++) {
+                statement.setObject(i + 1, arguments.get(i));
+            }
+            List<PendingProposal> page = new ArrayList<>();
+            try (ResultSet row = statement.executeQuery()) {
+                while (row.next()) {
+                    page.add(new PendingProposal(
+                            row.getObject("id", java.util.UUID.class),
+                            row.getString("proposed_by"),
+                            row.getTimestamp("proposed_at").toInstant(),
+                            row.getString("reason"),
+                            row.getString("subject")));
+                }
+            }
+            return List.copyOf(page);
+        } catch (SQLException failure) {
+            throw new MerchantStorageException(DatabaseFailure.describe(doing, failure));
+        }
+    }
 }
