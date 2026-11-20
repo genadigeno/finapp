@@ -3315,6 +3315,7 @@ latest; the run, as its record names it.
 | §11.66 | `platform`, `payments`, `reconciliation` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-025) |
 | §11.67 | `platform` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-025) |
 | §11.68 | `platform` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.69 | `platform`, `identity`, `risk`, `payments`, `reconciliation` | 0 | 4 | 4 | — | — | — | — | postponed by the owner (PI-025) |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -4808,6 +4809,85 @@ scaled to zero and green again; the capture of `httpcheck_status` and `traefik_s
 `infra/prometheus/console-series.txt` (today written from their documentation); `console.test.yml` under `alert-rules-check.sh`;
 `telemetry-check.sh` and `edge-check.sh` over the new flows and the watcher's second Role; and the probe's own memory and CPU measured
 (its numbers are the watcher's until then).
+
+### 11.69 The Operator Console's end-to-end battery: the seven scenarios at three replicas, running it, reading its record (`P17-TST-001`)
+
+*(Written by `P17-TST-001`, 2026-11-20, from `infra/scripts/kind-rehearsal/battery.sh`, `Battery.java` and the readings under
+`kind-rehearsal/battery/`. Not run: the owner postponed the end-to-end runs on 2026-11-15, and the standing word keeps cluster runs off
+this phase's tasks (`POSTPONED_ISSUES.md` PI-025). The record below is empty, and no scenario's verdict, violation count or replica
+count is claimed until a run of the scope has ended green.)*
+
+**What the battery is.** `PHASE_GATES.md` §5 Phase 17's criterion 2, and the run criteria 3 and 4 are read from: the console's seven
+mandatory scenarios (finapp-admin-panel `PHASE_17_PLAN.md` §13), each the console's own Playwright spec against the real application at
+three replicas through the operator edge, each judged from the run's records - never from the spec's exit status alone.
+
+#### Running it
+
+1. In the console's checkout, at the commit to be tested: `git checkout <commit>` and `npm ci` (the battery installs nothing). The
+   checkout must be clean: the specs run are that commit's, and its image is built from the same commit.
+2. `REHEARSAL_SCOPE=battery CONSOLE_REPOSITORY=<the checkout> CONSOLE_COMMIT=<its forty-character HEAD> infra/scripts/kind-rehearsal.sh`.
+   Release N alone at three replicas, smoked, its census green, the console built, loaded and asked through the edge (§11.28's console
+   step), the telemetry pipeline up; then the battery. An image or an archive named instead of the checkout, another commit checked out,
+   changes in it, or no installed Playwright are refused before anything is built.
+3. Port 30444 on this machine's 127.0.0.1 must be free (`BATTERY_PORT` names another, but the console's origin is then not the edge's
+   port, and the run is not the record). The browser reaches `operator.finapp.test` there through Chromium's host rules
+   (`BATTERY_HOST_RULES`), never through a hosts file.
+4. The probe, apart from the run that counts: `REHEARSAL_PROBE=battery-no-drop` runs scenario 4 without its drop; its journal's
+   judgement must go red (no dropped answer), and so must the run.
+5. Development only: `REHEARSAL_KEEP=1 BATTERY_SCENARIOS="s4"` runs fewer than seven against a kept cluster; refused under CI, and never
+   a record.
+
+#### What finapp hands the console, and what it reads back
+
+Per scenario `s<n>`: `npx playwright test --project=kind --grep @battery-s<n> --reporter=json` in the console's checkout, with
+`CONSOLE_BASE_URL=https://operator.finapp.test:30444/console/`, `BATTERY_SCENARIO`, `BATTERY_SEED` (the scenario's subject, `KEY=value`
+lines), `BATTERY_PEOPLE` (the people's `who.login`, `who.password`, `who.totp`, `who.id` and `who.roles`, a file of the run's own,
+owner-only, removed at exit), `BATTERY_CONTROL` (scenario 7's handshake directory), `BATTERY_EDGE_CA` (the run's edge CA) and
+`BATTERY_HOST_RULES`; `PLAYWRIGHT_JSON_OUTPUT_NAME` names the report. The report must hold exactly one test tagged `@battery-s<n>`, in the
+`kind` project, passed first time, with two annotations: `csp-violations` (a whole number: the `securitypolicyviolation` events the page
+raised during the test) and `session-token-at-rest` (`none`: no session token in localStorage, sessionStorage, IndexedDB, a cookie or a
+URL, read after sign-in, after step-up, after the acts and after sign-out). Every request of the spec goes through the browser: a call
+the spec makes from Node never reaches the proxy, and its journal then refuses the scenario.
+
+| # | Scenario | Subject (`e2e-seed.sh`) | The spec, with the battery's people | The journal's judgement | The reading |
+|---|---|---|---|---|---|
+| s1 | an unauthorised privileged operation | - | `viewer` (OPERATIONS_VIEWER) deep-links a ledger adjustment's approval: Forbidden shown; then forces `POST /v1/ledger/adjustments/{any id}/approval` from the page | `answered` 403, every time | an `identity.AuthorizationDenied` naming `LEDGER_ADJUST`; nothing of the ledger by the viewer |
+| s2 | a permission revoked mid-session | - | `revoked` (EVENT_OPERATOR, OPERATIONS_VIEWER) on the dead letters; `admin`, in a second context, revokes EVENT_OPERATOR; `revoked`'s next act there is refused and the module goes | `revoked`: served before, 403 after, nothing served after | the revocation by the administrator; a denial naming `EVENT_OPERATE` after it; nothing of the event plumbing after it; OPERATIONS_VIEWER still held |
+| s3 | two operators conflicting | `investigated-case` | `analysta` and `analystb` open the case at one revision and both take it; the second sees 409 and both converge on refetch | `conflict`: one 2xx, the rest 409, one case | one `risk.CaseTaken` since the start, by one of the two, the case theirs |
+| s4 | a timeout after the backend executed | `refundable-payment` (1250.00 EUR) | `refunder` (LEDGER_OPERATOR) proposes the whole refund; `controller` (FINANCIAL_CONTROLLER) approves - the proxy drops that answer - the console shows the outcome unknown, and the controller retries under the same key | `drop`: one dropped 2xx, the same key asked again, the same status and body | one refund, whole, COMPLETED; one proposal, the refunder's, approved by the controller, naming it |
+| s5 | a stale record | `fee-break` | `reconcilera` proposes ACKNOWLEDGE; `reconcilerb` approves echoing an operand the proposal does not name, is refused `reconciliation.ResolutionStale`, refetches and re-confirms | `stale`: a 409 first, one 2xx last | the resolution approved once between the two; one `reconciliation.ResolutionApproved`; the stale refusal recorded before it |
+| s6 | duplicate approval requests | `parked-record` | `eventsa` proposes the discard; `eventsb` double-clicks the approval and approves again from a second tab | `duplicate`: every 2xx one key and one body, the rest 409 | one discard, approved between the two; the record DISCARDED; one `inbox.ParkedRecordDiscarded`, SUCCEEDED |
+| s7 | the backend unavailable | - | `eventsa` on the dead letters, the page loaded once; writes `stop`, waits for `stopped`, sees the degraded banner and the reads retrying with backoff, issues no command of its own; writes `start`, waits for `started`, and the page recovers with no reload | `outage`: a 5xx met, a read 2xx after the last, no key asked twice, one page load | - (the fleet: a new three replaced the old) |
+
+Every scenario's journal is also judged for criterion 4's URL and cookie halves (`tokens`), and every scenario but s7 must leave the
+same three pods, none restarted. After the seven: the violation counts summed (criterion 3: zero), the replicas that served the
+battery's `/v1/operator` requests counted from Prometheus (at least three), and the census with the battery's money in it - scenario 4's
+top-up counted, its wallet credit taken back out by the refund.
+
+#### Reading its record
+
+Under `build/rehearsal/battery/` (`REHEARSAL_ARTEFACTS`): `people.env` (the people's ids), and per scenario `since.env`, `seed.env` and
+`seed.log`, `report.json` with `playwright.out` and `playwright.log`, `journal.tsv` (one line per request: sequence, instant, method, path,
+query present, idempotency key, status, outcome, body digest, correlation id, token in URL, token in cookie, milliseconds - never a
+body, a token, a cookie or a query's value), `proxy.log`, `reading.txt` (`PASS|check|detail` lines), and `fleet-before.txt` and
+`fleet-after.txt`; `spread.json`; the `census-battery.*` files beside the run's others. `assertions.tsv` holds every verdict in order.
+
+#### When the battery is red
+
+- **The report is missing, or the test failed, was skipped or flaky**: the console's (`playwright.log`, and the report's attachments).
+  A refusal for a missing annotation is the console's spec not yet measuring what criterion 3 or 4 needs.
+- **The journal refuses**: it names what it saw. s1's or s2's door never asked means the spec called from Node, not from the page;
+  s4's "never asked again" means the console did not retry under the key - a console defect if it showed the outcome unknown, the
+  harness's if the proxy dropped nothing (`proxy.log`'s `LISTENING` line names the rule); s6's "two keys answered 2xx" is a second
+  effect at the door - the platform's, a task of its own.
+- **The reading fails**: the line names the check. A second refund (s4), a second take (s3), a second approval (s5, s6) is the
+  platform's: a production defect with a task of its own, never a harness change to make it pass.
+- **The fleet changed during a scenario**: a pod restarted; its logs are in the run's `pods-final.txt` and the events. s7's fleet not
+  back at three is §11.46's E01 finding.
+- **Criterion 3's count is above zero**: the reports' `csp-violations` say which scenario; the console's policy is its own
+  (§11.68): a console defect.
+
+**The last record.** None: the run is owed (PI-025).
 
 ### 11.33 Rotations rehearsed on kind: running them, reading them, the last record (`P15-TSK-020`)
 

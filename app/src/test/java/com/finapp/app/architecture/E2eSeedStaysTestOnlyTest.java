@@ -30,8 +30,11 @@ import org.junit.jupiter.api.Test;
  * the merchant plants and the dispute's statement (`P17-TSK-115`) by {@code E2eSeedMerchantDatabaseTest}, the credit desks' doors and
  * the review case (`P17-TSK-117`) by {@code E2eSeedCreditDatabaseTest}, the FX desks' doors and the booked trade (`P17-TSK-119`) by
  * {@code E2eSeedFxDatabaseTest}, the KYC review states (`P17-TSK-113`) by {@code E2eSeedKycDatabaseTest}, the customer history and
- * its transfers (`P17-TSK-121`) by {@code E2eSeedCustomersDatabaseTest}; the script's run against a running stack is the console's
- * end-to-end run.
+ * its transfers (`P17-TSK-121`) by {@code E2eSeedCustomersDatabaseTest}, the end-to-end battery's refundable payment and its readings
+ * (`P17-TST-001`) by {@code E2eBatteryDatabaseTest}; the script's run against a running stack is the console's end-to-end run.
+ *
+ * <p>The battery that runs it ({@code P17-TST-001}: {@code infra/scripts/kind-rehearsal/battery.sh}, its proxy {@code Battery.java} and
+ * its readings) is held to the same rule by its own markers: nothing deployed or shipped names it either.
  */
 @Tag("architecture")
 @DisplayName("the end-to-end seed is test-only and stays so (P17-TSK-106)")
@@ -40,9 +43,12 @@ class E2eSeedStaysTestOnlyTest {
     private static final String SCRIPT = "infra/scripts/e2e-seed.sh";
     private static final String SEED = "infra/scripts/e2e-seed/";
 
-    /** What only the seed says: its script's name, its event type and aggregate type, its consumer and group, its plant's failure. */
-    private static final Pattern MARKERS =
-            Pattern.compile("e2e-seed|e2e\\.SeededEvent|e2e\\.Seed\\b|e2e\\.seed-consumer|finapp\\.e2e-seed|E2eSeedPlantedFailure");
+    /**
+     * What only the seed says: its script's name, its event type and aggregate type, its consumer and group, its plant's failure; and what
+     * only the battery says (`P17-TST-001`): its scope's file, its proxy's source and container, its people's file.
+     */
+    private static final Pattern MARKERS = Pattern.compile("e2e-seed|e2e\\.SeededEvent|e2e\\.Seed\\b|e2e\\.seed-consumer|finapp\\.e2e-seed"
+            + "|E2eSeedPlantedFailure|kind-rehearsal/battery|Battery\\.java|finapp-battery-proxy|E2E_SEED_PEOPLE|BATTERY_PROXY_");
 
     private static Path root;
     private static String script;

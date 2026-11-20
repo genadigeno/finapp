@@ -100,6 +100,14 @@
 # whose edge is Argo CD's and whose named console delivery.sh delivers through its own Application (P17-TSK-105), and in the disaster-recovery exercise, whose images are its vault's alone. THE CLUSTER RUN IS OWED (the owner's
 # postponement): KindRehearsalContractTest holds the step; what the step shows is claimed only once a run with a console image has ended green.
 #
+# `battery` (P17-TST-001, OPERATIONS_RUNBOOK.md section 11.69): the Operator Console's end-to-end battery. Release N alone at three replicas,
+# smoked, its census green, the console loaded and asked through the edge - which this scope needs, from CONSOLE_REPOSITORY at
+# CONSOLE_COMMIT, the checkout its specs run from - then the seven mandatory scenarios of kind-rehearsal/battery.sh, each its console's
+# Playwright spec through the battery's proxy (kind-rehearsal/Battery.java) and judged from the run's records: the console's report, the
+# proxy's journal and the database, the fleet counted before and after each; then the violation count, the replicas that served it, and
+# the census with the battery's own money in it. Its probe is battery-no-drop. THE RUN IS OWED (the owner's postponement of 2026-11-15):
+# BatteryContractTest and BatteryProxyTest hold the scope; what it shows is claimed only once a run of it has ended green.
+#
 # Usage:   infra/scripts/kind-rehearsal.sh
 # Needs:   Docker with buildx, kind (KIND, default `kind`), git, openssl, a JDK for Gradle, sha256sum, tar, base64.
 # Exit:    0 every assertion held; 1 an assertion failed; 2 a step could not run. A step that cannot run never looks like a pass.
@@ -127,6 +135,9 @@ DIR="$ROOT/infra/scripts/kind-rehearsal"
 # The disaster-recovery exercise (P16-TSK-025): functions only, called under REHEARSAL_SCOPE=dr.
 # shellcheck source=infra/scripts/kind-rehearsal/dr.sh
 . "$DIR/dr.sh"
+# The end-to-end battery (P17-TST-001): functions only, called under REHEARSAL_SCOPE=battery.
+# shellcheck source=infra/scripts/kind-rehearsal/battery.sh
+. "$DIR/battery.sh"
 
 CLUSTER=${REHEARSAL_CLUSTER:-finapp-rehearsal}
 NODE="$CLUSTER-control-plane"
@@ -145,7 +156,8 @@ ROLLOUT_TIMEOUT=${REHEARSAL_ROLLOUT_TIMEOUT:-1500}
 # What the run rehearses: `release` (the default, P15-TSK-012's walk from N - 1 to N and back) or `rotations` (P15-TSK-020: release N alone,
 # then every credential and certificate rotation of kind-rehearsal/rotations.sh, each under the workload, each with its census and its rollback).
 SCOPE=${REHEARSAL_SCOPE:-release}
-case $SCOPE in release | rotations | signals | incidents) ;; delivery) ;; rolls) ;; load) ;; experiments) ;; dr) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals, incidents, delivery, rolls, load, experiments or dr, not $SCOPE" >&2; exit 2 ;; esac
+# The end-to-end battery (P17-TST-001) is a scope too: admitted beside the list, which the scopes' contract tests read as written.
+[ "$SCOPE" = battery ] || case $SCOPE in release | rotations | signals | incidents) ;; delivery) ;; rolls) ;; load) ;; experiments) ;; dr) ;; *) echo "?? REHEARSAL_SCOPE is release, rotations, signals, incidents, delivery, rolls, load, experiments, dr or battery, not $SCOPE" >&2; exit 2 ;; esac
 # Every scope but `release` deploys release N alone: the steps below that name N - 1 deploy N.
 N_ONLY=""
 case $SCOPE in rotations | signals | incidents | delivery) N_ONLY=1 ;; esac
@@ -157,6 +169,8 @@ case $SCOPE in rotations | signals | incidents | delivery) N_ONLY=1 ;; esac
 [ "$SCOPE" != experiments ] || N_ONLY=1
 # The disaster-recovery exercise (P16-TSK-025) too: both its runs deploy the one release the vault records.
 [ "$SCOPE" != dr ] || N_ONLY=1
+# The end-to-end battery (P17-TST-001) too: the console's seven scenarios against release N at three.
+[ "$SCOPE" != battery ] || N_ONLY=1
 # The brokers (P16-TSK-013): three in the experiments scope, one or three in the load scope, one elsewhere; refused before anything is built.
 brokers_resolve
 # The platform scopes' API audit log (Q12): only they write one.
@@ -279,6 +293,8 @@ dpath() {
 
 # The disaster-recovery exercise's phase, vault and person (P16-TSK-025), refused before anything is built; no other scope may name them.
 dr_resolve
+# The end-to-end battery's console checkout, its scenarios and its probe (P17-TST-001), likewise; no other scope may name them.
+battery_resolve
 
 mkdir -p "$ART"
 : > "$ART/rehearsal.log"
@@ -354,6 +370,8 @@ finish() {
     experiments_clear_faults
     # The decline run's control (P16-TSK-029, E86), likewise: a no-op unless the load put it on.
     load_declines off
+    # The battery's fleet (P17-TST-001), scaled to zero by scenario 7: started again on every way out; a no-op otherwise.
+    battery_clear
     for container in $CONTAINERS; do
         dock rm -f "$container" >/dev/null 2>&1
     done
@@ -1433,12 +1451,14 @@ census() {
     expected_transfers=$(( $(transfer_ok_count) + SMOKE_TRANSFERS + ${LOAD_TRANSFERS:-0} + ${EXPERIMENTS_TRANSFERS:-0} ))
     # The telemetry steps' one traced top-up, of its own planted amount (P15-TSK-023); zero until it runs.
     # The scenario experiments' own card payments (P16-TSK-027: F07's raced one, F13's timed-out one), each of its own amount; zero elsewhere.
-    expected_topups=$(( $(flow_ok_count top-up) + SMOKE_TOPUPS + ${TELEMETRY_TOPUPS:-0} + ${LOAD_TOPUPS:-0} + ${EXPERIMENTS_TOPUPS:-0} ))
+    # The battery's refundable payment (P17-TST-001): its top-up, one per run of scenario 4; zero elsewhere.
+    expected_topups=$(( $(flow_ok_count top-up) + SMOKE_TOPUPS + ${TELEMETRY_TOPUPS:-0} + ${LOAD_TOPUPS:-0} + ${BATTERY_TOPUPS:-0} + ${EXPERIMENTS_TOPUPS:-0} ))
     expected_checkouts=$(( $(flow_ok_count checkout) + SMOKE_CHECKOUTS + ${LOAD_CHECKOUTS:-0} ))
     # E01's own payout, sent by the experiments scope (P16-TSK-019); zero in every other scope.
     expected_payouts=$(( $(flow_ok_count payout) + SMOKE_PAYOUTS + ${EXPERIMENTS_PAYOUTS:-0} ))
     # Every top-up credits one wallet: 5.00 in a smoke, 0.05 in the workload. Transfers move money between the same wallets and a checkout is paid by card.
-    expected_wallets=$(( SMOKE_TOPUPS * 500 + $(flow_ok_count top-up) * 5 + ${TELEMETRY_TOPUP_MINOR:-0} + ${LOAD_WALLET_MINOR:-0} + ${EXPERIMENTS_TOPUP_MINOR:-0} ))
+    # The battery's (P17-TST-001): the refundable payment's top-up less its refund once COMPLETED - nothing, after scenario 4.
+    expected_wallets=$(( SMOKE_TOPUPS * 500 + $(flow_ok_count top-up) * 5 + ${TELEMETRY_TOPUP_MINOR:-0} + ${LOAD_WALLET_MINOR:-0} + ${BATTERY_WALLET_MINOR:-0} + ${EXPERIMENTS_TOPUP_MINOR:-0} ))
     # The disaster-recovery exercise's rebuild (P16-TSK-025): what the restored books held at the backup's instant, as the census before it was
     # told (the vault's expected.env, read by dr_resolve); zero in every other scope and before the disaster. The rebuilt simulator never saw
     # those payments, so the provider's side counts only what was told after the release.
@@ -2244,6 +2264,14 @@ fi
 # recovered platform released, money moved and its census green, then its configuration, its scale-out and the registry's cut judged.
 if [ "$SCOPE" = dr ]; then
     dr_scope
+    step end
+    finish
+fi
+
+# The end-to-end battery (P17-TST-001) stops it here too: N deployed at three, smoked, its census green, the console up and asked through
+# the edge, the telemetry pipeline up; then the seven scenarios, each the console's spec through the battery's proxy and its records read.
+if [ "$SCOPE" = battery ]; then
+    battery_scope
     step end
     finish
 fi

@@ -866,6 +866,18 @@ commit and the date; do not delete the entry.
     `obs-probe-*` plants and the moved quota plants, and `edge-check.sh` over the console overlay's new Role and the operator edge's new
     ingress rule; and **the probe's resources** measured. Nothing ran: what ran instead, on 2026-11-19, was each rule through time on the
     build's evaluator and the manifests' guards (`ConsoleAlertRulesTest`, `TelemetryPipelineManifestsTest`), the scripts parsed with `sh -n`.
+  - **`P17-TST-001`** (the Operator Console's end-to-end battery, `OPERATIONS_RUNBOOK.md` §11.69, whose record is empty; the owner
+    postponed the end-to-end runs on 2026-11-15, the console's record, and this item's word keeps cluster runs off this phase's tasks):
+    **the battery scope whole**, `REHEARSAL_SCOPE=battery` with `CONSOLE_REPOSITORY` at `CONSOLE_COMMIT`, at three replicas - the seven
+    scenarios, each the console's `@battery-s<n>` spec through the battery's proxy and its records read; the violation count across them
+    (criterion 3), the reports' and journals' token readings (criterion 4), the replicas that served them, and the census after; and
+    **the probe** `battery-no-drop`, red, apart from the run that counts, with its `MUTATION_TESTING.md` §2 row. The same run carries
+    `P17-TSK-104`'s cluster half (the console step with an image named) and `P17-TSK-044`'s above. **It needs first**: the console's
+    seven specs, finapp-admin-panel's to write when the run can happen (§11.69's table is their contract), and the operator routes
+    `P17-MERGE-116` dropped (`/v1/operator/refund-proposals/{id}/approval` among them; `BatteryContractTest` holds them on the edge).
+    Nothing ran: what ran instead, on 2026-11-20, was the proxy, its journal's judgements and the report reader as processes against an
+    upstream of the test's (`BatteryProxyTest`), the scope's text (`BatteryContractTest`), the readings on PostgreSQL with scenario 4's
+    refund made through the doors (`E2eBatteryDatabaseTest`), and the scripts parsed with `sh -n` and `dash -n`.
 
 ## PI-026 — The first real environment's managed-service decisions: the audit archive's bucket and read door, the restore's release and window
 

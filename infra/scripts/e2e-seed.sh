@@ -1,7 +1,7 @@
 #!/bin/sh
 # TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112, P17-TSK-113,
-# P17-TSK-115, P17-TSK-117, P17-TSK-119, P17-TSK-121; finapp-admin-panel docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4, B5.5, B6.7,
-# B7.4, B8.6, B9.4).
+# P17-TSK-115, P17-TSK-117, P17-TSK-119, P17-TSK-121, P17-TST-001; finapp-admin-panel docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4,
+# B5.5, B6.7, B7.4, B8.6, B9.4, B11.2).
 #
 #   infra/scripts/e2e-seed.sh <scenario>...
 #
@@ -107,6 +107,18 @@
 #                     transfers from its wallet - 2.00 and 3.00 EUR - to another fresh customer's wallet, each COMPLETED and posted:
 #                     the console reads them and the account's ledger lines -> POSTED_CUSTOMER_ID, POSTED_PARTY_ID,
 #                     POSTED_ACCOUNT_ID, POSTED_TRANSFER_IDS (two, comma-separated, in the order made)
+#
+# The end-to-end battery's (P17-TST-001), which the battery scope of the kind rehearsal runs (kind-rehearsal/battery.sh):
+#   battery-people    the battery's people: the run's administrator and ten fresh test identities with a factor, each granted its roles
+#                     through the grant door by that administrator - viewer (OPERATIONS_VIEWER), revoked (EVENT_OPERATOR and
+#                     OPERATIONS_VIEWER), analysta and analystb (RISK_ANALYST), refunder (LEDGER_OPERATOR), controller
+#                     (FINANCIAL_CONTROLLER), reconcilera and reconcilerb (RECONCILIATION_OPERATOR), eventsa and eventsb (EVENT_OPERATOR).
+#                     Their logins, passwords and factor secrets go to the file E2E_SEED_PEOPLE names - a new file, outside this
+#                     checkout, its owner's alone - as who.login, who.password, who.totp, who.id and who.roles lines, and never to stdout,
+#                     which carries their ids -> BATTERY_ADMIN_ID and BATTERY_<WHO>_ID for each (BATTERY_VIEWER_ID, ...)
+#   refundable-payment  KIND ONLY. A fresh ACTIVE customer's 1250.00 EUR card top-up, captured: above the refund's four-eyes threshold of
+#                     1000.00 EUR (P17-TSK-031, payments V043), so the console's LEDGER_OPERATOR proposes its refund and its
+#                     FINANCIAL_CONTROLLER approves it -> REFUNDABLE_PAYMENT_ID, REFUNDABLE_AMOUNT (1250.00), REFUNDABLE_CURRENCY (EUR)
 #
 # THE CREDIT SCENARIOS CHANGE THE STACK'S PERSONAL_LOAN POLICY, AND HOLD ONE VERSION PER PRODUCT PENDING. No test stack has a credit
 # bureau or a financial-data provider - the platform refuses either's URL until it holds what a pull needs (unresolved questions
@@ -216,7 +228,7 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 SEED="$ROOT/infra/scripts/e2e-seed"
 TARGET=${E2E_SEED_TARGET:-compose}
-SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy, all, closable-period, prior-period-adjustment, proposed-mapping, draft-submission, accounting-break, finance, onboardable-organisation, active-merchant, proposed-destination, merchants, open-dispute, review-case, proposed-credit-policy, proposed-lending-terms, proposed-bnpl-terms, credit, proposed-fx-policy, proposed-corridor-policy, fx-enable-request, corridor-enable-request, fx, booked-trade, kyc-review, screening-review, kyc, customer-history or posted-transfers"
+SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy, all, closable-period, prior-period-adjustment, proposed-mapping, draft-submission, accounting-break, finance, onboardable-organisation, active-merchant, proposed-destination, merchants, open-dispute, review-case, proposed-credit-policy, proposed-lending-terms, proposed-bnpl-terms, credit, proposed-fx-policy, proposed-corridor-policy, fx-enable-request, corridor-enable-request, fx, booked-trade, kyc-review, screening-review, kyc, customer-history, posted-transfers, battery-people or refundable-payment"
 
 say() { printf '%s\n' "e2e-seed: $*" >&2; }
 refuse() { printf '%s\n' "e2e-seed: refused: $*" >&2; exit 2; }
@@ -251,6 +263,25 @@ for scenario in "$@"; do
         open-dispute)
             HTTP=yes
             [ "$TARGET" = kind ] || refuse "open-dispute needs a card PSP, and only kind has one (its simulator): a local stack configures no card provider, so no card payment exists to dispute"
+            ;;
+        refundable-payment)
+            HTTP=yes
+            [ "$TARGET" = kind ] || refuse "refundable-payment needs a card PSP, and only kind has one (its simulator): a local stack configures no card provider, so no card payment exists to refund"
+            ;;
+        battery-people)
+            HTTP=yes
+            # Where the people's credentials go, judged before anything is touched: a new file, named absolutely, never in this checkout.
+            people_file=${E2E_SEED_PEOPLE:-}
+            [ -n "$people_file" ] || refuse "battery-people writes its people's credentials to the file E2E_SEED_PEOPLE names, and it names none"
+            case "$people_file" in
+                /*|[A-Za-z]:/*) ;;
+                *) refuse "E2E_SEED_PEOPLE is '$people_file': name the file absolutely" ;;
+            esac
+            case "$(dpath "$people_file")/" in
+                "$(dpath "$ROOT")"/*) refuse "E2E_SEED_PEOPLE is inside this checkout ($people_file): credentials never go where a commit can take them" ;;
+            esac
+            [ ! -e "$people_file" ] || refuse "E2E_SEED_PEOPLE ($people_file) exists: the seed writes a new file, never over one"
+            [ -d "$(dirname "$people_file")" ] || refuse "E2E_SEED_PEOPLE's directory $(dirname "$people_file") does not exist"
             ;;
         *) refuse "unknown scenario '$scenario': $SCENARIOS" ;;
     esac
@@ -1104,6 +1135,75 @@ seed_posted_transfers() {
     printf 'POSTED_CUSTOMER_ID=%s\nPOSTED_PARTY_ID=%s\nPOSTED_ACCOUNT_ID=%s\nPOSTED_TRANSFER_IDS=%s,%s\n' "$customer" "$party" "$account" "$first" "$second"
 }
 
+# ---------------------------------------------------------------------------------------------------
+# The end-to-end battery's (P17-TST-001).
+
+# The battery's people: who, and the roles the run's administrator grants each through the door. No pair is one the owner's
+# segregation-of-duties table refuses (RoleConflicts), so every grant is admitted.
+BATTERY_PEOPLE="viewer:OPERATIONS_VIEWER revoked:EVENT_OPERATOR,OPERATIONS_VIEWER analysta:RISK_ANALYST analystb:RISK_ANALYST refunder:LEDGER_OPERATOR controller:FINANCIAL_CONTROLLER reconcilera:RECONCILIATION_OPERATOR reconcilerb:RECONCILIATION_OPERATOR eventsa:EVENT_OPERATOR eventsb:EVENT_OPERATOR"
+
+# person <who> <field>: one of Seed.java's own entries for a test identity of this run (login, password or totp), shape-checked.
+person() {
+    entry=$(sed -n "s/^$1\\.$2=//p" "$STATE/people.properties" | head -1)
+    case "$2" in
+        login) printf '%s' "$entry" | grep -Eq '^e2e-seed\.[a-z]+\.[0-9a-f]{12}$' ;;
+        password) printf '%s' "$entry" | grep -Eq '^E2e-seed-[0-9a-f-]{36}$' ;;
+        totp) printf '%s' "$entry" | grep -Eq '^[A-Z2-7]{16,128}$' ;;
+        *) false ;;
+    esac || { say "the run's $2 for $1 is not of the shape Seed.java makes"; exit 1; }
+    printf '%s' "$entry"
+}
+
+# hand_over <who> <id> <roles>: the person's lines into the people file, which only this script writes, and only once.
+hand_over() {
+    {
+        printf '%s.id=%s\n' "$1" "$2"
+        printf '%s.login=%s\n' "$1" "$(person "$1" login)"
+        printf '%s.password=%s\n' "$1" "$(person "$1" password)"
+        printf '%s.totp=%s\n' "$1" "$(person "$1" totp)"
+        printf '%s.roles=%s\n' "$1" "$3"
+    } >> "$PEOPLE_PART"
+}
+
+seed_battery_people() {
+    administrator
+    PEOPLE_PART="$STATE/battery-people"
+    ( umask 077; : > "$PEOPLE_PART" )
+    hand_over admin "$ADMIN_ID" ADMINISTRATOR
+    printf 'BATTERY_ADMIN_ID=%s\n' "$ADMIN_ID"
+    for entry in $BATTERY_PEOPLE; do
+        who=${entry%%:*}
+        roles=${entry#*:}
+        made=$(operator "$who")
+        id=${made%% *}
+        uuid_like "$id" || { say "$who came out '$made'"; exit 1; }
+        for role in $(printf '%s' "$roles" | tr ',' ' '); do
+            seed_http grant admin "$role" "$id" >/dev/null
+        done
+        hand_over "$who" "$id" "$roles"
+        printf 'BATTERY_%s_ID=%s\n' "$(printf '%s' "$who" | tr '[:lower:]' '[:upper:]')" "$id"
+    done
+    # Whole or not at all: the file appears complete, in one rename, owner-only from its first byte, and never over another.
+    [ ! -e "$E2E_SEED_PEOPLE" ] || { say "E2E_SEED_PEOPLE ($E2E_SEED_PEOPLE) appeared while the seed ran: nothing written over it"; exit 1; }
+    mv "$PEOPLE_PART" "$E2E_SEED_PEOPLE"
+    say "the battery's people: the administrator $ADMIN_ID and $(printf '%s\n' $BATTERY_PEOPLE | wc -l | tr -d ' ') operators, each with a factor and its roles; their credentials in $E2E_SEED_PEOPLE"
+}
+
+# The battery's refundable payment: 1250.00 EUR, above the refund's four-eyes threshold of 1000.00 EUR in EUR (payments V043).
+REFUNDABLE_AMOUNT=1250.00
+seed_refundable_payment() {
+    administrator
+    refundee_login=$(value LOGIN "$(seed_http register-bare refundee)")
+    refundee=$(identity_of "$refundee_login")
+    uuid_like "$refundee" || { say "the refundee's id came out '$refundee'"; exit 1; }
+    verdict=$(plant customer-verdict.sql -v identity="$refundee" | tr -d '[:space:]')
+    uuid_like "$verdict" || { say "the refundee's verdict printed '$verdict'"; exit 1; }
+    intent=$(value PAYMENT_ID "$(seed_http top-up refundee "$REFUNDABLE_AMOUNT")")
+    uuid_like "$intent" || { say "the top-up printed '$intent'"; exit 1; }
+    say "top-up $intent of $REFUNDABLE_AMOUNT EUR captured: propose its refund as a LEDGER_OPERATOR, approve it as a FINANCIAL_CONTROLLER"
+    printf 'REFUNDABLE_PAYMENT_ID=%s\nREFUNDABLE_AMOUNT=%s\nREFUNDABLE_CURRENCY=EUR\n' "$intent" "$REFUNDABLE_AMOUNT"
+}
+
 # booked-trade's provider and feed, judged before any scenario touches the stack.
 for scenario in "$@"; do
     [ "$scenario" != booked-trade ] || fx_feeds
@@ -1148,6 +1248,8 @@ for scenario in "$@"; do
         kyc) seed_kyc_review; seed_screening_review ;;
         customer-history) seed_customer_history ;;
         posted-transfers) seed_posted_transfers ;;
+        battery-people) seed_battery_people ;;
+        refundable-payment) seed_refundable_payment ;;
         all) seed_abandoned_event; seed_parked_record; seed_parsed_file; seed_fee_break; seed_factorless_holding; seed_sod_conflict
              seed_open_alert; seed_investigated_case; seed_overridable_assessment; seed_proposed_policy ;;
     esac

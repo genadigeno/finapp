@@ -35,7 +35,8 @@ import javax.net.ssl.TrustManagerFactory;
  * eyes, and a customer's stepped-up credit request (P17-TSK-117). And the FX controller's - a pricing policy and a corridor policy
  * proposed and decided by four eyes, a pair and a corridor disabled and their enabling proposed, and a customer's conversion
  * (P17-TSK-119). And a customer's consent to KYC processing, which every case's customer has given (P17-TSK-113). And a customer's
- * history - that consent granted, withdrawn and granted again, a wallet, and transfers judged by the transfer door (P17-TSK-121). A single source
+ * history - that consent granted, withdrawn and granted again, a wallet, and transfers judged by the transfer door (P17-TSK-121). And the
+ * end-to-end battery's - a top-up of a named amount, above the refund's four-eyes threshold (P17-TST-001). A single source
  * file run by {@code infra/scripts/e2e-seed.sh}
  * ({@code java --source 21}), never compiled into anything and named by no module's main source set (E2eSeedStaysTestOnlyTest).
  *
@@ -106,7 +107,7 @@ public final class Seed {
             case "draft-submission" -> seed.draftSubmission(rest[0], rest[1], rest[2]);
             case "onboard-merchant" -> seed.onboardMerchant(rest[0], rest[1]);
             case "issue-key" -> seed.issueKey(rest[0], rest[1]);
-            case "top-up" -> seed.topUp(one(rest));
+            case "top-up" -> seed.topUp(rest[0], topUpAmount(rest));
             case "dispute-statement" -> seed.disputeStatement(rest[0], rest[1], rest[2]);
             case "dispute-hint" -> seed.disputeHint(rest[0], rest[1]);
             case "approve-scorecard" -> seed.approveScorecard(rest[0], rest[1]);
@@ -646,18 +647,33 @@ public final class Seed {
     private static final String TOP_UP = "12.50";
 
     /**
-     * A card top-up of 12.50 EUR into {@code who}'s own wallet, authorized and captured by the card PSP - a payment with no
-     * merchant, the kind an operator answers a dispute on (a merchant answers its own). {@code who} is a customer the shell made
-     * ACTIVE: the wallet opens through the accounts door, the card attaches through tokenisation. Prints the payment's id.
+     * The top-up's amount: {@link #TOP_UP} unless a second argument names one (P17-TST-001's refundable payment, 1250.00), as the
+     * payments door takes it - a plain decimal with two places, at most 9,999,999.99.
      */
-    private void topUp(String who) throws Exception {
+    private static String topUpAmount(String[] rest) {
+        if (rest.length == 1) {
+            return TOP_UP;
+        }
+        if (rest.length != 2 || !rest[1].matches("[1-9][0-9]{0,6}\\.[0-9]{2}")) {
+            throw new IllegalArgumentException("top-up <who> [amount, two decimal places]");
+        }
+        return rest[1];
+    }
+
+    /**
+     * A card top-up of {@code amount} EUR (12.50 by default) into {@code who}'s own wallet, authorized and captured by the card PSP -
+     * a payment with no merchant, the kind an operator answers a dispute on (a merchant answers its own), and refunds (P17-TST-001).
+     * {@code who} is a customer the shell made ACTIVE: the wallet opens through the accounts door, the card attaches through
+     * tokenisation. Prints the payment's id.
+     */
+    private void topUp(String who, String amount) throws Exception {
         String session = signIn(publicBase, who);
         expect("wallet of " + who, post(publicBase, "/v1/me/accounts", "{\"productType\":\"WALLET\",\"currency\":\"EUR\"}", session,
                 key()), 201);
         String card = field(expect("card of " + who, post(publicBase, "/v1/me/payment-methods",
                 "{\"clientToken\":\"ctok_" + letters(12) + "\"}", session, null), 201).body(), "id");
         String payment = field(expect("top-up of " + who, post(publicBase, "/v1/payments",
-                "{\"amount\":\"" + TOP_UP + "\",\"currency\":\"EUR\",\"paymentMethodId\":\"" + card + "\"}", session, key()), 200, 201)
+                "{\"amount\":\"" + amount + "\",\"currency\":\"EUR\",\"paymentMethodId\":\"" + card + "\"}", session, key()), 200, 201)
                 .body(), "id");
         expect("top-up confirmation", post(publicBase, "/v1/payments/" + payment + "/confirmation", null, session, null), 200, 409);
         Instant deadline = Instant.now().plus(Duration.ofMinutes(2));
