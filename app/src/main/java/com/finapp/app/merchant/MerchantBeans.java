@@ -316,9 +316,10 @@ public class MerchantBeans {
             com.finapp.merchant.MerchantClosures merchantClosures,
             com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
             PlatformTransactionManager transactionManager,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.app.api.RecordedReads recordedReads) {
         return new MerchantClosureDesk(merchantClosures, idempotentExecutor, new TransactionTemplate(transactionManager),
-                dataSource);
+                dataSource, recordedReads);
     }
 
     /**

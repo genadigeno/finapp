@@ -50,6 +50,23 @@ public final class JdbcBnplFeeAssignmentProposalStore implements BnplFeeAssignme
     }
 
     @Override
+    public Optional<BnplFeeAssignmentProposal> find(Connection unitOfWork, BnplFeeAssignmentProposal.Id id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement read = unitOfWork.prepareStatement(
+                // P17-TSK-124: by id alone, unlocked - the decider's read of what they decide; FEE_SCHEDULE_APPROVE on a
+                // MULTI_FACTOR session at app's door stands in for an owner predicate (OwnershipIsScopedTest, ADMINISTERED).
+                "SELECT " + COLUMNS + " FROM " + TABLE + " WHERE id = ?")) {
+            read.setObject(1, id.value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new MerchantStorageException(DatabaseFailure.describe("reading a BNPL fee assignment proposal", failure));
+        }
+    }
+
+    @Override
     public Optional<BnplFeeAssignmentProposal> lock(Connection unitOfWork, BnplFeeAssignmentProposal.Id id) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(id, "id must not be null");

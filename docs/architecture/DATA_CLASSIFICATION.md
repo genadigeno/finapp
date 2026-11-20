@@ -700,6 +700,20 @@ an approver's console disables a proposer's own approval in advance; never a rea
 (credit V027) is `INTERNAL`: the provider's own name for the bytes, metadata - the content stays `RESTRICTED`, reachable
 only through `credit.read_evidence` with a reason.
 
+**Served to staff, the decider's read of one pending decision** (`P17-TSK-124`; finapp-admin-panel B7.6, B6.8): to the
+holders of the permission that decides it alone - `TRANSFER_REVERSE_APPROVE`, `PAYMENT_REFUND_APPROVE`,
+`MERCHANT_PAYOUT_APPROVE`, `MERCHANT_CLOSE_APPROVE`, `FEE_SCHEDULE_APPROVE`, `ACCOUNT_RESTRICT_APPROVE` - on a `MULTI_FACTOR`
+session, every serving recorded in the read's own transaction (held at the answer by `UnrecordedReadAdvice`): the proposal's
+`proposal_reason` and, once decided, `decision_reason` (`RESTRICTED-PII` - the approver must read the case to decide it),
+`proposed_by` (`RESTRICTED-PII`, so the console disables a proposer's own approval in advance), `proposed_at` and `decided_at`,
+`status`, the money asked (`RESTRICTED-FINANCIAL`, exact, with its currency: a refund's and a BNPL refund's amount and
+cumulative amount, a payout's amount, and the transfer's amount a reversal would undo) and the restriction's `kind` and
+`reason_code` (`CONFIDENTIAL`; to staff only, never the customer - the tipping-off rule stands). The subject is named by its
+identifier, and a merchant subject also by its `display_name` and `status` (`CONFIDENTIAL`; the controller holds no
+`MERCHANT_ADMINISTER` and would decide a closure or a payout blind without them). **Never** `decided_by`, never a customer's
+name, never an account's balance. No record's summary carries an amount or a reason, and the restriction's view masks its two
+reasons in its string form, so neither reaches a log.
+
 ### The fee schedule's proposals — *added by `P17-TSK-123`*
 
 **Two more acts on ADR-0154's pattern** (merchant V022): `merchant.fee_schedule_version_proposal` and
@@ -709,8 +723,8 @@ screened for instrument shapes). A version proposal's terms - `rate`, the fixed 
 `rounding_policy`, `refund_fee_policy`, `effective_from` - are `INTERNAL`, as `fee_schedule_version`'s are: the platform's
 own price, not a fact about anybody; `fee_schedule_version_id`, the version an approval minted, `INTERNAL`.
 
-**Served to staff** (`P17-TSK-123`): each kind's queue (`GET /v1/operator/pending-decisions/merchant.fee-schedule-versions`
-and `.../merchant.fee-assignments`, `FEE_SCHEDULE_APPROVE`) serves each open proposal's proposer (the raw actor id) and the
+**Served to staff** (`P17-TSK-123`): each kind's queue (`GET /v1/operator/pending-decisions/merchant/fee-schedule-versions`
+and `.../merchant/fee-assignments`, `FEE_SCHEDULE_APPROVE`) serves each open proposal's proposer (the raw actor id) and the
 proposer's reason cut to 120 characters (`reasonSummary`) to the holders of the permission that decides it - the servicing
 queues' precedent - and one proposal's read (`GET /v1/operator/fee-schedule-proposals/{id}`) serves its terms, its decider
 and the schedule it names; never a decision's reason.

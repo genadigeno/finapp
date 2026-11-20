@@ -10,6 +10,8 @@ import com.finapp.bnpl.BnplErrorCode;
 import com.finapp.bnpl.BnplObligationStatus;
 import com.finapp.bnpl.BnplOperatorLists;
 import com.finapp.bnpl.BnplPurchaseId;
+import com.finapp.bnpl.BnplRefundProposal;
+import com.finapp.bnpl.BnplRefundProposals;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.audit.AuditId;
 import com.finapp.platform.audit.AuditOutcome;
@@ -67,6 +69,7 @@ public final class BnplListDesk {
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
     @NonNull private final BnplTransactions transactions;
+    @NonNull private final BnplRefundProposals refundProposals;
 
     // ------------------------------------------------------------------ the views
 
@@ -239,6 +242,56 @@ public final class BnplListDesk {
                 BnplListDesk::refundView, BnplPurchaseRefundPage::new);
     }
 
+    // ------------------------------------------------------------------ a refund proposal, read by its approver
+
+    /**
+     * A BNPL refund proposal as its decider reads it (`P17-TSK-124`): the purchase, the refund's amount exact with its
+     * currency, the purchase's refunds with this one ({@code cumulativeAmount}, what the threshold judged) and the threshold's
+     * version, who proposed it, when and why, whether the caller did, and once decided the decision's instant and reason and
+     * an approval's refund ({@code null} until then). Never who decided.
+     */
+    public record BnplRefundProposalView(
+            String proposalId, String purchaseId, String amount, String currency, String cumulativeAmount,
+            int thresholdVersion, String refundId, String status, String reason, String proposedBy, boolean proposedByCaller,
+            String proposedAt, String decidedAt, String decisionReason) {}
+
+    /**
+     * Proposal {@code rawProposalId}, recorded {@code bnpl.RefundProposalRead} in the read's own transaction (`P17-TSK-124`).
+     * An unknown or malformed identifier is the uniform {@code 404}, nothing recorded; a proposal of the reader's own party's
+     * purchase - or a reader the platform cannot place in a party - {@code 403 bnpl.SelfDealingRefused}, recorded
+     * {@code FAILED} in a transaction of its own, as BNPL's other operator reads (`P17-TSK-035`, `-116`).
+     */
+    public BnplRefundProposalView refundProposal(String rawProposalId) {
+        BnplRefundProposal.Id id = refundProposalId(rawProposalId);
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        BnplRefundProposal proposal;
+        try {
+            proposal = transactions.inTransaction(uow -> {
+                BnplRefundProposal found = refundProposals.find(uow, id).orElseThrow(BnplListDesk::noRefundProposal);
+                UUID party = lists.purchaseParty(uow, found.purchaseId()).orElseThrow(BnplListDesk::noRefundProposal);
+                Optional<UUID> readers = actingParties.partyOf(uow, actor);
+                if (readers.isEmpty() || readers.get().equals(party)) {
+                    throw new Refused(readers.isEmpty() ? "the reader is no identity the platform can place in a party"
+                            : "the purchase is the reader's own party's");
+                }
+                reads.record(uow, BnplAuditAction.REFUND_PROPOSAL_READ, "BnplRefundProposal", id.value().toString(),
+                        "purchase=" + found.purchaseId().value() + ", status=" + found.status());
+                return found;
+            });
+        } catch (Refused refused) {
+            throw recorded(actor, correlation, "BnplRefundProposal", id.value().toString(),
+                    "proposal=" + id.value() + ", act=refund-proposal:read", refused);
+        }
+        return new BnplRefundProposalView(proposal.id().value().toString(), proposal.purchaseId().value().toString(),
+                decimal(proposal.amount()), proposal.amount().currency().code(), decimal(proposal.cumulative()),
+                proposal.thresholdVersion(), proposal.refundId().map(UUID::toString).orElse(null), proposal.status().name(),
+                proposal.proposalReason(), proposal.proposedBy(), proposal.proposedBy().equals(actor.id()),
+                proposal.proposedAt().toString(),
+                proposal.decision().map(BnplRefundProposal.Decision::decidedAt).map(Instant::toString).orElse(null),
+                proposal.decision().map(BnplRefundProposal.Decision::reason).orElse(null));
+    }
+
     // ------------------------------------------------------------------ the approver's queue
 
     /**
@@ -409,6 +462,24 @@ public final class BnplListDesk {
     private static ApiException notFound() {
         return new ApiException(BnplErrorCode.NOT_FOUND, "No BNPL purchase matches the requested identifier",
                 "no such record.");
+    }
+
+    /** A canonical UUIDv7 (ADR-0013), or the uniform 404 - anything else names no proposal, as the decision doors answer. */
+    private static BnplRefundProposal.Id refundProposalId(String raw) {
+        try {
+            UUID parsed = UUID.fromString(raw);
+            if (parsed.toString().equals(raw) && parsed.version() == 7 && parsed.variant() == 2) {
+                return BnplRefundProposal.Id.of(parsed);
+            }
+        } catch (IllegalArgumentException | NullPointerException malformed) {
+            // the uniform 404 below
+        }
+        throw noRefundProposal();
+    }
+
+    private static ApiException noRefundProposal() {
+        return new ApiException(BnplErrorCode.NOT_FOUND, "No BNPL refund proposal matches the requested identifier",
+                "no such BNPL refund proposal.");
     }
 
     private static CorrelationId correlation() {

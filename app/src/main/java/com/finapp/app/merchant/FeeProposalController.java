@@ -33,8 +33,8 @@ import org.springframework.web.bind.annotation.RestController;
  * reasoned; refusals recorded.
  *
  * <p>Each kind's proposals awaiting a decision are a queue in `P17-TSK-040`'s one pending-decision shape (finapp-admin-panel
- * ADR-C133 decision 3) - {@code /operator/pending-decisions/merchant.fee-schedule-versions} and
- * {@code .../merchant.fee-assignments} - on the approve door's factor, and one proposal of any kind (the BNPL fee
+ * ADR-C133 decision 3) - {@code /operator/pending-decisions/merchant/fee-schedule-versions} and
+ * {@code .../merchant/fee-assignments} - on the approve door's factor, and one proposal of any kind (the BNPL fee
  * assignments of {@code /operator/bnpl-fee-schedule-proposals} too) is read by its identifier with the schedule it names:
  * the approver holds no {@code FEE_ADMINISTER}, and four eyes that cannot see the price decide nothing. The reads are
  * unrecorded, configuration.
@@ -48,7 +48,7 @@ public class FeeProposalController {
 
     /** The fee schedule version proposals awaiting a decision, oldest first: `P17-TSK-040`'s pending-decision shape. */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
-    @GetMapping("/pending-decisions/merchant.fee-schedule-versions")
+    @GetMapping("/pending-decisions/merchant/fee-schedule-versions")
     @RequiresPermission(PermissionName.FEE_SCHEDULE_APPROVE)
     public PendingDecisions.PendingDecisionPage listPendingFeeScheduleVersions(
             @RequestParam(name = "status", required = false) String status,
@@ -59,7 +59,7 @@ public class FeeProposalController {
 
     /** The merchant fee assignment proposals awaiting a decision, oldest first: the same shape. */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
-    @GetMapping("/pending-decisions/merchant.fee-assignments")
+    @GetMapping("/pending-decisions/merchant/fee-assignments")
     @RequiresPermission(PermissionName.FEE_SCHEDULE_APPROVE)
     public PendingDecisions.PendingDecisionPage listPendingFeeAssignments(
             @RequestParam(name = "status", required = false) String status,

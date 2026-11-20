@@ -325,7 +325,7 @@ public class FeeScheduleOperations {
     // ----------------------------------------------------------------- the approver's reads
 
     /**
-     * {@code GET /v1/operator/pending-decisions/merchant.fee-schedule-versions} (`P17-TSK-123`, in `P17-TSK-040`'s one
+     * {@code GET /v1/operator/pending-decisions/merchant/fee-schedule-versions} (`P17-TSK-123`, in `P17-TSK-040`'s one
      * pending-decision shape; finapp-admin-panel ADR-C133 decision 3): the fee schedule version proposals awaiting a second
      * person, oldest first. Configuration: unrecorded, as the fee reads are.
      */
@@ -333,7 +333,7 @@ public class FeeScheduleOperations {
         return pending(FeeProposalStore.Kind.FEE_SCHEDULE_VERSION, VERSIONS_QUEUE, status, cursor, limit);
     }
 
-    /** {@code GET /v1/operator/pending-decisions/merchant.fee-assignments}: the merchant fee assignment proposals, as above. */
+    /** {@code GET /v1/operator/pending-decisions/merchant/fee-assignments}: the merchant fee assignment proposals, as above. */
     public PendingDecisions.PendingDecisionPage pendingAssignments(String status, String cursor, String limit) {
         return pending(FeeProposalStore.Kind.FEE_ASSIGNMENT, ASSIGNMENTS_QUEUE, status, cursor, limit);
     }

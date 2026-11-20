@@ -35,10 +35,26 @@ public final class BnplFeeAssignments {
     static final String TARGET_TYPE = BnplPricing.ASSIGNMENT_TARGET_TYPE;
 
     @NonNull private final BnplFeeAssignmentProposalStore<Connection> proposals;
+    @NonNull private final MerchantStore<Connection> merchants;
     @NonNull private final BnplPricing pricing;
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+
+    /** A proposal as its decider reads it (`P17-TSK-124`): the proposal and the merchant it would price, as they stand. */
+    public record Read(BnplFeeAssignmentProposal proposal, Merchant merchant) {}
+
+    /**
+     * The proposal and its merchant, unlocked - what its decider reads before deciding (`P17-TSK-124`). Empty for an unknown
+     * proposal. Nothing is written here: the caller records the serving in this unit of work.
+     */
+    public Optional<Read> read(Connection unitOfWork, BnplFeeAssignmentProposal.Id id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        return proposals.find(unitOfWork, id).map(proposal -> new Read(proposal, merchants.findById(unitOfWork,
+                proposal.merchantId()).orElseThrow(() -> new MerchantStorageException(
+                        "a BNPL fee assignment proposal names a merchant that does not exist"))));
+    }
 
     /** The door's answer: a proposal, or nothing to propose because the pointer is there already. */
     public record Proposed(Optional<BnplFeeAssignmentProposal> proposal) {

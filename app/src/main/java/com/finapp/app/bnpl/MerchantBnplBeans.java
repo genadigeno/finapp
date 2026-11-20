@@ -1,5 +1,6 @@
 package com.finapp.app.bnpl;
 
+import com.finapp.app.api.RecordedReads;
 import com.finapp.bnpl.BnplMerchants;
 import com.finapp.ledger.JdbcLedgerAccountStore;
 import com.finapp.merchant.BnplEnablements;
@@ -49,8 +50,8 @@ public class MerchantBnplBeans {
     @Bean
     BnplFeeAssignments bnplFeeAssignments(BnplPricing bnplPricing, AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator, Clock clock) {
-        return new BnplFeeAssignments(new JdbcBnplFeeAssignmentProposalStore(), bnplPricing, auditWriter, idGenerator,
-                clock);
+        return new BnplFeeAssignments(new JdbcBnplFeeAssignmentProposalStore(), new JdbcMerchantStore(), bnplPricing,
+                auditWriter, idGenerator, clock);
     }
 
     @Bean
@@ -58,7 +59,9 @@ public class MerchantBnplBeans {
             BnplEnablements bnplEnablements,
             IdempotentExecutor idempotentExecutor,
             BnplTransactions bnplTransactions,
-            BnplFeeAssignments bnplFeeAssignments) {
-        return new MerchantBnplDesk(bnplEnablements, idempotentExecutor, bnplTransactions, bnplFeeAssignments);
+            BnplFeeAssignments bnplFeeAssignments,
+            RecordedReads recordedReads) {
+        return new MerchantBnplDesk(bnplEnablements, idempotentExecutor, bnplTransactions, bnplFeeAssignments,
+                recordedReads);
     }
 }

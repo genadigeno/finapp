@@ -1370,8 +1370,10 @@ public class PaymentBeans {
             com.finapp.payments.RefundProposals refundProposals,
             com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
             TransactionTemplate paymentTransactions,
-            DataSource dataSource) {
-        return new RefundDesk(paymentService, refundProposals, idempotentExecutor, paymentTransactions, dataSource);
+            DataSource dataSource,
+            com.finapp.app.api.RecordedReads recordedReads) {
+        return new RefundDesk(paymentService, refundProposals, idempotentExecutor, paymentTransactions, dataSource,
+                recordedReads);
     }
 
     /**

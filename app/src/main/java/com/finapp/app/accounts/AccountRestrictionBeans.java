@@ -40,8 +40,9 @@ public class AccountRestrictionBeans {
             AccountRestrictions accountRestrictions,
             IdempotentExecutor idempotentExecutor,
             PlatformTransactionManager transactionManager,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.app.api.RecordedReads recordedReads) {
         return new AccountRestrictionDesk(accountRestrictions, idempotentExecutor, new TransactionTemplate(transactionManager),
-                dataSource);
+                dataSource, recordedReads);
     }
 }

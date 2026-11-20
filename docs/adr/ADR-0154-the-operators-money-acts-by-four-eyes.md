@@ -195,7 +195,7 @@ Decisions 1-7 and 9-13 are unchanged; these extend them.
 
 17. **The approver's queues and read, under `FEE_SCHEDULE_APPROVE`**, in `P17-TSK-040`'s one pending-decision shape
     (finapp-admin-panel ADR-C133 decision 3; `PendingDecisions`): one queue per kind, `GET
-    /v1/operator/pending-decisions/merchant.fee-schedule-versions` and `.../merchant.fee-assignments` - `PROPOSED` or no
+    /v1/operator/pending-decisions/merchant/fee-schedule-versions` and `.../merchant/fee-assignments` - `PROPOSED` or no
     status, items `{id, kind: merchant.FeeScheduleVersion | merchant.FeeAssignment, proposedBy, proposedAt, reasonSummary,
     subjectId}`, proposed at ascending, id ascending, on the approve door's factor. *(Read "one queue of every kind, the BNPL
     fee assignments included, with `subjectKind` and `proposedByCaller`, at `GET /v1/operator/fee-schedule-proposals`" until

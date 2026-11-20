@@ -20,6 +20,9 @@ public interface TransferReversalProposalStore<T> {
     /** The proposal, read {@code FOR UPDATE} - the deciders' serialization point. Empty for an unknown id. */
     Optional<TransferReversalProposal> lock(T unitOfWork, TransferReversalProposalId id);
 
+    /** The proposal, unlocked - its decider's read (`P17-TSK-124`). Empty for an unknown id. */
+    Optional<TransferReversalProposal> find(T unitOfWork, TransferReversalProposalId id);
+
     /** The transfer's open ({@code PROPOSED}) proposal, if any - at most one, by the index. */
     Optional<TransferReversalProposal> findOpenFor(T unitOfWork, TransferId transferId);
 

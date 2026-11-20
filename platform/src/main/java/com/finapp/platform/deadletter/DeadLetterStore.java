@@ -79,6 +79,18 @@ public interface DeadLetterStore {
     /** At most {@code limit} discards awaiting a second person, oldest proposal first, the discard's id breaking the tie. */
     List<Proposal> standingProposals(Connection unitOfWork, Optional<Position> after, int limit);
 
+    /**
+     * One abandoned event by its id, as {@link #abandoned} serves it - empty unless it is in the abandoned queue now: unknown,
+     * published, discarded or returned to the relay (`P17-TSK-124`). Unlocked.
+     */
+    Optional<AbandonedEvent> abandonedEvent(Connection unitOfWork, UUID eventId);
+
+    /** One parked record by its id, as {@link #parked} serves it - empty unless it is parked now (`P17-TSK-124`). Unlocked. */
+    Optional<ParkedRecord> parkedRecord(Connection unitOfWork, UUID parkId);
+
+    /** One discard by its id, in whatever status it stands - empty for an unknown id (`P17-TSK-124`). Unlocked. */
+    Optional<Proposal> discard(Connection unitOfWork, UUID discardId);
+
     /** Locks the row. {@code withinDedupeWindow} is judged by the server against {@code retention}. */
     Optional<EventRow> lockEvent(Connection unitOfWork, UUID eventId, Duration retention);
 

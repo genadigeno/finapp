@@ -125,6 +125,17 @@ public enum TransfersAuditAction implements AuditableAction {
             "transfers.TransfersReportRead",
             "An overview reader was served a day's transfers report - counts and totals by outcome and currency, never a"
                     + " transfer (PLATFORM_OVERVIEW_READ); every serving is recorded, in the read's transaction.",
+            false),
+
+    /**
+     * A holder of {@code TRANSFER_REVERSE_APPROVE} read a reversal proposal with the transfer it would reverse (`P17-TSK-124`;
+     * {@code GET /v1/operator/transfer-reversals/{id}}, on a {@code MULTI_FACTOR} session): the proposal the target, its
+     * transfer and status the summary - never an amount. Written by app's {@code RecordedReads} in the read's own transaction.
+     */
+    REVERSAL_PROPOSAL_READ(
+            "transfers.ReversalProposalRead",
+            "An approver read a transfer reversal proposal and the transfer it would reverse (TRANSFER_REVERSE_APPROVE); the"
+                    + " proposal, its transfer and status recorded, never an amount; every serving, in the read's transaction.",
             false);
 
     private final String code;

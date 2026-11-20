@@ -20,6 +20,9 @@ public interface AccountRestrictionStore<T> {
     /** The restriction, read {@code FOR UPDATE} - the deciders' serialization point. Empty for an unknown id. */
     Optional<AccountRestriction> lock(T unitOfWork, AccountRestrictionId id);
 
+    /** The restriction, unlocked - its approver's read (`P17-TSK-124`). Empty for an unknown id. */
+    Optional<AccountRestriction> find(T unitOfWork, AccountRestrictionId id);
+
     /** The agreement's open ({@code PROPOSED}) restriction, if any - at most one, by the index. */
     Optional<AccountRestriction> findOpenFor(T unitOfWork, CustomerAccountId accountId);
 

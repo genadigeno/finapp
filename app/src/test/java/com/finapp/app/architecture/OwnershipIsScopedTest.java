@@ -2493,7 +2493,7 @@ class OwnershipIsScopedTest {
                             "com.finapp.payments.JdbcRefundProposalStore.find",
                             new Entry(
                                     Scope.ADMINISTERED,
-                                    "P17-TSK-031. A refund proposal by its id alone - the approver's read of what to approve: the id comes from the URL of POST /v1/operator/refund-proposals/{id}/approval, another person's proposal by design. Standing in: PAYMENT_REFUND_APPROVE on a MULTI_FACTOR session, keyed, the proposer refused by the domain and V043's CHECK, every decision audited.")),
+                                    "P17-TSK-031. A refund proposal by its id alone - the approver's read of what to approve: the id comes from the URL of POST /v1/operator/refund-proposals/{id}/approval, another person's proposal by design. Standing in: PAYMENT_REFUND_APPROVE on a MULTI_FACTOR session, keyed, the proposer refused by the domain and V043's CHECK, every decision audited. Since P17-TSK-124 also GET /v1/operator/refund-proposals/{id}, the decider's read: the same permission and factor, every serving recorded payments.RefundProposalRead (@RecordedRead).")),
                     Map.entry(
                             "com.finapp.payments.JdbcRefundProposalStore.lock",
                             new Entry(
@@ -2512,7 +2512,10 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P17-TSK-116. A BNPL refund proposal by its id alone - another person's proposal by design."
                                         + " Standing in: PAYMENT_REFUND_APPROVE on a MULTI_FACTOR session, keyed, the proposer"
-                                        + " refused by the domain and bnpl V024's CHECK, every decision audited.")),
+                                        + " refused by the domain and bnpl V024's CHECK, every decision audited. Since P17-TSK-124"
+                                        + " also GET /v1/operator/bnpl-refund-proposals/{id}, the decider's read: the same permission"
+                                        + " and factor, the reader's own party's purchase refused, every serving recorded"
+                                        + " bnpl.RefundProposalRead (@RecordedRead).")),
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplRefundProposalStore.lock",
                             new Entry(
@@ -2562,6 +2565,11 @@ class OwnershipIsScopedTest {
                                     "P17-TSK-123. find's one-row helper: each of the three proposal tables by the id find"
                                         + " was given - find's classification, one hop down.")),
                     Map.entry(
+                            "com.finapp.merchant.JdbcBnplFeeAssignmentProposalStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-124. A BNPL fee assignment proposal by its id alone, unlocked - the approver's read of what they decide: the id from the URL of GET /v1/operator/bnpl-fee-schedule-proposals/{id}, another person's proposal by design. Standing in: FEE_SCHEDULE_APPROVE on a MULTI_FACTOR session, every serving recorded merchant.BnplFeeAssignmentProposalRead (@RecordedRead, held at the answer).")),
+                    Map.entry(
                             "com.finapp.merchant.JdbcBnplFeeAssignmentProposalStore.lock",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -2580,7 +2588,7 @@ class OwnershipIsScopedTest {
                             "com.finapp.merchant.JdbcPayoutProposalStore.find",
                             new Entry(
                                     Scope.ADMINISTERED,
-                                    "P17-TSK-031. A payout proposal by its id alone - the approver's read of what to approve: the id comes from the URL of POST /v1/operator/payout-proposals/{id}/approval, another person's proposal by design. Standing in: MERCHANT_PAYOUT_APPROVE on a MULTI_FACTOR session, keyed, the proposer refused by the domain and V020's CHECK, every decision audited.")),
+                                    "P17-TSK-031. A payout proposal by its id alone - the approver's read of what to approve: the id comes from the URL of POST /v1/operator/payout-proposals/{id}/approval, another person's proposal by design. Standing in: MERCHANT_PAYOUT_APPROVE on a MULTI_FACTOR session, keyed, the proposer refused by the domain and V020's CHECK, every decision audited. Since P17-TSK-124 also GET /v1/operator/payout-proposals/{id}, the decider's read: the same permission and factor, every serving recorded merchant.PayoutProposalRead (@RecordedRead).")),
                     Map.entry(
                             "com.finapp.merchant.JdbcPayoutProposalStore.lock",
                             new Entry(
@@ -2593,6 +2601,11 @@ class OwnershipIsScopedTest {
                                     "P17-TSK-031. The open payout proposal of the merchant the operator door names - under its own"
                                         + " permission and factor - so one open proposal per merchant is judged before the partial"
                                         + " unique index has to refuse it.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcMerchantClosureProposalStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-124. A closure proposal by its id alone, unlocked - the approver's read of what they decide: the id from the URL of GET /v1/operator/merchant-closures/{id}, another person's proposal by design. Standing in: MERCHANT_CLOSE_APPROVE on a MULTI_FACTOR session, every serving recorded merchant.ClosureProposalRead (@RecordedRead, held at the answer).")),
                     Map.entry(
                             "com.finapp.merchant.JdbcMerchantClosureProposalStore.lock",
                             new Entry(
@@ -2611,6 +2624,11 @@ class OwnershipIsScopedTest {
                                         + " MERCHANT_ADMINISTER), so one open proposal per merchant is judged before the"
                                         + " partial unique index has to refuse it.")),
                     Map.entry(
+                            "com.finapp.transfers.JdbcTransferReversalProposalStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-124. A reversal proposal by its id alone, unlocked - the approver's read of what they decide: the id from the URL of GET /v1/operator/transfer-reversals/{id}, another person's proposal by design. Standing in: TRANSFER_REVERSE_APPROVE on a MULTI_FACTOR session, every serving recorded transfers.ReversalProposalRead (@RecordedRead, held at the answer).")),
+                    Map.entry(
                             "com.finapp.transfers.JdbcTransferReversalProposalStore.lock",
                             new Entry(
                                     Scope.ADMINISTERED,
@@ -2627,6 +2645,11 @@ class OwnershipIsScopedTest {
                                         + " the proposer holds (TransferStore.lockById's provenance - the URL of"
                                         + " POST /v1/transfers/{id}/reversal under TRANSFER_REVERSE), so one open proposal per"
                                         + " transfer is judged before the partial unique index has to refuse it.")),
+                    Map.entry(
+                            "com.finapp.accounts.JdbcAccountRestrictionStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-124. A restriction by its id alone, unlocked - the approver's read of what they decide: the id from the URL of GET /v1/operator/account-restrictions/{id}, another person's proposal about a customer's agreement by design. Standing in: ACCOUNT_RESTRICT_APPROVE on a MULTI_FACTOR session, every serving recorded accounts.RestrictionRead (@RecordedRead, held at the answer).")),
                     Map.entry(
                             "com.finapp.accounts.JdbcAccountRestrictionStore.lock",
                             new Entry(

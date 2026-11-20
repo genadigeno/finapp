@@ -47,6 +47,21 @@ public final class JdbcMerchantClosureProposalStore implements MerchantClosurePr
     }
 
     @Override
+    public Optional<MerchantClosureProposal> find(Connection unitOfWork, MerchantClosureProposalId id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement read = unitOfWork.prepareStatement(
+                // P17-TSK-124: by id alone, unlocked - the decider's read of what they decide; MERCHANT_CLOSE_APPROVE on a
+                // MULTI_FACTOR session at app's door stands in for an owner predicate (OwnershipIsScopedTest, ADMINISTERED).
+                "SELECT " + COLUMNS + " FROM " + TABLE + " WHERE id = ?")) {
+            read.setObject(1, id.value());
+            return single(read);
+        } catch (SQLException failure) {
+            throw new MerchantStorageException(DatabaseFailure.describe("reading a closure proposal", failure));
+        }
+    }
+
+    @Override
     public Optional<MerchantClosureProposal> lock(Connection unitOfWork, MerchantClosureProposalId id) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(id, "id must not be null");

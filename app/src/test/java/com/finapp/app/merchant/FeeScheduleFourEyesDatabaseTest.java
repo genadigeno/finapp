@@ -444,8 +444,8 @@ class FeeScheduleFourEyesDatabaseTest {
 
     // ------------------------------------------------------------------ fixtures
 
-    private static final String VERSIONS = "/v1/operator/pending-decisions/merchant.fee-schedule-versions";
-    private static final String ASSIGNMENTS = "/v1/operator/pending-decisions/merchant.fee-assignments";
+    private static final String VERSIONS = "/v1/operator/pending-decisions/merchant/fee-schedule-versions";
+    private static final String ASSIGNMENTS = "/v1/operator/pending-decisions/merchant/fee-assignments";
 
     /** Every page of {@code route}'s queue read by {@code reader}, {@code limit} at a time: each item by id, in order. */
     private Map<String, String> queue(String route, Operator reader, int limit) throws Exception {

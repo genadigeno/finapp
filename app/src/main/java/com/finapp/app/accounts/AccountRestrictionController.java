@@ -3,6 +3,7 @@ package com.finapp.app.accounts;
 import com.finapp.accounts.RestrictionKind;
 import com.finapp.accounts.RestrictionStatus;
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.api.RecordedRead;
 import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
@@ -17,6 +18,7 @@ import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -63,6 +65,18 @@ public class AccountRestrictionController {
             @PathVariable("id") String id,
             @Valid @RequestBody RestrictionProposalRequest body) {
         return desk.propose(idempotencyKey, id, RestrictionKind.REINSTATEMENT, body.reasonCode(), body.reason());
+    }
+
+    /**
+     * One restriction - the agreement, the kind, the reason code, the reason and who proposed it - what its approver decides
+     * (`P17-TSK-124`). Every serving recorded ({@code accounts.RestrictionRead}); unknown or malformed 404.
+     */
+    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
+    @GetMapping("/account-restrictions/{id}")
+    @RequiresPermission(PermissionName.ACCOUNT_RESTRICT_APPROVE)
+    @RecordedRead
+    public AccountRestrictionDesk.AccountRestrictionView readAccountRestriction(@PathVariable("id") String id) {
+        return desk.read(id);
     }
 
     /** Approves a restriction the caller did not propose: the agreement moves. */

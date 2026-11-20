@@ -1,6 +1,8 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.api.RecordedReads;
 import com.finapp.payments.PaymentIntentId;
+import com.finapp.payments.PaymentsAuditAction;
 import com.finapp.payments.PaymentsErrorCode;
 import com.finapp.payments.RefundProposal;
 import com.finapp.payments.RefundProposals;
@@ -19,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
 import java.util.UUID;
@@ -53,6 +56,43 @@ public final class RefundDesk {
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final TransactionTemplate paymentTransactions;
     @NonNull private final DataSource dataSource;
+    @NonNull private final RecordedReads reads;
+
+    /**
+     * A refund proposal as its decider reads it (`P17-TSK-124`): the payment, the refund's amount exact with its currency, the
+     * payment's refunds with this one ({@code cumulativeAmount}, what the threshold judged) and the threshold's version, who
+     * proposed it, when and why, whether the caller did, and once decided the decision's instant and reason and an approval's
+     * refund ({@code null} until then). Never who decided.
+     */
+    public record RefundProposalView(
+            String proposalId, String paymentId, String amount, String currency, String cumulativeAmount,
+            int thresholdVersion, String refundId, String status, String reason, String proposedBy, boolean proposedByCaller,
+            String proposedAt, String decidedAt, String decisionReason) {}
+
+    /**
+     * Proposal {@code rawId}, recorded {@code payments.RefundProposalRead} in the read's own transaction (`P17-TSK-124`). An
+     * unknown or malformed identifier: 404, and nothing recorded.
+     */
+    public RefundProposalView read(String rawId) {
+        RefundProposal.Id id = uuid(rawId).map(RefundProposal.Id::of).orElseThrow(RefundDesk::notFound);
+        String caller = SecurityContext.require().id();
+        RefundProposal proposal = inOneTransaction(uow -> proposals.find(uow, id).map(found -> {
+            reads.record(uow, PaymentsAuditAction.REFUND_PROPOSAL_READ, "RefundProposal", id.value().toString(),
+                    "payment=" + found.intentId().value() + ", status=" + found.status());
+            return found;
+        })).orElseThrow(RefundDesk::notFound);
+        return new RefundProposalView(proposal.id().value().toString(), proposal.intentId().value().toString(),
+                decimal(proposal.amount()), proposal.amount().currency().code(), decimal(proposal.cumulative()),
+                proposal.thresholdVersion(), proposal.refundId().map(refund -> refund.value().toString()).orElse(null),
+                proposal.status().name(), proposal.proposalReason(), proposal.proposedBy(), proposal.proposedBy().equals(caller),
+                proposal.proposedAt().toString(),
+                proposal.decision().map(RefundProposal.Decision::decidedAt).map(Instant::toString).orElse(null),
+                proposal.decision().map(RefundProposal.Decision::reason).orElse(null));
+    }
+
+    private static String decimal(Money amount) {
+        return amount.toBigDecimal().toPlainString();
+    }
 
     /** The operator's refund: dispatched at or below the threshold, proposed above it. */
     public PaymentService.RefundView refund(PaymentIntentId intentId, RefundRequest body, String idempotencyKey) {

@@ -443,6 +443,19 @@ public enum BnplAuditAction implements AuditableAction {
                     + " waivers and repayment reversals with their proposers - never the agent's own party's"
                     + " (bnpl.SelfDealingRefused, recorded FAILED). Recorded in the read's own transaction. Its target the"
                     + " agreement; the summary counts, never an amount.",
+            false),
+
+    /**
+     * A holder of {@code PAYMENT_REFUND_APPROVE} read a BNPL refund proposal (`P17-TSK-124`; {@code GET
+     * /v1/operator/bnpl-refund-proposals/{id}}, on a {@code MULTI_FACTOR} session) - never of the reader's own party's
+     * purchase ({@code bnpl.SelfDealingRefused}, recorded {@code FAILED}). The proposal the target, its purchase and status the
+     * summary - never an amount. Written by app's {@code RecordedReads} in the read's own transaction.
+     */
+    REFUND_PROPOSAL_READ(
+            "bnpl.RefundProposalRead",
+            "An approver read a BNPL refund proposal above the four-eyes threshold (PAYMENT_REFUND_APPROVE) - never of their"
+                    + " own party's purchase (bnpl.SelfDealingRefused, recorded FAILED); the proposal, its purchase and status"
+                    + " recorded, never an amount; every serving, in the read's transaction.",
             false);
 
     private final String code;

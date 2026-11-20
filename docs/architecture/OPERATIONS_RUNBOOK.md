@@ -746,7 +746,7 @@ condition below is true, in this order, each with its evidence recorded:
    assignment above and every fee schedule version are keyed proposals, decided by a `FINANCIAL_CONTROLLER`
    (`FEE_SCHEDULE_APPROVE`) who did not propose them - `POST /v1/operator/bnpl-fee-schedule-proposals/{id}/approval` and
    `POST /v1/operator/fee-schedule-version-proposals/{id}/approval`, the queues at
-   `GET /v1/operator/pending-decisions/merchant.fee-schedule-versions` and `.../merchant.fee-assignments`;
+   `GET /v1/operator/pending-decisions/merchant/fee-schedule-versions` and `.../merchant/fee-assignments`;
    the second person is in code now. A schedule's creation stays one person's, keyed.)*
 5. **A four-eyes BNPL terms activation**: one `BNPL_OFFICER` (the role holding `BNPL_ADMINISTER`) proposes the reviewed
    version (`POST /v1/operator/bnpl/terms`, `Idempotency-Key`, a reason - judged whole, `422 bnpl.TermsInvalid` or
