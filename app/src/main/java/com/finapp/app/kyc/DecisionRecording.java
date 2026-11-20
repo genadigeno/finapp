@@ -127,54 +127,40 @@ public class DecisionRecording {
      */
     public Recording byReviewer(
             KycCaseId caseId, IdentityId reviewer, DecisionOutcome outcome, String reason) {
+        return byReviewer(caseId, reviewer, outcome, reason, Optional.empty());
+    }
+
+    /**
+     * The reviewer's door's form (`P17-TSK-029`): the same decision under the request's {@code Idempotency-Key} - claimed, made
+     * and its {@code RECORDED} stored in one transaction, a retry answered from the store. A refusal changes nothing and spends no
+     * key ({@link KeyedReviewAct}). The re-route after the commit runs on a replay too: a retry heals a crash that landed between
+     * the decision's commit and its re-route, exactly as the unkeyed {@code 409} path does.
+     */
+    Recording byReviewer(
+            KycCaseId caseId, IdentityId reviewer, DecisionOutcome outcome, String reason, KeyedReviewAct keyed) {
+        return byReviewer(caseId, reviewer, outcome, reason,
+                Optional.of(Objects.requireNonNull(keyed, "keyed must not be null")));
+    }
+
+    private Recording byReviewer(
+            KycCaseId caseId,
+            IdentityId reviewer,
+            DecisionOutcome outcome,
+            String reason,
+            Optional<KeyedReviewAct> keyed) {
         Objects.requireNonNull(caseId, "caseId must not be null");
         Objects.requireNonNull(reviewer, "reviewer must not be null");
         Objects.requireNonNull(outcome, "outcome must not be null");
         Objects.requireNonNull(reason, "reason must not be null");
-        Recording recorded = units.inTransaction(
-                unitOfWork -> {
-                    Optional<KycCase> kycCase = cases.findById(unitOfWork, caseId);
-                    if (kycCase.isEmpty()) {
-                        return Recording.NOT_FOUND;
-                    }
-                    boolean won =
-                            cases.moveStatus(
-                                    unitOfWork,
-                                    caseId,
-                                    KycCaseStatus.READY_FOR_DECISION,
-                                    outcome.caseStatus(),
-                                    Instant.now(clock));
-                    if (!won) {
-                        // Disambiguate the lost conditional by what is checked, not by the
-                        // commonest cause (the NOT_ACTIVE lesson): a terminal case is already
-                        // decided; anything else is not ready for a decision yet - among it,
-                        // since P13-TSK-022's last review, a READY_FOR_DECISION case with an OPEN
-                        // review task (a list update's rescreen hit, or a late onboarding hit,
-                        // that arrived after the review exit): the decision's move never passes
-                        // one (KycCaseStore.moveStatus), so the reviewer resolves it first.
-                        return cases.findById(unitOfWork, caseId)
-                                        .map(current -> current.status().isTerminal())
-                                        .orElse(false)
-                                ? Recording.ALREADY_DECIDED
-                                : Recording.NOT_READY;
-                    }
-                    KycDecision decision =
-                            KycDecision.byReviewer(
-                                    ids,
-                                    clock,
-                                    kycCase.get(),
-                                    ChecksAssessment.decisionEvidence(
-                                            checks.allForCase(unitOfWork, caseId)),
-                                    reviewer.value(),
-                                    outcome,
-                                    reason);
-                    decisions.record(unitOfWork, decision);
-                    // The actor is the person the interceptor proved - never the platform
-                    // (INV-KYC-02: the record names who decided).
-                    audit(unitOfWork, decision, SecurityContext.require());
-                    project(unitOfWork, kycCase.get(), outcome);
-                    return Recording.RECORDED;
-                });
+        Recording recorded;
+        try {
+            recorded = units.inTransaction(unitOfWork -> keyed.isPresent()
+                    ? keyed.get().run(unitOfWork, Recording.class, Recording.RECORDED,
+                            work -> decide(work, caseId, reviewer, outcome, reason))
+                    : decide(unitOfWork, caseId, reviewer, outcome, reason));
+        } catch (KeyedReviewAct.Refused refused) {
+            recorded = refused.outcome(Recording.class);
+        }
         if (recorded == Recording.RECORDED || recorded == Recording.ALREADY_DECIDED) {
             // The decided case may be some KYB case's pinned owner verification (P2-TSK-015):
             // re-route the parents waiting on the answer, AFTER the commit (the exit-attempt
@@ -187,6 +173,52 @@ public class DecisionRecording {
             assessments.ifAvailable(assessment -> assessment.reRouteParentsOf(caseId));
         }
         return recorded;
+    }
+
+    /** The decision itself, in {@code unitOfWork}: the conditional move arbitrates, and only its winner writes. */
+    private Recording decide(
+            Connection unitOfWork, KycCaseId caseId, IdentityId reviewer, DecisionOutcome outcome, String reason) {
+        Optional<KycCase> kycCase = cases.findById(unitOfWork, caseId);
+        if (kycCase.isEmpty()) {
+            return Recording.NOT_FOUND;
+        }
+        boolean won =
+                cases.moveStatus(
+                        unitOfWork,
+                        caseId,
+                        KycCaseStatus.READY_FOR_DECISION,
+                        outcome.caseStatus(),
+                        Instant.now(clock));
+        if (!won) {
+            // Disambiguate the lost conditional by what is checked, not by the
+            // commonest cause (the NOT_ACTIVE lesson): a terminal case is already
+            // decided; anything else is not ready for a decision yet - among it,
+            // since P13-TSK-022's last review, a READY_FOR_DECISION case with an OPEN
+            // review task (a list update's rescreen hit, or a late onboarding hit,
+            // that arrived after the review exit): the decision's move never passes
+            // one (KycCaseStore.moveStatus), so the reviewer resolves it first.
+            return cases.findById(unitOfWork, caseId)
+                            .map(current -> current.status().isTerminal())
+                            .orElse(false)
+                    ? Recording.ALREADY_DECIDED
+                    : Recording.NOT_READY;
+        }
+        KycDecision decision =
+                KycDecision.byReviewer(
+                        ids,
+                        clock,
+                        kycCase.get(),
+                        ChecksAssessment.decisionEvidence(
+                                checks.allForCase(unitOfWork, caseId)),
+                        reviewer.value(),
+                        outcome,
+                        reason);
+        decisions.record(unitOfWork, decision);
+        // The actor is the person the interceptor proved - never the platform
+        // (INV-KYC-02: the record names who decided).
+        audit(unitOfWork, decision, SecurityContext.require());
+        project(unitOfWork, kycCase.get(), outcome);
+        return Recording.RECORDED;
     }
 
     /**

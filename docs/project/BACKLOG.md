@@ -32205,7 +32205,7 @@ key (G-36). It waits for `-027`'s read and `-031`'s remediation.
 - **Risk**: Medium. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
 - **As built (2026-11-20, gate `COMPLETE`)**: five routes, each on a `MULTI_FACTOR` session as every customer read is, each answer recorded and held at the answer (`-025`): `GET /v1/operator/customers/{id}/accounts` (a §7 collection of the customer's agreements, newest opening first; `accounts.CustomerAccountsListed`), `GET /v1/operator/accounts/{id}` (the agreement with, per currency, `posted`, `held` and `available` - the ledger's own `BalanceDisplay` projection, read in one statement, as the customer's balance read serves them - and `asOf`, the database's `statement_timestamp()` of the snapshot's first statement; `accounts.AccountRead`), `GET /v1/operator/accounts/{id}/entries?currency=` (the ledger lines of the agreement's ledger account in that currency, a §7 collection, newest entry first then the line's place; `ledger.AccountLinesListed`; the currency required, since one ledger account per currency), all under `ACCOUNT_READ`; `GET /v1/operator/transfers?customerId=&status=&from=&to=` (the customer and a window of at most 92 days required, a §7 collection newest first; `transfers.TransfersListed`) and `GET /v1/operator/transfers/{id}` (the transfer with its journal entry and reversal entry identifiers; `transfers.TransferRead`), under `TRANSFER_READ`. Amounts decimal strings with their currency; never a transfer's `reference` (a person's free text) nor who initiated or reversed it. **The customer is required on the transfer list** - a design decision: a support desk reads one customer's transfers, so a page is a range of `transfer_by_customer`, never a window of the platform's. The lines' ledger account is the agreement's `CUSTOMER_WALLET` in exactly that currency (`findOwned`, never the first of a list - `WalletsAreResolvedByCurrencyTest`); an unknown currency `404`. The list's handler is `listCustomerTransfers`, so its operationId is its own (`listTransfers` is the customer's). **Branched from `P17-TSK-026`, not `-025`** (the coordinator's choice, recorded): it reads on `-026`'s `operatorReadTransactions` snapshot and extends the same registers. No migration, no index. `ACCOUNT_READ` and `TRANSFER_READ` now guard reads only, each behind a factor (`PermissionName.guardsAnAct`/`readsBehindAFactor`, held both ways by `EveryOperatorActRequiresAFactorTest`). `JdbcBalanceDisplay.balancesFor` and `JdbcTransferStore.findById` are relabelled `ADMINISTERED` for their new, weaker provenance; accounts' `pageFor`, ledger's `accountLines` and transfers' `pageFor` classified. **Probe** (2026-11-20; each file's sha256 saved first; two runs): run A, P1 the transfer window's 92-day bound removed - `theTransfersAreAWindowedCollection` red, 93 days answered `200` for `422`; run B, P2 the account read's record skipped - `theBalancesAreTheLedgersAsOfTheRead` red, the answer refused `500 api.InternalError` by `-025`'s advice; P3 ledger's line cursor resuming the wrong way - `theLinesAreACollection` red, the walk no longer newest first once; every other case green; restored, sha256 identical. **Fresh** (2026-11-20, every class the change reaches, the whole tiers owed - §Partially Satisfied Definition of Done): identity's unit tier 218 tests in 25 classes, accounts' 9 in 2, ledger's 217 in 39 and transfers' 33 in 6 (the first pass; the fixes after it touched app alone); on the final bytes app's `ApiConventionsAreAccurateTest` 10, `ApiSchemaNamesAreUniqueTest` 2, `RecordedReadsTest` 6 and `CredentialReachesNoEmittedSinkTest` 9 (unit, 27); `EdgeAllowListTest` 23, `EveryCustomerReadIsRecordedTest` 2, `OpenApiContractTest` 9, `RoutePermissionRegisterTest` 7 and `EveryOperatorActRequiresAFactorTest` 7 (slice, 48, the contract and the edge's operator list regenerated first: five paths, five matchers); `OwnershipIsScopedTest` 15, `AuditableActionRegistryTest` 7, `AuditCompletenessTest` 4 and the ten ArchUnit rule classes, 29 (architecture, 55); `AccountTransferReadsApiDatabaseTest` 4 and `CustomerProjectionDatabaseTest` 8 (database, 12; the tier's other classes not run, by the owner's word). The first pass was red three times, each fixed and re-run green: a new operationId `listTransfers_1` (the handler renamed `listCustomerTransfers`), ledger's `accountLines` and transfers' `pageFor` unclassified (`OwnershipIsScopedTest`; classified `ADMINISTERED`), and the lines' wallet picked by `findFirst` (`WalletsAreResolvedByCurrencyTest`; resolved by currency). **Multi-instance**: `PASS` - the three balances one statement, the as-of instant the database's, all on one `REPEATABLE READ` snapshot; keyset pages, no lock, nothing held between requests.
 
-**P17-TSK-029 — The KYC queue, a customer's latest case, the screening backlog, and the decision's controls (G-60, G-61, G-64, G-65)** — `PLANNED`
+**P17-TSK-029 — The KYC queue, a customer's latest case, the screening backlog, and the decision's controls (G-60, G-61, G-64, G-65)** — `COMPLETE` (2026-11-20; marked `READY` at its design on the coordinator's assignment, under the owner's "run everything nondependend tasks eachother in parallel"; its dependencies `-025` and `-102` `COMPLETE`, both contained in `P17-TSK-025`; branch `P17-TSK-029` from `P17-TSK-025`) *(read "`PLANNED`" until its design, then "`READY`" until its gate)*
 - **Context**: `kyc` and counterparty screening, `app`; ADR-0035; D-8; B6.4.
 - **Scope**, every read audited:
   1. `GET /v1/operator/kyc/cases?status=&cursor` (`KYC_REVIEW`): the review queue, oldest first;
@@ -32223,6 +32223,98 @@ key (G-36). It waits for `-027`'s read and `-031`'s remediation.
 - **Multi-instance**: the decision is one conditional transition of the case, so of two reviewers deciding at once one wins
   and the other answers `409`; a duplicate keyed request replays. `PASS` with both races in the database tests.
 - **Risk**: Medium - a key added to an existing door. **Cx**: M. **DoD**: `DOD-API`, `DOD-SEC`.
+- **The owner's ruling (2026-11-20, asked at the design: "a second person for a rejection, or for an approval over an adverse
+  provider verdict?")**: **"Single reviewer"** - one `KYC_REVIEW` holder decides every outcome; the decision door grows no
+  proposal and no approval. Recorded as ADR-0035's amendment. The alternatives were four-eyes on a rejection, or on an approval
+  over a `HIT`/indeterminate verdict.
+- **Decisions taken on the owner's standing ruling ("if you rise questions, my answer is your recommended options")**, each
+  the recommended option, its alternatives named:
+  (a) **the key is required at once** - a request without `Idempotency-Key` is `422 api.IdempotencyKeyRequired`, the console's
+  keyed dialogs shipping the same day; a documented breaking change on the operator surface, `OpenApiChange`'s BREAKING labels
+  on the two doors accepted. Alternatives: an optional key for a window, then required; a new route beside the old;
+  (b) **a refusal does not spend the key** - only the recorded act is stored and replayed (`RECORDED`, `RESOLVED`); a refusal
+  (`409` already decided or not ready, `404`) changed nothing, so it rolls back with its claim and a later retry under the same
+  key is judged again - a case `NOT_READY` at the first attempt is decidable under the same key once ready. Alternative: store
+  the refusal as `FAILED` and replay it, which would pin a passing `NOT_READY` on the key for its retention;
+  (c) **the KYC reads are held by `-025`'s guard through an opt-in mark** - `@RecordedRead` on the handler brings it under
+  `UnrecordedReadAdvice` beside `RecordedReads.PERMISSIONS`, because `KYC_REVIEW` and `COUNTERPARTY_SCREENING_REVIEW` also guard
+  acts; and `EveryCustomerReadIsRecordedTest` gains a structural rule, every operator `GET` naming a customer
+  (`/v1/operator/customers/...`) recorded, whatever its permission. Alternative: widen `PERMISSIONS` to the two review
+  permissions (they are not the support desk's reads, and `RecordedReadsTest` pins `PERMISSIONS` to that desk's grant);
+  (d) **`MULTI_FACTOR` on the three reads** - a list of customers under review is a map, as `-014`'s directory is;
+  (e) **the queue's own partial index** (kyc `V015`, `kyc_case_review_queue (opened_at, id) WHERE status NOT IN ('APPROVED',
+  'REJECTED')`), so each page is one index range rather than a sort of every open case; the backlog keeps V009's
+  `counterparty_screening_awaiting_review (decided_at)`, the tie broken by id within it.
+- **Design (2026-11-20; 23 points, terse)**: (1) **Objective** - the reviewer's three queues and the decision's controls.
+  (2) **Domain** - a KYC case is kyc's one verification of one customer (ADR-0035); a reviewer works the open cases oldest first,
+  finds a customer's latest case from a support panel, and works the counterparty screenings a person must release or block
+  (ADR-0081). The decision and a task's resolution are judgements a retry must never repeat or misreport. (3) **Context** -
+  `kyc` owns the rows and the reads (a new read port, `KycInquiries`); `app` composes the doors (`KycQueueController`,
+  `KycQueueDesk`, `ReviewController`). (4) **Aggregates** - `KycCase`, `ReviewTask`, `CounterpartyScreening`; no new one.
+  (5) **Lifecycle** - unchanged: `READY_FOR_DECISION -> APPROVED | REJECTED` by one conditional move, a task `OPEN -> RESOLVED`
+  likewise. (6) **Invariants** - `INV-KYC-02` (one decision, attributed), `INV-KYC-04` (a person resolves), `INV-IDEM-01`/`-03`,
+  `INV-AUD-01`/`-02` (every read recorded, identifiers only). (7) **Data** - no new table. (8) **Indexes** - (e) above.
+  (9) **Transactions** - a page and its record in one transaction (kyc's); the key's claim, the act and the stored outcome in
+  the act's own transaction; the post-commit exits (`reRouteParentsOf`, `moveToReadyForDecision`) unchanged, run on a replay
+  too. (10) **Consistency** - each page one statement; strong within kyc. (11) **API** - `GET /v1/operator/kyc/cases?status=
+  &cursor=&limit=` (`KYC_REVIEW`; open cases, opened at then id ascending; 50/200; `status` one open status, a decided one
+  `422`); `GET /v1/operator/customers/{id}/kyc-case` (`KYC_REVIEW`; the latest case's head; `404` for none);
+  `GET /v1/operator/kyc/counterparty-screenings?status=IN_REVIEW&cursor=&limit=` (`COUNTERPARTY_SCREENING_REVIEW`; raised at
+  then id ascending; 50/200; each row `screeningId`, `status`, `raisedAt` and nothing else); the decision and the resolution
+  `@RequiresIdempotencyKey`. All on `MULTI_FACTOR`; every list a §7 collection from birth. (12) **Events** - none new.
+  (13) **Idempotency** - scope `kyc.case-decision:` / `kyc.review-resolution:` plus the principal (`X-TSK-003`); fingerprint the
+  case, the outcome or task, and the reason's digest; a replay answers the first outcome; another body under the key `409
+  api.Conflict`; (b) above. (14) **Concurrency** - the conditional move arbitrates reviewers; the key's unique index arbitrates
+  one reviewer's duplicates (a racer meeting the claim in flight `409 api.IdempotencyInProgress`). (15) **Multi-instance** -
+  no state outside the rows; a cursor is a row's own key. (16) **Failures** - a lost answer replays; a crash before commit
+  leaves no claim; a crash after commit and before the exit is healed by the retry's replay. (17) **Security** - the
+  permissions above, `MULTI_FACTOR`, the not-found shape of the existing doors; the backlog row names no subject (tipping-off:
+  nothing here reaches a customer surface). (18) **Audit** - `kyc.ReviewQueueRead` and `kyc.ScreeningBacklogRead` per page
+  (filter, continued, served), `kyc.CaseRead` for the latest case; written in the read's transaction by `RecordedReads`.
+  (19) **Reconciliation** - `N/A`, no money moves. (20) **Observability** - the existing request metrics and the audit trail.
+  (21) **Tests** - unit: the desk's refusals, cursors and records, the keyed act's replay and refusal, the doors' annotations,
+  the mark under the guard; slice: the route register, the contract, the edge list, the recorded-read register; database: the
+  three routes walked in pieces over planted ties, the decision and the resolution replayed, conflicted, refused without a key,
+  a refusal not spending its key, ten racers under one key one decision, ten reviewers one decision. (22) **Accept** - the
+  entry's. (23) **Out of scope** - four-eyes (ruled out); the console; `-042`'s guards (not on this base: the new lists are §7
+  collections from birth, and `-042`'s `OperatorListKeysetsTest` and `OperatorListsAreCollectionsTest` take them at the merge).
+  **Financial**: `N/A` - no economic event; the decision moves no money. **Multi-instance**: `PASS` by the design above, with
+  both races in the database tests.
+- **As built (2026-11-20, gate `COMPLETE`)**: as designed, on the owner's "Single reviewer" (ADR-0035's amendment, the
+  decisions index noted). **kyc**: `KycInquiries`/`JdbcKycInquiries`, a read port beside the stores - each page one keyset
+  range, its row comparison its `ORDER BY`'s columns ascending; `kyc.ReviewQueueRead` and `kyc.ScreeningBacklogRead`
+  (`KycAuditAction`, `AUDITABLE_ACTIONS.md`); kyc `V015` (`kyc_case_review_queue`, index-only, expand-only, built in its
+  migration's transaction, `IF NOT EXISTS`). **app**: `KycQueueController`/`KycQueueDesk`/`KycQueueBeans` - the three reads,
+  `MULTI_FACTOR`, each page and the latest case recorded in kyc's transaction that read it; `@RecordedRead` (app/api) and
+  `RecordedReads.recordsEveryRead` honouring it; `KeyedReviewAct` - the decision's and the
+  resolution's key (`kyc.case-decision:`/`kyc.review-resolution:` plus the principal), the act stored as its outcome's name, a
+  refusal thrown as `Refused` and rolled back with its claim; `DecisionRecording.byReviewer` and `ReviewService.resolve`
+  gaining a package-private keyed form (the unkeyed form kept for their other callers), `ReviewController` requiring the key
+  on both doors. `API_CONVENTIONS.md` §7 two rows; `AUDITABLE_ACTIONS.md` §1's held-reads row widened to the mark.
+  **Guards**: `EveryCustomerReadIsRecordedTest` - the register's four KYC entries, and every operator `GET` naming a customer
+  held whatever its permission; `RoutePermissionRegisterTest` - the three routes and their `MULTI_FACTOR`;
+  `OwnershipIsScopedTest`'s `findLatestFor` entry naming its new caller. **Found and withdrawn at implementation**: marking
+  the case file's existing read (`GET /v1/kyc/cases/{id}`) `@RecordedRead` would have answered it `500` - its `kyc.CaseRead`
+  is written by `ReviewService`'s own writer, which marks no request - so it stays unmarked, and bringing it under
+  `RecordedReads` is a follow-up. **Found and fixed at the gate**: `RefusedActsAreRecordedTest` (architecture) refused the
+  backlog read - every door under the Phase 9 permission `COUNTERPARTY_SCREENING_REVIEW` records its refusals - so it declares
+  `@RecordsRefusals`, as the review door's controller does; and the ten-racer cases of `DecisionDatabaseTest` and
+  `ReviewDatabaseTest` met the load shedder's five command permits (ADR-0137): their requests carried no edge marker, so they
+  were shed as no deployed operator request is. The three post helpers now send `X-Finapp-Surface: operator`, as the operator
+  edge does for both doors. **Tests**: `KycQueueDeskTest` (5),
+  `KeyedReviewActTest` (5), `RecordedReadsTest` (+1), `KycQueueApiDatabaseTest` (new, 5: each list's tie walked once in
+  order, in pieces; the request rules; the latest case; the doors on a factor), `DecisionDatabaseTest` (+4: the replay, ten
+  racers under one key, no key `422`, a refusal not spending its key; `tenConcurrentDecisionsProduceOne` the reviewers'
+  race), `ReviewDatabaseTest` (+1), the three post helpers keyed. **Probe**: `MUTATION_TESTING.md`, `P17-TSK-029`'s row.
+  **Fresh**: on the final bytes (2026-11-20 UTC, every task `--rerun`): app's unit tier 2,130 tests in 363 classes (03:10-03:12), its slice tier 324 in 56 (03:12-03:18) and its architecture tier 1,285 in 119 (03:18-04:12); the database classes this task adds or changes, `KycQueueApiDatabaseTest` 5, `DecisionDatabaseTest` 14, `ReviewDatabaseTest` 14 and `CustomerProjectionDatabaseTest` 8 (04:14) - 0 failed; kyc's unit tier 167 in 25 and architecture tier 2 in 1 (00:49, on kyc's final bytes) - 0 failed. Earlier fresh runs on the way, each red found and fixed: `KeyedReviewActTest`'s scope expectation (`Actor.keyedType()` names a person `CUSTOMER`), the contract, edge and declared-route registers (regenerated), the ten-racer cases shed by the load shedder (no edge marker), and `RefusedActsAreRecordedTest` (the backlog read's `@RecordsRefusals`). Whole database, Kafka, own-container and kind tiers not run (the owner's standing instruction).
+  **Merge notes**: this base holds neither `-042` nor `-026`. At `-042`'s merge, the two new reads join
+  `OperatorListKeysetsTest`'s resumed reads and `OperatorListsAreCollectionsTest` reads their two §7 rows; they are §7
+  collections from birth, so no register entry. At `-026`'s, `EveryCustomerReadIsRecordedTest.REGISTER` keeps both branches'
+  entries. `docs/api/openapi.json` and `deploy/edge/base/operator-routes.yaml` are regenerated after a merge, never merged by
+  hand. **Owed**: `edge-check.sh` over the regenerated routes; the console's keyed decision and resolution dialogs, which ship
+  with this; `P17-TSK-113`'s seed decides a case and resolves a task through the keyed doors. **Multi-instance**: `PASS` -
+  the conditional move and the conditional resolution arbitrate reviewers, the key's unique index one reviewer's duplicates,
+  and a page's position is a row's own key.
 
 **P17-TSK-028 — Account restriction: suspension and reinstatement by four-eyes (G-33)** — `COMPLETE` (2026-11-20; gated on branch `P17-TSK-028`) *(read "`READY` (marked at `P17-TSK-027`'s gate)" until its gate)* *(new domain behaviour)*
 - **Context**: `accounts` (the customer account aggregate), `risk` (its `SUSPEND_ACCOUNT` and `REINSTATE_ACCOUNT` actions,

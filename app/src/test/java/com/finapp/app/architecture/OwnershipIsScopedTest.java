@@ -1078,7 +1078,11 @@ class OwnershipIsScopedTest {
                                         + " somebody else by design - for the session's own"
                                         + " organisation's KYB case (organisationRegisteredBy), audited"
                                         + " kyc.OwnerDeclared, the case id pinned on the owner row and"
-                                        + " the declaration answering its outcome. The other callers are"
+                                        + " the declaration answering its outcome. P17-TSK-029 adds the"
+                                        + " reviewer's: KycQueueDesk, GET /v1/operator/customers/{id}/kyc-case,"
+                                        + " a KYC_REVIEW holder on a MULTI_FACTOR session naming any customer -"
+                                        + " ADMINISTERED by design, the case's head only, recorded kyc.CaseRead."
+                                        + " The other callers are"
                                         + " session-derived (KycCaseService, KybService) or the system's"
                                         + " (KycPartyRescreening, KycScreeningClearances,"
                                         + " PlatformRiskInputs).")),

@@ -22887,6 +22887,34 @@
         },
         "type": "object"
       },
+      "KycCaseHead": {
+        "properties": {
+          "caseId": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "openedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "policyVersion": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusChangedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "KycCaseResponse": {
         "properties": {
           "status": {
@@ -29900,6 +29928,20 @@
         },
         "type": "object"
       },
+      "ReviewQueuePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KycCaseHead"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RiskActionProposalRequest": {
         "properties": {
           "kind": {
@@ -33083,6 +33125,35 @@
         },
         "type": "object"
       },
+      "ScreeningAwaitingReview": {
+        "properties": {
+          "raisedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "screeningId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ScreeningBacklogPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScreeningAwaitingReview"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ScreeningDecisionReceipt": {
         "properties": {
           "id": {
@@ -35269,6 +35340,14 @@
         "operationId": "decide",
         "parameters": [
           {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "path",
             "name": "id",
             "required": true,
@@ -35298,6 +35377,14 @@
       "post": {
         "operationId": "resolve",
         "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "in": "path",
             "name": "id",
@@ -43328,6 +43415,33 @@
         }
       }
     },
+    "/v1/operator/customers/{id}/kyc-case": {
+      "get": {
+        "operationId": "readCustomerLatestKycCase",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KycCaseHead"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/disputes/{disputeId}": {
       "get": {
         "operationId": "viewDisputeAsOperator",
@@ -44724,6 +44838,92 @@
         "responses": {
           "204": {
             "description": "No Content"
+          }
+        }
+      }
+    },
+    "/v1/operator/kyc/cases": {
+      "get": {
+        "operationId": "listKycReviewQueue",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewQueuePage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/kyc/counterparty-screenings": {
+      "get": {
+        "operationId": "listCounterpartyScreeningBacklog",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreeningBacklogPage"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

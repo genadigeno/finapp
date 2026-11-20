@@ -18,7 +18,8 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 
 /**
  * No operator read of a customer is served unrecorded (`P17-TSK-025`; finapp-admin-panel ADR-C132 decision 5): the guard that
- * every handler under {@link RecordedReads#PERMISSIONS} records its read.
+ * every handler under {@link RecordedReads#PERMISSIONS} records its read - and, since `P17-TSK-029`, every handler marked
+ * {@link RecordedRead}.
  *
  * <p>Every answer passes through here on its way to the wire. One that serves something - any body but a problem - from a
  * handler declaring one of those permissions, in a request where {@link RecordedReads#record} wrote nothing, is refused: logged

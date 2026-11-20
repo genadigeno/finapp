@@ -22,7 +22,7 @@ check is possible at all.
 |---|---|
 | Every audit record names a *declared* action | The type system. `AuditRecord.operation` is an `AuditableAction`, so an ad-hoc string cannot be recorded |
 | Every action that *should* be audited *is* | **Nothing mechanical.** A missing call is a missing call |
-| Every operator read of a customer is recorded - a handler under `CUSTOMER_READ`, `ACCOUNT_READ`, `TRANSFER_READ` or `PAYMENT_READ` (`P17-TSK-025`; finapp-admin-panel ADR-C132 decision 5) | **At the answer.** The one helper, app's `RecordedReads`, writes the module's record in the read's own transaction and marks the request; `UnrecordedReadAdvice` refuses a successful answer from such a handler with no mark, `500 api.InternalError` before any byte leaves. `EveryCustomerReadIsRecordedTest` holds the advice on the answer path and every such handler named with its record. The exception to the row above, for these reads only |
+| Every operator read of a customer is recorded - a handler under `CUSTOMER_READ`, `ACCOUNT_READ`, `TRANSFER_READ` or `PAYMENT_READ` (`P17-TSK-025`; finapp-admin-panel ADR-C132 decision 5), or marked `@RecordedRead` (`P17-TSK-029`: the KYC reviewer's reads, whose permissions also guard acts) | **At the answer.** The one helper, app's `RecordedReads`, writes the module's record in the read's own transaction and marks the request; `UnrecordedReadAdvice` refuses a successful answer from such a handler with no mark, `500 api.InternalError` before any byte leaves. `EveryCustomerReadIsRecordedTest` holds the advice on the answer path, every such handler named with its record, and every operator `GET` naming a customer held whatever its permission, so a forgotten mark fails the build. The exception to the row above, for these reads only |
 
 The second is what the Phase 15 gate and code review are for. Saying so plainly is more useful
 than implying a guarantee the mechanism does not provide — a registry that looked complete while
@@ -288,6 +288,8 @@ that is recorded debt rather than an omission here.
 | `kyc.CaseRead` | No | A reviewer read a KYC/KYB case, naming who looked and at which case. |
 | `kyc.OwnerDeclared` | No | A beneficial owner was declared onto a KYB case, pinning the verification case the graph rests on. |
 | `kyc.CounterpartyScreeningDecided` | **Yes** | kyc decided a counterparty screening - automatically from the provider's verdict and the payee check, or a reviewer's release or block - naming its basis and policy version. |
+| `kyc.ReviewQueueRead` | No | A reviewer was served a page of the open KYC cases; the status filter and a count recorded. |
+| `kyc.ScreeningBacklogRead` | No | A reviewer was served a page of the counterparty screenings awaiting review; a count recorded, never a subject. |
 
 The two reason-required actions are the invariants speaking: `INV-KYC-02` makes a decision's
 reason a `NOT NULL` column, and `INV-KYC-04` requires a hit's resolution to carry its
@@ -322,6 +324,18 @@ platform's reason names the provider's verdict, the payee check and the outcome 
 answered HIT and the payee check was MATCH: decided IN_REVIEW (HIT)"*); a reviewer's is the reason
 code and the narrative. The change summary carries the screening id, status, basis, policy version
 and attempts - **never the counterparty's name**, which rests only in kyc's ciphertext (the needle).
+
+`kyc.ReviewQueueRead` and `kyc.ScreeningBacklogRead` joined at `P17-TSK-029`: the reviewers' queues
+(`GET /v1/operator/kyc/cases`, `GET /v1/operator/kyc/counterparty-screenings`) are maps of the
+customers under review and the counterparties held for a person, so who read them is `kyc.CaseRead`'s
+argument one level up. One record a page, never a row - the status filter, whether the page followed a
+cursor, how many it served - written by app's `RecordedReads` in the read's own transaction and held at
+the answer by `UnrecordedReadAdvice`, the handlers marked `@RecordedRead` because their permissions
+also guard acts. A customer's latest case (`GET /v1/operator/customers/{id}/kyc-case`) writes
+`kyc.CaseRead`, its summary naming the customer and `latest-of-customer`. No reason, as for every read:
+the trail of who looked is the control. The case file's own read (`GET /v1/kyc/cases/{id}`) still writes
+`kyc.CaseRead` through `ReviewService`'s writer, which marks no request, so it is not yet held at the
+answer: bringing it under `RecordedReads` is a recorded follow-up.
 
 `party.OrganisationRegistered` joined at `P2-TSK-016`, and its actor is **the proven person,
 never the platform** — the opposite of `party.CustomerRegistered`, whose caller is

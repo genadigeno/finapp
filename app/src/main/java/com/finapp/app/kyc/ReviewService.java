@@ -147,34 +147,39 @@ public class ReviewService {
      */
     public Resolution resolve(
             KycCaseId caseId, ReviewTaskId taskId, IdentityId reviewer, String reason) {
+        return resolve(caseId, taskId, reviewer, reason, Optional.empty());
+    }
+
+    /**
+     * The reviewer's door's form (`P17-TSK-029`): the same resolution under the request's {@code Idempotency-Key} - claimed,
+     * written and its {@code RESOLVED} stored in one transaction, a retry answered from the store. A refusal changes nothing and
+     * spends no key ({@link KeyedReviewAct}); the case's exit after the commit runs on a replay too.
+     */
+    Resolution resolve(
+            KycCaseId caseId, ReviewTaskId taskId, IdentityId reviewer, String reason, KeyedReviewAct keyed) {
+        return resolve(caseId, taskId, reviewer, reason, Optional.of(Objects.requireNonNull(keyed, "keyed must not be null")));
+    }
+
+    private Resolution resolve(
+            KycCaseId caseId,
+            ReviewTaskId taskId,
+            IdentityId reviewer,
+            String reason,
+            Optional<KeyedReviewAct> keyed) {
         Objects.requireNonNull(caseId, "caseId must not be null");
         Objects.requireNonNull(taskId, "taskId must not be null");
         Objects.requireNonNull(reviewer, "reviewer must not be null");
         Objects.requireNonNull(reason, "reason must not be null");
 
-        Resolution outcome =
-                units.inTransaction(
-                        unitOfWork -> {
-                            boolean won =
-                                    tasks.resolve(
-                                            unitOfWork,
-                                            taskId,
-                                            caseId,
-                                            reviewer.value(),
-                                            reason,
-                                            Instant.now(clock));
-                            if (won) {
-                                auditResolution(unitOfWork, caseId, taskId, reason);
-                                return Resolution.RESOLVED;
-                            }
-                            // Disambiguate the lost conditional: absent (or another case's task
-                            // named through this URL) is NOT_FOUND; present can only be RESOLVED,
-                            // because a concurrent resolver's row lock makes our UPDATE wait and
-                            // re-evaluate, so an OPEN row would have been won.
-                            return tasks.findByIdForCase(unitOfWork, taskId, caseId).isPresent()
-                                    ? Resolution.ALREADY_RESOLVED
-                                    : Resolution.NOT_FOUND;
-                        });
+        Resolution outcome;
+        try {
+            outcome = units.inTransaction(unitOfWork -> keyed.isPresent()
+                    ? keyed.get().run(unitOfWork, Resolution.class, Resolution.RESOLVED,
+                            work -> resolveIn(work, caseId, taskId, reviewer, reason))
+                    : resolveIn(unitOfWork, caseId, taskId, reviewer, reason));
+        } catch (KeyedReviewAct.Refused refused) {
+            outcome = refused.outcome(Resolution.class);
+        }
 
         if (outcome != Resolution.NOT_FOUND) {
             // After the commit, never inside it - and on the 409 path too, which is what heals
@@ -192,6 +197,30 @@ public class ReviewService {
                                     Instant.now(clock)));
         }
         return outcome;
+    }
+
+    /** The resolution itself, in {@code unitOfWork}: the conditional write arbitrates, and only its winner records. */
+    private Resolution resolveIn(
+            Connection unitOfWork, KycCaseId caseId, ReviewTaskId taskId, IdentityId reviewer, String reason) {
+        boolean won =
+                tasks.resolve(
+                        unitOfWork,
+                        taskId,
+                        caseId,
+                        reviewer.value(),
+                        reason,
+                        Instant.now(clock));
+        if (won) {
+            auditResolution(unitOfWork, caseId, taskId, reason);
+            return Resolution.RESOLVED;
+        }
+        // Disambiguate the lost conditional: absent (or another case's task
+        // named through this URL) is NOT_FOUND; present can only be RESOLVED,
+        // because a concurrent resolver's row lock makes our UPDATE wait and
+        // re-evaluate, so an OPEN row would have been won.
+        return tasks.findByIdForCase(unitOfWork, taskId, caseId).isPresent()
+                ? Resolution.ALREADY_RESOLVED
+                : Resolution.NOT_FOUND;
     }
 
     private void auditRead(Connection unitOfWork, KycCase kycCase) {

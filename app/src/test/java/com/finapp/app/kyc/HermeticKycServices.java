@@ -1,10 +1,12 @@
 package com.finapp.app.kyc;
 
+import com.finapp.app.api.RecordedReads;
 import com.finapp.kyc.BeneficialOwnerStore;
 import com.finapp.kyc.CallbackSignature;
 import com.finapp.kyc.CheckStore;
 import com.finapp.kyc.KycCaseStore;
 import com.finapp.kyc.KycDecisionStore;
+import com.finapp.kyc.KycInquiries;
 import com.finapp.kyc.ReviewTaskStore;
 import com.finapp.kyc.VerificationProvider;
 import com.finapp.party.PartyStore;
@@ -68,6 +70,11 @@ final class HermeticKycServices {
                 inbox, trail, assessment, JsonMapper.builder().build(), ids, clock, transactions, dataSource,
                 told.getBeanProvider(RescreenHits.class));
         return new Services(assessment, runs, callbacks);
+    }
+
+    /** The reviewers' queues (`P17-TSK-029`) over the suite's own read port and case store, opening nothing. */
+    static KycQueueDesk queueDesk(KycInquiries inquiries, KycCaseStore<Connection> cases, RecordedReads recordedReads) {
+        return new KycQueueDesk(inquiries, cases, recordedReads, new TransactionTemplate(new NoTransactions()), dataSource());
     }
 
     /** A source whose one connection is never used: every store is the suite's, in memory. */

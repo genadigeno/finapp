@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
+import com.finapp.app.surface.RequestSurfaces;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
@@ -696,7 +697,13 @@ class CustomerProjectionDatabaseTest {
         return "/kyc/cases/" + caseId.value() + "/decision";
     }
 
+    /** A new request: since `P17-TSK-029` the decision and the resolution are keyed, so each call carries a fresh key. */
     private HttpResponse<String> post(String path, String token, String body) throws Exception {
+        return post(path, token, body, UUID.randomUUID().toString());
+    }
+
+    private HttpResponse<String> post(String path, String token, String body, String idempotencyKey)
+            throws Exception {
         HttpRequest.Builder request =
                 HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/v1" + path))
                         .header("Content-Type", "application/json")
@@ -704,6 +711,12 @@ class CustomerProjectionDatabaseTest {
         if (token != null) {
             request.header("Authorization", "Bearer " + token);
         }
+        if (idempotencyKey != null) {
+            request.header("Idempotency-Key", idempotencyKey);
+        }
+        // Both doors are on the operator surface, and the operator edge marks every request it forwards (P15-TSK-042):
+        // marked as deployed, the doors are never shed (ADR-0137), so ten racers race each other, not five permits.
+        request.header(RequestSurfaces.HEADER, "operator");
         return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 

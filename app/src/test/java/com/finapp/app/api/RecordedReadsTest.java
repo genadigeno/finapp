@@ -175,6 +175,30 @@ class RecordedReadsTest {
         assertThat(answer(null, at("customerProfile"), new MockHttpServletResponse())).as("nor does no body").isNull();
     }
 
+    @Test
+    @DisplayName("a handler marked @RecordedRead is held whatever its permission - the KYC reviewers' reads (P17-TSK-029) - and"
+            + " the mark is the method's, never inferred for its neighbours")
+    void aMarkedReadIsHeldWhateverItsPermission() throws Exception {
+        MockHttpServletResponse unrecorded = new MockHttpServletResponse();
+        answer(Map.of(), at("reviewQueue"), unrecorded);
+        assertThat(unrecorded.getStatus()).as("marked, under KYC_REVIEW").isEqualTo(500);
+
+        MockHttpServletRequest request = at("reviewQueue");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+        try (CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)));
+                SecurityContext.Scope actor = SecurityContext.enter(OPERATOR)) {
+            reads.record(null, IdentityAuditAction.IDENTITY_READ, "kyc_review_queue", "open", "served=0");
+        }
+        MockHttpServletResponse served = new MockHttpServletResponse();
+        Map<String, String> body = Map.of();
+        assertThat(answer(body, request, served)).isSameAs(body);
+        assertThat(served.getStatus()).isEqualTo(200);
+
+        MockHttpServletResponse act = new MockHttpServletResponse();
+        assertThat(answer(body, at("reviewAct"), act)).as("its unmarked neighbour under the same permission passes").isSameAs(body);
+        assertThat(act.getStatus()).isEqualTo(200);
+    }
+
     // -----------------------------------------------------------------------------------------------------------------
 
     private static MockHttpServletRequest inARequest() {
@@ -230,6 +254,17 @@ class RecordedReadsTest {
         }
 
         public Optional<String> unguarded() {
+            return Optional.empty();
+        }
+
+        @RequiresPermission(PermissionName.KYC_REVIEW)
+        @RecordedRead
+        public Optional<String> reviewQueue() {
+            return Optional.empty();
+        }
+
+        @RequiresPermission(PermissionName.KYC_REVIEW)
+        public Optional<String> reviewAct() {
             return Optional.empty();
         }
     }
