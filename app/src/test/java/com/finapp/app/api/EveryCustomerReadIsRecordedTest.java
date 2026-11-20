@@ -65,7 +65,9 @@ class EveryCustomerReadIsRecordedTest {
             Map.entry("BnplRefundProposalController#readBnplRefundProposal", "bnpl.RefundProposalRead"),
             Map.entry("BnplFeeAssignmentProposalController#readBnplFeeAssignmentProposal",
                     "merchant.BnplFeeAssignmentProposalRead"),
-            Map.entry("AccountRestrictionController#readAccountRestriction", "accounts.RestrictionRead"));
+            Map.entry("AccountRestrictionController#readAccountRestriction", "accounts.RestrictionRead"),
+            // P17-TSK-123: a fee schedule version or merchant fee assignment proposal read by its decider, as P17-TSK-124's.
+            Map.entry("FeeProposalController#viewFeeScheduleProposal", "merchant.FeeProposalRead"));
     // P17-TSK-039: the payments report moved to PLATFORM_OVERVIEW_READ - its counts name no customer - and is recorded there.
 
     @Autowired private ApplicationContext context;

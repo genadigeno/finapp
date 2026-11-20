@@ -148,6 +148,8 @@ class MerchantTenancyBatteryDatabaseTest {
 
     private String operator;
     private String schedule;
+    /** The FINANCIAL_CONTROLLER who approves the battery's fee proposals (`P17-TSK-123`). */
+    private String feeController;
 
     @BeforeAll
     static void startProvider() {
@@ -802,12 +804,7 @@ class MerchantTenancyBatteryDatabaseTest {
                         });
         String key = issueKey(id).token();
         String spareKeyId = issueKey(id).keyId();
-        HttpResponse<String> assigned =
-                put(
-                        "/v1/operator/merchants/" + id + "/fee-schedule",
-                        "{\"feeScheduleId\":\"" + pricing() + "\",\"reason\":\"standard terms\"}",
-                        operator());
-        assertThat(assigned.statusCode()).as(assigned.body()).isEqualTo(200);
+        fees().assign(id.toString(), pricing(), "standard terms");
 
         World partial =
                 new World(id.toString(), key, spareKeyId, payable, fundingEntry, null, null, null,
@@ -1011,26 +1008,18 @@ class MerchantTenancyBatteryDatabaseTest {
     /** The platform's pricing for this test, created once: 2.9% + 0.30, which 10.00 covers. */
     private String pricing() throws Exception {
         if (schedule == null) {
-            HttpResponse<String> created =
-                    post(
-                            "/v1/operator/fee-schedules",
-                            "{\"name\":\"Tenancy " + UUID.randomUUID()
-                                    + "\",\"currency\":\"EUR\"}",
-                            operator(),
-                            null);
-            assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
-            schedule = field(created.body(), "feeScheduleId");
-            HttpResponse<String> version =
-                    post(
-                            "/v1/operator/fee-schedules/" + schedule + "/versions",
-                            "{\"rate\":0.029,\"fixedAmountMinor\":30,\"roundingPolicy\":"
-                                    + "\"HALF_EVEN\",\"refundFeePolicy\":\"RETAINED\","
-                                    + "\"reason\":\"initial pricing\"}",
-                            operator(),
-                            null);
-            assertThat(version.statusCode()).as(version.body()).isEqualTo(201);
+            schedule = fees().schedule("Tenancy " + UUID.randomUUID(), "EUR");
+            fees().version(schedule, FeePricing.standardTerms());
         }
         return schedule;
+    }
+
+    /** The two-person path (`P17-TSK-123`): the battery's administrator proposes, its FINANCIAL_CONTROLLER approves. */
+    private FeePricing fees() throws Exception {
+        if (feeController == null) {
+            feeController = sessionHolding(RoleName.FINANCIAL_CONTROLLER);
+        }
+        return new FeePricing(FeePricing.overHttp(port), operator(), feeController);
     }
 
     /** An API key: the token a request presents, and the key id an operator's path names. */
@@ -1081,43 +1070,48 @@ class MerchantTenancyBatteryDatabaseTest {
     /** A signed-in MERCHANT_ADMINISTRATOR, created once per test. */
     private String operator() throws Exception {
         if (operator == null) {
-            String login = registered();
-            UUID identity;
-            try (Connection app = DatabaseRoles.application();
-                    PreparedStatement read =
-                            app.prepareStatement(
-                                    "SELECT id FROM identity.identity WHERE login_identifier = ?")) {
-                read.setString(1, login);
-                try (ResultSet row = read.executeQuery()) {
-                    assertThat(row.next()).isTrue();
-                    identity = row.getObject("id", UUID.class);
-                }
-            }
-            try (CorrelationContext.Scope flow =
-                            CorrelationContext.enter(
-                                    Correlation.startingWith(CorrelationId.generate(IDS)));
-                    SecurityContext.Scope actor = SecurityContext.enterSystem();
-                    Connection app = DatabaseRoles.application()) {
-                app.setAutoCommit(false);
-                authorization.assign(
-                        app,
-                        IdentityId.of(identity),
-                        RoleName.MERCHANT_ADMINISTRATOR,
-                        IdentityId.of(identity),
-                        "test fixture");
-                app.commit();
-            }
-            HttpResponse<String> session =
-                    post(
-                            "/v1/authentications",
-                            "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD
-                                    + "\"}",
-                            null,
-                            someKey());
-            // MULTI_FACTOR: the battery's operator reaches every door, the payout destination's approval among them.
-            operator = com.finapp.app.session.OperatorStepUp.elevated(field(session.body(), "sessionToken"), this::post);
+            operator = sessionHolding(RoleName.MERCHANT_ADMINISTRATOR);
         }
         return operator;
+    }
+
+    /** A signed-in operator holding {@code role}, stepped up to {@code MULTI_FACTOR}. */
+    private String sessionHolding(RoleName role) throws Exception {
+        String login = registered();
+        UUID identity;
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement(
+                                "SELECT id FROM identity.identity WHERE login_identifier = ?")) {
+            read.setString(1, login);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                identity = row.getObject("id", UUID.class);
+            }
+        }
+        try (CorrelationContext.Scope flow =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(IDS)));
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            authorization.assign(
+                    app,
+                    IdentityId.of(identity),
+                    role,
+                    IdentityId.of(identity),
+                    "test fixture");
+            app.commit();
+        }
+        HttpResponse<String> session =
+                post(
+                        "/v1/authentications",
+                        "{\"loginIdentifier\":\"" + login + "\",\"password\":\"" + PASSWORD
+                                + "\"}",
+                        null,
+                        someKey());
+        // MULTI_FACTOR: the battery's operator reaches every door, the payout destination's approval among them.
+        return com.finapp.app.session.OperatorStepUp.elevated(field(session.body(), "sessionToken"), this::post);
     }
 
     private String registered() throws Exception {

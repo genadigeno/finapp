@@ -13,7 +13,8 @@ import java.util.UUID;
 /** {@link BnplFeeAssignmentProposalStore} over {@code merchant.bnpl_fee_assignment_proposal} (`P17-TSK-116`, V021). */
 public final class JdbcBnplFeeAssignmentProposalStore implements BnplFeeAssignmentProposalStore<Connection> {
 
-    private static final String TABLE = "merchant.bnpl_fee_assignment_proposal";
+    /** Read by {@link JdbcFeeProposalStore}'s queue too (`P17-TSK-123`): this table's open rows, by kind. */
+    static final String TABLE = "merchant.bnpl_fee_assignment_proposal";
 
     private static final String COLUMNS = "id, merchant_id, product, fee_schedule_id, proposal_reason, proposed_by,"
             + " proposed_by_type, proposed_at, proposal_correlation_id, status, decided_by, decided_by_type, decided_at,"

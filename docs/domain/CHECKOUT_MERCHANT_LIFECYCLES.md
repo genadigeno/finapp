@@ -26,6 +26,11 @@ trigger, and an append-only history table (`INV-LIFE-01/-02`, the ADR-0044 doctr
   failure modes. Three facts, three records; none is a field on another.
 - **Fee assessment / fee schedule.** The schedule is versioned configuration; the
   assessment is a historical fact pinned to the version that priced it (`INV-MER-03`).
+  A version and a merchant's assignment are each a **fee proposal** first (`P17-TSK-123`,
+  merchant `V022`): `PROPOSED → APPROVED | REJECTED`, decided once by a holder of
+  `FEE_SCHEDULE_APPROVE` who did not propose it; the approval mints the version (named on the
+  proposal) or moves the pointer in its own transaction, a rejection changes nothing, and a
+  start named and passed before the approval leaves the proposal open, for a rejection.
 
 ## 2. The checkout session — six states
 

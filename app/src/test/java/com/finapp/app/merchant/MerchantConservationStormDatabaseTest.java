@@ -899,22 +899,10 @@ class MerchantConservationStormDatabaseTest {
         assertThat(onboarded.statusCode()).as(onboarded.body()).isEqualTo(201);
         String merchant = field(onboarded.body(), "merchantId");
 
-        HttpResponse<String> schedule =
-                post(
-                        "/v1/operator/fee-schedules",
-                        "{\"name\":\"Storm " + UUID.randomUUID() + "\",\"currency\":\"" + currency
-                                + "\"}",
-                        operator,
-                        null);
-        assertThat(schedule.statusCode()).as(schedule.body()).isEqualTo(201);
-        String scheduleId = field(schedule.body(), "feeScheduleId");
+        // P17-TSK-123: priced by the two-person path - this administrator proposes, a FINANCIAL_CONTROLLER approves.
+        String scheduleId = fees(operator).schedule("Storm " + UUID.randomUUID(), currency);
         addVersion(operator, scheduleId, "0.029", 30, policy);
-        HttpResponse<String> assigned =
-                put(
-                        "/v1/operator/merchants/" + merchant + "/fee-schedule",
-                        "{\"feeScheduleId\":\"" + scheduleId + "\",\"reason\":\"standard terms\"}",
-                        operator);
-        assertThat(assigned.statusCode()).as(assigned.body()).isEqualTo(200);
+        fees(operator).assign(merchant, scheduleId, "standard terms");
 
         HttpResponse<String> issued =
                 post("/v1/operator/merchants/" + merchant + "/api-keys", null, operator, someKey());
@@ -954,17 +942,21 @@ class MerchantConservationStormDatabaseTest {
     private String addVersion(
             String operator, String schedule, String rate, long fixedMinor, String policy)
             throws Exception {
-        HttpResponse<String> version =
-                post(
-                        "/v1/operator/fee-schedules/" + schedule + "/versions",
-                        "{\"rate\":" + rate + ",\"fixedAmountMinor\":" + fixedMinor
-                                + ",\"roundingPolicy\":\"HALF_EVEN\",\"refundFeePolicy\":\""
-                                + policy + "\",\"reason\":\"storm pricing\"}",
-                        operator,
-                        null);
-        assertThat(version.statusCode()).as(version.body()).isEqualTo(201);
-        return field(version.body(), "feeScheduleVersionId");
+        return fees(operator).version(schedule, com.finapp.app.merchant.FeePricing.versionBody(
+                rate, fixedMinor, "HALF_EVEN", policy, null, "storm pricing"));
     }
+
+    /** The two-person path (`P17-TSK-123`): {@code operator} proposes, this storm's FINANCIAL_CONTROLLER approves. */
+    private FeePricing fees(String operator) throws Exception {
+        // Set while the tenants are made, one at a time, before the storm reprices any.
+        if (feeController == null) {
+            feeController = operatorSession(RoleName.FINANCIAL_CONTROLLER);
+        }
+        return new FeePricing(FeePricing.overHttp(port), operator, feeController);
+    }
+
+    /** The FINANCIAL_CONTROLLER who approves this storm's fee proposals. */
+    private String feeController;
 
     /** A verified customer with an attached instrument, able to pay in any currency. */
     private Customer payingCustomer() throws Exception {

@@ -524,7 +524,7 @@ class BnplApplicationDatabaseTest {
 
     // ------------------------------------------------------------------ plumbing
 
-    /** A trading merchant settling in USD, priced for USD cards, with an API key - checkout's own doors. */
+    /** A trading merchant settling in USD, priced for USD cards by two persons, with an API key - checkout's own doors. */
     private BnplApplicationClient.Merchant usdMerchant() throws Exception {
         String operator = client.operatorSession(authorization, com.finapp.identity.RoleName.MERCHANT_ADMINISTRATOR);
         UUID party = ids.next();
@@ -539,16 +539,7 @@ class BnplApplicationDatabaseTest {
                 BnplApplicationClient.key());
         assertThat(onboarded.statusCode()).as(onboarded.body()).isEqualTo(201);
         String merchantId = BnplApplicationClient.field(onboarded.body(), "merchantId");
-        String schedule = BnplApplicationClient.field(client.post("/v1/operator/fee-schedules",
-                "{\"name\":\"Usd " + UUID.randomUUID() + "\",\"currency\":\"USD\"}", operator, null).body(),
-                "feeScheduleId");
-        assertThat(client.post("/v1/operator/fee-schedules/" + schedule + "/versions",
-                "{\"rate\":0.029,\"fixedAmountMinor\":30,\"roundingPolicy\":\"HALF_EVEN\","
-                        + "\"refundFeePolicy\":\"RETAINED\",\"reason\":\"initial pricing\"}", operator, null)
-                .statusCode()).isEqualTo(201);
-        HttpResponse<String> assigned = client.call("PUT", "/v1/operator/merchants/" + merchantId + "/fee-schedule",
-                "{\"feeScheduleId\":\"" + schedule + "\",\"reason\":\"standard terms\"}", operator);
-        assertThat(assigned.statusCode()).as(assigned.body()).isEqualTo(200);
+        client.fees(authorization, operator).priced(merchantId, "USD", com.finapp.app.merchant.FeePricing.standardTerms());
         HttpResponse<String> issued = client.post("/v1/operator/merchants/" + merchantId + "/api-keys", null, operator,
                 BnplApplicationClient.key());
         assertThat(issued.statusCode()).as(issued.body()).isEqualTo(201);

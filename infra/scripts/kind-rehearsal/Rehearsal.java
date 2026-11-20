@@ -202,6 +202,11 @@ public final class Rehearsal {
         return call("PUT", base + path, body, Map.of("Authorization", "Bearer " + bearer));
     }
 
+    /** A keyed {@code PUT} (P17-TSK-123: the fee assignment's proposal is keyed). */
+    private Answer put(String base, String path, String body, String bearer, String key) throws IOException, InterruptedException {
+        return call("PUT", base + path, body, Map.of("Authorization", "Bearer " + bearer, "Idempotency-Key", key));
+    }
+
     private Answer get(String base, String path, String bearer) throws IOException, InterruptedException {
         return call("GET", base + path, null, bearer == null ? Map.of() : Map.of("Authorization", "Bearer " + bearer));
     }
@@ -317,20 +322,27 @@ public final class Rehearsal {
     /** The operator's factor, the merchant, its pricing, its key; then the SQL for its destination. */
     private void onboard() throws Exception {
         String operator = enrol("operator");
-        enrol("controller");
+        // The second person of four eyes: the GL mapping's activation, and since P17-TSK-123 the merchant's pricing.
+        String controller = enrol("controller");
 
         String party = state.getProperty("merchant.party");
         Answer merchant = expect("onboard merchant", post(operatorBase, "/v1/operator/merchants",
                 "{\"partyId\":\"" + party + "\",\"legalName\":\"Rehearsal GmbH\",\"displayName\":\"Rehearsal\",\"settlementCurrency\":\"EUR\"}",
                 operator, key()), 201);
         String merchantId = field(merchant.body(), "merchantId");
+        // The merchant's pricing by four eyes (P17-TSK-123): the operator proposes the version and the assignment, keyed; the
+        // controller, another person, approves each.
         String schedule = field(expect("fee schedule", post(operatorBase, "/v1/operator/fee-schedules",
-                "{\"name\":\"Rehearsal " + UUID.randomUUID() + "\",\"currency\":\"EUR\"}", operator, null), 201).body(), "feeScheduleId");
-        expect("fee version", post(operatorBase, "/v1/operator/fee-schedules/" + schedule + "/versions",
+                "{\"name\":\"Rehearsal " + UUID.randomUUID() + "\",\"currency\":\"EUR\"}", operator, key()), 201).body(), "feeScheduleId");
+        String versionProposal = field(expect("fee version", post(operatorBase, "/v1/operator/fee-schedules/" + schedule + "/versions",
                 "{\"rate\":0.029,\"fixedAmountMinor\":30,\"roundingPolicy\":\"HALF_EVEN\",\"refundFeePolicy\":\"RETAINED\",\"reason\":\"the rehearsal's pricing\"}",
-                operator, null), 201);
-        expect("assign fee schedule", put(operatorBase, "/v1/operator/merchants/" + merchantId + "/fee-schedule",
-                "{\"feeScheduleId\":\"" + schedule + "\",\"reason\":\"the rehearsal's pricing\"}", operator), 200);
+                operator, key()), 201).body(), "proposalId");
+        expect("approve fee version", post(operatorBase, "/v1/operator/fee-schedule-version-proposals/" + versionProposal + "/approval",
+                "{\"reason\":\"the rehearsal's pricing, reviewed\"}", controller, key()), 200);
+        String assignment = field(expect("assign fee schedule", put(operatorBase, "/v1/operator/merchants/" + merchantId + "/fee-schedule",
+                "{\"feeScheduleId\":\"" + schedule + "\",\"reason\":\"the rehearsal's pricing\"}", operator, key()), 200).body(), "proposalId");
+        expect("approve fee assignment", post(operatorBase, "/v1/operator/fee-assignment-proposals/" + assignment + "/approval",
+                "{\"reason\":\"the rehearsal's pricing, reviewed\"}", controller, key()), 200);
         Answer issued = expect("merchant key", post(operatorBase, "/v1/operator/merchants/" + merchantId + "/api-keys", null, operator, key()), 201);
         state.setProperty("merchant.id", merchantId);
         state.setProperty("merchant.key", field(issued.body(), "keyId") + "." + field(issued.body(), "secret"));

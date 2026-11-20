@@ -9758,6 +9758,111 @@
           }
         }
       },
+      "merchant.FeeProposalAlreadyDecided": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.FeeProposalAlreadyDecided"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.FeeProposalAlreadyDecided"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The fee proposal is already decided.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.FeeProposalAlreadyOpen": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.FeeProposalAlreadyOpen"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.FeeProposalAlreadyOpen"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] The fee schedule or merchant already has an open fee proposal; decide it first.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
+      "merchant.FeeProposalSelfDecision": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "merchant.FeeProposalSelfDecision"
+                    },
+                    "status": {
+                      "const": 409
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/merchant.FeeProposalSelfDecision"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[409] A fee proposal is decided by a person who did not propose it.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "merchant.FeeScheduleNotForward": {
         "content": {
           "application/problem+json": {
@@ -22930,6 +23035,69 @@
         },
         "type": "object"
       },
+      "FeeProposalDecisionRequest": {
+        "properties": {
+          "reason": {
+            "maxLength": 1000,
+            "minLength": 0,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "type": "object"
+      },
+      "FeeProposalView": {
+        "properties": {
+          "currentFeeScheduleId": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "feeSchedule": {
+            "$ref": "#/components/schemas/FeeScheduleDetailView"
+          },
+          "feeScheduleVersionId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedTerms": {
+            "$ref": "#/components/schemas/ProposedFeeTermsView"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "FeeScheduleDetailView": {
         "properties": {
           "currency": {
@@ -22946,6 +23114,23 @@
               "$ref": "#/components/schemas/FeeScheduleVersionView"
             },
             "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "FeeScheduleVersionProposalReceipt": {
+        "properties": {
+          "feeScheduleId": {
+            "type": "string"
+          },
+          "feeScheduleVersionId": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -26716,6 +26901,12 @@
           },
           "merchantId": {
             "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -28477,6 +28668,43 @@
         },
         "type": "object"
       },
+      "PendingDecision": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "reasonSummary": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PendingDecisionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PendingDecision"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "PendingLedgerAdjustment": {
         "properties": {
           "id": {
@@ -29555,6 +29783,30 @@
           "destinationToken",
           "reason"
         ],
+        "type": "object"
+      },
+      "ProposedFeeTermsView": {
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "fixedAmountMinor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "rate": {
+            "type": "string"
+          },
+          "refundFeePolicy": {
+            "type": "string"
+          },
+          "roundingPolicy": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "ProvenanceView": {
@@ -47243,6 +47495,213 @@
         }
       }
     },
+    "/v1/operator/fee-assignment-proposals/{id}/approval": {
+      "post": {
+        "operationId": "approveFeeAssignment",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeeProposalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantFeeScheduleView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/fee-assignment-proposals/{id}/rejection": {
+      "post": {
+        "operationId": "rejectFeeAssignment",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeeProposalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantFeeScheduleView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/fee-schedule-proposals/{id}": {
+      "get": {
+        "operationId": "viewFeeScheduleProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeProposalView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/fee-schedule-version-proposals/{id}/approval": {
+      "post": {
+        "operationId": "approveFeeScheduleVersion",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeeProposalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeScheduleVersionProposalReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/fee-schedule-version-proposals/{id}/rejection": {
+      "post": {
+        "operationId": "rejectFeeScheduleVersion",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeeProposalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeeScheduleVersionProposalReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/fee-schedules": {
       "get": {
         "operationId": "listFeeSchedules",
@@ -47264,6 +47723,16 @@
       },
       "post": {
         "operationId": "createFeeSchedule",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -47320,6 +47789,14 @@
         "operationId": "createFeeScheduleVersion",
         "parameters": [
           {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "path",
             "name": "id",
             "required": true,
@@ -47343,7 +47820,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FeeScheduleVersionView"
+                  "$ref": "#/components/schemas/FeeScheduleVersionProposalReceipt"
                 }
               }
             },
@@ -50697,6 +51174,14 @@
         "operationId": "assignFeeSchedule",
         "parameters": [
           {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
             "in": "path",
             "name": "merchantId",
             "required": true,
@@ -51465,6 +51950,92 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PayoutView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/pending-decisions/merchant.fee-assignments": {
+      "get": {
+        "operationId": "listPendingFeeAssignments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingDecisionPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/pending-decisions/merchant.fee-schedule-versions": {
+      "get": {
+        "operationId": "listPendingFeeScheduleVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingDecisionPage"
                 }
               }
             },

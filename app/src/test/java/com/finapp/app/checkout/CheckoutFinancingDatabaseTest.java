@@ -733,16 +733,9 @@ class CheckoutFinancingDatabaseTest {
     private Merchant tradingMerchant() throws Exception {
         String operator = operatorSession(RoleName.MERCHANT_ADMINISTRATOR);
         String merchantId = onboard(operator);
-        String schedule = field(post("/v1/operator/fee-schedules",
-                "{\"name\":\"Std " + UUID.randomUUID() + "\",\"currency\":\"EUR\"}", operator, null).body(),
-                "feeScheduleId");
-        assertThat(post("/v1/operator/fee-schedules/" + schedule + "/versions",
-                "{\"rate\":0.029,\"fixedAmountMinor\":30,\"roundingPolicy\":\"HALF_EVEN\","
-                        + "\"refundFeePolicy\":\"RETAINED\",\"reason\":\"initial pricing\"}", operator, null)
-                .statusCode()).isEqualTo(201);
-        assertThat(put("/v1/operator/merchants/" + merchantId + "/fee-schedule",
-                "{\"feeScheduleId\":\"" + schedule + "\",\"reason\":\"standard terms\"}", operator).statusCode())
-                .isEqualTo(200);
+        // P17-TSK-123: priced by the two-person path - this administrator proposes, a FINANCIAL_CONTROLLER approves.
+        new com.finapp.app.merchant.FeePricing(com.finapp.app.merchant.FeePricing.overHttp(port), operator,
+                operatorSession(RoleName.FINANCIAL_CONTROLLER)).priced(merchantId);
         HttpResponse<String> issued = post("/v1/operator/merchants/" + merchantId + "/api-keys", null, operator, someKey());
         assertThat(issued.statusCode()).isEqualTo(201);
         return new Merchant(merchantId, field(issued.body(), "keyId") + "." + field(issued.body(), "secret"));
