@@ -1,6 +1,6 @@
 #!/bin/sh
-# TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112; finapp-admin-panel
-# docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4, B5.5).
+# TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112, P17-TSK-115;
+# finapp-admin-panel docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4, B5.5, B7.4).
 #
 #   infra/scripts/e2e-seed.sh <scenario>...
 #
@@ -50,6 +50,28 @@
 #   accounting-break  an OPEN accounting break in today's month: the console's accountant proposes its acknowledgement, its
 #                     controller approves or rejects it -> ACCOUNTING_BREAK_ID
 #   finance           each of the five once
+#
+# The merchant scenarios (P17-TSK-115) - the seed's own merchant administrator onboards and proposes, never the console's:
+#   onboardable-organisation  a KYB-verified organisation that is no merchant yet (merchant-organisation.sql): the console onboards
+#                     it -> MERCHANT_PARTY_ID
+#   active-merchant   such an organisation onboarded as a EUR merchant, ACTIVE, with an API key: the console suspends it (and
+#                     reinstates it, or revokes the key) -> MERCHANT_ID, MERCHANT_KEY_ID
+#   proposed-destination  an ACTIVE merchant's payout destination PROPOSED by the seed's administrator (payout-destination.sql: no
+#                     test stack configures the destination tokenisation the proposal door exchanges at): a different administrator,
+#                     the console's, approves it -> PAYOUT_DESTINATION_ID, DESTINATION_MERCHANT_ID, DESTINATION_PROPOSER_ID
+#   merchants         each of the three once
+#   open-dispute      KIND ONLY. A 12.50 EUR card top-up into a fresh customer's own wallet, captured, and charged back by the card
+#                     network: a dispute at CHARGED_BACK, the stage that takes evidence and a representment, on a payment with no
+#                     merchant, so an operator answers it - the console's LEDGER_OPERATOR uploads evidence and represents it, or
+#                     accepts it -> DISPUTE_ID, DISPUTE_PAYMENT_ID
+#
+# THE DISPUTE NEEDS THE CARD PSP, AND ONLY KIND HAS ONE. A local stack configures no card or tokenisation provider, so no card payment
+# exists there; open-dispute is refused on compose. On kind the rehearsal's simulator is the card PSP. A dispute is the network's word
+# alone: the seed hands the simulator the PSP's statement of a chargeback on the top-up's capture (kubectl exec, its pod's
+# /tmp/disputes), then delivers the PSP's webhook that the dispute exists, signed with the stack's payment webhook key read from its
+# Secret as the rehearsal's load client reads it; the platform asks the simulator for the statement, and that answer opens the
+# dispute and posts the chargeback - nothing here writes a dispute or a posting. The payer's KYC verdict, which no door reaches on a
+# test stack (no verification provider), is planted (customer-verdict.sql), as the rehearsal makes its customers ACTIVE.
 #
 # THE PERIOD SCENARIOS NEED THE BOOKS OPENED MONTHS BACK (ADR-0152). closable-period, prior-period-adjustment and draft-submission
 # need the two months before today's held and OPEN, which only a local stack started on a fresh database with
@@ -101,7 +123,7 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 SEED="$ROOT/infra/scripts/e2e-seed"
 TARGET=${E2E_SEED_TARGET:-compose}
-SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy, all, closable-period, prior-period-adjustment, proposed-mapping, draft-submission, accounting-break or finance"
+SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy, all, closable-period, prior-period-adjustment, proposed-mapping, draft-submission, accounting-break, finance, onboardable-organisation, active-merchant, proposed-destination, merchants or open-dispute"
 
 say() { printf '%s\n' "e2e-seed: $*" >&2; }
 refuse() { printf '%s\n' "e2e-seed: refused: $*" >&2; exit 2; }
@@ -120,6 +142,12 @@ for scenario in "$@"; do
         abandoned-event|parked-record) ;;
         parsed-file|fee-break|factorless-holding|sod-conflict|open-alert|investigated-case|overridable-assessment|proposed-policy|all) HTTP=yes ;;
         closable-period|prior-period-adjustment|proposed-mapping|draft-submission|accounting-break|finance) HTTP=yes ;;
+        onboardable-organisation) ;;
+        active-merchant|proposed-destination|merchants) HTTP=yes ;;
+        open-dispute)
+            HTTP=yes
+            [ "$TARGET" = kind ] || refuse "open-dispute needs a card PSP, and only kind has one (its simulator): a local stack configures no card provider, so no card payment exists to dispute"
+            ;;
         *) refuse "unknown scenario '$scenario': $SCENARIOS" ;;
     esac
 done
@@ -543,6 +571,106 @@ seed_accounting_break() {
     printf 'ACCOUNTING_BREAK_ID=%s\n' "$raised"
 }
 
+# ---------------------------------------------------------------------------------------------------
+# The merchant desks' rows (P17-TSK-115).
+
+# kube [arguments]: the kind cluster's kubectl, on its control-plane node.
+kube() {
+    docker exec -i "$E2E_SEED_NODE" kubectl --kubeconfig=/etc/kubernetes/admin.conf "$@"
+}
+
+# The run's merchant administrator (MERCHANT_ADMINISTRATOR): the seed's onboarder and proposer. The console's is another identity.
+MERCHANT_READY=no
+merchant_desks() {
+    [ "$MERCHANT_READY" = no ] || return 0
+    administrator
+    onboarder=$(operator onboarder)
+    ONBOARDER_ID=${onboarder%% *}
+    seed_http grant admin MERCHANT_ADMINISTRATOR "$ONBOARDER_ID" >/dev/null
+    say "the run's merchant administrator: $ONBOARDER_ID"
+    MERCHANT_READY=yes
+}
+
+# organisation: plants a KYB-verified organisation (merchant-organisation.sql). Prints its party's id.
+organisation() {
+    planted=$(plant merchant-organisation.sql | tr -d '[:space:]')
+    uuid_like "$planted" || { say "the organisation's plant printed '$planted'"; exit 1; }
+    printf '%s\n' "$planted"
+}
+
+# merchant: such an organisation onboarded by the seed's administrator, with an API key. Prints the merchant's id and its key's id.
+merchant() {
+    organised=$(organisation)
+    onboarded=$(value MERCHANT_ID "$(seed_http onboard-merchant onboarder "$organised")")
+    uuid_like "$onboarded" || { say "the onboarding printed '$onboarded'"; exit 1; }
+    keyed=$(value MERCHANT_KEY_ID "$(seed_http issue-key onboarder "$onboarded")")
+    [ -n "$keyed" ] || { say "the API key's issue printed no key id"; exit 1; }
+    printf '%s %s\n' "$onboarded" "$keyed"
+}
+
+seed_onboardable_organisation() {
+    organised=$(organisation)
+    say "organisation $organised: KYB-verified, no merchant yet - onboard it"
+    printf 'MERCHANT_PARTY_ID=%s\n' "$organised"
+}
+
+seed_active_merchant() {
+    merchant_desks
+    made=$(merchant)
+    say "merchant ${made%% *} ACTIVE with API key ${made#* }, onboarded by $ONBOARDER_ID: suspend it"
+    printf 'MERCHANT_ID=%s\n' "${made%% *}"
+    printf 'MERCHANT_KEY_ID=%s\n' "${made#* }"
+}
+
+seed_proposed_destination() {
+    merchant_desks
+    made=$(merchant)
+    owner=${made%% *}
+    reference="pdr_$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
+    printf '%s' "$reference" | grep -Eq '^pdr_[0-9a-f]{12}$' || { say "a destination reference came out '$reference'"; exit 1; }
+    uuid_like "$owner" && uuid_like "$ONBOARDER_ID" || { say "the destination's plant was handed '$owner' by '$ONBOARDER_ID'"; exit 1; }
+    proposed=$(plant payout-destination.sql -v merchant="$owner" -v proposer="$ONBOARDER_ID" -v reference="$reference" | tr -d '[:space:]')
+    uuid_like "$proposed" || { say "the destination's plant printed '$proposed'"; exit 1; }
+    say "payout destination $proposed of merchant $owner PROPOSED by $ONBOARDER_ID: an administrator other than its proposer approves it"
+    printf 'PAYOUT_DESTINATION_ID=%s\n' "$proposed"
+    printf 'DESTINATION_MERCHANT_ID=%s\n' "$owner"
+    printf 'DESTINATION_PROPOSER_ID=%s\n' "$ONBOARDER_ID"
+}
+
+# Kind only: refused on compose before anything was touched.
+seed_open_dispute() {
+    administrator
+    payer_login=$(value LOGIN "$(seed_http register-bare payer)")
+    payer=$(identity_of "$payer_login")
+    uuid_like "$payer" || { say "the payer's id came out '$payer'"; exit 1; }
+    verdict=$(plant customer-verdict.sql -v identity="$payer" | tr -d '[:space:]')
+    uuid_like "$verdict" || { say "the payer's verdict printed '$verdict'"; exit 1; }
+    intent=$(value PAYMENT_ID "$(seed_http top-up payer)")
+    uuid_like "$intent" || { say "the top-up printed '$intent'"; exit 1; }
+    operation=$(psql_seed -c "SELECT capture_reference FROM payments.payment_attempt WHERE intent_id = '$intent' AND status = 'CAPTURED'" | tr -d '[:space:]')
+    printf '%s' "$operation" | grep -Eq '^[A-Za-z0-9-]{1,64}$' || { say "the top-up's capture reference came out '$operation'"; exit 1; }
+    dispute="dp_e2e_$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
+    printf '%s' "$dispute" | grep -Eq '^dp_e2e_[0-9a-f]{12}$' || { say "a dispute reference came out '$dispute'"; exit 1; }
+    seed_http dispute-statement "$operation" "$dispute" 1250
+    # The simulator's statement of the chargeback, which the platform's inquiry reads.
+    kube -n finapp-rehearsal exec -i deploy/finapp-simulator -- sh -c 'mkdir -p /tmp/disputes && cat > "/tmp/disputes/$1"' statement "$dispute" \
+        < "$STATE/dispute-$dispute.json"
+    # The provider's signing key as the stack holds it, in the run's state: removed with the run, never printed.
+    kube -n finapp get secret finapp-app-secrets -o jsonpath='{.data.FINAPP_PAYMENTS_WEBHOOK_KEY}' | base64 -d > "$STATE/provider-key"
+    [ -s "$STATE/provider-key" ] || { say "the stack's Secret holds no payment webhook key"; exit 1; }
+    seed_http dispute-hint "$operation" "$dispute"
+    opened=
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+        opened=$(psql_seed -c "SELECT id FROM payments.dispute WHERE provider_dispute_reference = '$dispute' AND stage = 'CHARGED_BACK'" | tr -d '[:space:]')
+        uuid_like "$opened" && break
+        sleep 2
+    done
+    uuid_like "$opened" || { say "no CHARGED_BACK dispute $dispute after the hint: is the simulator answering /disputes/?"; exit 1; }
+    say "dispute $opened CHARGED_BACK on top-up $intent: upload evidence and represent it, or accept it"
+    printf 'DISPUTE_ID=%s\n' "$opened"
+    printf 'DISPUTE_PAYMENT_ID=%s\n' "$intent"
+}
+
 for scenario in "$@"; do
     case "$scenario" in
         abandoned-event) seed_abandoned_event ;;
@@ -561,6 +689,11 @@ for scenario in "$@"; do
         draft-submission) seed_draft_submission ;;
         accounting-break) seed_accounting_break ;;
         finance) seed_closable_period; seed_prior_period_adjustment; seed_proposed_mapping; seed_draft_submission; seed_accounting_break ;;
+        onboardable-organisation) seed_onboardable_organisation ;;
+        active-merchant) seed_active_merchant ;;
+        proposed-destination) seed_proposed_destination ;;
+        merchants) seed_onboardable_organisation; seed_active_merchant; seed_proposed_destination ;;
+        open-dispute) seed_open_dispute ;;
         all) seed_abandoned_event; seed_parked_record; seed_parsed_file; seed_fee_break; seed_factorless_holding; seed_sod_conflict
              seed_open_alert; seed_investigated_case; seed_overridable_assessment; seed_proposed_policy ;;
     esac

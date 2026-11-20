@@ -88,6 +88,13 @@ import javax.net.ssl.SSLContext;
  * load scope puts it on before the decline profile's load and takes it off after it and on every way out. A decline is a business
  * outcome: the platform answers it with the payment FAILED, and no objective may count it as an error.
  *
+ * <p>THE DISPUTES (P17-TSK-115): a card dispute is the network's word alone, so this provider says one exists only when told to. A file
+ * {@code /tmp/disputes/<reference>}, written by the console's end-to-end seed with {@code kubectl exec}, is the PSP's statement of that
+ * dispute in SimulatedCardPspAdapter's words; {@code GET /disputes/{reference}}, the platform's dispute inquiry, answers it verbatim, or
+ * {@code {"status":"unrecognised"}} for a reference never stated. {@code POST /dispute-responses}, a representment or an acceptance,
+ * is approved with a reference of its own, one effect per Idempotency-Key as everywhere here; the network's later outcome is never
+ * sent. The rehearsal's own scopes state no dispute, so their counts are unchanged.
+ *
  * <p>No port serves plain HTTP. It holds no credential and verifies none: a bearer key is the adapter's confinement rule to meet, and a
  * simulator that checked it would prove only that the rehearsal's generator and the application agree.
  */
@@ -103,6 +110,13 @@ public final class Simulator {
     /** The card rail's inquiry prefix, SimulatedCardPspAdapter's OPERATIONS_PATH; our reference is the next segment (P16-TSK-005). */
     private static final String OPERATIONS = "/operations/";
     private static final List<String> CARD_OPERATIONS = List.of("/authorizations", "/captures", "/refunds", "/voids");
+    /** The dispute inquiry's prefix, SimulatedCardPspAdapter's DISPUTES_PATH; the network's reference is the next segment (P17-TSK-115). */
+    private static final String DISPUTES = "/disputes/";
+    /** A dispute answer's path, SimulatedCardPspAdapter's DISPUTE_RESPONSES_PATH (P17-TSK-115). */
+    private static final String DISPUTE_RESPONSES = "/dispute-responses";
+    /** Where the seed states a dispute: one file per network reference, its content the statement (P17-TSK-115). */
+    private static final Path DISPUTE_STATEMENTS = Path.of("/tmp/disputes");
+    private static final Pattern DISPUTE_REFERENCE = Pattern.compile("[A-Za-z0-9_:-][A-Za-z0-9_.:-]{0,127}");
 
     /** The degradation flags' prefix and each rail's paths (P16-TSK-018): a flag names a rail and a mode, never a path. */
     private static final String DEGRADE = "/tmp/degrade-";
@@ -208,6 +222,9 @@ public final class Simulator {
         server.createContext("/payouts", exchange -> answer(exchange, "/payouts",
                 key -> "{\"status\":\"paid\",\"reference\":\"po-" + key + "\"}"));
         server.createContext(OPERATIONS, Simulator::operationInquiry);
+        server.createContext(DISPUTES, Simulator::disputeInquiry);
+        server.createContext(DISPUTE_RESPONSES, exchange -> answer(exchange, DISPUTE_RESPONSES,
+                key -> "{\"status\":\"approved\",\"reference\":\"psp_dr-" + UUID.randomUUID() + "\"}"));
         server.createContext(FX_REFERENCE, Simulator::referenceRates);
         server.createContext(FX_QUOTES, Simulator::fxQuote);
         server.createContext(FX_EXECUTIONS, Simulator::fxExecution);
@@ -406,7 +423,8 @@ public final class Simulator {
      * {@code GET /operations/{reference}} (P16-TSK-005): the card rail's inquiry, which the payment sweep sends for an authorization, capture,
      * refund or void it holds dispatched past its age or {@code *_UNKNOWN}. It answers what this provider did with that reference, the answer
      * its operation got, or {@code {"status":"unrecognised"}} for a reference it never saw; it takes no effect and holds no key. A deeper path
-     * (the clearing and dispute inquiries) is not served: no answer, which the adapter reads as indeterminate, as before this inquiry existed.
+     * (the clearing inquiry) is not served: no answer, which the adapter reads as indeterminate, as before this inquiry existed. The dispute
+     * inquiry has its own prefix, {@link #disputeInquiry}.
      */
     private static void operationInquiry(HttpExchange exchange) throws IOException {
         exchange.getRequestBody().readAllBytes();
@@ -425,6 +443,24 @@ public final class Simulator {
             known = known != null ? known : ANSWERED.get(operation + "|" + reference);
         }
         send(exchange, 200, known != null ? known : "{\"status\":\"unrecognised\"}");
+    }
+
+    /**
+     * {@code GET /disputes/{reference}} (P17-TSK-115): the card PSP's statement of a dispute, as the seed wrote it to
+     * {@code /tmp/disputes/<reference>}, or {@code {"status":"unrecognised"}} for a reference nobody stated. It takes no effect and
+     * holds no key; a reference outside the adapter's charset, or starting with a dot, names no file.
+     */
+    private static void disputeInquiry(HttpExchange exchange) throws IOException {
+        exchange.getRequestBody().readAllBytes();
+        REQUESTS.computeIfAbsent(DISPUTES, ignored -> new AtomicLong()).incrementAndGet();
+        String reference = exchange.getRequestURI().getPath().substring(DISPUTES.length());
+        logged(exchange, DISPUTES, reference, "inquiry");
+        if (!"GET".equals(exchange.getRequestMethod()) || !DISPUTE_REFERENCE.matcher(reference).matches()) {
+            send(exchange, 404, "{\"status\":\"not_found\"}");
+            return;
+        }
+        Path statement = DISPUTE_STATEMENTS.resolve(reference);
+        send(exchange, 200, Files.isRegularFile(statement) ? Files.readString(statement).strip() : "{\"status\":\"unrecognised\"}");
     }
 
     /** The reference an inquiry names: the path's segment after its prefix, or {@code -}. */
