@@ -372,6 +372,17 @@ read both entries against the code as built through `P12-TSK-028`.)*
   onboarding checks (`forCase`); risk's screening-hit reading reads `latestDecidedScreenings`, bounded. The purpose and the
   key are frozen by the grant (`UPDATE` narrowed to `status`, `status_changed_at`). Caller: risk's rescreening leg, through
   `app`'s `KycPartyRescreening` - the one production caller of `requestRescreen` (`OwnershipIsScopedTest`'s `SYSTEM_JOIN`).
+- **Phase 17** *(`P17-TSK-126`, 2026-11-20, ADR-0155; kyc `V016`)*: **a case awaits its customer.** The case machine's
+  edges are one named table, `KycCaseTransition`, from which the permitted set is derived and against which the store's
+  conditional move refuses any other pair. A new state, `AWAITING_CUSTOMER`, entered from `IN_REVIEW` by a reviewer's
+  **Information Request** (`kyc.information_request`: a reason code, a text for the customer screened against tipping-off
+  by `CustomerRequestText`, a deadline fourteen days on) and left back to `IN_REVIEW` by the customer's answer or the
+  request's lapse on the database clock (`InformationRequests`; app's leaderless `InformationRequestExpirySchedule`). At
+  most one open request per case, and a case awaits its customer exactly while one is open. Doors: the reviewer's
+  `POST /v1/kyc/cases/{id}/information-request` (`KYC_REVIEW`, `MULTI_FACTOR`, keyed) and the customer's
+  `POST /v1/me/kyc/information-response` (keyed); the customer reads the request on `GET /v1/me/kyc`
+  (`ACTION_REQUIRED`), the reviewer every request in the case file. Event `kyc.CustomerInformationRequested` (identifiers
+  and the deadline only) for the deferred notifier. KYC cases only; a KYB answer door is a follow-up.
 
 ### `consent` — Phase 2
 - **Responsibility:** the lawful basis for processing, held separately from authentication and authorization.

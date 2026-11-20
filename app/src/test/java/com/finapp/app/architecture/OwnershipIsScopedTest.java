@@ -7550,19 +7550,22 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.kyc.JdbcKycCaseStore.moveStatus",
                             new Entry(
-                                    Scope.AUTHORITATIVE_ID,
-                                    "com.finapp.kyc.JdbcKycCaseStore.findOpenFor",
+                                    Scope.ADMINISTERED,
                                     "P2-TSK-005's seam, driven since P2-TSK-009 by the"
-                                        + " assessment. A case identifier reaching THIS method"
-                                        + " still comes only from findOpenFor or from"
-                                        + " openOrConverge's own insert, both scoped by"
-                                        + " customer_id in the statement - P2-TSK-012's reviewer"
-                                        + " surface came and said so: its URL-derived exit goes"
-                                        + " through moveToReadyForDecision (ADMINISTERED,"
-                                        + " below), never here. The statement's AND status = ?"
-                                        + " is the concurrency protocol, not an ownership"
-                                        + " predicate - JdbcIdentityStore.moveStatus's recorded"
-                                        + " distinction.")),
+                                        + " assessment. Its weakest provenance is a reviewer's"
+                                        + " URL-derived case identifier - the decision's move"
+                                        + " (P2-TSK-013) and, since P17-TSK-126, the request for"
+                                        + " information's IN_REVIEW -> AWAITING_CUSTOMER - the"
+                                        + " lockIdentity weaker-of-two-provenances rule: KYC_REVIEW"
+                                        + " on a MULTI_FACTOR session at the boundary and the act's"
+                                        + " own audit record (kyc.DecisionRecorded,"
+                                        + " kyc.InformationRequested) stand in for an ownership"
+                                        + " predicate. The other callers' identifiers are the"
+                                        + " customer's own (findOpenFor, the answer's return) or the"
+                                        + " platform's (the assessment, the expiry from its own"
+                                        + " row). The statement's AND status = ? is the concurrency"
+                                        + " protocol, and a pair no named edge permits is refused"
+                                        + " before any statement runs.")),
                     Map.entry(
                             "com.finapp.kyc.JdbcKycCaseStore.findById",
                             new Entry(
@@ -7661,6 +7664,37 @@ class OwnershipIsScopedTest {
                                         + " composite predicate: id AND case_id, so another"
                                         + " case's task is indistinguishable from no task."
                                         + " KYC_REVIEW at the boundary.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcInformationRequestStore.findOpenFor",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.kyc.JdbcKycCaseStore.findLatestFor",
+                                    "P17-TSK-126. The customer's own view (KycCaseService.view):"
+                                        + " the case identifier is the one findLatestFor just"
+                                        + " returned for the session's customer, customer_id in its"
+                                        + " statement - the open request of the caller's own case,"
+                                        + " never a URL's.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcInformationRequestStore.answer",
+                            new Entry(
+                                    Scope.AUTHORITATIVE_ID,
+                                    "com.finapp.kyc.JdbcKycCaseStore.findOpenFor",
+                                    "P17-TSK-126. The customer's answer (InformationRequestDesk):"
+                                        + " the /v1/me shape - the case identifier comes from"
+                                        + " findOpenFor over the session's customer, customer_id in"
+                                        + " its statement, so the answer can only close the"
+                                        + " caller's own case's request. The statement's status ="
+                                        + " 'OPEN' AND due_at > statement_timestamp() is the"
+                                        + " concurrency and deadline protocol, not ownership.")),
+                    Map.entry(
+                            "com.finapp.kyc.JdbcInformationRequestStore.forCase",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-126. The case file's requests, URL-derived case"
+                                        + " identifier - JdbcReviewTaskStore.forCase's shape: KYC_REVIEW"
+                                        + " at the boundary and the read audited as part of"
+                                        + " kyc.CaseRead in the same unit of work. The customer's"
+                                        + " answers it returns are this surface's alone.")),
                     Map.entry(
                             "com.finapp.kyc.JdbcReviewTaskStore.forCase",
                             new Entry(

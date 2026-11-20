@@ -169,6 +169,8 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/kyc/cases/{id}", PermissionName.KYC_REVIEW),
                     entry("POST /v1/kyc/cases/{id}/decision", PermissionName.KYC_REVIEW),
                     entry("POST /v1/kyc/cases/{id}/reviews/{taskId}/resolution", PermissionName.KYC_REVIEW),
+                    // P17-TSK-126 (ADR-0155): a reviewer asks the case's customer for more information.
+                    entry("POST /v1/kyc/cases/{id}/information-request", PermissionName.KYC_REVIEW),
                     // Ledger adjustments, four-eyes by identity (Phase 3)
                     entry("POST /v1/ledger/adjustments", PermissionName.LEDGER_ADJUST),
                     // The approver's queue (P17-TSK-022, G-112): the permission its door decides under.
@@ -941,6 +943,9 @@ class RoutePermissionRegisterTest {
             "GET /v1/operator/kyc/cases",
             "GET /v1/operator/customers/{id}/kyc-case",
             "GET /v1/operator/kyc/counterparty-screenings",
+            // P17-TSK-126 (ADR-0155): a reviewer's request for information - a text that reaches the customer, so an act on a
+            // factor as the decision and the resolution are.
+            "POST /v1/kyc/cases/{id}/information-request",
             // P17-TSK-015: whose sessions are live, and ending them - an incident's acts, not a stolen password's.
             "GET /v1/operator/identities/{id}/sessions",
             "DELETE /v1/operator/identities/{id}/sessions",

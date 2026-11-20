@@ -1,12 +1,16 @@
 package com.finapp.app.kyc;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.session.RequiresSession;
 import com.finapp.app.session.SessionAuthenticationInterceptor;
 import com.finapp.identity.Session;
+import com.finapp.kyc.InformationRequest;
 import com.finapp.kyc.KycCase;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Instant;
+import java.util.Optional;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -63,7 +67,7 @@ public class KycCaseController {
     @ResponseStatus(HttpStatus.CREATED)
     public KycCaseResponse open(HttpServletRequest request) {
         return switch (cases.open(current(request))) {
-            case KycCaseService.Opening.Opened opened -> KycCaseResponse.of(opened.kycCase());
+            case KycCaseService.Opening.Opened opened -> KycCaseResponse.of(opened.kycCase(), Optional.empty());
             case KycCaseService.Opening.NotResolvable ignored -> throw notResolvable();
         };
     }
@@ -79,7 +83,7 @@ public class KycCaseController {
     @GetMapping
     public KycCaseResponse viewCase(HttpServletRequest request) {
         return switch (cases.view(current(request))) {
-            case KycCaseService.View.Found found -> KycCaseResponse.of(found.kycCase());
+            case KycCaseService.View.Found found -> KycCaseResponse.of(found.kycCase(), found.openRequest());
             case KycCaseService.View.NoCase ignored ->
                     throw new ApiException(
                             PlatformErrorCode.NOT_FOUND,
@@ -117,11 +121,30 @@ public class KycCaseController {
      * What both verbs publish: the shaped status, and nothing else — no case identifier
      * (nothing customer-facing consumes one, the {@code P1-TSK-006} empty-body reasoning), no
      * screening vocabulary, no timestamps a caller did not ask for.
+     *
+     * <p>Since `P17-TSK-126` (ADR-0155 decision 5), on the read ({@code GET}) while the case is
+     * {@code ACTION_REQUIRED}, the open request for information: the reviewer's screened text and
+     * the deadline, on the customer's proven session - the one place the text reaches them. Never
+     * the reason code. The ensure-exists {@code POST} answers the status alone, as it always has.
      */
-    public record KycCaseResponse(String status) {
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record KycCaseResponse(String status, InformationRequestView informationRequest) {
 
-        static KycCaseResponse of(KycCase kycCase) {
-            return new KycCaseResponse(CustomerFacingCaseStatus.of(kycCase.status()));
+        static KycCaseResponse of(KycCase kycCase, Optional<InformationRequest> openRequest) {
+            return new KycCaseResponse(
+                    CustomerFacingCaseStatus.of(kycCase.status()),
+                    openRequest.map(InformationRequestView::of).orElse(null));
+        }
+    }
+
+    /**
+     * What the customer is asked, and by when: answered at {@code POST
+     * /v1/me/kyc/information-response}, documents first through {@code POST /v1/me/kyc/documents}.
+     */
+    public record InformationRequestView(String requestText, Instant dueAt) {
+
+        static InformationRequestView of(InformationRequest request) {
+            return new InformationRequestView(request.text().value(), request.dueAt());
         }
     }
 }

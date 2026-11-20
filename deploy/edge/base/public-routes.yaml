@@ -112,6 +112,7 @@ http:
         || (Method(`GET`) && Path(`/v1/me/kyc`))
         || (Method(`POST`) && Path(`/v1/me/kyc`))
         || (Method(`POST`) && Path(`/v1/me/kyc/documents`))
+        || (Method(`POST`) && Path(`/v1/me/kyc/information-response`))
         || (Method(`POST`) && Path(`/v1/me/loan-applications`))
         || (Method(`GET`) && PathRegexp(`^/v1/me/loan-applications/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$`))
         || (Method(`POST`) && PathRegexp(`^/v1/me/loan-applications/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/withdrawal$`))

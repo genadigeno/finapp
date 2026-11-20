@@ -98,7 +98,26 @@ public enum KycErrorCode implements ErrorCode {
     SCREENING_REVIEW_INVALID(
             "kyc.ScreeningReviewInvalid",
             422,
-            "The counterparty screening review is not acceptable.");
+            "The counterparty screening review is not acceptable."),
+
+    /**
+     * A reviewer's request text cannot be sent to the customer (`P17-TSK-126`, ADR-0155 decision 4): it names a screening, a
+     * list, a suspicion or an investigation, carries one of the platform's identifiers or a link, or is outside its bounds - the
+     * tipping-off control, {@link CustomerRequestText}. A {@code 422} and a code of its own because it is actionable: the reviewer
+     * rewrites the text, told which rule it broke, and the text is never echoed.
+     */
+    REQUEST_TEXT_REFUSED(
+            "kyc.RequestTextRefused", 422, "This request cannot be sent to the customer as written."),
+
+    /**
+     * The caller's case has no open request for information to answer (`P17-TSK-126`): none was asked, it was answered already,
+     * or its deadline passed. A {@code 409} and a code of its own because it is actionable: there is nothing to answer, and the
+     * case view says whether anything is asked.
+     */
+    NO_OPEN_INFORMATION_REQUEST(
+            "kyc.NoOpenInformationRequest",
+            409,
+            "There is no open request for information on your verification case.");
 
     private final String code;
     private final int status;

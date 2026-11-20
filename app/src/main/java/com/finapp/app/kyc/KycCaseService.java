@@ -8,7 +8,10 @@ import com.finapp.identity.IdentityStore;
 import com.finapp.identity.Session;
 import com.finapp.kyc.CaseKindResolver;
 import com.finapp.kyc.CaseOpeningTrail;
+import com.finapp.kyc.InformationRequest;
+import com.finapp.kyc.InformationRequestStore;
 import com.finapp.kyc.KycCase;
+import com.finapp.kyc.KycCaseStatus;
 import com.finapp.kyc.KycCaseStore;
 import com.finapp.party.Customer;
 import com.finapp.party.PartyId;
@@ -84,6 +87,7 @@ public class KycCaseService {
     private final KycCaseStore<Connection> cases;
     private final CaseKindResolver<Connection> kinds;
     private final ConsentGate<Connection> consentGate;
+    private final InformationRequestStore<Connection> informationRequests;
     private final CaseOpeningTrail trail;
     private final IdGenerator ids;
     private final Clock clock;
@@ -95,6 +99,7 @@ public class KycCaseService {
             KycCaseStore<Connection> kycCaseStore,
             CaseKindResolver<Connection> caseKindResolver,
             ConsentGate<Connection> consentGate,
+            InformationRequestStore<Connection> informationRequestStore,
             AuditWriter<Connection> auditWriter,
             OutboxWriter<Connection> outboxWriter,
             IdGenerator idGenerator,
@@ -106,6 +111,8 @@ public class KycCaseService {
         this.cases = Objects.requireNonNull(kycCaseStore, "kycCaseStore must not be null");
         this.kinds = Objects.requireNonNull(caseKindResolver, "caseKindResolver must not be null");
         this.consentGate = Objects.requireNonNull(consentGate, "consentGate must not be null");
+        this.informationRequests =
+                Objects.requireNonNull(informationRequestStore, "informationRequestStore must not be null");
         this.ids = Objects.requireNonNull(idGenerator, "idGenerator must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
         this.trail =
@@ -169,8 +176,13 @@ public class KycCaseService {
                     if (customer.isEmpty()) {
                         return View.NOT_RESOLVABLE;
                     }
+                    // The open request in the same snapshot as the case (P17-TSK-126): a case
+                    // awaiting its customer and the request it awaits are one fact, read once.
                     return cases.findLatestFor(unitOfWork, customer.get().id().value())
-                            .<View>map(View.Found::new)
+                            .<View>map(kycCase -> new View.Found(kycCase,
+                                    kycCase.status() == KycCaseStatus.AWAITING_CUSTOMER
+                                            ? informationRequests.findOpenFor(unitOfWork, kycCase.id())
+                                            : Optional.empty()))
                             .orElse(View.NO_CASE);
                 });
     }
@@ -217,7 +229,11 @@ public class KycCaseService {
     /** What the read came to. */
     public sealed interface View {
 
-        record Found(KycCase kycCase) implements View {}
+        /**
+         * The latest case, and its open request for information while it awaits the customer
+         * (`P17-TSK-126`): what the customer is asked, and by when.
+         */
+        record Found(KycCase kycCase, Optional<InformationRequest> openRequest) implements View {}
 
         /** The customer never had a case: an honest 404, with POST as the remedy. */
         record NoCase() implements View {}

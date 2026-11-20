@@ -1218,6 +1218,11 @@ class OpenApiContractTest {
                         // P2-TSK-013. The decision: the one recorded act every later phase
                         // gates on (INV-KYC-02), behind the same permission.
                         ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}/decision",
+                        // P17-TSK-126 (ADR-0155). A reviewer asks the case's customer for more
+                        // information - keyed, on a factor, every refusal recorded - and the
+                        // customer answers on the /v1/me shape, no identifier anywhere.
+                        ApiVersion.CURRENT_PREFIX + "/kyc/cases/{id}/information-request",
+                        ApiVersion.CURRENT_PREFIX + "/me/kyc/information-response",
                         // P2-TSK-016. The KYB surface: the /v1/me ownership-by-absence shape -
                         // registration, the shaped view, and the owner declaration whose one
                         // identifier names the declaration's subject, never a resource.

@@ -617,6 +617,15 @@ class SystemActorCallSitesAreEnumeratedTest {
                         + " reasoning - and what it triggers is the platform's authenticated"
                         + " inquiry of its own cover, never the callback's claim."),
                     Map.entry(
+                            "com.finapp.app.kyc.InformationRequestExpirySchedule.sweepOnce",
+                    "A KYC request for information lapses (P17-TSK-126, ADR-0155 decision 7): the"
+                        + " database clock passed its due_at - nobody chose it. Attributing the"
+                        + " EXPIRED edge and the case's return to review to a person would record"
+                        + " them as having closed a request they never saw; the reviewer who asked"
+                        + " and the customer who answers act as themselves at their doors. The scope"
+                        + " wraps the tick's pages, each one conditional UPDATE, its cases' returns"
+                        + " and their records."),
+                    Map.entry(
                             "com.finapp.app.fx.FxQuoteExpirySchedule.sweepOnce",
                     "Quote expiry (P9-TSK-008, ADR-0075 section 5): a quote lapses because the"
                         + " database clock passed its expires_at - nobody chose it. Attributing the"

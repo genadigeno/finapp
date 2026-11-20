@@ -73,10 +73,10 @@ class ShutdownOrderTest {
 
     private static final String PROBE_PATH = "/__drain-probe";
 
-    /** The platform's lifecycle components: thirty-nine schedules (`P16-TSK-011`'s idempotency sweep the latest, after `P16-TSK-010`'s session sweep; its audit archive schedule exists only where a store is named, which production's configuration does not), the inbox consumers, the gauge refresher's lifecycle (`P15-TSK-024`), the telemetry SDK's bounded flush (`P15-TSK-023`). *(Read forty and thirty-seven, `P15-TSK-022`'s window-counter sweep the latest, until 2026-11-13.)* */
-    private static final int COMPONENTS = 42;
+    /** The platform's lifecycle components: forty schedules (`P17-TSK-126`'s KYC information request expiry the latest, after `P16-TSK-011`'s idempotency sweep and `P16-TSK-010`'s session sweep; its audit archive schedule exists only where a store is named, which production's configuration does not), the inbox consumers, the gauge refresher's lifecycle (`P15-TSK-024`), the telemetry SDK's bounded flush (`P15-TSK-023`). *(Read forty-two and thirty-nine until `P17-TSK-126`, 2026-11-20; forty and thirty-seven, `P15-TSK-022`'s window-counter sweep the latest, until 2026-11-13.)* */
+    private static final int COMPONENTS = 43;
 
-    private static final int SCHEDULES = 39;
+    private static final int SCHEDULES = 40;
 
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
 

@@ -3,6 +3,8 @@ package com.finapp.app.kyc;
 import com.finapp.identity.IdentityId;
 import com.finapp.kyc.BeneficialOwnerStore;
 import com.finapp.kyc.CheckStore;
+import com.finapp.kyc.InformationRequest;
+import com.finapp.kyc.InformationRequestStore;
 import com.finapp.kyc.KycAuditAction;
 import com.finapp.kyc.KycCase;
 import com.finapp.kyc.KycCaseId;
@@ -73,18 +75,22 @@ public class ReviewService {
      * since `P2-TSK-016`, the declared owners with their verification statuses: the owner rows
      * ARE the evidence a KYB decision rests on ({@code INV-KYC-02}), and the person who must
      * defend that decision cannot defend evidence they cannot see. Empty for a KYC case, by
-     * V008's composite FK rather than by filtering.
+     * V008's composite FK rather than by filtering. Since `P17-TSK-126`, every request for
+     * information the case's reviewers asked, oldest first, with the customer's answers: the open
+     * one - at most one - names the deadline (ADR-0155 decision 10).
      */
     public record CaseFile(
             KycCase kycCase,
             List<VerificationCheck> checks,
             List<ReviewTask> tasks,
-            List<BeneficialOwnerStore.DeclaredOwner> owners) {}
+            List<BeneficialOwnerStore.DeclaredOwner> owners,
+            List<InformationRequest> informationRequests) {}
 
     private final KycCaseStore<Connection> cases;
     private final CheckStore<Connection> checks;
     private final ReviewTaskStore<Connection> tasks;
     private final BeneficialOwnerStore<Connection> owners;
+    private final InformationRequestStore<Connection> informationRequests;
     private final AuditWriter<Connection> auditWriter;
     private final IdGenerator ids;
     private final Clock clock;
@@ -95,6 +101,7 @@ public class ReviewService {
             CheckStore<Connection> checkStore,
             ReviewTaskStore<Connection> reviewTaskStore,
             BeneficialOwnerStore<Connection> beneficialOwnerStore,
+            InformationRequestStore<Connection> informationRequestStore,
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
             Clock clock,
@@ -105,6 +112,8 @@ public class ReviewService {
         this.tasks = Objects.requireNonNull(reviewTaskStore, "reviewTaskStore must not be null");
         this.owners =
                 Objects.requireNonNull(beneficialOwnerStore, "beneficialOwnerStore must not be null");
+        this.informationRequests = Objects.requireNonNull(
+                informationRequestStore, "informationRequestStore must not be null");
         this.auditWriter = Objects.requireNonNull(auditWriter, "auditWriter must not be null");
         this.ids = Objects.requireNonNull(idGenerator, "idGenerator must not be null");
         this.clock = Objects.requireNonNull(clock, "clock must not be null");
@@ -132,7 +141,8 @@ public class ReviewService {
                                                             // evidence beside a decided one.
                                                             checks.allForCase(unitOfWork, caseId),
                                                             tasks.forCase(unitOfWork, caseId),
-                                                            owners.ownersOf(unitOfWork, caseId));
+                                                            owners.ownersOf(unitOfWork, caseId),
+                                                            informationRequests.forCase(unitOfWork, caseId));
                                             auditRead(unitOfWork, kycCase);
                                             return file;
                                         }));

@@ -98,39 +98,73 @@ public final class KycCase {
 
     /** {@code OPEN → CHECKS_IN_PROGRESS}: the first check was dispatched. */
     public KycCase beginChecks(Clock clock) {
-        return transitionTo(KycCaseStatus.CHECKS_IN_PROGRESS, clock);
+        return apply(KycCaseTransition.BEGIN_CHECKS, clock);
     }
 
     /**
      * {@code CHECKS_IN_PROGRESS → IN_REVIEW}: a check {@code HIT}, or went indeterminate past
      * its retry budget. A person resolves it ({@code INV-KYC-04}); silence resolves nothing.
+     * This edge alone: a case awaiting its customer returns to review by {@link #resumeReview}.
      */
     public KycCase requireReview(Clock clock) {
-        return transitionTo(KycCaseStatus.IN_REVIEW, clock);
+        return apply(KycCaseTransition.CHECKS_RAISE_REVIEW, clock);
+    }
+
+    /**
+     * {@code IN_REVIEW → AWAITING_CUSTOMER}: a reviewer asked the customer for more information
+     * (`P17-TSK-126`, ADR-0155). The request itself is an {@link InformationRequest}, written in
+     * the same transaction as this move.
+     */
+    public KycCase awaitCustomer(Clock clock) {
+        return apply(KycCaseTransition.INFORMATION_REQUESTED, clock);
+    }
+
+    /**
+     * {@code AWAITING_CUSTOMER → IN_REVIEW}, by {@code why}: the customer answered, or the
+     * request's deadline passed. Either way the reviewer has the case back; nothing is decided.
+     *
+     * @throws IllegalArgumentException {@code why} is not one of the two returns
+     */
+    public KycCase resumeReview(KycCaseTransition why, Clock clock) {
+        Objects.requireNonNull(why, "why must not be null");
+        if (why != KycCaseTransition.CUSTOMER_ANSWERED && why != KycCaseTransition.REQUEST_EXPIRED) {
+            throw new IllegalArgumentException("a case returns to review by an answer or a lapse, not " + why);
+        }
+        return apply(why, clock);
     }
 
     /**
      * {@code → READY_FOR_DECISION}, from checks all clear or from every review task resolved.
      * Being ready is not being decided: the decision is a separate recorded act
-     * ({@code P2-TSK-013}, {@code INV-KYC-02}).
+     * ({@code P2-TSK-013}, {@code INV-KYC-02}). Never from {@code AWAITING_CUSTOMER}.
      */
     public KycCase readyForDecision(Clock clock) {
-        return transitionTo(KycCaseStatus.READY_FOR_DECISION, clock);
+        return apply(
+                status == KycCaseStatus.IN_REVIEW
+                        ? KycCaseTransition.REVIEW_COMPLETE
+                        : KycCaseTransition.CHECKS_CLEAR,
+                clock);
     }
 
     /** {@code READY_FOR_DECISION → APPROVED}. Terminal ({@code INV-LIFE-04}). */
     public KycCase approve(Clock clock) {
-        return transitionTo(KycCaseStatus.APPROVED, clock);
+        return apply(KycCaseTransition.APPROVE, clock);
     }
 
     /** {@code READY_FOR_DECISION → REJECTED}. Terminal ({@code INV-LIFE-04}). */
     public KycCase reject(Clock clock) {
-        return transitionTo(KycCaseStatus.REJECTED, clock);
+        return apply(KycCaseTransition.REJECT, clock);
     }
 
-    private KycCase transitionTo(KycCaseStatus target, Clock clock) {
+    /**
+     * Applies one named edge of the table ({@link KycCaseTransition}): refused unless the case
+     * stands exactly at the edge's source ({@code INV-LIFE-02}), so no method reaches a status by
+     * another edge's row.
+     */
+    private KycCase apply(KycCaseTransition transition, Clock clock) {
         Objects.requireNonNull(clock, "clock must not be null");
-        if (!status.canTransitionTo(target)) {
+        KycCaseStatus target = transition.to();
+        if (status != transition.from() || !status.canTransitionTo(target)) {
             throw new IllegalKycCaseTransitionException(id, status, target);
         }
         // max(now, latest) - ADR-0063 decision 2 (X-TSK-006): the database orders the case's

@@ -29,11 +29,19 @@ class KycCaseMigrationTest {
     private static final String MIGRATION_V008 =
             "db/migration/kyc/V008__create_beneficial_owner.sql";
 
+    /**
+     * V016 (`P17-TSK-126`): the status check's current definition, replaced to admit
+     * {@code AWAITING_CUSTOMER}. V002 is pinned history (an applied migration cannot be edited);
+     * the effective constraint is the latest file's.
+     */
+    private static final String MIGRATION_V016 = "db/migration/kyc/V016__a_case_awaits_the_customer.sql";
+
     @Test
     @DisplayName("the status constraint lists exactly the states the machine declares")
     void statusConstraintMatchesTheEnum() {
-        assertThat(migration())
-                .contains("CHECK (status IN (" + KycCaseStatus.sqlValueList() + "))");
+        assertThat(migration(MIGRATION_V016))
+                .contains("DROP CONSTRAINT kyc_case_status_is_known")
+                .contains("CHECK (status IN (" + KycCaseStatus.sqlValueList() + ")) NOT VALID");
     }
 
     @Test
