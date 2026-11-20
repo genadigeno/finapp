@@ -23,6 +23,37 @@ import java.util.UUID;
  */
 public interface LedgerCollections {
 
+    // ------------------------------------------------------------------ one account's lines (P17-TSK-027, G-32)
+
+    /** Where a page of an account's lines ended: the last line it served, by its entry and its place in it. */
+    record LineCursor(UUID entryId, int seq) {
+        public LineCursor {
+            Objects.requireNonNull(entryId, "entryId must not be null");
+        }
+    }
+
+    /**
+     * One line on the account: its entry - id, type, posting and value dates, when it was posted - its direction and its amount,
+     * exact at the line's own scale, in the account's currency. Never the entry's {@code reference}, {@code reason} or actor.
+     */
+    record AccountLine(
+            UUID entryId,
+            int seq,
+            JournalEntryType entryType,
+            java.time.LocalDate postingDate,
+            java.time.LocalDate valueDate,
+            Instant postedAt,
+            String direction,
+            String currency,
+            java.math.BigDecimal amount) {}
+
+    /**
+     * A page of one ledger account's lines, newest entry first - the entry id, a UUIDv7, then the line's place in the entry -
+     * strictly after {@code after} when given, at most {@code limit} (`P17-TSK-027`: a customer agreement's lines, under
+     * {@code ACCOUNT_READ}, recorded at app's door). One backward range of {@code journal_line_by_account}.
+     */
+    List<AccountLine> accountLines(Connection unitOfWork, LedgerAccountId account, Optional<LineCursor> after, int limit);
+
     // ------------------------------------------------------------------ the account register (G-110)
 
     /** The register's filters, each optional: one purpose, one currency. */

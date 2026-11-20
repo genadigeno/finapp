@@ -79,7 +79,30 @@ public enum TransfersAuditAction implements AuditableAction {
             "An operator reversed a completed transfer with a recorded reason; the record"
                     + " names the transfer, the original entry and the reversal entry, never"
                     + " an amount.",
-            true);
+            true),
+
+    /**
+     * A holder of {@code TRANSFER_READ} was served a page of a customer's transfers (`P17-TSK-027`, gap G-35;
+     * {@code GET /v1/operator/transfers}, on a {@code MULTI_FACTOR} session; ADR-C132 decision 5): once per page, the customer
+     * the target, the window, the status filter, whether it followed a cursor and how many it served the summary - never an
+     * amount. Written by app's {@code RecordedReads} in the read's own transaction.
+     */
+    TRANSFERS_LISTED(
+            "transfers.TransfersListed",
+            "A page of a customer's transfers was served to an operator; the customer, the window, the filter and a count"
+                    + " recorded, never an amount.",
+            false),
+
+    /**
+     * A holder of {@code TRANSFER_READ} read one transfer with its journal entry's reference (`P17-TSK-027`;
+     * {@code GET /v1/operator/transfers/{id}}, on a {@code MULTI_FACTOR} session): the transfer the target, its customer and
+     * status the summary - never an amount or the customer's own reference text.
+     */
+    TRANSFER_READ(
+            "transfers.TransferRead",
+            "An operator read a transfer and its journal entry's reference; the transfer, its customer and status recorded,"
+                    + " never an amount.",
+            false);
 
     private final String code;
     private final String description;

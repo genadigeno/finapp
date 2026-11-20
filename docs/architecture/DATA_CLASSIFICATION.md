@@ -607,6 +607,8 @@ money is `ledger`'s and classified there.
 | `customer_account` | `opened_at` | `CONFIDENTIAL` | Dates a product opening — `ledger_account.created_at`'s reasoning verbatim |
 | `customer_account` | `status_changed_at` | `CONFIDENTIAL` | Dates a freeze or a closure, which is more disclosive than the status alone |
 
+**Served to staff by the account reads** (`P17-TSK-027`, 2026-11-20; finapp-admin-panel ADR-C132 decision 5), under `ACCOUNT_READ` on a `MULTI_FACTOR` session, every answer recorded. A customer's agreements (`GET /v1/operator/customers/{id}/accounts`, `accounts.CustomerAccountsListed`) and one agreement (`GET /v1/operator/accounts/{id}`, `accounts.AccountRead`) serve every column above - `CONFIDENTIAL` at most - and the agreement's balances per currency, posted, held and available: `ledger`'s own figures (`RESTRICTED-FINANCIAL`), read through `BalanceDisplay` as of the database's instant, which the answer states. An agreement's ledger lines (`GET /v1/operator/accounts/{id}/entries`, `ledger.AccountLinesListed`) serve each line's entry id, entry type, posting and value dates, posting instant, direction and amount (`RESTRICTED-FINANCIAL`) - **never** the entry's `reference`, `reason` or actor (`RESTRICTED-PII`). The records name no amount.
+
 ### `transfers.transfer` and `transfers.transfer_event` — *added by `P4-TSK-004`*
 
 **The first customer-commanded amounts outside the ledger schema.** The row is the judgement
@@ -636,6 +638,8 @@ and its record (ADR-0044); the money itself is the ledger posting `journal_entry
 | `transfer_event` | `to_status` | `CONFIDENTIAL` | As `from_status` |
 | `transfer_event` | `actor_id` | `RESTRICTED-PII` | As `initiated_by` |
 | `transfer_event` | `occurred_at` | `CONFIDENTIAL` | As `initiated_at` |
+
+**Served to staff by the transfer reads** (`P17-TSK-027`, 2026-11-20), under `TRANSFER_READ` on a `MULTI_FACTOR` session, every answer recorded. A customer's transfers in a window of at most 92 days (`GET /v1/operator/transfers`, `transfers.TransfersListed`) serve `id`, `source_account_id`, `destination_account_id`, `amount_minor` at its `scale` with its `currency`, `status`, `failure_reason` and `initiated_at`; one transfer (`GET /v1/operator/transfers/{id}`, `transfers.TransferRead`) adds `customer_id`, `journal_entry_id`, `reversal_entry_id` and `reversed_at`. **Never** `reference` - a person's free text, `RESTRICTED-PII` - nor `initiated_by` or `reversed_by`. The records name no amount.
 
 ### `transfers.beneficiary` — *added by `P4-TSK-006`*
 

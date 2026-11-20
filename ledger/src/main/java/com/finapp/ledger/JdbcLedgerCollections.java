@@ -93,6 +93,42 @@ public final class JdbcLedgerCollections implements LedgerCollections {
     }
 
     @Override
+    public List<AccountLine> accountLines(
+            Connection unitOfWork, LedgerAccountId account, Optional<LineCursor> after, int limit) {
+        requirePage(limit);
+        StringBuilder sql = new StringBuilder("SELECT line.entry_id, line.seq, line.direction, line.amount_minor, line.currency,"
+                + " line.scale, entry.entry_type, entry.posting_date, entry.value_date, entry.created_at"
+                + " FROM ledger.journal_line line JOIN ledger.journal_entry entry ON entry.id = line.entry_id"
+                + " WHERE line.ledger_account_id = ?");
+        List<Object> arguments = new ArrayList<>(List.of(account.value()));
+        after.ifPresent(cursor -> {
+            sql.append(" AND (line.entry_id, line.seq) < (?, ?)");
+            arguments.add(cursor.entryId());
+            arguments.add(cursor.seq());
+        });
+        sql.append(" ORDER BY line.entry_id DESC, line.seq DESC LIMIT ?");
+        arguments.add(limit);
+        List<AccountLine> page = new ArrayList<>();
+        try (PreparedStatement read = prepared(unitOfWork, sql.toString(), arguments); ResultSet rows = read.executeQuery()) {
+            while (rows.next()) {
+                page.add(new AccountLine(
+                        rows.getObject("entry_id", UUID.class),
+                        rows.getInt("seq"),
+                        JournalEntryType.valueOf(rows.getString("entry_type")),
+                        rows.getDate("posting_date").toLocalDate(),
+                        rows.getDate("value_date").toLocalDate(),
+                        rows.getTimestamp("created_at").toInstant(),
+                        rows.getString("direction"),
+                        rows.getString("currency").stripTrailing(),
+                        BigDecimal.valueOf(rows.getLong("amount_minor"), rows.getInt("scale"))));
+            }
+        } catch (SQLException failure) {
+            throw new LedgerStorageException(DatabaseFailure.describe("reading an account's lines", failure));
+        }
+        return page;
+    }
+
+    @Override
     public List<EntryHead> entries(Connection unitOfWork, EntryFilter filter, Optional<EntryCursor> after, int limit) {
         requirePage(limit);
         StringBuilder sql = new StringBuilder(ENTRY_COLUMNS).append(" WHERE entry.posting_date >= ? AND entry.posting_date <= ?");

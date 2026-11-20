@@ -37,7 +37,13 @@ class EveryCustomerReadIsRecordedTest {
             // P17-TSK-026: the customer lookup, profile and consent history (CUSTOMER_READ).
             "CustomerReadController#lookUpCustomer", "party.CustomerLookedUp",
             "CustomerReadController#readCustomer", "party.CustomerRead",
-            "CustomerReadController#listPartyConsents", "consent.HistoryRead");
+            "CustomerReadController#listPartyConsents", "consent.HistoryRead",
+            // P17-TSK-027: the accounts and transfers (ACCOUNT_READ, TRANSFER_READ).
+            "AccountTransferReadController#listCustomerAccounts", "accounts.CustomerAccountsListed",
+            "AccountTransferReadController#readAccount", "accounts.AccountRead",
+            "AccountTransferReadController#listAccountEntries", "ledger.AccountLinesListed",
+            "AccountTransferReadController#listCustomerTransfers", "transfers.TransfersListed",
+            "AccountTransferReadController#readTransfer", "transfers.TransferRead");
 
     @Autowired private ApplicationContext context;
 

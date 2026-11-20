@@ -87,6 +87,12 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/customers/lookup", PermissionName.CUSTOMER_READ),
                     entry("GET /v1/operator/customers/{id}", PermissionName.CUSTOMER_READ),
                     entry("GET /v1/operator/parties/{id}/consents", PermissionName.CUSTOMER_READ),
+                    // P17-TSK-027: a customer's accounts, balances, ledger lines and transfers - the support desk's reads.
+                    entry("GET /v1/operator/customers/{id}/accounts", PermissionName.ACCOUNT_READ),
+                    entry("GET /v1/operator/accounts/{id}", PermissionName.ACCOUNT_READ),
+                    entry("GET /v1/operator/accounts/{id}/entries", PermissionName.ACCOUNT_READ),
+                    entry("GET /v1/operator/transfers", PermissionName.TRANSFER_READ),
+                    entry("GET /v1/operator/transfers/{id}", PermissionName.TRANSFER_READ),
                     // P17-TSK-017: the audit trail, read - the AUDITOR's alone (ADR-C134; the owner, 2026-11-18).
                     entry("GET /v1/operator/audit-records", PermissionName.AUDIT_READ),
                     entry("GET /v1/operator/audit-records/{id}", PermissionName.AUDIT_READ),
@@ -775,6 +781,12 @@ class RoutePermissionRegisterTest {
             "POST /v1/operator/customers/lookup",
             "GET /v1/operator/customers/{id}",
             "GET /v1/operator/parties/{id}/consents",
+            // P17-TSK-027: what a customer holds and moves - every customer read on a factor, as P17-TSK-026's.
+            "GET /v1/operator/customers/{id}/accounts",
+            "GET /v1/operator/accounts/{id}",
+            "GET /v1/operator/accounts/{id}/entries",
+            "GET /v1/operator/transfers",
+            "GET /v1/operator/transfers/{id}",
             // P17-TSK-014: who holds the privileged roles, one of them, and who a login names - the same map, not on a password.
             "GET /v1/operator/identities",
             "GET /v1/operator/identities/{id}",

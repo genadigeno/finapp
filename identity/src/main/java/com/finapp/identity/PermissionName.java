@@ -864,7 +864,7 @@ public enum PermissionName {
      */
     public boolean guardsAnAct() {
         return switch (this) {
-            case ACCOUNTING_READ, FX_INVESTIGATE, AUDIT_READ -> false;
+            case ACCOUNTING_READ, FX_INVESTIGATE, AUDIT_READ, ACCOUNT_READ, TRANSFER_READ -> false;
             default -> true;
         };
     }
@@ -878,6 +878,7 @@ public enum PermissionName {
      * {@code MULTI_FACTOR}.
      */
     public boolean readsBehindAFactor() {
-        return this == AUDIT_READ;
+        // P17-TSK-027: the account and transfer reads, every one on a MULTI_FACTOR session as every customer read is.
+        return this == AUDIT_READ || this == ACCOUNT_READ || this == TRANSFER_READ;
     }
 }

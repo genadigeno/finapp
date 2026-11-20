@@ -129,6 +129,47 @@ public final class JdbcTransferStore implements TransferStore<Connection> {
     }
 
     @Override
+    public List<Transfer> pageFor(
+            Connection unitOfWork,
+            UUID customerId,
+            Instant from,
+            Instant to,
+            Optional<TransferStatus> status,
+            Optional<TransferCursor> after,
+            int limit) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(customerId, "customerId must not be null");
+        StringBuilder sql = new StringBuilder("SELECT " + COLUMNS + " FROM transfers.transfer"
+                + " WHERE customer_id = ? AND initiated_at >= ? AND initiated_at < ?");
+        status.ifPresent(any -> sql.append(" AND status = ?"));
+        after.ifPresent(any -> sql.append(" AND (initiated_at, id) < (?, ?)"));
+        sql.append(" ORDER BY initiated_at DESC, id DESC LIMIT ?");
+        try (PreparedStatement read = unitOfWork.prepareStatement(sql.toString())) {
+            int parameter = 1;
+            read.setObject(parameter++, customerId);
+            read.setTimestamp(parameter++, Timestamp.from(from));
+            read.setTimestamp(parameter++, Timestamp.from(to));
+            if (status.isPresent()) {
+                read.setString(parameter++, status.get().name());
+            }
+            if (after.isPresent()) {
+                read.setTimestamp(parameter++, Timestamp.from(after.get().initiatedAt()));
+                read.setObject(parameter++, after.get().transferId());
+            }
+            read.setInt(parameter, limit);
+            List<Transfer> page = new ArrayList<>();
+            try (ResultSet rows = read.executeQuery()) {
+                while (rows.next()) {
+                    page.add(rehydrate(rows));
+                }
+            }
+            return page;
+        } catch (SQLException failure) {
+            throw new TransfersStorageException(DatabaseFailure.describe("reading a page of a customer's transfers", failure));
+        }
+    }
+
+    @Override
     public List<Transfer> listFor(Connection unitOfWork, UUID customerId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(customerId, "customerId must not be null");

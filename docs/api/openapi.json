@@ -13008,6 +13008,41 @@
         ],
         "type": "object"
       },
+      "AccountDetail": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "asOf": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "balances": {
+            "items": {
+              "$ref": "#/components/schemas/BalanceView"
+            },
+            "type": "array"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "productType": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusChangedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AccountOpenRequest": {
         "properties": {
           "currency": {
@@ -13353,6 +13388,42 @@
           "withdrawals": {
             "format": "int64",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "AgreementPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgreementRow"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AgreementRow": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "productType": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "statusChangedAt": {
+            "format": "date-time",
+            "type": "string"
           }
         },
         "type": "object"
@@ -13835,6 +13906,23 @@
             "type": "array"
           },
           "kind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BalanceView": {
+        "properties": {
+          "available": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "held": {
+            "type": "string"
+          },
+          "posted": {
             "type": "string"
           }
         },
@@ -23018,6 +23106,56 @@
             "type": "string"
           },
           "requestedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LinePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LineRow"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LineRow": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "entryId": {
+            "type": "string"
+          },
+          "entryType": {
+            "type": "string"
+          },
+          "line": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "postedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "postingDate": {
+            "format": "date",
+            "type": "string"
+          },
+          "valueDate": {
+            "format": "date",
             "type": "string"
           }
         },
@@ -33726,6 +33864,63 @@
         ],
         "type": "object"
       },
+      "TransferDetail": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "destinationAccountId": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "initiatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "reversalEntryId": {
+            "type": "string"
+          },
+          "reversedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sourceAccountId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "transferId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TransferPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TransferRow"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "TransferReversalRequest": {
         "properties": {
           "reason": {
@@ -33738,6 +33933,36 @@
         "required": [
           "reason"
         ],
+        "type": "object"
+      },
+      "TransferRow": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "destinationAccountId": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "initiatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sourceAccountId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "transferId": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "TransferView": {
@@ -40435,6 +40660,84 @@
         }
       }
     },
+    "/v1/operator/accounts/{id}": {
+      "get": {
+        "operationId": "readAccount",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDetail"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/accounts/{id}/entries": {
+      "get": {
+        "operationId": "listAccountEntries",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "currency",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinePage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/audit-records": {
       "get": {
         "operationId": "listAuditRecords",
@@ -42533,6 +42836,49 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CustomerProfile"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/customers/{id}/accounts": {
+      "get": {
+        "operationId": "listCustomerAccounts",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgreementPage"
                 }
               }
             },
@@ -50941,6 +51287,100 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FetchAnswer"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/transfers": {
+      "get": {
+        "operationId": "listCustomerTransfers",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "customerId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/transfers/{id}": {
+      "get": {
+        "operationId": "readTransfer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferDetail"
                 }
               }
             },

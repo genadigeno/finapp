@@ -55,6 +55,24 @@ public interface TransferStore<T> {
      */
     List<Transfer> listFor(T unitOfWork, UUID customerId);
 
+    /** Where a page of a customer's transfers ended: the last one it served. */
+    record TransferCursor(java.time.Instant initiatedAt, UUID transferId) {}
+
+    /**
+     * A page of one customer's transfers initiated in {@code [from, to)}, of {@code status} when given, newest first, the id
+     * breaking a tie, strictly after {@code after}, at most {@code limit} (`P17-TSK-027`, the operator's read under
+     * {@code TRANSFER_READ}, every page recorded at app's door). One range of {@code transfer_by_customer}: the customer is
+     * required, so a page costs that customer's transfers in the window, never the platform's.
+     */
+    List<Transfer> pageFor(
+            T unitOfWork,
+            UUID customerId,
+            java.time.Instant from,
+            java.time.Instant to,
+            Optional<TransferStatus> status,
+            Optional<TransferCursor> after,
+            int limit);
+
     /**
      * The transfer {@code transfer}, read {@code FOR UPDATE} — the reversal's serialisation
      * point (`P4-TSK-009`, the `P2-TSK-015` lock-then-look idiom): the loser of two concurrent

@@ -64,6 +64,28 @@ public enum AccountsAuditAction implements AuditableAction {
             "accounts.WalletCurrencyAdded",
             "A wallet currency was added to a customer account product; the record names the"
                     + " account, the currency and the ledger account, never a balance.",
+            false),
+
+    /**
+     * An operator was served a page of a customer's agreements (`P17-TSK-027`; {@code GET /v1/operator/customers/{id}/accounts},
+     * {@code ACCOUNT_READ}, on a {@code MULTI_FACTOR} session; finapp-admin-panel ADR-C132 decision 5): once per page, the
+     * customer the target, whether it followed a cursor and how many it served the summary. Written by app's
+     * {@code RecordedReads} in the read's own transaction.
+     */
+    CUSTOMER_ACCOUNTS_LISTED(
+            "accounts.CustomerAccountsListed",
+            "An operator was served a page of a customer's agreements; the customer and a count recorded.",
+            false),
+
+    /**
+     * An operator read one agreement with its balances as of a stated instant (`P17-TSK-027`;
+     * {@code GET /v1/operator/accounts/{id}}, {@code ACCOUNT_READ}, on a {@code MULTI_FACTOR} session): the agreement the
+     * target, its customer and the instant the balances were read as of the summary - never an amount.
+     */
+    ACCOUNT_READ(
+            "accounts.AccountRead",
+            "An operator read an agreement and its balances; the agreement, its customer and the as-of instant recorded, never"
+                    + " an amount.",
             false);
 
     private final String code;

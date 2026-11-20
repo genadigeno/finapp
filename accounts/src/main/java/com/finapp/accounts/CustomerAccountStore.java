@@ -94,6 +94,17 @@ public interface CustomerAccountStore<T> {
      */
     Optional<CustomerAccount> findById(T unitOfWork, CustomerAccountId accountId);
 
+    /** Where a page of a customer's agreements ended: the last one it served. */
+    record AgreementCursor(java.time.Instant openedAt, UUID accountId) {}
+
+    /**
+     * A page of one customer's agreements, every status, newest opening first, the id breaking a tie, strictly after
+     * {@code after} when given, at most {@code limit} (`P17-TSK-027`, the operator's read under {@code ACCOUNT_READ}). The customer
+     * is named by an operator - somebody else by design - and every page is recorded at app's door. One range of
+     * {@code customer_account_by_customer}; a customer holds a handful of agreements.
+     */
+    java.util.List<CustomerAccount> pageFor(T unitOfWork, UUID customerId, Optional<AgreementCursor> after, int limit);
+
     /**
      * {@link #findOwnedBy}, read {@code FOR UPDATE} — the closer's serialization point
      * (`P3-TSK-014`): N concurrent closes queue here, one closes, and the rest re-read
