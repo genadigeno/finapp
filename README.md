@@ -30,11 +30,11 @@ repository on 2026-11-21. Other documents cite this README by its older section 
 | 🧩 **Modules** | **25 Gradle modules**: 22 domain or platform modules, the pure `creditmath`, the `migrator` and the `app` |
 | 🗄️ **Schema** | **388 forward-only Flyway migrations** across **21 schema-owning modules**, one PostgreSQL schema per module |
 | 🌐 **API** | **558 published paths, 604 operations** (456 of them on the operator surface), 871 schemas, in [`docs/api/openapi.json`](docs/api/openapi.json), generated from the running application and compared byte for byte on every build |
-| 📐 **Decisions** | **149 ADRs** in [`docs/adr/`](docs/adr/README.md): 147 `Accepted`, 2 `Proposed` |
+| 📐 **Decisions** | **150 ADRs** in [`docs/adr/`](docs/adr/README.md): 148 `Accepted`, 2 `Proposed` |
 | 🔒 **Invariants** | **171 financial and platform invariants** (`INV-*`) in [`docs/domain/FINANCIAL_INVARIANTS.md`](docs/domain/FINANCIAL_INVARIANTS.md) |
-| 🧾 **Audit and errors** | **469 auditable actions** ([`AUDITABLE_ACTIONS.md`](docs/architecture/AUDITABLE_ACTIONS.md)) and **398 error codes** ([`ERROR_CONTRACT.md`](docs/architecture/ERROR_CONTRACT.md)), both reconciled with the code by guard tests |
-| 💻 **Code** | 3,147 production Java files (~448k lines), 1,956 test files and 50 test fixtures; 12,471 test methods |
-| 📦 **History** | 2,323 commits, 2026-08-31 to 2026-11-21 |
+| 🧾 **Audit and errors** | **469 auditable actions** ([`AUDITABLE_ACTIONS.md`](docs/architecture/AUDITABLE_ACTIONS.md)) and **399 error codes** ([`ERROR_CONTRACT.md`](docs/architecture/ERROR_CONTRACT.md)), both reconciled with the code by guard tests |
+| 💻 **Code** | 3,151 production Java files (~448k lines), 1,957 test files and 50 test fixtures; 12,495 test methods |
+| 📦 **History** | 2,327 commits, 2026-08-31 to 2026-11-21 |
 
 ## 1.2 Where the project is
 
@@ -139,7 +139,7 @@ time-based coordination uses the database's clock, and schedules are leaderless 
 | `risk` | Signals, rules, decisions, cases, AML monitoring | 246 / 117 | 22 |
 | `accounting` | GL mapping, accounting periods, the close, statements and regulatory reports | 182 / 73 | 19 |
 | `migrator` | The Flyway runner shipped as the `finapp-migrator` image | 12 / 10 | - |
-| `app` | The Spring Boot application: HTTP doors, wiring, the API contract and the architecture rules | 968 / 1,103 | - |
+| `app` | The Spring Boot application: HTTP doors, wiring, the API contract and the architecture rules | 972 / 1,104 | - |
 
 Which module owns what, and why, is in [`MODULE_ARCHITECTURE.md`](docs/architecture/MODULE_ARCHITECTURE.md) and
 [`BOUNDED_CONTEXTS.md`](docs/architecture/BOUNDED_CONTEXTS.md). The build fails on a dependency that crosses a boundary
@@ -509,7 +509,7 @@ tested this way are recorded as owed.
 
 The project is delivered in **phases**, each with a written plan, tasks, and a clear definition of "done". A phase is
 not finished when its tasks are. It is finished when a formal review says so, and several reviews have sent a phase
-back for more work. Every significant decision is recorded with its reasons (149 so far). Every task goes through
+back for more work. Every significant decision is recorded with its reasons (150 so far). Every task goes through
 three steps: design first, then build, then a completion check that looks for gaps.
 
 The project owner is building finapp deliberately to develop deep expertise in financial systems and system design. The
