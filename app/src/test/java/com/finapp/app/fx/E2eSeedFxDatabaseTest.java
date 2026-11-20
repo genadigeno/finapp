@@ -175,7 +175,7 @@ class E2eSeedFxDatabaseTest {
         Answer reference = post(console, "/v1/operator/fx/pricing-policies", PricingPolicyV1.json("e2e: the runbook's version 1"));
         assertThat(reference.status()).as(reference.body()).isEqualTo(201);
         String referenceId = field(reference.body(), "id");
-        JsonNode versions = JSON.readTree(send("GET", console, "/v1/operator/fx/pricing-policies", null, false).body()).get("versions");
+        JsonNode versions = JSON.readTree(send("GET", console, "/v1/operator/fx/pricing-policies", null, false).body()).get("items");
         assertThat(terms(versions, proposed, "pairs")).hasSize(40).isEqualTo(terms(versions, referenceId, "pairs"));
         Answer withdrawn = post(console, "/v1/operator/fx/pricing-policies/" + referenceId + "/rejection",
                 "{\"reason\":\"e2e: compared, withdrawn\"}");
