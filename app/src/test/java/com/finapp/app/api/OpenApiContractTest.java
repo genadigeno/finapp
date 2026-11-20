@@ -853,6 +853,16 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/routing-policy/versions",
                         ApiVersion.CURRENT_PREFIX + "/operator/rails/{rail}/availability",
                         ApiVersion.CURRENT_PREFIX + "/operator/payments/{intentId}/routing",
+                        // P17-TSK-032: the payment reads - the search and one payment, a party's methods, the
+                        // payments report, the dispute queue, the held card payments, the versions and the rails read back.
+                        ApiVersion.CURRENT_PREFIX + "/operator/payments",
+                        ApiVersion.CURRENT_PREFIX + "/operator/payments/{intentId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/parties/{partyId}/payment-methods",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/payments",
+                        ApiVersion.CURRENT_PREFIX + "/operator/disputes",
+                        ApiVersion.CURRENT_PREFIX + "/operator/held-payments",
+                        ApiVersion.CURRENT_PREFIX + "/operator/routing-policy/versions/{version}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/rails",
                         // P7-TSK-012: the dispute reads (ADR-0061) - the merchant's pair on
                         // its key, tenant-scoped in the statement; the operator's pair behind
                         // DISPUTE_ADMINISTER, every dispute shown audited. Read-only: the

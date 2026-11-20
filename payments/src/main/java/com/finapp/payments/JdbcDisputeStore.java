@@ -42,8 +42,11 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
             "id, provider, provider_dispute_reference, attempt_id, reason, stage,"
                     + MONEY_COLUMNS + ", respond_by, opened_at";
 
-    /** The read surfaces' shape: the dispute's columns, and the payment its attempt serves. */
-    private static final String FOUND =
+    /**
+     * The read surfaces' shape: the dispute's columns, and the payment its attempt serves - package-visible for the operator's
+     * queue ({@link JdbcPaymentCollections}, `P17-TSK-032`), so a queue row and a by-id read never describe one dispute two ways.
+     */
+    static final String FOUND =
             "SELECT d.id, d.provider, d.provider_dispute_reference, d.attempt_id, d.reason,"
                     + " d.stage, d.chargeback_amount_minor, d.chargeback_currency,"
                     + " d.chargeback_scale, d.counterparty_share_amount_minor,"
@@ -627,7 +630,7 @@ public final class JdbcDisputeStore implements DisputeStore<Connection> {
         return List.copyOf(found);
     }
 
-    private static Found found(ResultSet row) throws SQLException {
+    static Found found(ResultSet row) throws SQLException {
         return new Found(map(row), PaymentIntentId.of(row.getObject("intent_id", UUID.class)));
     }
 

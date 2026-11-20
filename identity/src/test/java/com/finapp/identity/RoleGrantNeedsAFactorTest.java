@@ -72,7 +72,9 @@ class RoleGrantNeedsAFactorTest {
     void onlyTheReadsNeedNone() {
         assertThat(Arrays.stream(PermissionName.values()).filter(permission -> !permission.guardsAnAct()))
                 .containsExactlyInAnyOrder(PermissionName.ACCOUNTING_READ, PermissionName.FX_INVESTIGATE, PermissionName.AUDIT_READ,
-                        PermissionName.ACCOUNT_READ, PermissionName.TRANSFER_READ);
+                        PermissionName.ACCOUNT_READ, PermissionName.TRANSFER_READ,
+                        // P17-TSK-032: every route under it reads.
+                        PermissionName.PAYMENT_READ);
     }
 
     @Test

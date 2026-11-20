@@ -456,6 +456,61 @@ public enum PaymentsAuditAction implements AuditableAction {
             "payments.ChargebackRatioRead",
             "An operator read the chargeback-ratio report; the record names the period and how"
                     + " many credited accounts it counted, never a merchant or an amount.",
+            false),
+
+    /**
+     * A holder of {@code PAYMENT_READ} was served a page of the payment search (`P17-TSK-032`, gap G-40; finapp-admin-panel
+     * ADR-C132 decision 5): written by {@code RecordedReads} in the read's own transaction, so no page is served unrecorded.
+     * The target the search (the party or merchant named, or {@code all}); the summary the window, the filters, whether the
+     * page continued a walk and how many it served - never an amount.
+     */
+    PAYMENTS_LISTED(
+            "payments.PaymentsListed",
+            "A page of the payment search was served to an operator; the record names the window, the filters and a count,"
+                    + " never an amount.",
+            false),
+
+    /**
+     * A holder of {@code PAYMENT_READ} was served one payment with its attempt, refunds, routing decision and disputes
+     * (`P17-TSK-032`, gap G-40), recorded in the read's own transaction. The target the payment; the summary its status and
+     * how many refunds and disputes it served - never an amount.
+     */
+    PAYMENT_READ(
+            "payments.PaymentRead",
+            "One payment was served to an operator with its attempt, refunds, routing decision and disputes; the record names"
+                    + " the payment and counts, never an amount.",
+            false),
+
+    /**
+     * A holder of {@code DISPUTE_ADMINISTER} was served a page of the dispute queue (`P17-TSK-032`, gap G-42), in the read's
+     * own transaction - the bnpl queue's {@code bnpl.DisputeQueueRead} shape. The target the stage read, or {@code all}; the
+     * summary the deadline bound, whether the page continued a walk and how many it served - never an amount.
+     */
+    DISPUTE_QUEUE_READ(
+            "payments.DisputeQueueRead",
+            "A page of the dispute queue was served to an operator; the record names the stage, the deadline bound and a"
+                    + " count, never an amount.",
+            false),
+
+    /**
+     * A holder of {@code PAYMENT_READ} was served the payments report for a day (`P17-TSK-032`, gap G-45): the day's payments
+     * by rail and outcome and the unknown-state backlog now, in the read's own transaction. The target the day; the summary
+     * how many rows it served - never an amount.
+     */
+    PAYMENTS_REPORT_READ(
+            "payments.PaymentsReportRead",
+            "The payments report for a day was served to an operator; the record names the day and its row counts.",
+            false),
+
+    /**
+     * A holder of {@code RISK_INVESTIGATE} was served a page of the held card payments (`P17-TSK-032`, gap G-43): the open
+     * capture holds, the reader's own party's withheld, in the read's own transaction. The doors that capture or void a held
+     * payment stay risk's (ADR-0112). The summary whether the page continued a walk and how many it served - never an amount.
+     */
+    HELD_PAYMENTS_LISTED(
+            "payments.HeldPaymentsListed",
+            "A page of the held card payments was served to a risk investigator, the reader's own party withheld; the record"
+                    + " names a count, never an amount.",
             false);
 
     private final String code;

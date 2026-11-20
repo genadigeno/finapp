@@ -177,6 +177,10 @@ class StampOrderedReadsAreJudgedTest {
                 SWEEP_AGE);
         read("merchant.JdbcMerchantPayoutStore|MIN_MAX|min(case when p.status = '' then coalesce(h.entered, p.created_at) else p.last_dispatched_at end)", 1, Judgement.DISPLAYS,
                 GAUGE);
+        // P17-TSK-032: the payments report's unknown-state backlog - the oldest attempt's and refund's creation, shown and never
+        // branched on.
+        read("payments.JdbcPaymentCollections|MIN_MAX|min(created_at)", 2, Judgement.DISPLAYS,
+                GAUGE);
         read("payments.JdbcCaptureHoldStore|SINGLE_ROW|held_until, intent_id", 1, Judgement.SCHEDULES,
                 CLAIM);
         read("payments.JdbcDisputeResponseStore|MIN_MAX|max(occurred_at)", 2, Judgement.SCHEDULES,

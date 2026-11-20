@@ -68,6 +68,14 @@ public final class RoutingAdministration {
      */
     public static final String IDEMPOTENCY_SCOPE = "payments.routing.version";
 
+    /**
+     * The rail switch's claim (`P17-TSK-032`, finapp-admin-panel ADR-C135 decision 2): {@code
+     * payments.rail.availability:<keyedType>:<actorId>}. The switch converged on the state a rail already had, but its RECORD
+     * did not: a lost response retried wrote a second act on the trail and moved the fact's instant. Keyed, the retry answers
+     * the original act and records nothing.
+     */
+    public static final String AVAILABILITY_IDEMPOTENCY_SCOPE = "payments.rail.availability";
+
     static final String VERSION_TARGET_TYPE = "routing_policy_version";
     static final String RAIL_TARGET_TYPE = "rail";
 
@@ -82,6 +90,9 @@ public final class RoutingAdministration {
 
     /** The keyed creation's answer: the version, and whether this call replayed it. */
     public record CreatedVersion(RoutingPolicyVersion version, boolean replayed) {}
+
+    /** The keyed switch's answer: the act's fact, and whether this call replayed it (`P17-TSK-032`). */
+    public record SwitchedAvailability(RailAvailability fact, boolean replayed) {}
 
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final RoutingStore<Connection> routing;
@@ -218,18 +229,62 @@ public final class RoutingAdministration {
      *
      * @throws UnknownRailException if this build declares no such rail
      */
-    public RailAvailability setAvailability(
-            Connection unitOfWork, RailId rail, boolean available, String reason) {
+    public SwitchedAvailability setAvailability(
+            Connection unitOfWork, RailId rail, boolean available, String reason, String idempotencyKey) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(rail, "rail must not be null");
         Objects.requireNonNull(reason, "reason must not be null");
+        Objects.requireNonNull(idempotencyKey, "idempotencyKey must not be null");
         Actor actor = SecurityContext.require();
         Correlation correlation = resolvedCorrelation();
 
+        // Refused before the claim, so a typo consumes no key (createVersion's order).
         if (!rails.declaredIds().contains(rail)) {
             throw new UnknownRailException(rail);
         }
 
+        IdempotencyKey key =
+                new IdempotencyKey(
+                        AVAILABILITY_IDEMPOTENCY_SCOPE + ":" + actor.keyedType().name() + ":" + actor.id(),
+                        idempotencyKey);
+        // What one key must always mean: the operator, the rail, the state and the reason (INV-IDEM-03).
+        String canonical = AVAILABILITY_IDEMPOTENCY_SCOPE + "|" + actor.id() + "|" + rail.value() + "|" + available
+                + "|" + reason;
+        IdempotentExecutor.ExecutionOutcome outcome =
+                executor.execute(
+                        unitOfWork,
+                        key,
+                        RequestFingerprint.sha256(canonical.getBytes(StandardCharsets.UTF_8)),
+                        uow -> {
+                            RailAvailability recorded = switchAvailability(uow, rail, available, reason, actor, correlation);
+                            // The act's instant is all a replay needs: the rest is the request the key binds.
+                            return CommandResult.succeeded(
+                                    StoredResponse.of(
+                                            recorded.changedAt().toString().getBytes(StandardCharsets.UTF_8),
+                                            "text/plain"));
+                        });
+        Instant changedAt =
+                Instant.parse(
+                        new String(
+                                outcome.body()
+                                        .orElseThrow(
+                                                () ->
+                                                        new IllegalStateException(
+                                                                "a recorded availability switch always"
+                                                                        + " names its instant")),
+                                StandardCharsets.UTF_8));
+        return new SwitchedAvailability(
+                new RailAvailability(rail, available, reason, actor.id(), changedAt), outcome.replayed());
+    }
+
+    /** The act under the key: the newest fact on the row and its audit record, one commit. */
+    private RailAvailability switchAvailability(
+            Connection unitOfWork,
+            RailId rail,
+            boolean available,
+            String reason,
+            Actor actor,
+            Correlation correlation) {
         RailAvailability fact =
                 new RailAvailability(rail, available, reason, actor.id(), Instant.now(clock));
         routing.recordAvailability(unitOfWork, fact);

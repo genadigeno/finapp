@@ -52,7 +52,12 @@ class EveryCustomerReadIsRecordedTest {
             // P17-TSK-029: the KYC reviewer's reads, under KYC_REVIEW and COUNTERPARTY_SCREENING_REVIEW, held by their mark.
             Map.entry("KycQueueController#listKycReviewQueue", "kyc.ReviewQueueRead"),
             Map.entry("KycQueueController#readCustomerLatestKycCase", "kyc.CaseRead"),
-            Map.entry("KycQueueController#listCounterpartyScreeningBacklog", "kyc.ScreeningBacklogRead"));
+            Map.entry("KycQueueController#listCounterpartyScreeningBacklog", "kyc.ScreeningBacklogRead"),
+            // P17-TSK-032: the payment reads under PAYMENT_READ.
+            Map.entry("PaymentReadController#listOperatorPayments", "payments.PaymentsListed"),
+            Map.entry("PaymentReadController#viewOperatorPayment", "payments.PaymentRead"),
+            Map.entry("PaymentReadController#listPartyPaymentMethods", "paymentmethods.PaymentMethodsRead"),
+            Map.entry("PaymentReadController#readPaymentsReport", "payments.PaymentsReportRead"));
 
     @Autowired private ApplicationContext context;
 

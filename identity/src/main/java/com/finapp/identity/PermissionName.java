@@ -118,8 +118,10 @@ public enum PermissionName {
 
     /**
      * Read payments on the operator surface (`P17-TSK-025`, served by `P17-TSK-032`; ADR-C132). Never {@link #PAYMENT_REFUND}.
-     * Every read recorded. The {@code CUSTOMER_SUPPORT_AGENT}'s alone. Until `P17-TSK-032` it guards no route, so it counts as
-     * an act ({@link #guardsAnAct}) and its holder needs a factor: the rule fails towards one.
+     * Every read recorded. The {@code CUSTOMER_SUPPORT_AGENT}'s alone. Until `P17-TSK-032` it guarded no route, so it counted as
+     * an act ({@link #guardsAnAct}) and its holder needed a factor: the rule failed towards one. Since `P17-TSK-032` every route
+     * under it reads - the payment search and one payment, a party's methods, the payments report - so it guards no act
+     * ({@code EveryOperatorActRequiresAFactorTest} holds the answer to the routes); the support role's other reads still do.
      */
     PAYMENT_READ,
 
@@ -880,7 +882,7 @@ public enum PermissionName {
      */
     public boolean guardsAnAct() {
         return switch (this) {
-            case ACCOUNTING_READ, FX_INVESTIGATE, AUDIT_READ, ACCOUNT_READ, TRANSFER_READ -> false;
+            case ACCOUNTING_READ, FX_INVESTIGATE, AUDIT_READ, ACCOUNT_READ, TRANSFER_READ, PAYMENT_READ -> false;
             default -> true;
         };
     }
