@@ -1344,7 +1344,28 @@ public class PaymentBeans {
                 // The push rail exists only where the instant scheme is configured
                 // (P7-TSK-010): the return-payment mode needs it, the card modes never
                 // touch it, and the absent case is the honest 503 at dispatch.
-                java.util.Optional.ofNullable(pushRail.getIfAvailable()));
+                java.util.Optional.ofNullable(pushRail.getIfAvailable()),
+                // P17-TSK-031 (ADR-0154): the four-eyes threshold, versioned in payments V043.
+                new com.finapp.payments.JdbcRefundThresholds());
+    }
+
+    /** A refund above the threshold, by four eyes (`P17-TSK-031`, ADR-0154). */
+    @Bean
+    com.finapp.payments.RefundProposals refundProposals(
+            AuditWriter<Connection> auditWriter, IdGenerator ids, Clock clock) {
+        return new com.finapp.payments.RefundProposals(new com.finapp.payments.JdbcRefundProposalStore(), auditWriter, ids,
+                clock);
+    }
+
+    /** The refund door's four-eyes half (`P17-TSK-031`): the proposal above the threshold, its approval and rejection. */
+    @Bean
+    RefundDesk refundDesk(
+            PaymentService paymentService,
+            com.finapp.payments.RefundProposals refundProposals,
+            com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
+            TransactionTemplate paymentTransactions,
+            DataSource dataSource) {
+        return new RefundDesk(paymentService, refundProposals, idempotentExecutor, paymentTransactions, dataSource);
     }
 
     /**

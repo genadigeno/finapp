@@ -698,7 +698,8 @@ class BnplMerchantPayoutDatabaseTest {
     /** The application's payout composition with the counting wire - one more instance of it. */
     private MerchantPayouts payoutsSendingTo(PayoutProvider wire) {
         return new MerchantPayouts(runner(), idempotentExecutor, new com.finapp.merchant.JdbcMerchantStore(),
-                destinations, ledgerAccountStore, holds, payoutStore, wire, outcomes, evidence, auditWriter, IDS, clock);
+                destinations, ledgerAccountStore, holds, payoutStore, wire, outcomes, evidence, auditWriter, IDS, clock,
+                (unitOfWork, amount) -> java.util.Optional.empty() /* P17-TSK-031: payout mechanics, never four eyes */);
     }
 
     private MerchantPayoutResolution resolver(PayoutProvider wire) {

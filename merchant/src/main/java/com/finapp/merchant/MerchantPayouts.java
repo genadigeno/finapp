@@ -87,6 +87,23 @@ public final class MerchantPayouts {
     @NonNull private final Clock clock;
 
     /**
+     * The operator payout's four-eyes threshold (`P17-TSK-031`, ADR-0154): judged in {@link #dispatch} under the merchant's
+     * {@code FOR UPDATE} for an operator's payout - never a merchant's own - and above it the payout is refused for a second
+     * person's approval, which runs this command with an {@link ApprovalStep}. Last, so no existing argument moved.
+     */
+    @NonNull private final PayoutThresholds thresholds;
+
+    /**
+     * The approval of a payout proposal, run INSIDE the dispatch transaction right after the payout row is written
+     * (`P17-TSK-031`; ADR-C135 decision 4) - so the decision and the dispatch commit together or not at all. Throwing rolls the
+     * whole dispatch back.
+     */
+    @FunctionalInterface
+    public interface ApprovalStep {
+        void within(Connection unitOfWork, MerchantPayoutId payout);
+    }
+
+    /**
      * A payout request.
      *
      * @param reason an operator's reason, required of them and never of the merchant's own key
@@ -146,8 +163,21 @@ public final class MerchantPayouts {
             boolean firstSend,
             Instant permit) {}
 
-    @SuppressWarnings("try") // The platform Scope is used for its close side effect (the idiom).
     public Initiated initiate(InitiateCommand command) {
+        return initiate(command, Optional.empty());
+    }
+
+    /**
+     * {@link #initiate(InitiateCommand)} as a payout proposal's approval (`P17-TSK-031`): no threshold judged - this IS the
+     * second person - and {@code approval} run in the dispatch transaction beside the payout it writes.
+     */
+    public Initiated initiate(InitiateCommand command, ApprovalStep approval) {
+        Objects.requireNonNull(approval, "approval must not be null");
+        return initiate(command, Optional.of(approval));
+    }
+
+    @SuppressWarnings("try") // The platform Scope is used for its close side effect (the idiom).
+    private Initiated initiate(InitiateCommand command, Optional<ApprovalStep> approval) {
         Objects.requireNonNull(command, "command must not be null");
         Actor actor = SecurityContext.require();
         if (actor.type() == ActorType.MERCHANT
@@ -174,7 +204,7 @@ public final class MerchantPayouts {
                                         claimed -> {
                                             Dispatch dispatched =
                                                     dispatchOrConverge(
-                                                            claimed, command, actor, correlation);
+                                                            claimed, command, actor, correlation, approval);
                                             holder[0] = dispatched;
                                             return dispatched
                                                     .payout()
@@ -261,11 +291,11 @@ public final class MerchantPayouts {
     }
 
     private Dispatch dispatchOrConverge(
-            Connection unitOfWork, InitiateCommand command, Actor actor, Correlation correlation) {
+            Connection unitOfWork, InitiateCommand command, Actor actor, Correlation correlation, Optional<ApprovalStep> approval) {
         Optional<MerchantPayout> existing =
                 payouts.findByDispatchKey(unitOfWork, command.merchant(), command.idempotencyKey());
         if (existing.isEmpty()) {
-            return dispatch(unitOfWork, command, actor, correlation);
+            return dispatch(unitOfWork, command, actor, correlation, approval);
         }
         // THE TAKEOVER: this claim's lease expired with its payout already committed.
         MerchantPayout found = existing.get();
@@ -296,7 +326,11 @@ public final class MerchantPayouts {
     }
 
     private Dispatch dispatch(
-            Connection unitOfWork, InitiateCommand command, Actor actor, Correlation correlation) {
+            Connection unitOfWork,
+            InitiateCommand command,
+            Actor actor,
+            Correlation correlation,
+            Optional<ApprovalStep> approval) {
         // Serialised with suspension and closure, which lock this row to move it.
         Merchant merchant =
                 merchants.findByIdForUpdate(unitOfWork, command.merchant())
@@ -306,6 +340,15 @@ public final class MerchantPayouts {
         }
         if (!command.amount().currency().equals(merchant.settlementCurrency())) {
             throw new PayoutCurrencyMismatchException();
+        }
+        // FOUR EYES ABOVE THE THRESHOLD (P17-TSK-031, ADR-0154; ADR-C135 decision 3): an operator's payout - never a merchant's
+        // own by its key - judged under the merchant's FOR UPDATE just taken. Above it nothing is held, written or sent: the
+        // door makes it a proposal. An approval is the second person, so it is not judged again.
+        if (approval.isEmpty() && actor.type() != ActorType.MERCHANT) {
+            Optional<PayoutThresholds.Threshold> above = thresholds.requiresApproval(unitOfWork, command.amount());
+            if (above.isPresent()) {
+                throw new PayoutRequiresApprovalException(above.get(), command.amount());
+            }
         }
         PayoutDestination destination =
                 destinations.findEffectiveForShare(unitOfWork, command.merchant())
@@ -342,6 +385,8 @@ public final class MerchantPayouts {
                         actor,
                         command.reason());
         payouts.insert(unitOfWork, payout, command.idempotencyKey());
+        // The approval's decision, in this transaction, beside the payout it names (P17-TSK-031).
+        approval.ifPresent(step -> step.within(unitOfWork, payout.id()));
         recordInitiation(unitOfWork, payout, command, actor, correlation);
         outcomes.announceInitiated(unitOfWork, payout, correlation, payout.createdAt());
         return new Dispatch(

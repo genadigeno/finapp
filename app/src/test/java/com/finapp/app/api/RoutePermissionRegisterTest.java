@@ -101,6 +101,11 @@ class RoutePermissionRegisterTest {
                     // P17-TSK-031: a merchant closure's decision - terminal, so four eyes.
                     entry("POST /v1/operator/merchant-closures/{id}/approval", PermissionName.MERCHANT_CLOSE_APPROVE),
                     entry("POST /v1/operator/merchant-closures/{id}/rejection", PermissionName.MERCHANT_CLOSE_APPROVE),
+                    // P17-TSK-031: a refund and an operator payout above the four-eyes threshold, decided by a second person.
+                    entry("POST /v1/operator/refund-proposals/{id}/approval", PermissionName.PAYMENT_REFUND_APPROVE),
+                    entry("POST /v1/operator/refund-proposals/{id}/rejection", PermissionName.PAYMENT_REFUND_APPROVE),
+                    entry("POST /v1/operator/payout-proposals/{id}/approval", PermissionName.MERCHANT_PAYOUT_APPROVE),
+                    entry("POST /v1/operator/payout-proposals/{id}/rejection", PermissionName.MERCHANT_PAYOUT_APPROVE),
                     // P17-TSK-017: the audit trail, read - the AUDITOR's alone (ADR-C134; the owner, 2026-11-18).
                     entry("GET /v1/operator/audit-records", PermissionName.AUDIT_READ),
                     entry("GET /v1/operator/audit-records/{id}", PermissionName.AUDIT_READ),
@@ -791,6 +796,10 @@ class RoutePermissionRegisterTest {
             "POST /v1/operator/transfer-reversals/{id}/rejection",
             "POST /v1/operator/merchant-closures/{id}/approval",
             "POST /v1/operator/merchant-closures/{id}/rejection",
+            "POST /v1/operator/refund-proposals/{id}/approval",
+            "POST /v1/operator/refund-proposals/{id}/rejection",
+            "POST /v1/operator/payout-proposals/{id}/approval",
+            "POST /v1/operator/payout-proposals/{id}/rejection",
             // P17-TSK-014: who holds the privileged roles, one of them, and who a login names - the same map, not on a password.
             "GET /v1/operator/identities",
             "GET /v1/operator/identities/{id}",

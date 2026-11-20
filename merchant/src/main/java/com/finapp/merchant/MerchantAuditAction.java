@@ -87,6 +87,28 @@ public enum MerchantAuditAction implements AuditableAction {
             "A merchant's closure was proposed with a reason; nothing moved until a second person approves.",
             true),
 
+    /**
+     * A holder of {@code MERCHANT_PAYOUT} asked for an operator payout above the four-eyes threshold (`P17-TSK-031`,
+     * ADR-0154): a proposal, nothing held or sent; the record names the proposal and the threshold version, never an amount.
+     */
+    PAYOUT_PROPOSED(
+            "merchant.PayoutProposed",
+            "An operator payout above the four-eyes threshold was proposed with a reason; nothing moved until a second person"
+                    + " approves.",
+            true),
+
+    /** A holder of {@code MERCHANT_PAYOUT_APPROVE} approved a payout proposal (`P17-TSK-031`), in the payout's dispatch. */
+    PAYOUT_PROPOSAL_APPROVED(
+            "merchant.PayoutProposalApproved",
+            "A payout proposal was approved by a second person, with a reason; the payout dispatched in the same transaction.",
+            true),
+
+    /** A holder of {@code MERCHANT_PAYOUT_APPROVE} rejected a payout proposal it did not propose (`P17-TSK-031`). */
+    PAYOUT_PROPOSAL_REJECTED(
+            "merchant.PayoutProposalRejected",
+            "A payout proposal was rejected by a second person, with a reason; nothing moved.",
+            true),
+
     /** A holder of {@code MERCHANT_CLOSE_APPROVE} rejected a closure it did not propose (`P17-TSK-031`); nothing moved. */
     CLOSURE_REJECTED(
             "merchant.ClosureRejected",

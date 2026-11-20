@@ -92,6 +92,31 @@ public enum PaymentsAuditAction implements AuditableAction {
             true),
 
     /**
+     * A holder of {@code PAYMENT_REFUND} asked for a refund whose cumulative amount on its payment is above the four-eyes
+     * threshold (`P17-TSK-031`, ADR-0154): a proposal, nothing held or sent; the record names the proposal and the threshold
+     * version, never an amount.
+     */
+    REFUND_PROPOSED(
+            "payments.RefundProposed",
+            "A refund above the four-eyes threshold was proposed with a reason; nothing moved until a second person approves.",
+            true),
+
+    /**
+     * A holder of {@code PAYMENT_REFUND_APPROVE} who did not propose it approved a refund proposal (`P17-TSK-031`): written in
+     * the refund's dispatch transaction, beside {@link #PAYMENT_REFUND_DISPATCHED}, naming the refund dispatched.
+     */
+    REFUND_PROPOSAL_APPROVED(
+            "payments.RefundProposalApproved",
+            "A refund proposal was approved by a second person, with a reason; the refund dispatched in the same transaction.",
+            true),
+
+    /** A holder of {@code PAYMENT_REFUND_APPROVE} rejected a refund proposal it did not propose (`P17-TSK-031`); nothing moved. */
+    REFUND_PROPOSAL_REJECTED(
+            "payments.RefundProposalRejected",
+            "A refund proposal was rejected by a second person, with a reason; nothing moved.",
+            true),
+
+    /**
      * An operator created a routing policy version (`P7-TSK-003`, ADR-0060 §1) — the
      * privileged, reasoned act: how money travels changed, effective forward. The record
      * names the version and its rule count; ceilings never appear ({@code INV-AUD-02}).

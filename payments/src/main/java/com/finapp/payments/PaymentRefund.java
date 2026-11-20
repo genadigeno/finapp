@@ -123,6 +123,24 @@ public final class PaymentRefund {
     @NonNull private final Optional<PushRail> pushRail;
 
     /**
+     * The four-eyes threshold (`P17-TSK-031`, ADR-0154): judged in {@link #dispatch}, under the attempt lock, with the
+     * payment's non-failed refunds and this one together - above it the door's refund is refused for a second person's
+     * approval, which runs this same command with an {@link ApprovalStep}. Last, so no existing positional argument moved.
+     */
+    @NonNull private final RefundThresholds thresholds;
+
+    /**
+     * The approval of a refund proposal, run INSIDE the dispatch transaction right after the refund row is written
+     * (`P17-TSK-031`, ADR-0154; finapp-admin-panel ADR-C135 decision 4: "approval performs the existing effect in the existing
+     * transaction") - so the decision and the dispatch commit together or not at all, and a rejection or a second approver,
+     * serialised on the proposal's lock, can never race a dispatched refund. Throwing rolls the whole dispatch back.
+     */
+    @FunctionalInterface
+    public interface ApprovalStep {
+        void within(Connection unitOfWork, RefundId refund);
+    }
+
+    /**
      * What the operator learns — the status honestly, {@code UNKNOWN} included.
      *
      * @param replayed the recorded judgement was rendered; no wire call happened
@@ -181,9 +199,28 @@ public final class PaymentRefund {
      * @throws com.finapp.platform.idempotency.IdempotencyInProgressException another flight
      *     holds this key and its lease is running — deterministic, bounded, and true
      */
-    @SuppressWarnings("try") // The Scope is used for its close side effect.
     public RefundResult refund(
             PaymentIntentId intentId, Money amount, String reason, String idempotencyKey) {
+        return refund(intentId, amount, reason, idempotencyKey, Optional.empty());
+    }
+
+    /**
+     * {@link #refund(PaymentIntentId, Money, String, String)} as a proposal's approval (`P17-TSK-031`): no threshold judged -
+     * this IS the second person - and {@code approval} run in the dispatch transaction beside the refund it writes.
+     */
+    public RefundResult refund(
+            PaymentIntentId intentId, Money amount, String reason, String idempotencyKey, ApprovalStep approval) {
+        Objects.requireNonNull(approval, "approval must not be null");
+        return refund(intentId, amount, reason, idempotencyKey, Optional.of(approval));
+    }
+
+    @SuppressWarnings("try") // The Scope is used for its close side effect.
+    private RefundResult refund(
+            PaymentIntentId intentId,
+            Money amount,
+            String reason,
+            String idempotencyKey,
+            Optional<ApprovalStep> approval) {
         Objects.requireNonNull(intentId, "intentId must not be null");
         Objects.requireNonNull(amount, "amount must not be null");
         Objects.requireNonNull(reason, "reason must not be null");
@@ -226,7 +263,7 @@ public final class PaymentRefund {
                                                     dispatchOrConverge(
                                                             claimed, idempotencyKey, intentId,
                                                             amount, reason, operator,
-                                                            correlation);
+                                                            correlation, approval);
                                             holder[0] = dispatched;
                                             return dispatched
                                                     .refund()
@@ -448,11 +485,14 @@ public final class PaymentRefund {
             Money amount,
             String reason,
             Actor operator,
-            Correlation correlation) {
+            Correlation correlation,
+            Optional<ApprovalStep> approval) {
         Optional<Refund> existing = refunds.findByDispatchKey(uow, dispatchKey);
         if (existing.isEmpty()) {
-            return dispatch(uow, dispatchKey, intentId, amount, reason, operator, correlation);
+            return dispatch(uow, dispatchKey, intentId, amount, reason, operator, correlation, approval);
         }
+        // A converging takeover re-drives a refund whose first dispatch committed - its approval, when it had one, committed
+        // with it (P17-TSK-031), so nothing is decided again here.
         Refund found = existing.get();
         PaymentAttempt attempt =
                 attempts.findById(uow, found.attemptId())
@@ -494,7 +534,8 @@ public final class PaymentRefund {
             Money amount,
             String reason,
             Actor operator,
-            Correlation correlation) {
+            Correlation correlation,
+            Optional<ApprovalStep> approval) {
         PaymentIntent intent =
                 intents.findById(uow, intentId).orElseThrow(UnknownPaymentException::new);
         PaymentAttempt loose =
@@ -585,6 +626,17 @@ public final class PaymentRefund {
             // The honest 422 BEFORE any hold is placed: nothing written, nothing reserved.
             throw new RefundExceedsCaptureException(base.currency());
         }
+        // FOUR EYES ABOVE THE THRESHOLD (P17-TSK-031, ADR-0154; ADR-C135 decision 3): the payment's non-failed refunds and
+        // this one, together, judged under the attempt lock just taken - the same lock every refund of this payment takes -
+        // so a refund split under the threshold, or ten racing under it, cannot add up past it unseen. Above it, nothing is
+        // held, written or sent: the door makes it a proposal. An approval is the second person, so it is not judged again.
+        if (approval.isEmpty()) {
+            Money cumulative = alreadyRefunded.plus(amount);
+            Optional<RefundThresholds.Threshold> above = thresholds.requiresApproval(uow, cumulative);
+            if (above.isPresent()) {
+                throw new RefundRequiresApprovalException(above.get(), cumulative);
+            }
+        }
 
         // WHAT THE REFUND WILL TAKE, NOT ITS GROSS (P6-TSK-015, ADR-0054): asked of the
         // composition that will write the lines, in payment vocabulary - the gross for a
@@ -654,6 +706,8 @@ public final class PaymentRefund {
                                     new ProviderIdempotencyReference("rfd-" + ids.next()));
                 };
         refunds.insert(uow, refund, dispatchKey);
+        // The approval's decision, in this transaction, beside the refund it names (P17-TSK-031).
+        approval.ifPresent(step -> step.within(uow, refund.id()));
 
         Instant now = Instant.now(clock);
         // The dispatch's own fact, in the transaction that commits it (INV-EVT-01; plan §10:

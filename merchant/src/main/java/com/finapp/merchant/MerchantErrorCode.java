@@ -190,6 +190,24 @@ public enum MerchantErrorCode implements ErrorCode {
             409,
             "The closure proposal is already decided."),
 
+    /** A second payout proposal while one is open for the merchant (`P17-TSK-031`). */
+    PAYOUT_PROPOSAL_ALREADY_OPEN(
+            "merchant.PayoutProposalAlreadyOpen",
+            409,
+            "The merchant already has an open payout proposal; decide it first."),
+
+    /** A decision on a decided payout proposal (`P17-TSK-031`): decided once. */
+    PAYOUT_PROPOSAL_ALREADY_DECIDED(
+            "merchant.PayoutProposalAlreadyDecided",
+            409,
+            "The payout proposal is already decided."),
+
+    /** The proposer deciding their own payout proposal (`P17-TSK-031`, INV-AUD-04). */
+    PAYOUT_PROPOSAL_SELF_DECISION(
+            "merchant.PayoutProposalSelfDecision",
+            409,
+            "A payout proposal is decided by a person who did not propose it."),
+
     /** The proposer deciding their own closure proposal (`P17-TSK-031`, INV-AUD-04). */
     CLOSURE_SELF_DECISION(
             "merchant.ClosureSelfDecision",

@@ -2454,6 +2454,40 @@ class OwnershipIsScopedTest {
                                         + " MULTI_FACTOR session, keyed, four eyes (V003's CHECK), every act audited; or risk's"
                                         + " case approval, itself four eyes. A customer's own acts stay lockOwnedBy.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcRefundProposalStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-031. A refund proposal by its id alone - the approver's read of what to approve: the id comes from the URL of POST /v1/operator/refund-proposals/{id}/approval, another person's proposal by design. Standing in: PAYMENT_REFUND_APPROVE on a MULTI_FACTOR session, keyed, the proposer refused by the domain and V043's CHECK, every decision audited.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRefundProposalStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-031. A refund proposal by its id alone, FOR UPDATE - the deciders' lock, inside the refund's own dispatch transaction for an approval: the id from the URL of POST /v1/operator/refund-proposals/{id}/approval or /rejection. Standing in: PAYMENT_REFUND_APPROVE on a MULTI_FACTOR session, keyed, four eyes by the domain and V043's CHECK.")),
+                    Map.entry(
+                            "com.finapp.payments.JdbcRefundProposalStore.findOpenFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-031. The open refund proposal of the payment the operator door names - under its own"
+                                        + " permission and factor - so one open proposal per payment is judged before the partial"
+                                        + " unique index has to refuse it.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutProposalStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-031. A payout proposal by its id alone - the approver's read of what to approve: the id comes from the URL of POST /v1/operator/payout-proposals/{id}/approval, another person's proposal by design. Standing in: MERCHANT_PAYOUT_APPROVE on a MULTI_FACTOR session, keyed, the proposer refused by the domain and V020's CHECK, every decision audited.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutProposalStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-031. A payout proposal by its id alone, FOR UPDATE - the deciders' lock, inside the payout's own dispatch transaction for an approval: the id from the URL of POST /v1/operator/payout-proposals/{id}/approval or /rejection. Standing in: MERCHANT_PAYOUT_APPROVE on a MULTI_FACTOR session, keyed, four eyes by the domain and V020's CHECK.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcPayoutProposalStore.findOpenFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-031. The open payout proposal of the merchant the operator door names - under its own"
+                                        + " permission and factor - so one open proposal per merchant is judged before the partial"
+                                        + " unique index has to refuse it.")),
+                    Map.entry(
                             "com.finapp.merchant.JdbcMerchantClosureProposalStore.lock",
                             new Entry(
                                     Scope.ADMINISTERED,

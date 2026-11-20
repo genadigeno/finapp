@@ -66,6 +66,7 @@ public class PaymentController {
 
     @NonNull private final PaymentService payments;
     @NonNull private final OperatorVoidDesk voids;
+    @NonNull private final RefundDesk refunds;
 
     /**
      * Creates the caller's payment intent, or replays the judgement — {@code 201} for the
@@ -123,7 +124,9 @@ public class PaymentController {
             @PathVariable("id") String id,
             @Valid @RequestBody RefundRequest body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey) {
-        return payments.refundPayment(parsedOrAbsent(id), body, idempotencyKey);
+        // P17-TSK-031 (ADR-0154): at or below the four-eyes threshold the refund dispatches as before; above it the answer
+        // is the keyed proposal, status PROPOSED, for a second person.
+        return refunds.refund(parsedOrAbsent(id), body, idempotencyKey);
     }
 
     /**

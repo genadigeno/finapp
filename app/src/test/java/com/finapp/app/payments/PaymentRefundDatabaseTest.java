@@ -2291,7 +2291,10 @@ class PaymentRefundDatabaseTest {
                 clock,
                 com.finapp.payments.PaymentRails.of(java.util.List.of(SimulatedCardPspAdapter.RAIL)),
                 // A card-only suite: the push rail is absent, as on a card-only deployment.
-                java.util.Optional.empty());
+                java.util.Optional.empty(),
+                // P17-TSK-031: this suite proves the refund's mechanics, never its four eyes (RefundFourEyesDatabaseTest
+                // does) - no threshold is ever crossed here.
+                (unitOfWork, cumulative) -> java.util.Optional.empty());
     }
 
     private HoldService holdService() {
