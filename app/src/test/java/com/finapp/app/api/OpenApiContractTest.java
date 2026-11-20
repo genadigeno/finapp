@@ -1075,6 +1075,12 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/customers/lookup",
                         ApiVersion.CURRENT_PREFIX + "/operator/customers/{id}",
                         ApiVersion.CURRENT_PREFIX + "/operator/parties/{id}/consents",
+                        // P17-TSK-027: a customer's accounts (ACCOUNT_READ), one account, its lines; the transfers (TRANSFER_READ).
+                        ApiVersion.CURRENT_PREFIX + "/operator/customers/{id}/accounts",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounts/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounts/{id}/entries",
+                        ApiVersion.CURRENT_PREFIX + "/operator/transfers",
+                        ApiVersion.CURRENT_PREFIX + "/operator/transfers/{id}",
                         // P17-TSK-014: the staff directory, its detail, the lookup and the role catalogue (IDENTITY_READ).
                         ApiVersion.CURRENT_PREFIX + "/operator/identities",
                         ApiVersion.CURRENT_PREFIX + "/operator/identities/{id}",

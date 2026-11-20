@@ -207,6 +207,18 @@ public enum LedgerAuditAction implements AuditableAction {
             "ledger.EntriesSearched",
             "A page of the journal entry search was served; the record names the window, the filters and a count, never an"
                     + " amount.",
+            false),
+
+    /**
+     * A holder of {@code ACCOUNT_READ} was served a page of a customer agreement's ledger lines (`P17-TSK-027`, gap G-32;
+     * {@code GET /v1/operator/accounts/{id}/entries}, on a {@code MULTI_FACTOR} session; ADR-C132 decision 5). Once per page,
+     * written by app's {@code RecordedReads} in the read's own transaction: the agreement the target, the currency, whether it
+     * followed a cursor and how many lines it served the summary - never an amount.
+     */
+    ACCOUNT_LINES_LISTED(
+            "ledger.AccountLinesListed",
+            "A page of a customer agreement's ledger lines was served; the agreement, the currency and a count recorded, never"
+                    + " an amount.",
             false);
 
     private final String code;

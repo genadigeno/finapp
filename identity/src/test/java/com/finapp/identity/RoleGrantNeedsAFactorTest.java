@@ -71,7 +71,8 @@ class RoleGrantNeedsAFactorTest {
     @DisplayName("a permission that only reads needs no factor, and one added later guards an act until somebody says otherwise")
     void onlyTheReadsNeedNone() {
         assertThat(Arrays.stream(PermissionName.values()).filter(permission -> !permission.guardsAnAct()))
-                .containsExactlyInAnyOrder(PermissionName.ACCOUNTING_READ, PermissionName.FX_INVESTIGATE, PermissionName.AUDIT_READ);
+                .containsExactlyInAnyOrder(PermissionName.ACCOUNTING_READ, PermissionName.FX_INVESTIGATE, PermissionName.AUDIT_READ,
+                        PermissionName.ACCOUNT_READ, PermissionName.TRANSFER_READ);
     }
 
     @Test

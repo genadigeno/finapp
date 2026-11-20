@@ -180,6 +180,35 @@ public final class JdbcCustomerAccountStore implements CustomerAccountStore<Conn
     }
 
     @Override
+    public java.util.List<CustomerAccount> pageFor(
+            Connection unitOfWork, UUID customerId, Optional<AgreementCursor> after, int limit) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(customerId, "customerId must not be null");
+        Objects.requireNonNull(after, "after must not be null");
+        String sql = "SELECT " + COLUMNS + " FROM " + TABLE + " WHERE customer_id = ?"
+                + (after.isPresent() ? " AND (opened_at, id) < (?, ?)" : "")
+                + " ORDER BY opened_at DESC, id DESC LIMIT ?";
+        try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
+            int parameter = 1;
+            read.setObject(parameter++, customerId);
+            if (after.isPresent()) {
+                read.setTimestamp(parameter++, java.sql.Timestamp.from(after.get().openedAt()));
+                read.setObject(parameter++, after.get().accountId());
+            }
+            read.setInt(parameter, limit);
+            try (ResultSet rows = read.executeQuery()) {
+                java.util.List<CustomerAccount> page = new java.util.ArrayList<>();
+                while (rows.next()) {
+                    page.add(rehydrate(rows));
+                }
+                return java.util.List.copyOf(page);
+            }
+        } catch (SQLException failure) {
+            throw new AccountsStorageException(DatabaseFailure.describe("reading a page of a customer's agreements", failure));
+        }
+    }
+
+    @Override
     public Optional<UUID> customerOf(Connection unitOfWork, CustomerAccountId accountId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(accountId, "accountId must not be null");

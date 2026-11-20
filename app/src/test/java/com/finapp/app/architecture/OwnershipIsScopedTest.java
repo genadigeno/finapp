@@ -1085,15 +1085,15 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.ledger.JdbcBalanceDisplay.balancesFor",
                             new Entry(
-                                    Scope.AUTHORITATIVE_ID,
-                                    "com.finapp.accounts.JdbcCustomerAccountStore.findOwnedBy",
-                                    "X-TSK-002. The displayed balances of one owner reference (a.owner_ref"
-                                        + " = ?, the ledger's opaque owner, ADR-0042 - no predicate this"
-                                        + " guard counts). AccountService alone calls it, for GET"
-                                        + " /v1/me/accounts/{id}/balance and /balances, and the reference"
-                                        + " is always the product findOwnedBy just returned under"
-                                        + " customer_id = ?, the session's own live customer: another"
-                                        + " customer's account id yields no product and so no read.")),
+                                    Scope.ADMINISTERED,
+                                    "X-TSK-002; relabelled by P17-TSK-027 for the weaker of its two provenances. The"
+                                        + " displayed balances of one owner reference (a.owner_ref = ?, the ledger's opaque"
+                                        + " owner, ADR-0042). AccountService calls it for GET /v1/me/accounts/{id}/balance"
+                                        + " and /balances with the product findOwnedBy just returned under the session's own"
+                                        + " customer; AccountTransferReadDesk for GET /v1/operator/accounts/{id} with the"
+                                        + " agreement findById returned - somebody else's by design. Standing in for the"
+                                        + " owner there: ACCOUNT_READ on a MULTI_FACTOR session and a record of every read,"
+                                        + " held at the answer by UnrecordedReadAdvice.")),
                     Map.entry(
                             "com.finapp.ledger.JdbcJournalEntryStore.countBeyond",
                             new Entry(
@@ -2417,6 +2417,32 @@ class OwnershipIsScopedTest {
                                         + " by design. Standing in: CUSTOMER_READ or ACCOUNT_READ on a MULTI_FACTOR session,"
                                         + " every read recorded and held at the answer by UnrecordedReadAdvice. A customer's"
                                         + " own reads stay findOwnedBy, the owner in the statement.")),
+                    Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.pageFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-027. A page of one customer's agreements: the customer from the URL of"
+                                        + " GET /v1/operator/customers/{id}/accounts, somebody else by design. Standing in:"
+                                        + " ACCOUNT_READ on a MULTI_FACTOR session, the customer's existence checked first,"
+                                        + " every page recorded (accounts.CustomerAccountsListed).")),
+                    Map.entry(
+                            "com.finapp.ledger.JdbcLedgerCollections.accountLines",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-027. A page of one ledger account's lines: the account is the agreement's wallet"
+                                        + " in the asked currency, the agreement from the URL of"
+                                        + " GET /v1/operator/accounts/{id}/entries - somebody else's by design. Standing in:"
+                                        + " ACCOUNT_READ on a MULTI_FACTOR session, the agreement's existence checked first,"
+                                        + " every page recorded (ledger.AccountLinesListed); never the entry's reference,"
+                                        + " reason or actor.")),
+                    Map.entry(
+                            "com.finapp.transfers.JdbcTransferStore.pageFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-027. A page of one customer's transfers in a window of at most 92 days: the"
+                                        + " customer from GET /v1/operator/transfers?customerId=, somebody else by design."
+                                        + " Standing in: TRANSFER_READ on a MULTI_FACTOR session, the customer's existence"
+                                        + " checked first, every page recorded (transfers.TransfersListed).")),
                     Map.entry(
                             "com.finapp.accounts.JdbcCustomerAccountStore.customerOf",
                             new Entry(
@@ -6440,14 +6466,14 @@ class OwnershipIsScopedTest {
                     Map.entry(
                             "com.finapp.transfers.JdbcTransferStore.findById",
                             new Entry(
-                                    Scope.AUTHORITATIVE_ID,
-                                    "com.finapp.transfers.TransferExecution.execute",
-                                    "Renders the POST response: the identifier is the execution"
-                                        + " command's own result inside the same transaction -"
-                                        + " minted by the claim this call just made or"
-                                        + " replayed, whose fingerprint binds the actor and"
-                                        + " party - never a request's. The HTTP reads go"
-                                        + " through findOwned.")),
+                                    Scope.ADMINISTERED,
+                                    "Relabelled by P17-TSK-027 for the weaker of its two provenances. It renders the"
+                                        + " POST response - the identifier the execution command's own result inside the same"
+                                        + " transaction, never a request's - and, since P17-TSK-027, the operator's"
+                                        + " GET /v1/operator/transfers/{id}: the identifier from the URL, somebody else's"
+                                        + " transfer by design. Standing in there: TRANSFER_READ on a MULTI_FACTOR session and"
+                                        + " a record of every read (transfers.TransferRead), held at the answer by"
+                                        + " UnrecordedReadAdvice. A customer's own reads stay findOwned.")),
                     Map.entry(
                             "com.finapp.transfers.JdbcTransferStore.lockById",
                             new Entry(
