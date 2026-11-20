@@ -51,14 +51,29 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("KYC_REVIEWER grants exactly KYC_REVIEW and COUNTERPARTY_SCREENING_REVIEW - and neither administrative permission")
+    @DisplayName("KYC_REVIEWER grants exactly KYC_REVIEW, COUNTERPARTY_SCREENING_REVIEW and KYC_DOCUMENT_READ - and neither"
+            + " administrative permission")
     void kycReviewerGrantsExactlyOne() {
         // The least-privilege split is the point of the role (P2-TSK-004), so it is asserted as
         // an exact set: this is the assertion that catches the previously-untestable mutations -
         // the role granting everything, or quietly gaining IDENTITY_SUSPEND or ROLE_ASSIGN.
+        // P17-TSK-125: the document download is the reviewer's alone (the owner's D-25).
         assertThat(RoleName.KYC_REVIEWER.permissions())
                 .as("a reviewer reviews; managing identities is a different trust decision")
-                .containsExactlyInAnyOrder(PermissionName.KYC_REVIEW, PermissionName.COUNTERPARTY_SCREENING_REVIEW);
+                .containsExactlyInAnyOrder(PermissionName.KYC_REVIEW, PermissionName.COUNTERPARTY_SCREENING_REVIEW,
+                        PermissionName.KYC_DOCUMENT_READ);
+    }
+
+    @Test
+    @DisplayName("KYC_DOCUMENT_READ is held by KYC_REVIEWER alone, guards no act and asks for a factor at grant (P17-TSK-125)")
+    void kycDocumentReadIsTheReviewersAlone() {
+        assertThat(java.util.Arrays.stream(RoleName.values())
+                        .filter(role -> role.permissions().contains(PermissionName.KYC_DOCUMENT_READ)))
+                .as("whoever can save a person's identity document")
+                .containsExactly(RoleName.KYC_REVIEWER);
+        assertThat(PermissionName.KYC_DOCUMENT_READ.guardsAnAct()).as("it only reads").isFalse();
+        assertThat(PermissionName.KYC_DOCUMENT_READ.readsBehindAFactor()).as("every read behind a second factor").isTrue();
+        assertThat(RoleName.KYC_REVIEWER.requiresEnrolledFactor()).isTrue();
     }
 
     @Test

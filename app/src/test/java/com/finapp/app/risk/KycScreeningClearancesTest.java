@@ -184,6 +184,11 @@ class KycScreeningClearancesTest {
         }
 
         @Override
+        public Optional<com.finapp.party.PartyName> registeredNameOf(Connection unitOfWork, PartyId partyId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public Optional<com.finapp.party.PartyKind> kindOfCustomer(Connection unitOfWork, CustomerId customerId) {
             throw new UnsupportedOperationException();
         }

@@ -143,6 +143,18 @@ public enum KycAuditAction implements AuditableAction {
             false),
 
     /**
+     * A reviewer was served a page of a case's documents (`P17-TSK-125`; the owner's D-25 decision 2;
+     * {@code GET /v1/operator/kyc/cases/{id}/documents} under {@code KYC_DOCUMENT_READ}, on a {@code MULTI_FACTOR} session):
+     * once per page, the case the target, whether it followed a cursor and how many it served - identifiers, types and sizes
+     * only, never content. A document's content is {@link #DOCUMENT_CONTENT_READ}'s, written by {@code DocumentAccess}.
+     * Written by app's {@code RecordedReads} in the read's own transaction.
+     */
+    CASE_DOCUMENTS_LISTED(
+            "kyc.CaseDocumentsListed",
+            "A reviewer was served a page of a case's documents - identifiers, types and sizes, never content; a count recorded.",
+            false),
+
+    /**
      * kyc decided a counterparty screening (`P9-TSK-016`, ADR-0081; {@code INV-KYC-01},
      * {@code INV-KYC-04}): every outcome, automatic or a person's, in the decision's own transaction.
      * <strong>Reason required</strong> - an outcome nobody can explain is one nobody can defend: the

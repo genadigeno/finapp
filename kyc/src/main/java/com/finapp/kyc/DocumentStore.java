@@ -1,7 +1,10 @@
 package com.finapp.kyc;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Stores and retrieves document content (`P2-TSK-008`, ADR-0036).
@@ -53,6 +56,27 @@ public interface DocumentStore<T> {
      *     different key — refused by the cipher, never returned
      */
     Optional<DocumentContent> readContent(T unitOfWork, DocumentId id);
+
+    /**
+     * A page of a case's documents - <strong>metadata only, never content</strong> (`P17-TSK-125`; the owner's D-25 decision
+     * 2): the reviewer's list of what a case holds, by identifier, type, size and when it was received.
+     *
+     * <p>Received order: {@code uploaded_at} ascending, the document's id breaking a tie - a total order, so a page resumes
+     * exactly after {@code after}, the last document the page before served. At most {@code limit} rows. A case's documents are
+     * reached by {@code kyc_document_one_per_case_and_checksum}'s leading column; a case holds a handful, sorted in memory.
+     *
+     * <p>No ciphertext is read: a {@link KycDocument} holds nothing worth exfiltrating, so this read needs no audit of its own
+     * here - its caller records the page it serves.
+     */
+    List<KycDocument> documentsOf(T unitOfWork, KycCaseId caseId, Optional<DocumentPosition> after, int limit);
+
+    /** Where a page of {@link #documentsOf} ends: the last document served, by its order's key. */
+    record DocumentPosition(Instant uploadedAt, UUID id) {
+        public DocumentPosition {
+            Objects.requireNonNull(uploadedAt, "uploadedAt must not be null");
+            Objects.requireNonNull(id, "id must not be null");
+        }
+    }
 
     /** The outcome of an append: the document that now exists, and whether this call created it. */
     record Capture(KycDocument document, boolean created) {

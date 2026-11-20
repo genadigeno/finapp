@@ -10,6 +10,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Savepoint;
 import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -137,6 +139,41 @@ public final class JdbcDocumentStore implements DocumentStore<Connection> {
         } catch (SQLException failure) {
             throw new KycStorageException(
                     DatabaseFailure.describe("reading document " + id, failure));
+        }
+    }
+
+    @Override
+    public List<KycDocument> documentsOf(
+            Connection unitOfWork, KycCaseId caseId, Optional<DocumentPosition> after, int limit) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(caseId, "caseId must not be null");
+        Objects.requireNonNull(after, "after must not be null");
+        if (limit < 1) {
+            throw new IllegalArgumentException("a page holds at least one document");
+        }
+        // Metadata only: the ciphertext, its nonce and its key version are never selected, so no content leaves this read.
+        String sql = "SELECT id, case_id, document_type, content_type, checksum_sha256, content_length, uploaded_at FROM "
+                + TABLE + " WHERE case_id = ?"
+                + (after.isPresent() ? " AND (uploaded_at, id) > (?, ?)" : "")
+                + " ORDER BY uploaded_at, id LIMIT ?";
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            int parameter = 1;
+            select.setObject(parameter++, caseId.value());
+            if (after.isPresent()) {
+                select.setTimestamp(parameter++, Timestamp.from(after.get().uploadedAt()));
+                select.setObject(parameter++, after.get().id());
+            }
+            select.setInt(parameter, limit);
+            List<KycDocument> page = new ArrayList<>();
+            try (ResultSet rows = select.executeQuery()) {
+                while (rows.next()) {
+                    page.add(rehydrate(rows));
+                }
+            }
+            return List.copyOf(page);
+        } catch (SQLException failure) {
+            throw new KycStorageException(
+                    DatabaseFailure.describe("listing the documents of case " + caseId, failure));
         }
     }
 

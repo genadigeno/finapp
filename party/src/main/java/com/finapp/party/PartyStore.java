@@ -107,6 +107,20 @@ public interface PartyStore<T> {
     Optional<PartyKind> kindOf(T unitOfWork, PartyId partyId);
 
     /**
+     * The name a Party is registered under - and nothing else (`P17-TSK-125`; the owner's D-25 decision 1).
+     *
+     * <p>A deliberately narrow read beside {@link #findById}, for {@link #kindOf}'s reason: an operator names the customer
+     * from a URL, somebody else by design, and {@link #findById}'s {@code SESSION_DERIVED} classification excludes that
+     * provenance. Classified {@code ADMINISTERED}: {@code CUSTOMER_READ} on a {@code MULTI_FACTOR} session at the boundary, and
+     * an audit record of every read ({@code party.CustomerIdentityRead}).
+     *
+     * <p><strong>What the name is</strong>: the one the party gave at registration, or last chose itself
+     * ({@code PATCH /v1/me}) - never verified against a document. {@code RESTRICTED-PII}: {@link PartyName} masks itself, and
+     * no caller may log it.
+     */
+    Optional<PartyName> registeredNameOf(T unitOfWork, PartyId partyId);
+
+    /**
      * The kind of the Party behind a customer (`P2-TSK-015`).
      *
      * <p>The case-kind resolution: an {@code ORGANISATION} customer's verification opens as a

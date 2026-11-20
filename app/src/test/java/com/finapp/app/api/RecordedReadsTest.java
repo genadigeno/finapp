@@ -65,13 +65,27 @@ class RecordedReadsTest {
     }
 
     @Test
-    @DisplayName("the four reads are recorded: customer, account, transfer and payment - and nothing that acts")
+    @DisplayName("the five reads are recorded: customer, account, transfer, payment and a KYC document - and nothing that acts")
     void thePermissionsAreTheFourReads() {
         assertThat(RecordedReads.PERMISSIONS).containsExactlyInAnyOrder(PermissionName.CUSTOMER_READ, PermissionName.ACCOUNT_READ,
-                PermissionName.TRANSFER_READ, PermissionName.PAYMENT_READ);
+                PermissionName.TRANSFER_READ, PermissionName.PAYMENT_READ, PermissionName.KYC_DOCUMENT_READ);
         assertThat(RecordedReads.PERMISSIONS)
-                .as("they are the support desk's whole grant, so every read that desk makes is on the record")
-                .isEqualTo(com.finapp.identity.RoleName.CUSTOMER_SUPPORT_AGENT.permissions());
+                .as("the support desk's whole grant, so every read that desk makes is on the record")
+                .containsAll(com.finapp.identity.RoleName.CUSTOMER_SUPPORT_AGENT.permissions());
+        // P17-TSK-125: and the reviewer's document reads, which guard no act.
+        assertThat(PermissionName.KYC_DOCUMENT_READ.guardsAnAct()).isFalse();
+    }
+
+    @Test
+    @DisplayName("a read its module recorded marks the request and writes nothing more: one look, one record (P17-TSK-125)")
+    void aModulesOwnRecordMarksTheRequest() {
+        MockHttpServletRequest request = inARequest();
+
+        reads.recordedByItsModule(com.finapp.kyc.KycAuditAction.DOCUMENT_CONTENT_READ);
+
+        assertThat(written).as("DocumentAccess wrote the record; a second would split the trail").isEmpty();
+        assertThat(RecordedReads.recorded(request)).isTrue();
+        assertThatThrownBy(() -> reads.recordedByItsModule(null)).isInstanceOf(NullPointerException.class);
     }
 
     @Test
@@ -207,6 +221,28 @@ class RecordedReadsTest {
         return request;
     }
 
+    @Test
+    @DisplayName("an unrecorded answer that is not JSON - a document's bytes - is refused by an exception the error contract"
+            + " answers 500, never handed to its converter in the problem's place (P17-TSK-125)")
+    void anUnrecordedFileIsRefusedByAnException() throws Exception {
+        MockHttpServletRequest request = at("documentContent");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        byte[] document = "%PDF-1.7 a passport".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+
+        assertThatThrownBy(() -> advice.beforeBodyWrite(document, null, MediaType.APPLICATION_PDF,
+                org.springframework.http.converter.ByteArrayHttpMessageConverter.class, new ServletServerHttpRequest(request),
+                new ServletServerHttpResponse(response)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageNotContaining("PDF");
+        assertThat(response.getContentAsByteArray()).as("nothing of the file written").isEmpty();
+
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+        reads.recordedByItsModule(com.finapp.kyc.KycAuditAction.DOCUMENT_CONTENT_READ);
+        assertThat(advice.beforeBodyWrite(document, null, MediaType.APPLICATION_PDF,
+                org.springframework.http.converter.ByteArrayHttpMessageConverter.class, new ServletServerHttpRequest(request),
+                new ServletServerHttpResponse(response))).as("served once its module recorded it").isSameAs(document);
+    }
+
     private static MockHttpServletRequest at(String handler) throws NoSuchMethodException {
         Method method = ReadDesk.class.getMethod(handler);
         return at(new HandlerMethod(new ReadDesk(), method));
@@ -266,6 +302,11 @@ class RecordedReadsTest {
         @RequiresPermission(PermissionName.KYC_REVIEW)
         public Optional<String> reviewAct() {
             return Optional.empty();
+        }
+
+        @RequiresPermission(PermissionName.KYC_DOCUMENT_READ)
+        public byte[] documentContent() {
+            return new byte[0];
         }
     }
 
