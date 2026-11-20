@@ -7,6 +7,8 @@ import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.PermissionName;
 import com.finapp.identity.Session;
+import com.finapp.kyc.CustomerAnswer;
+import com.finapp.kyc.InformationRequest;
 import com.finapp.kyc.KycCaseId;
 import com.finapp.kyc.ReviewTask;
 import com.finapp.kyc.ReviewTaskId;
@@ -201,7 +203,8 @@ public class ReviewController {
             Instant openedAt,
             List<CheckView> checks,
             List<TaskView> reviewTasks,
-            List<ReviewOwnerView> owners) {
+            List<ReviewOwnerView> owners,
+            List<InformationRequestFileView> informationRequests) {
 
         static CaseFileResponse of(ReviewService.CaseFile file) {
             return new CaseFileResponse(
@@ -212,7 +215,40 @@ public class ReviewController {
                     file.kycCase().openedAt(),
                     file.checks().stream().map(CheckView::of).toList(),
                     file.tasks().stream().map(TaskView::of).toList(),
-                    file.owners().stream().map(ReviewOwnerView::of).toList());
+                    file.owners().stream().map(ReviewOwnerView::of).toList(),
+                    file.informationRequests().stream().map(InformationRequestFileView::of).toList());
+        }
+    }
+
+    /**
+     * A request for information as its reviewers see it (`P17-TSK-126`, ADR-0155 decision 10):
+     * the reason code, the text the customer read, who asked, the deadline, how it closed and -
+     * once answered - the customer's answer (RESTRICTED-PII, this surface's alone). At most one is
+     * {@code OPEN}; its {@code dueAt} is the case's deadline.
+     */
+    public record InformationRequestFileView(
+            UUID id,
+            String status,
+            String reasonCode,
+            String requestText,
+            UUID requestedBy,
+            Instant requestedAt,
+            Instant dueAt,
+            Instant closedAt,
+            String answer,
+            UUID answeredBy) {
+        static InformationRequestFileView of(InformationRequest request) {
+            return new InformationRequestFileView(
+                    request.id().value(),
+                    request.status().name(),
+                    request.reason().name(),
+                    request.text().value(),
+                    request.requestedBy(),
+                    request.requestedAt(),
+                    request.dueAt(),
+                    request.closedAt().orElse(null),
+                    request.answer().map(CustomerAnswer::value).orElse(null),
+                    request.answeredBy().orElse(null));
         }
     }
 

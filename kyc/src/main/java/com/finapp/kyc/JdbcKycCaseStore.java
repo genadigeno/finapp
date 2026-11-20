@@ -129,6 +129,11 @@ public final class JdbcKycCaseStore implements KycCaseStore<Connection> {
         Objects.requireNonNull(from, "from must not be null");
         Objects.requireNonNull(to, "to must not be null");
         Objects.requireNonNull(at, "at must not be null");
+        // The machine's table, at the write every caller shares (P17-TSK-126, ADR-0155 decision 1): a pair no named edge
+        // permits is refused before any statement runs, so no caller can move a case by a row the table lacks.
+        if (!from.canTransitionTo(to)) {
+            throw new IllegalKycCaseTransitionException(caseId, from, to);
+        }
         boolean deciding = to.isTerminal();
         try {
             if (deciding) {

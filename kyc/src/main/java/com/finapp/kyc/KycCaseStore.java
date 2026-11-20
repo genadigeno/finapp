@@ -66,6 +66,9 @@ public interface KycCaseStore<T> {
      * update's rescreen, or a late onboarding hit, the gap this closes for both - is resolved by
      * a person before any decision is recorded. The case row is locked first, so a task
      * committing meanwhile is seen; a lost move is then "not ready", never "decided".
+     *
+     * @throws IllegalKycCaseTransitionException {@code from → to} is no edge of the machine's table
+     *     ({@link KycCaseTransition}, `P17-TSK-126`): refused before any statement runs
      */
     boolean moveStatus(
             T unitOfWork, KycCaseId caseId, KycCaseStatus from, KycCaseStatus to, Instant at);

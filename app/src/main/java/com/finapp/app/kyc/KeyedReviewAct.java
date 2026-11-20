@@ -1,6 +1,7 @@
 package com.finapp.app.kyc;
 
 import com.finapp.kyc.DecisionOutcome;
+import com.finapp.kyc.InformationRequestReason;
 import com.finapp.kyc.KycCaseId;
 import com.finapp.kyc.ReviewTaskId;
 import com.finapp.platform.idempotency.CommandResult;
@@ -19,7 +20,8 @@ import java.util.function.Function;
 
 /**
  * A reviewer's act under its {@code Idempotency-Key} (`P17-TSK-029`, gap G-61; ADR-0004, {@code INV-IDEM-01}, {@code -03}): the
- * case's decision, or a review task's resolution, run at most once per key and replayed on every retry.
+ * case's decision, or a review task's resolution, run at most once per key and replayed on every retry. Since `P17-TSK-126` also
+ * a reviewer's request for information and the customer's answer to it - the same discipline, each under its own scope.
  *
  * <p><strong>The key names its principal</strong> (`X-TSK-003`): the scope is the act's and the reviewer's, so two reviewers
  * choosing the same key never meet, and a retry is always the reviewer's own. <strong>The fingerprint is the request's
@@ -37,6 +39,8 @@ final class KeyedReviewAct {
 
     static final String DECISION_SCOPE = "kyc.case-decision:";
     static final String RESOLUTION_SCOPE = "kyc.review-resolution:";
+    static final String INFORMATION_REQUEST_SCOPE = "kyc.information-request:";
+    static final String INFORMATION_RESPONSE_SCOPE = "kyc.information-response:";
 
     private final IdempotentExecutor executor;
     private final IdempotencyKey key;
@@ -64,6 +68,28 @@ final class KeyedReviewAct {
         Objects.requireNonNull(taskId, "taskId must not be null");
         return new KeyedReviewAct(executor, key(RESOLUTION_SCOPE, reviewer, rawKey),
                 fingerprint(caseId.value() + "|" + taskId.value() + "|" + digest(reason)));
+    }
+
+    /**
+     * A reviewer's request to a case's customer for more information under {@code rawKey} (`P17-TSK-126`, ADR-0155 decision 3):
+     * the fingerprint is the case, the reason code and the text's digest.
+     */
+    static KeyedReviewAct informationRequest(
+            IdempotentExecutor executor, String rawKey, Actor reviewer, KycCaseId caseId, InformationRequestReason reason,
+            String requestText) {
+        Objects.requireNonNull(caseId, "caseId must not be null");
+        Objects.requireNonNull(reason, "reason must not be null");
+        return new KeyedReviewAct(executor, key(INFORMATION_REQUEST_SCOPE, reviewer, rawKey),
+                fingerprint(caseId.value() + "|" + reason.name() + "|" + digest(requestText)));
+    }
+
+    /**
+     * The customer's answer to their case's open request under {@code rawKey} (`P17-TSK-126`, ADR-0155 decision 6): the scope
+     * names the customer, as every key names its principal; the fingerprint is the answer's digest - the case is the session's.
+     */
+    static KeyedReviewAct informationResponse(IdempotentExecutor executor, String rawKey, Actor customer, String answer) {
+        return new KeyedReviewAct(executor, key(INFORMATION_RESPONSE_SCOPE, customer, rawKey),
+                fingerprint("answer|" + digest(answer)));
     }
 
     IdempotencyKey key() {

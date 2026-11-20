@@ -291,6 +291,9 @@ that is recorded debt rather than an omission here.
 | `kyc.CounterpartyScreeningDecided` | **Yes** | kyc decided a counterparty screening - automatically from the provider's verdict and the payee check, or a reviewer's release or block - naming its basis and policy version. |
 | `kyc.ReviewQueueRead` | No | A reviewer was served a page of the open KYC cases; the status filter and a count recorded. |
 | `kyc.ScreeningBacklogRead` | No | A reviewer was served a page of the counterparty screenings awaiting review; a count recorded, never a subject. |
+| `kyc.InformationRequested` | **Yes** | A reviewer asked a case's customer for more information, with a reason code and a deadline; the case awaits the customer. |
+| `kyc.InformationRequestAnswered` | No | The customer answered a reviewer's request for information; the case returned to review. |
+| `kyc.InformationRequestExpired` | No | A reviewer's request for information passed its deadline unanswered; the case returned to review. |
 
 The two reason-required actions are the invariants speaking: `INV-KYC-02` makes a decision's
 reason a `NOT NULL` column, and `INV-KYC-04` requires a hit's resolution to carry its
@@ -337,6 +340,19 @@ also guard acts. A customer's latest case (`GET /v1/operator/customers/{id}/kyc-
 the trail of who looked is the control. The case file's own read (`GET /v1/kyc/cases/{id}`) still writes
 `kyc.CaseRead` through `ReviewService`'s writer, which marks no request, so it is not yet held at the
 answer: bringing it under `RecordedReads` is a recorded follow-up.
+
+`kyc.InformationRequested`, `kyc.InformationRequestAnswered` and `kyc.InformationRequestExpired` joined at
+`P17-TSK-126` (ADR-0155): the three edges of a case awaiting its customer, each written in the transaction that
+moves the case, its target the case (`KycCase`, its id). **The request requires a reason** - its reason code
+(`InformationRequestReason`, named for what the customer must supply): holding a case on its customer is an act
+taken on somebody's verification, and the reviewer answers for why. Its summary names the customer, the request
+and its deadline, **never the request's text** - the row and the case file hold what the customer was told. The
+answer is the customer's own act (their actor, no reason) and names the request, **never the answer's words**,
+which are RESTRICTED-PII on the reviewer surface alone. The expiry is the platform's (`enterSystem()`, the
+leaderless sweep), under the asking flow's correlation so one search joins the request to its lapse; no reason,
+the deadline is the reason, and its summary says whether the case moved (`caseReturned`). A request the
+tipping-off rule refuses writes none of these: the door's `door.ActRefused` records the refusal - who tried,
+`kyc.RequestTextRefused` - and never the body.
 
 `party.OrganisationRegistered` joined at `P2-TSK-016`, and its actor is **the proven person,
 never the platform** — the opposite of `party.CustomerRegistered`, whose caller is

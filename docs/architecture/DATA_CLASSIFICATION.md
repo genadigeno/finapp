@@ -2220,6 +2220,28 @@ the reason is a person's prose about a person.
 | `kyc_decision_check` | `decision_id` | `INTERNAL` | As `kyc_decision.id` — an identifier of a thing |
 | `kyc_decision_check` | `check_id` | `INTERNAL` | As `verification_check.id` — an identifier of a thing |
 
+### `kyc.information_request` — *added by `P17-TSK-126`* (ADR-0155)
+
+A reviewer's request to a case's customer for more information, and the customer's answer. The
+row exists only because a case was in review, so its existence carries `review_task.status`'s
+tipping-off reasoning; what reaches the customer is the screened text and the deadline, never the
+reason code. The answer is the customer's own words about themselves.
+
+| Table | Column | Level | Note |
+|---|---|---|---|
+| `information_request` | `id` | `INTERNAL` | An aggregate identifier. Generated |
+| `information_request` | `case_id` | `INTERNAL` | As `kyc_case.id` — an identifier of a thing |
+| `information_request` | `reason_code` | `CONFIDENTIAL` | Why a reviewer held a named person's case on them — a closed vocabulary naming what is needed, never a screening, but internal: `review_task.status`'s reasoning, one table over. Never served to the customer |
+| `information_request` | `request_text` | `CONFIDENTIAL` | **Written by a person for the customer to read**, screened before it is written so it carries no screening, list, suspicion or investigation term, identifier or link (`CustomerRequestText`); it names what is needed about a named person's verification. Served to that customer on their own session and to reviewers |
+| `information_request` | `requested_by` | `RESTRICTED-PII` | The reviewer's `IdentityId` — as `review_task.resolved_by` |
+| `information_request` | `requested_at` | `CONFIDENTIAL` | Dates a review event on a named person — `review_task.opened_at`'s reasoning |
+| `information_request` | `due_at` | `CONFIDENTIAL` | The deadline the customer is told — dates the same event |
+| `information_request` | `correlation_id` | `INTERNAL` | The asking flow's identifier, joining the request to its records |
+| `information_request` | `status` | `CONFIDENTIAL` | Whether the customer answered — a fact about their verification, `kyc_case.status`'s reasoning |
+| `information_request` | `closed_at` | `CONFIDENTIAL` | Dates the answer or the lapse — as `requested_at` |
+| `information_request` | `answer_text` | `RESTRICTED-PII` | **The customer's own words about themselves**, free text — anything a person may write about their identity, address or money. `audit_record.reason`'s ceiling; shown to reviewers only, never logged, never in an event |
+| `information_request` | `answered_by` | `RESTRICTED-PII` | The customer's `IdentityId` — from Phase 1 an identity names a person |
+
 ### `kyc.counterparty_screening` and `kyc.counterparty_screening_attempt` — *added by `P9-TSK-016`*
 
 A counterparty is a payee abroad, never a customer: it cannot consent, and screening it rests on the

@@ -129,6 +129,18 @@ class KycQueueDeskTest {
     }
 
     @Test
+    @DisplayName("the queue filters by AWAITING_CUSTOMER: the cases a reviewer asked the customer about (P17-TSK-126)")
+    void theQueueFiltersTheCasesAwaitingTheirCustomer() {
+        inquiries.cases = List.of(aCase(KycCaseStatus.AWAITING_CUSTOMER));
+
+        KycQueueDesk.ReviewQueuePage page = desk.queue("AWAITING_CUSTOMER", null, null);
+
+        assertThat(inquiries.statuses.getLast()).containsExactly(KycCaseStatus.AWAITING_CUSTOMER);
+        assertThat(page.items()).extracting(KycQueueDesk.KycCaseHead::status).containsExactly("AWAITING_CUSTOMER");
+        assertThat(recorded.getLast().changeSummary()).hasValue("status=AWAITING_CUSTOMER, continued=false, served=1");
+    }
+
+    @Test
     @DisplayName("a limit outside 1..200, a decided or unknown status, and another collection's or an unreadable cursor are"
             + " refused 422 - nothing read, nothing recorded")
     void theRequestRulesRefuseBeforeReading() {

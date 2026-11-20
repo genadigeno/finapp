@@ -174,6 +174,39 @@ public enum KycAuditAction implements AuditableAction {
     SCREENING_BACKLOG_READ(
             "kyc.ScreeningBacklogRead",
             "A reviewer was served a page of the counterparty screenings awaiting review; a count recorded, never a subject.",
+            false),
+
+    /**
+     * A reviewer asked a case's customer for more information (`P17-TSK-126`, ADR-0155; {@code POST
+     * /v1/kyc/cases/{id}/information-request} under {@code KYC_REVIEW}, on a {@code MULTI_FACTOR} session): the case moved
+     * {@code IN_REVIEW → AWAITING_CUSTOMER} in the same transaction. <strong>Reason required</strong> - the request's reason code,
+     * the reviewer's justification for holding the case on the customer. The record names the request and its deadline, never the
+     * text (the row and the case file hold it).
+     */
+    INFORMATION_REQUESTED(
+            "kyc.InformationRequested",
+            "A reviewer asked a case's customer for more information, with a reason code and a deadline; the case awaits the"
+                    + " customer.",
+            true),
+
+    /**
+     * The customer answered a reviewer's request for information (`P17-TSK-126`; {@code POST /v1/me/kyc/information-response}):
+     * the request {@code ANSWERED} and the case back {@code IN_REVIEW} in the same transaction. The customer's own act, so no
+     * reason; never the answer's words.
+     */
+    INFORMATION_REQUEST_ANSWERED(
+            "kyc.InformationRequestAnswered",
+            "The customer answered a reviewer's request for information; the case returned to review.",
+            false),
+
+    /**
+     * A reviewer's request for information lapsed unanswered (`P17-TSK-126`; the leaderless expiry sweep, on the database
+     * clock): the request {@code EXPIRED} and the case back {@code IN_REVIEW} in the same transaction, under the platform's actor
+     * and the asking flow's correlation. No reason: the deadline is the reason.
+     */
+    INFORMATION_REQUEST_EXPIRED(
+            "kyc.InformationRequestExpired",
+            "A reviewer's request for information passed its deadline unanswered; the case returned to review.",
             false);
 
     private final String code;

@@ -157,7 +157,12 @@ class KycCaseLifecycleTest {
                     // through the enum the way a hand-written caller could not.
                     refuse(kycCase, to);
             case CHECKS_IN_PROGRESS -> kycCase.beginChecks(CLOCK);
-            case IN_REVIEW -> kycCase.requireReview(CLOCK);
+            // Two named edges reach IN_REVIEW (P17-TSK-126): the checks raising it, and the
+            // customer's case coming back - each its own method, each refused off its own source.
+            case IN_REVIEW -> kycCase.status() == KycCaseStatus.AWAITING_CUSTOMER
+                    ? kycCase.resumeReview(KycCaseTransition.CUSTOMER_ANSWERED, CLOCK)
+                    : kycCase.requireReview(CLOCK);
+            case AWAITING_CUSTOMER -> kycCase.awaitCustomer(CLOCK);
             case READY_FOR_DECISION -> kycCase.readyForDecision(CLOCK);
             case APPROVED -> kycCase.approve(CLOCK);
             case REJECTED -> kycCase.reject(CLOCK);
