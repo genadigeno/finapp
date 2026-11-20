@@ -315,7 +315,7 @@ class SafeguardingReturnDatabaseTest {
         ReportRunLinesDesk door = new ReportRunLinesDesk(REPORT_RUNS, new JdbcGlMappingStore(), new JdbcPeriodPins(), new GeneralLedger(new LedgerJournalReads()), GL_SNAPSHOTS, TRANSACTIONS, new JdbcAuditWriter(), AccountingFlowScope.NONE, IDS, NOW);
         String account = glAccount;
         try (SecurityContext.Scope who = SecurityContext.enter(person()); CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(correlation()))) {
-            ReportRunLinesDesk.ReportRunLinesView listed = door.lines(run.id().value().toString(), account, month.toString(), "EUR", null, 500);
+            ReportRunLinesDesk.ReportRunLinesView listed = door.lines(run.id().value().toString(), account, month.toString(), "EUR", null, "500");
             assertThat(listed.exact()).as("a FINAL run's pages sum to its figure").isTrue();
             assertThat(listed.activity().lines()).as("the door finds the line this case posted").isNotEmpty();
         }

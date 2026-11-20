@@ -9,6 +9,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -32,6 +34,9 @@ public final class JdbcRegulatoryObligationStore implements RegulatoryObligation
     static final String LOCK_SHARED_SQL = ROW + " WHERE id = ? FOR SHARE";
     static final String LOCK_FORM_SQL = ROW + " WHERE jurisdiction_code = ? AND form_code = ? ORDER BY id FOR UPDATE";
     static final String RECENT_SQL = ROW + " ORDER BY proposed_at DESC, id DESC LIMIT ?";
+
+    /** The next page: strictly before the last row served in {@code (proposed_at, id)} - the order's own key, V019's index read backwards. */
+    static final String RECENT_AFTER_SQL = ROW + " WHERE (proposed_at, id) < (?, ?) ORDER BY proposed_at DESC, id DESC LIMIT ?";
 
     /** Selected in the statement: the filter is the database's, before the {@code LIMIT}. */
     static final String AWAITING_SQL = ROW + " WHERE status = 'PROPOSED' AND proposed_by <> ? ORDER BY proposed_at, id LIMIT ?";
@@ -84,9 +89,14 @@ public final class JdbcRegulatoryObligationStore implements RegulatoryObligation
     }
 
     @Override
-    public List<Row> recent(Connection unitOfWork, int limit) {
-        try (PreparedStatement read = unitOfWork.prepareStatement(RECENT_SQL)) {
-            read.setInt(1, limit);
+    public List<Row> recent(Connection unitOfWork, Optional<ObligationCursor> after, int limit) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(after.isPresent() ? RECENT_AFTER_SQL : RECENT_SQL)) {
+            int at = 1;
+            if (after.isPresent()) {
+                read.setObject(at++, OffsetDateTime.ofInstant(after.get().proposedAt(), ZoneOffset.UTC));
+                read.setObject(at++, after.get().id().value());
+            }
+            read.setInt(at, limit);
             return rows(read);
         } catch (SQLException failure) {
             throw failed("reading the regulatory obligations", failure);

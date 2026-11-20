@@ -447,7 +447,7 @@ class PeriodCloseDeskTest {
                 .contains("at most 20 of overtakenReturnsTotal").contains("a return not yet sent").contains("One APPROVED can still be sent").contains("UNDELIVERED").contains("does not mean nothing is in flight");
         assertThat(PeriodCloseDesk.OVERTAKEN_RETURNS_NOTE).contains("GET /v1/operator/regulatory/submissions under REGULATORY_REPORT_PREPARE");
         assertThat("/v1" + RegulatorySubmissionController.class.getAnnotation(org.springframework.web.bind.annotation.RequestMapping.class).path()[0]).isEqualTo("/v1/operator/regulatory/submissions");
-        assertThat(RegulatorySubmissionController.class.getMethod("listStandingRegulatorySubmissions", String.class, Integer.class).getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.REGULATORY_REPORT_PREPARE);
+        assertThat(RegulatorySubmissionController.class.getMethod("listStandingRegulatorySubmissions", String.class, String.class).getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.REGULATORY_REPORT_PREPARE);
         assertThat(java.util.Arrays.stream(RoleName.values()).filter(role -> role.permissions().contains(PermissionName.REGULATORY_REPORT_PREPARE))
                 .filter(role -> role.permissions().contains(PermissionName.ACCOUNTING_CLOSE_PROPOSE) || role.permissions().contains(PermissionName.ACCOUNTING_CLOSE_APPROVE)).toList()).as("as the words say").isEmpty();
     }

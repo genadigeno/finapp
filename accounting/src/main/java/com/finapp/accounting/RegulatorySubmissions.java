@@ -211,8 +211,8 @@ public final class RegulatorySubmissions {
         OVERTAKEN
     }
 
-    /** One page of what stands, and the cursor of the next when more exist. */
-    public record Standing(List<Row> rows, Optional<RegulatorySubmissionId> nextAfter) {}
+    /** One page of what stands, and the position the next resumes after when more exist. */
+    public record Standing(List<Row> rows, Optional<RegulatorySubmissionStore.StandingCursor> next) {}
 
     // ------------------------------------------------------------------ refusals
 
@@ -813,22 +813,20 @@ public final class RegulatorySubmissions {
     }
 
     /**
-     * What a person must act on or know of, oldest first, one page: a keyset on what is frozen from birth (the application role's grant is what freezes {@code recorded_order}), so a row turning up or leaving moves no other. The cursor is the last row's id.
+     * What a person must act on or know of, oldest first, one page: a keyset on what is frozen from birth (the application role's grant is what freezes {@code recorded_order}), so a row turning up or leaving moves no other. The cursor is the last row's recorded order and id
+     * (`P17-TSK-122`), a position needing no row to resolve it; one look-ahead row decides whether a next page exists.
      *
-     * @throws SubmissionInvalid a page out of bounds, or a cursor no return answers
+     * @throws SubmissionInvalid a page out of bounds
      */
-    public Standing standing(Connection unitOfWork, Optional<RegulatorySubmissionId> after, int limit) {
+    public Standing standing(Connection unitOfWork, Optional<RegulatorySubmissionStore.StandingCursor> after, int limit) {
         Objects.requireNonNull(after, "after");
         if (limit < 1 || limit > LIST_LIMIT) {
             throw new SubmissionInvalid("a page of what stands holds 1 to " + LIST_LIMIT + " returns");
         }
-        if (after.isPresent() && store.find(unitOfWork, after.get()).isEmpty()) {
-            throw new SubmissionInvalid("after is the cursor of a previous page");
-        }
-        List<Row> read = store.standing(unitOfWork, after, limit + 1);
+        List<RegulatorySubmissionStore.Placed> read = store.standing(unitOfWork, after, limit + 1);
         boolean more = read.size() > limit;
-        List<Row> page = more ? read.subList(0, limit) : read;
-        return new Standing(List.copyOf(page), more ? Optional.of(page.get(limit - 1).id()) : Optional.empty());
+        List<RegulatorySubmissionStore.Placed> page = more ? read.subList(0, limit) : read;
+        return new Standing(page.stream().map(RegulatorySubmissionStore.Placed::row).toList(), more ? Optional.of(page.get(limit - 1).cursor()) : Optional.empty());
     }
 
     /** Those waiting on a decision {@code reader} could make: never their own - excluded in the statement, before its limit. Fail closed: only a person has such a list. */

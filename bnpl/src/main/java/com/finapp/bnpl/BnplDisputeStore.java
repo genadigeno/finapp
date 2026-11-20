@@ -78,11 +78,24 @@ public interface BnplDisputeStore {
 
     /**
      * The operator's queue (the gate's A7-2): at most {@code limit} disputes in {@code status} ({@code OPEN} or
-     * {@code MERCHANT_RESPONDED}), oldest first by the instant each entered it, after the cursor dispute when given - never
-     * one of {@code excludingParty}'s, the reading operator's own party.
+     * {@code MERCHANT_RESPONDED}), oldest first by the instant each entered it and then by id - a total order - strictly
+     * after the position {@code after} when given (a keyset by the order's own key since `P17-TSK-122`, read from the
+     * cursor, not from the row it named) - never one of {@code excludingParty}'s, the reading operator's own party.
      */
     List<BnplDispute> queue(Connection unitOfWork, BnplDisputeStatus status, UUID excludingParty,
-            Optional<BnplDisputeId> after, int limit);
+            Optional<QueuePosition> after, int limit);
+
+    /**
+     * A dispute's place in the queue of its status (`P17-TSK-122`): the instant it entered that status - opened for
+     * {@code OPEN}, the merchant's answer for {@code MERCHANT_RESPONDED} - and its id, which breaks the tie.
+     */
+    record QueuePosition(java.time.Instant entered, BnplDisputeId id) {
+
+        public QueuePosition {
+            Objects.requireNonNull(entered, "entered must not be null");
+            Objects.requireNonNull(id, "id must not be null");
+        }
+    }
 
     /**
      * How long the oldest {@code MERCHANT_RESPONDED} dispute has awaited an operator since the merchant answered, on the

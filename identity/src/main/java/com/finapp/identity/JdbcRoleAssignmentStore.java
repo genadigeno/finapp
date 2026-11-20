@@ -159,25 +159,43 @@ public final class JdbcRoleAssignmentStore implements RoleAssignmentStore<Connec
 
     @Override
     public java.util.List<ConflictingHolding> conflictingHoldings(
-            Connection unitOfWork, java.util.List<RoleConflicts.Pair> pairs, int limit) {
+            Connection unitOfWork,
+            java.util.List<RoleConflicts.Pair> pairs,
+            java.util.Optional<ConflictingHolding> after,
+            int limit) {
         Objects.requireNonNull(pairs, "pairs must not be null");
+        Objects.requireNonNull(after, "after must not be null");
         if (limit < 1) {
             throw new IllegalArgumentException("a review serves at least one holding, not " + limit);
         }
         // Both directions of each pair are named, so a holding is found whichever role is in which column; the pair's first is
-        // the one reported first, so each conflict is one row.
-        String sql = "SELECT a.identity_id, a.role_name AS first_role, b.role_name AS second_role,"
+        // the one reported first, so each conflict is one row. P17-TSK-122: the join is a derived table so the page can resume
+        // after the last conflict the page before served by the order's own key - since, identity, first role, second role, a
+        // total order (one live holding per identity and role). No index can serve a key computed from two rows: the page reads
+        // the live-assignment join it read before it was paged, the review's handful of conflicts, and filters it.
+        String sql = "SELECT conflict.identity_id, conflict.first_role, conflict.second_role, conflict.since FROM ("
+                + "SELECT a.identity_id, a.role_name AS first_role, b.role_name AS second_role,"
                 + " greatest(a.assigned_at, b.assigned_at) AS since"
                 + " FROM " + TABLE + " a"
                 + " JOIN " + TABLE + " b ON b.identity_id = a.identity_id AND b.revoked_at IS NULL"
                 + " JOIN unnest(?::text[], ?::text[]) AS pair (first_role, second_role)"
                 + " ON pair.first_role = a.role_name AND pair.second_role = b.role_name"
-                + " WHERE a.revoked_at IS NULL"
-                + " ORDER BY since, a.identity_id, a.role_name, b.role_name LIMIT ?";
+                + " WHERE a.revoked_at IS NULL) conflict"
+                + (after.isPresent()
+                        ? " WHERE (conflict.since, conflict.identity_id, conflict.first_role, conflict.second_role) > (?, ?, ?, ?)"
+                        : "")
+                + " ORDER BY conflict.since, conflict.identity_id, conflict.first_role, conflict.second_role LIMIT ?";
         try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
-            select.setArray(1, unitOfWork.createArrayOf("text", pairs.stream().map(pair -> pair.first().name()).toArray()));
-            select.setArray(2, unitOfWork.createArrayOf("text", pairs.stream().map(pair -> pair.second().name()).toArray()));
-            select.setInt(3, limit);
+            int index = 1;
+            select.setArray(index++, unitOfWork.createArrayOf("text", pairs.stream().map(pair -> pair.first().name()).toArray()));
+            select.setArray(index++, unitOfWork.createArrayOf("text", pairs.stream().map(pair -> pair.second().name()).toArray()));
+            if (after.isPresent()) {
+                select.setObject(index++, java.time.OffsetDateTime.ofInstant(after.get().since(), java.time.ZoneOffset.UTC));
+                select.setObject(index++, after.get().identityId().value());
+                select.setString(index++, after.get().first().name());
+                select.setString(index++, after.get().second().name());
+            }
+            select.setInt(index, limit);
             try (ResultSet rows = select.executeQuery()) {
                 java.util.List<ConflictingHolding> found = new java.util.ArrayList<>();
                 while (rows.next()) {
@@ -187,7 +205,7 @@ public final class JdbcRoleAssignmentStore implements RoleAssignmentStore<Connec
                             RoleName.valueOf(rows.getString("second_role")),
                             rows.getTimestamp("since").toInstant()));
                 }
-                return found;
+                return java.util.List.copyOf(found);
             }
         } catch (SQLException e) {
             throw new IdentityStorageException(DatabaseFailure.describe("Could not read the conflicting holdings", e));

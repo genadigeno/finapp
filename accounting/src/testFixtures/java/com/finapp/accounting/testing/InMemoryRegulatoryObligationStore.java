@@ -1,5 +1,6 @@
 package com.finapp.accounting.testing;
 
+import com.finapp.accounting.JournalReads;
 import com.finapp.accounting.RegulatoryObligationId;
 import com.finapp.accounting.RegulatoryObligationStatus;
 import com.finapp.accounting.RegulatoryObligationStore;
@@ -58,8 +59,16 @@ public final class InMemoryRegulatoryObligationStore implements RegulatoryObliga
     }
 
     @Override
-    public List<Row> recent(Connection unitOfWork, int limit) {
-        return rows.values().stream().sorted(Comparator.comparing(Row::proposedAt).reversed()).limit(limit).toList();
+    public List<Row> recent(Connection unitOfWork, Optional<ObligationCursor> after, int limit) {
+        // Newest first, the id breaking the tie in PostgreSQL's uuid order (unsigned, big-endian) - the keyset's own order.
+        Comparator<Row> newestFirst = Comparator.comparing(Row::proposedAt)
+                .thenComparing((left, right) -> JournalReads.LineCursor.compareIds(left.id().value(), right.id().value()))
+                .reversed();
+        return rows.values().stream()
+                .filter(row -> after.map(cursor -> cursor.proposedAt().compareTo(row.proposedAt()) > 0
+                        || (cursor.proposedAt().equals(row.proposedAt())
+                                && JournalReads.LineCursor.compareIds(row.id().value(), cursor.id().value()) < 0)).orElse(true))
+                .sorted(newestFirst).limit(limit).toList();
     }
 
     @Override

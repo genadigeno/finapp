@@ -133,18 +133,19 @@ class GeneralLedgerDeskTest {
     void activityIsPagedAndRecorded() {
         activate();
         postNovember();
-        GeneralLedgerDesk.GlActivityView first = as(accountant, () -> desk().activity("2000", "2026-11", "EUR", null, 1));
+        GeneralLedgerDesk.GlActivityView first = as(accountant, () -> desk().activity("2000", "2026-11", "EUR", null, "1"));
         assertThat(first.figure().lines()).isEqualTo(2);
         assertThat(first.lines()).singleElement().satisfies(line -> {
             assertThat(line.purpose()).isEqualTo("CUSTOMER_WALLET");
             assertThat(line.ownerRef()).as("a reference, never a name").matches("[0-9a-f-]{36}");
             assertThat(line.glAccountCode()).isNull();
         });
-        assertThat(first.next()).isNotNull();
+        assertThat(first.nextCursor()).isNotNull();
         GeneralLedgerDesk.GlActivityView second = as(accountant,
-                () -> desk().activity("2000", "2026-11", "EUR", first.next(), 1));
+                () -> desk().activity("2000", "2026-11", "EUR", first.nextCursor(), "1"));
         assertThat(second.lines()).singleElement().satisfies(line ->
                 assertThat(line.entryId()).isNotEqualTo(first.lines().get(0).entryId()));
+        assertThat(second.nextCursor()).as("the last page names no next: no look-ahead line followed it").isNull();
         BigDecimal debits = BigDecimal.ZERO;
         BigDecimal credits = BigDecimal.ZERO;
         for (GeneralLedgerDesk.GlLineView line : List.of(first.lines().get(0), second.lines().get(0))) {
@@ -253,8 +254,9 @@ class GeneralLedgerDeskTest {
                 () -> desk().balances("2026-11", "eur"),
                 () -> desk().balances("2026-11", "XXX"),
                 () -> desk().activity("2000", "2026-11", null, null, null),
-                () -> desk().activity("2000", "2026-11", "EUR", null, 0),
-                () -> desk().activity("2000", "2026-11", "EUR", null, 501),
+                () -> desk().activity("2000", "2026-11", "EUR", null, "0"),
+                () -> desk().activity("2000", "2026-11", "EUR", null, "501"),
+                () -> desk().activity("2000", "2026-11", "EUR", com.finapp.app.api.OperatorCollection.cursor("accounting.breaks", UUID.randomUUID().toString()), null),
                 () -> desk().activity("2000", "2026-11", "EUR", "garbage!", null),
                 // A well-formed cursor of another month, or of a year far outside the calendar (the review's M-2).
                 () -> desk().activity("2000", "2026-11", "EUR", cursor(LocalDate.of(2026, 12, 1)), null),
@@ -273,7 +275,7 @@ class GeneralLedgerDeskTest {
         List<Method> handlers = List.of(
                 GeneralLedgerController.class.getMethod("readGeneralLedgerBalances", String.class, String.class),
                 GeneralLedgerController.class.getMethod("readGeneralLedgerAccountActivity", String.class, String.class,
-                        String.class, String.class, Integer.class),
+                        String.class, String.class, String.class),
                 GeneralLedgerController.class.getMethod("readGeneralLedgerEntry", String.class));
         assertThat(handlers).extracting(handler -> handler.getAnnotation(GetMapping.class).value()[0])
                 .containsExactly("/balances", "/accounts/{code}/activity", "/entries/{entryId}");
@@ -328,7 +330,7 @@ class GeneralLedgerDeskTest {
     // ------------------------------------------------------------------
 
     private static String cursor(LocalDate day) {
-        return new JournalReads.LineCursor(day, UUID.randomUUID(), 0).encoded();
+        return GeneralLedgerDesk.cursor(new JournalReads.LineCursor(day, UUID.randomUUID(), 0));
     }
 
     private GeneralLedgerDesk desk() {

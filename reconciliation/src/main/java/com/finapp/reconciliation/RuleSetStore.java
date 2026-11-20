@@ -149,6 +149,11 @@ public interface RuleSetStore {
             Instant at,
             CorrelationId correlation);
 
-    /** The source's versions, newest version first, at most {@code limit}, content included. */
-    List<VersionView> versions(Connection unitOfWork, UUID sourceId, int limit);
+    /**
+     * The source's versions, newest version first, at most {@code limit}, content included; strictly older than
+     * {@code beforeVersion} when one is named (`P17-TSK-122`, `API_CONVENTIONS.md` section 7) - a keyset read on the source's
+     * own {@code UNIQUE (source_id, version)}, never an offset.
+     */
+    List<VersionView> versions(
+            Connection unitOfWork, UUID sourceId, java.util.OptionalInt beforeVersion, int limit);
 }

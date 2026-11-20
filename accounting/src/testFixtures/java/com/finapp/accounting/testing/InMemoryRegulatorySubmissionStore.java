@@ -2,6 +2,7 @@ package com.finapp.accounting.testing;
 
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.AccountingPeriodStore;
+import com.finapp.accounting.JournalReads;
 import com.finapp.accounting.PeriodStatus;
 import com.finapp.accounting.RegulatoryFormLine;
 import com.finapp.accounting.RegulatoryObligationStore;
@@ -374,15 +375,17 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
     }
 
     @Override
-    public List<Row> standing(Connection unitOfWork, Optional<RegulatorySubmissionId> after, int limit) {
-        Comparator<Row> order = Comparator.comparing((Row row) -> recordedOrder.get(row.id())).thenComparing(row -> row.id().value());
-        Optional<Row> last = after.flatMap(id -> find(unitOfWork, id));
+    public List<Placed> standing(Connection unitOfWork, Optional<StandingCursor> after, int limit) {
+        // (recorded_order, id) ascending, the id in PostgreSQL's uuid order (unsigned, big-endian) - the keyset's own order.
+        Comparator<StandingCursor> order = Comparator.comparingLong(StandingCursor::recordedOrder)
+                .thenComparing((left, right) -> JournalReads.LineCursor.compareIds(left.id().value(), right.id().value()));
         return rows.values().stream().map(this::read).filter(row -> row.status() == SubmissionStatus.DRAFT || row.status() == SubmissionStatus.VALIDATED || row.status() == SubmissionStatus.APPROVED || row.status() == SubmissionStatus.SUBMITTED
                 || ((row.status() == SubmissionStatus.REJECTED || row.status() == SubmissionStatus.UNDELIVERED) && !corrections.containsKey(row.id()))
                 || row.overtaken()
                 || row.contraryAnswers() > 0)
-                .filter(row -> after.isEmpty() || last.filter(held -> order.compare(row, held) > 0).isPresent())
-                .sorted(order).limit(limit).toList();
+                .map(row -> new Placed(row, recordedOrder.get(row.id())))
+                .filter(placed -> after.map(cursor -> order.compare(placed.cursor(), cursor) > 0).orElse(true))
+                .sorted(Comparator.comparing(Placed::cursor, order)).limit(limit).toList();
     }
 
     @Override

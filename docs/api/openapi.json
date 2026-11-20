@@ -13291,13 +13291,13 @@
       },
       "AccountingBreakPage": {
         "properties": {
-          "breaks": {
+          "items": {
             "items": {
               "$ref": "#/components/schemas/AccountingBreakView"
             },
             "type": "array"
           },
-          "next": {
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -14867,20 +14867,6 @@
         ],
         "type": "object"
       },
-      "BnplDisputeQueue": {
-        "properties": {
-          "disputes": {
-            "items": {
-              "$ref": "#/components/schemas/BnplDisputeQueueItem"
-            },
-            "type": "array"
-          },
-          "next": {
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
       "BnplDisputeQueueItem": {
         "properties": {
           "amount": {
@@ -14912,6 +14898,20 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplDisputeQueuePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BnplDisputeQueueItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -18676,16 +18676,16 @@
         },
         "type": "object"
       },
-      "CorridorPolicyList": {
+      "CorridorPolicyPage": {
         "properties": {
-          "truncated": {
-            "type": "boolean"
-          },
-          "versions": {
+          "items": {
             "items": {
               "$ref": "#/components/schemas/CorridorPolicyView"
             },
             "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -20756,16 +20756,16 @@
         },
         "type": "object"
       },
-      "ExpectationList": {
+      "ExpectationPage": {
         "properties": {
-          "expectations": {
+          "items": {
             "items": {
               "$ref": "#/components/schemas/ExpectationView"
             },
             "type": "array"
           },
-          "truncated": {
-            "type": "boolean"
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -22071,7 +22071,7 @@
           "mappingVersionId": {
             "type": "string"
           },
-          "next": {
+          "nextCursor": {
             "type": "string"
           },
           "period": {
@@ -28515,6 +28515,20 @@
         },
         "type": "object"
       },
+      "RegulatoryObligationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/RegulatoryObligationSummaryView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RegulatoryObligationReceipt": {
         "properties": {
           "configurationSha256": {
@@ -28944,14 +28958,14 @@
       },
       "RegulatorySubmissionStandingView": {
         "properties": {
-          "nextAfter": {
-            "type": "string"
-          },
-          "submissions": {
+          "items": {
             "items": {
               "$ref": "#/components/schemas/RegulatorySubmissionSummaryView"
             },
             "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -33009,16 +33023,16 @@
         },
         "type": "object"
       },
-      "RuleSetList": {
+      "RuleSetPage": {
         "properties": {
-          "truncated": {
-            "type": "boolean"
-          },
-          "versions": {
+          "items": {
             "items": {
               "$ref": "#/components/schemas/RuleSetVersion"
             },
             "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -33265,16 +33279,16 @@
         },
         "type": "object"
       },
-      "RunList": {
+      "RunPage": {
         "properties": {
-          "runs": {
+          "items": {
             "items": {
               "$ref": "#/components/schemas/RunView"
             },
             "type": "array"
           },
-          "truncated": {
-            "type": "boolean"
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -33920,6 +33934,20 @@
         ],
         "type": "object"
       },
+      "SodConflictPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SodConflictView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "SodConflictView": {
         "properties": {
           "identityId": {
@@ -33934,20 +33962,6 @@
           "since": {
             "format": "date-time",
             "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "SodConflictsView": {
-        "properties": {
-          "conflicts": {
-            "items": {
-              "$ref": "#/components/schemas/SodConflictView"
-            },
-            "type": "array"
-          },
-          "truncated": {
-            "type": "boolean"
           }
         },
         "type": "object"
@@ -39169,12 +39183,30 @@
     "/v1/operator/access-review/sod-conflicts": {
       "get": {
         "operationId": "listSodConflicts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SodConflictsView"
+                  "$ref": "#/components/schemas/SodConflictPage"
                 }
               }
             },
@@ -39295,16 +39327,15 @@
           },
           {
             "in": "query",
-            "name": "limit",
+            "name": "cursor",
             "required": false,
             "schema": {
-              "format": "int32",
-              "type": "integer"
+              "type": "string"
             }
           },
           {
             "in": "query",
-            "name": "after",
+            "name": "limit",
             "required": false,
             "schema": {
               "type": "string"
@@ -39562,7 +39593,7 @@
           },
           {
             "in": "query",
-            "name": "after",
+            "name": "cursor",
             "required": false,
             "schema": {
               "type": "string"
@@ -39573,8 +39604,7 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "format": "int32",
-              "type": "integer"
+              "type": "string"
             }
           }
         ],
@@ -41093,7 +41123,7 @@
           },
           {
             "in": "query",
-            "name": "after",
+            "name": "cursor",
             "required": false,
             "schema": {
               "type": "string"
@@ -41104,8 +41134,7 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "format": "int32",
-              "type": "integer"
+              "type": "string"
             }
           }
         ],
@@ -42401,7 +42430,15 @@
           },
           {
             "in": "query",
-            "name": "after",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
             "required": false,
             "schema": {
               "type": "string"
@@ -42413,7 +42450,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BnplDisputeQueue"
+                  "$ref": "#/components/schemas/BnplDisputeQueuePage"
                 }
               }
             },
@@ -43511,12 +43548,30 @@
     "/v1/operator/cross-border/corridor-policies": {
       "get": {
         "operationId": "listCorridorPolicies",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CorridorPolicyList"
+                  "$ref": "#/components/schemas/CorridorPolicyPage"
                 }
               }
             },
@@ -48480,6 +48535,22 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -48487,7 +48558,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ExpectationList"
+                  "$ref": "#/components/schemas/ExpectationPage"
                 }
               }
             },
@@ -48739,6 +48810,22 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -48746,7 +48833,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RuleSetList"
+                  "$ref": "#/components/schemas/RuleSetPage"
                 }
               }
             },
@@ -48867,12 +48954,30 @@
     "/v1/operator/reconciliation/runs": {
       "get": {
         "operationId": "listReconciliationRuns",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/RunList"
+                  "$ref": "#/components/schemas/RunPage"
                 }
               }
             },
@@ -49055,15 +49160,30 @@
     "/v1/operator/regulatory/obligations": {
       "get": {
         "operationId": "listRegulatoryObligations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/RegulatoryObligationSummaryView"
-                  },
-                  "type": "array"
+                  "$ref": "#/components/schemas/RegulatoryObligationPage"
                 }
               }
             },
@@ -49277,7 +49397,7 @@
         "parameters": [
           {
             "in": "query",
-            "name": "after",
+            "name": "cursor",
             "required": false,
             "schema": {
               "type": "string"
@@ -49288,8 +49408,7 @@
             "name": "limit",
             "required": false,
             "schema": {
-              "format": "int32",
-              "type": "integer"
+              "type": "string"
             }
           }
         ],

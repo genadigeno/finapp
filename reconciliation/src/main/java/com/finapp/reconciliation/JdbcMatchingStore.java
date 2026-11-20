@@ -2394,17 +2394,26 @@ public final class JdbcMatchingStore implements MatchingStore {
     }
 
     @Override
-    public List<RunRow> runs(Connection unitOfWork, int limit) {
-        try (PreparedStatement read =
-                unitOfWork.prepareStatement(
-                        "SELECT " + RUN_COLUMNS
-                                + " FROM reconciliation.reconciliation_batch"
-                                + " ORDER BY created_at DESC LIMIT ?")) {
-            read.setInt(1, limit);
+    public List<ListedRun> runs(Connection unitOfWork, Optional<RunCursor> after, int limit) {
+        // Resuming newest-first: everything strictly before the cursor's row in (created_at, id) - the order's own key, so the
+        // walk is served by V028's index read backwards (P17-TSK-122).
+        String sql = "SELECT " + RUN_COLUMNS + ", created_at FROM reconciliation.reconciliation_batch"
+                + (after.isPresent() ? " WHERE (created_at, id) < (?, ?)" : "")
+                + " ORDER BY created_at DESC, id DESC LIMIT ?";
+        try (PreparedStatement read = unitOfWork.prepareStatement(sql)) {
+            int index = 1;
+            if (after.isPresent()) {
+                read.setObject(index++, java.time.OffsetDateTime.ofInstant(
+                        after.get().createdAt(), java.time.ZoneOffset.UTC));
+                read.setObject(index++, after.get().id());
+            }
+            read.setInt(index, limit);
             try (ResultSet rows = read.executeQuery()) {
-                List<RunRow> runs = new ArrayList<>();
+                List<ListedRun> runs = new ArrayList<>();
                 while (rows.next()) {
-                    runs.add(runRow(rows));
+                    runs.add(new ListedRun(
+                            runRow(rows),
+                            rows.getObject("created_at", java.time.OffsetDateTime.class).toInstant()));
                 }
                 return List.copyOf(runs);
             }

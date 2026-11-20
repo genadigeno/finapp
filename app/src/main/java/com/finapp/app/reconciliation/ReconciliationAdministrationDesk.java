@@ -1,5 +1,7 @@
 package com.finapp.app.reconciliation;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.correlation.CorrelationContext;
@@ -28,6 +30,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.time.Clock;
@@ -60,7 +63,11 @@ public class ReconciliationAdministrationDesk {
     static final String PROPOSE_SCOPE = "reconciliation.rule-set:";
 
     /** The bound on a version listing; one more is read to know it was truncated. */
-    static final int VERSION_BOUND = 20;
+    /** One source's rule set list's collection name, inside its cursors (`P17-TSK-122`). */
+    static final String RULE_SETS = "reconciliation.rule-sets";
+
+    static final int VERSION_PAGE_DEFAULT = 20;
+    static final int VERSION_PAGE_MAXIMUM = 50;
 
     @NonNull private final RuleSetAdministration ruleSets;
     @NonNull private final RunAdministration runs;
@@ -135,22 +142,50 @@ public class ReconciliationAdministrationDesk {
             int scale,
             String roundingPolicy) {}
 
-    /** A source's versions, newest first, bounded. */
-    public record RuleSetList(List<RuleSetVersion> versions, boolean truncated) {}
+    /** A page of one source's versions (`API_CONVENTIONS.md` section 7): {@code nextCursor} absent on the last page. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record RuleSetPage(List<RuleSetVersion> items, String nextCursor) {}
 
-    public RuleSetList ruleSets(String sourceCode) {
+    /**
+     * A page of one source's versions, as a section 7 collection (`P17-TSK-122`; read "the newest 20 with
+     * {@code truncated}" until then): version descending - a source's versions are unique, so the order is total;
+     * {@code limit} {@value #VERSION_PAGE_DEFAULT} unless named, {@value #VERSION_PAGE_MAXIMUM} at most and refused above,
+     * never reduced (each version carries its whole content); the opaque {@code cursor} of the page before.
+     */
+    public RuleSetPage ruleSets(String sourceCode, String cursor, String limit) {
+        int size = OperatorCollection.limit(limit, VERSION_PAGE_DEFAULT, VERSION_PAGE_MAXIMUM);
+        OptionalInt before = ruleSetCursor(cursor);
         List<RuleSetStore.VersionView> rows =
                 command(
                         unitOfWork ->
                                 ruleSets.versions(
-                                        unitOfWork, sourceId(unitOfWork, sourceCode),
-                                        VERSION_BOUND + 1));
-        return new RuleSetList(
-                rows.stream()
-                        .limit(VERSION_BOUND)
-                        .map(ReconciliationAdministrationDesk::version)
-                        .toList(),
-                rows.size() > VERSION_BOUND);
+                                        unitOfWork, sourceId(unitOfWork, sourceCode), before,
+                                        size + 1));
+        List<RuleSetStore.VersionView> served = rows.subList(0, Math.min(size, rows.size()));
+        String next = null;
+        if (rows.size() > size) {
+            next = OperatorCollection.cursor(
+                    RULE_SETS, Integer.toString(served.get(served.size() - 1).row().version()));
+        }
+        return new RuleSetPage(
+                served.stream().map(ReconciliationAdministrationDesk::version).toList(), next);
+    }
+
+    /** The version {@code cursor} names in a source's rule set list, or none for the first page; anything else refused. */
+    static OptionalInt ruleSetCursor(String cursor) {
+        return OperatorCollection.key(RULE_SETS, cursor, 1)
+                .map(key -> {
+                    try {
+                        int version = Integer.parseInt(key.get(0));
+                        if (version < 1) {
+                            throw OperatorCollection.invalidCursor();
+                        }
+                        return OptionalInt.of(version);
+                    } catch (NumberFormatException unreadable) {
+                        throw OperatorCollection.invalidCursor();
+                    }
+                })
+                .orElse(OptionalInt.empty());
     }
 
     public RuleSetReceipt proposeRuleSet(

@@ -52,8 +52,26 @@ public interface ExpectationInquiries {
             Instant openedAt,
             Instant statusChangedAt) {}
 
-    /** The newest expectations matching {@code filter}, at most {@code limit}. */
-    List<ExpectationRow> expectations(Connection unitOfWork, ExpectationFilter filter, int limit);
+    /**
+     * Where a page of the listing resumes (`P17-TSK-122`, `API_CONVENTIONS.md` section 7): after the expectation whose
+     * {@code (opened_at, id)} this is, in the listing's newest-first order. Both are fixed at the expectation's opening (V002's
+     * trigger refuses a changed opened_at), so a page boundary never moves while expectations open or settle around it.
+     */
+    record ExpectationCursor(Instant openedAt, UUID id) {
+
+        public ExpectationCursor {
+            Objects.requireNonNull(openedAt, "openedAt must not be null");
+            Objects.requireNonNull(id, "id must not be null");
+        }
+    }
+
+    /**
+     * The expectations matching {@code filter}, at most {@code limit}: opened newest first, the id breaking the tie
+     * (descending too), so the order is total; strictly after {@code after} when one is named - a keyset read, never an
+     * offset.
+     */
+    List<ExpectationRow> expectations(
+            Connection unitOfWork, ExpectationFilter filter, Optional<ExpectationCursor> after, int limit);
 
     Optional<ExpectationRow> expectationById(Connection unitOfWork, UUID expectationId);
 

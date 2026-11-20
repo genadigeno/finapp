@@ -251,9 +251,11 @@ public final class Authorization {
     }
 
     /** The live holdings that conflict under the owner's segregation-of-duties table (`P17-TSK-016`, {@link RoleConflicts}). */
-    public List<RoleAssignmentStore.ConflictingHolding> conflictingHoldings(Connection unitOfWork, int limit) {
+    public List<RoleAssignmentStore.ConflictingHolding> conflictingHoldings(
+            Connection unitOfWork, Optional<RoleAssignmentStore.ConflictingHolding> after, int limit) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
-        return assignments.conflictingHoldings(unitOfWork, RoleConflicts.PAIRS, limit);
+        Objects.requireNonNull(after, "after must not be null");
+        return assignments.conflictingHoldings(unitOfWork, RoleConflicts.PAIRS, after, limit);
     }
 
     /**

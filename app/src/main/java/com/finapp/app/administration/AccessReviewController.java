@@ -38,14 +38,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class AccessReviewController {
 
-    /** A review reads this, so it need never be paged; a page full of holdings says so and the rest wait for the next. */
-    private static final int MOST_SERVED = 200;
-
     /** The factorless review's collection name, inside its cursors (`P17-TSK-042`). */
     static final String FACTORLESS = "identity.factorless-holdings";
 
     static final int FACTORLESS_DEFAULT_LIMIT = 50;
     static final int FACTORLESS_MAXIMUM_LIMIT = 200;
+
+    /** The SoD-conflict review's collection name, inside its cursors (`P17-TSK-122`). */
+    static final String SOD_CONFLICTS = "identity.sod-conflicts";
+
+    static final int SOD_CONFLICTS_DEFAULT_LIMIT = 50;
+    static final int SOD_CONFLICTS_MAXIMUM_LIMIT = 200;
 
     @NonNull private final IdentityAdministrationService administration;
 
@@ -87,19 +90,45 @@ public class AccessReviewController {
 
     /**
      * The live holdings that conflict under the owner's segregation-of-duties table (`P17-TSK-016`): those granted before the rule,
-     * which the grant now refuses, oldest conflict first. It revokes nothing; the review decides each, through the revocation door.
-     * Under {@code ROLE_ASSIGN} on a {@code MULTI_FACTOR} session, recorded, as the factorless review.
+     * which the grant now refuses. It revokes nothing; the review decides each, through the revocation door. A section 7
+     * collection (`P17-TSK-122`; read "at most 200 with {@code truncated}" until then): oldest conflict first - since, the later
+     * of the two grants - the identity, the first role and the second breaking the tie; {@code limit} 50 unless named, 200 at
+     * most; the opaque {@code cursor} of the page before. Under {@code ROLE_ASSIGN} on a {@code MULTI_FACTOR} session, every page
+     * recorded, as the factorless review.
      */
     @GetMapping("/sod-conflicts")
     @RequiresPermission(PermissionName.ROLE_ASSIGN)
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
-    public SodConflictsView listSodConflicts() {
-        IdentityAdministration.SodConflicts served = administration.sodConflicts(MOST_SERVED);
-        return new SodConflictsView(served.conflicts().stream().map(SodConflictView::of).toList(), served.truncated());
+    public SodConflictPage listSodConflicts(
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        int size = OperatorCollection.limit(limit, SOD_CONFLICTS_DEFAULT_LIMIT, SOD_CONFLICTS_MAXIMUM_LIMIT);
+        Optional<RoleAssignmentStore.ConflictingHolding> after = sodConflictCursor(cursor);
+        IdentityAdministration.SodConflicts served = administration.sodConflicts(after, size);
+        String next = null;
+        if (served.more() && !served.conflicts().isEmpty()) {
+            RoleAssignmentStore.ConflictingHolding tail = served.conflicts().get(served.conflicts().size() - 1);
+            next = OperatorCollection.cursor(SOD_CONFLICTS, tail.since().toString(), tail.identityId().value().toString(),
+                    tail.first().name(), tail.second().name());
+        }
+        return new SodConflictPage(served.conflicts().stream().map(SodConflictView::of).toList(), next);
     }
 
-    /** The conflicts served and whether there were more. */
-    public record SodConflictsView(List<SodConflictView> conflicts, boolean truncated) {}
+    /** The conflict {@code cursor} names as the last one served, or none for the first page; anything else refused. */
+    static Optional<RoleAssignmentStore.ConflictingHolding> sodConflictCursor(String cursor) {
+        return OperatorCollection.key(SOD_CONFLICTS, cursor, 4).map(key -> {
+            try {
+                return new RoleAssignmentStore.ConflictingHolding(IdentityId.of(UUID.fromString(key.get(1))),
+                        RoleName.valueOf(key.get(2)), RoleName.valueOf(key.get(3)), Instant.parse(key.get(0)));
+            } catch (RuntimeException unreadable) {
+                throw OperatorCollection.invalidCursor();
+            }
+        });
+    }
+
+    /** A page of the SoD-conflict review (`P17-TSK-122`): {@code nextCursor} absent, not null, on the last one. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record SodConflictPage(List<SodConflictView> items, String nextCursor) {}
 
     /** Who, which two roles, since when - the later of the two grants: nothing else about the person. */
     public record SodConflictView(String identityId, List<String> roles, Instant since) {

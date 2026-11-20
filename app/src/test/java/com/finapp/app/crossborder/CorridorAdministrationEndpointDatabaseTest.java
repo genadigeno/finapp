@@ -98,12 +98,12 @@ class CorridorAdministrationEndpointDatabaseTest {
         assertThat(post(approval(id), decision("checked against O7"), second, null).statusCode())
                 .as("the approver's retry converges").isEqualTo(200);
 
-        HttpResponse<String> listed = get(POLICIES, second);
+        HttpResponse<String> listed = get(POLICIES + "?limit=100", second);
         assertThat(listed.statusCode()).isEqualTo(200);
         assertThat(listed.body()).contains(id).contains("\"maximum\":\"1500000\"").contains("\"maximum\":\"4000.000\"");
         // P17-TSK-118: each version names its proposer, never its decider.
         JsonNode version = null;
-        for (JsonNode listedVersion : new ObjectMapper().readTree(listed.body()).get("versions")) {
+        for (JsonNode listedVersion : new ObjectMapper().readTree(listed.body()).get("items")) {
             if (listedVersion.get("id").asString().equals(id)) {
                 version = listedVersion;
             }

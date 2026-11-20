@@ -790,12 +790,12 @@ class BnplDisputeDatabaseTest {
         long pages = count("SELECT count(*) FROM platform.audit_record WHERE operation = '"
                 + BnplAuditAction.DISPUTE_QUEUE_READ.code() + "' AND actor_id = '" + operator.id() + "'");
         List<BnplDisputeId> all = new java.util.ArrayList<>();
-        Optional<BnplDisputeId> after = Optional.empty();
+        Optional<BnplDisputeStore.QueuePosition> after = Optional.empty();
         int served = 0;
         do {
-            Optional<BnplDisputeId> cursor = after;
+            Optional<BnplDisputeStore.QueuePosition> cursor = after;
             BnplDisputes.Queue page = BnplClockFrame.inOneTransaction(Duration.ZERO, uow -> disputes.queue(uow,
-                    BnplDisputeStatus.MERCHANT_RESPONDED, cursor, operator, correlation()));
+                    BnplDisputeStatus.MERCHANT_RESPONDED, cursor, 1, operator, correlation()));
             assertThat(page.disputes()).allSatisfy(row -> assertThat(row.status())
                     .isEqualTo(BnplDisputeStatus.MERCHANT_RESPONDED));
             page.disputes().forEach(row -> all.add(row.id()));
@@ -811,18 +811,18 @@ class BnplDisputeDatabaseTest {
         Actor insider = new Actor("operator-insider", ActorType.CUSTOMER);
         operatorParties.put(insider.id(), bought.get(2).party());
         List<BnplDisputeId> seen = new java.util.ArrayList<>();
-        Optional<BnplDisputeId> next = Optional.empty();
+        Optional<BnplDisputeStore.QueuePosition> next = Optional.empty();
         do {
-            Optional<BnplDisputeId> cursor = next;
+            Optional<BnplDisputeStore.QueuePosition> cursor = next;
             BnplDisputes.Queue page = BnplClockFrame.inOneTransaction(Duration.ZERO, uow -> disputes.queue(uow,
-                    BnplDisputeStatus.MERCHANT_RESPONDED, cursor, insider, correlation()));
+                    BnplDisputeStatus.MERCHANT_RESPONDED, cursor, BnplDisputes.QUEUE_PAGE, insider, correlation()));
             page.disputes().forEach(row -> seen.add(row.id()));
             next = page.next();
         } while (next.isPresent());
         assertThat(seen).as("never one's own party's").doesNotContain(contested.get(2).id())
                 .contains(contested.get(1).id(), contested.get(0).id());
         assertThatThrownBy(() -> BnplClockFrame.inOneTransaction(Duration.ZERO, uow -> disputes.queue(uow,
-                BnplDisputeStatus.MERCHANT_RESPONDED, Optional.empty(), UNPLACED, correlation())))
+                BnplDisputeStatus.MERCHANT_RESPONDED, Optional.empty(), BnplDisputes.QUEUE_PAGE, UNPLACED, correlation())))
                 .isInstanceOf(BnplDisputes.SelfDealingRefused.class);
         Optional<Duration> oldest = BnplClockFrame.inOneTransaction(Duration.ZERO, DISPUTES::oldestContestedAge);
         assertThat(oldest).as("the gauge's read").isPresent();

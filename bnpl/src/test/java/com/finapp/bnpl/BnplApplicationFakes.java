@@ -3191,15 +3191,18 @@ final class BnplApplicationFakes {
 
         @Override
         public List<BnplDispute> queue(Connection unitOfWork, BnplDisputeStatus status, UUID excludingParty,
-                Optional<BnplDisputeId> after, int limit) {
+                Optional<BnplDisputeStore.QueuePosition> after, int limit) {
             java.util.function.Function<BnplDispute, Instant> entered = row -> status == BnplDisputeStatus.OPEN
                     ? row.openedAt().orElseThrow() : row.merchantRespondedAt().orElseThrow();
-            java.util.Comparator<BnplDispute> order = java.util.Comparator.comparing(entered)
-                    .thenComparing(row -> row.id().value());
+            java.util.Comparator<BnplDisputeStore.QueuePosition> order =
+                    java.util.Comparator.comparing(BnplDisputeStore.QueuePosition::entered)
+                            .thenComparing(position -> position.id().value());
+            java.util.function.Function<BnplDispute, BnplDisputeStore.QueuePosition> position =
+                    row -> new BnplDisputeStore.QueuePosition(entered.apply(row), row.id());
             List<BnplDispute> sorted = rows.values().stream()
-                    .filter(row -> row.status() == status && !row.party().equals(excludingParty)).sorted(order).toList();
-            Optional<BnplDispute> cursor = after.map(id -> rows.get(id.value()));
-            return sorted.stream().filter(row -> cursor.map(from -> order.compare(row, from) > 0).orElse(true))
+                    .filter(row -> row.status() == status && !row.party().equals(excludingParty))
+                    .sorted(java.util.Comparator.comparing(position, order)).toList();
+            return sorted.stream().filter(row -> after.map(from -> order.compare(position.apply(row), from) > 0).orElse(true))
                     .limit(limit).toList();
         }
 

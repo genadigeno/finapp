@@ -23,7 +23,7 @@ public class ReportRunLinesController {
     @NonNull private final ReportRunLinesDesk desk;
 
     /**
-     * One GL account's journal lines in one calendar month and currency, under the run's pinned version: the month's figure and one keyset page ({@code limit} 1 to 500, default 100; {@code after} the previous page's {@code next}). A month after the run's period is refused.
+     * One GL account's journal lines in one calendar month and currency, under the run's pinned version: the month's figure and one keyset page ({@code limit} 1 to 500, default 100, refused above; {@code cursor} the previous page's opaque {@code nextCursor}, absent on the last page). A month after the run's period is refused.
      * A row's opening is walked back a month at a time until its {@code openingLines} are counted.
      */
     @GetMapping("/{runId}/lines")
@@ -33,8 +33,8 @@ public class ReportRunLinesController {
             @RequestParam("account") String account,
             @RequestParam("month") String month,
             @RequestParam("currency") String currency,
-            @RequestParam(name = "after", required = false) String after,
-            @RequestParam(name = "limit", required = false) Integer limit) {
-        return desk.lines(runId, account, month, currency, after, limit);
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.lines(runId, account, month, currency, cursor, limit);
     }
 }

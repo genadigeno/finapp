@@ -70,6 +70,12 @@ public class BreakInvestigation {
     static final int BREAK_PAGE_DEFAULT = 50;
     static final int BREAK_PAGE_MAXIMUM = 200;
 
+    /** The expectation list's collection name, inside its cursors (`P17-TSK-122`). */
+    static final String EXPECTATIONS = "reconciliation.expectations";
+
+    static final int EXPECTATION_PAGE_DEFAULT = 50;
+    static final int EXPECTATION_PAGE_MAXIMUM = 200;
+
     static final String NOTE_SCOPE = "reconciliation.break-note:";
     static final String LINK_SCOPE = "reconciliation.break-evidence-link:";
 
@@ -191,7 +197,9 @@ public class BreakInvestigation {
             String ruleSetId,
             String openedAt) {}
 
-    public record ExpectationList(List<ExpectationView> expectations, boolean truncated) {}
+    /** A page of the expectation list (`API_CONVENTIONS.md` section 7): {@code nextCursor} absent on the last page. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ExpectationPage(List<ExpectationView> items, String nextCursor) {}
 
     public record ExpectationKeyView(String keyKind, String keyValue) {}
 
@@ -496,7 +504,15 @@ public class BreakInvestigation {
 
     // ================================================================== expectations
 
-    public ExpectationList listExpectations(String status, Boolean overdue, String source) {
+    /**
+     * A page of the expectations matching the filters (`P17-TSK-122`): opened newest first, the id breaking the tie;
+     * {@code limit} {@value #EXPECTATION_PAGE_DEFAULT} unless named, {@value #EXPECTATION_PAGE_MAXIMUM} at most and refused
+     * above, never reduced; the opaque {@code cursor} of the page before. Unrecorded, as every read of this desk is.
+     */
+    public ExpectationPage listExpectations(
+            String status, Boolean overdue, String source, String cursor, String limit) {
+        int size = OperatorCollection.limit(limit, EXPECTATION_PAGE_DEFAULT, EXPECTATION_PAGE_MAXIMUM);
+        Optional<ExpectationInquiries.ExpectationCursor> after = expectationCursor(cursor);
         ExpectationInquiries.ExpectationFilter filter =
                 new ExpectationInquiries.ExpectationFilter(
                         enumParam("status", status, ExpectationStatus.values()),
@@ -505,13 +521,30 @@ public class BreakInvestigation {
         return snapshot(
                 unitOfWork -> {
                     List<ExpectationInquiries.ExpectationRow> rows =
-                            expectations.expectations(unitOfWork, filter, BOUND + 1);
-                    return new ExpectationList(
-                            rows.stream()
-                                    .limit(BOUND)
-                                    .map(BreakInvestigation::expectationView)
-                                    .toList(),
-                            rows.size() > BOUND);
+                            expectations.expectations(unitOfWork, filter, after, size + 1);
+                    List<ExpectationInquiries.ExpectationRow> served =
+                            rows.subList(0, Math.min(size, rows.size()));
+                    String next = null;
+                    if (rows.size() > size) {
+                        ExpectationInquiries.ExpectationRow tail = served.get(served.size() - 1);
+                        next = OperatorCollection.cursor(
+                                EXPECTATIONS, tail.openedAt().toString(), tail.id().toString());
+                    }
+                    return new ExpectationPage(
+                            served.stream().map(BreakInvestigation::expectationView).toList(), next);
+                });
+    }
+
+    /** The position {@code cursor} names in the expectation list, or none for the first page; anything else refused. */
+    static Optional<ExpectationInquiries.ExpectationCursor> expectationCursor(String cursor) {
+        return OperatorCollection.key(EXPECTATIONS, cursor, 2)
+                .map(key -> {
+                    try {
+                        return new ExpectationInquiries.ExpectationCursor(
+                                Instant.parse(key.get(0)), UUID.fromString(key.get(1)));
+                    } catch (RuntimeException unreadable) {
+                        throw OperatorCollection.invalidCursor();
+                    }
                 });
     }
 

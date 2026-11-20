@@ -44,8 +44,9 @@ public class GeneralLedgerController {
 
     /**
      * One GL account's activity in one currency and period: its figure and one keyset page of the journal lines composing
-     * it, in posting-date, entry and line order ({@code limit} 1 to 500, default 100; {@code after} the previous page's
-     * {@code next}). Every page's lines, with the others', sum to the figure.
+     * it, in posting-date, entry and line order ({@code limit} 1 to 500, default 100, refused above; {@code cursor} the
+     * previous page's opaque {@code nextCursor}, absent on the last page). Every page's lines, with the others', sum to the
+     * figure.
      */
     @GetMapping("/accounts/{code}/activity")
     @RequiresPermission(PermissionName.ACCOUNTING_READ)
@@ -53,9 +54,9 @@ public class GeneralLedgerController {
             @PathVariable("code") String code,
             @RequestParam("period") String period,
             @RequestParam("currency") String currency,
-            @RequestParam(name = "after", required = false) String after,
-            @RequestParam(name = "limit", required = false) Integer limit) {
-        return desk.activity(code, period, currency, after, limit);
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.activity(code, period, currency, cursor, limit);
     }
 
     /** One journal entry's GL view: each line with the GL account it maps to under its posting month's version. */

@@ -8,7 +8,8 @@ import java.util.Optional;
 /**
  * A GL account's activity in one currency and period (`P14-TSK-007`; {@code INV-ACC-02}): its figure and one keyset page
  * of the journal lines composing it, both read in one snapshot - so a page's lines are always among its figure's.
- * {@code next} is the position after the page's last line when the page is full, empty when the drill-down is exhausted.
+ * {@code next} is the position after the page's last line when a line follows it (a look-ahead row read, `P17-TSK-122`),
+ * empty when the drill-down is exhausted.
  *
  * <p><strong>Every page together sums to the figure only for a period no longer {@code OPEN}</strong> - a locked or
  * closed period's posting-date range is immutable after the cutoff ({@code INV-ACC-08}). In an {@code OPEN} period each

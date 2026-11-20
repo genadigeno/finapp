@@ -94,9 +94,12 @@ public interface RoleAssignmentStore<T> {
 
     /**
      * The live holdings that conflict (`P17-TSK-016`): each identity holding both roles of a pair in {@code pairs}, oldest
-     * conflict first, at most {@code limit} - one read, so both holdings are judged at one moment.
+     * conflict first, at most {@code limit} - one read, so both holdings are judged at one moment. The order is total - since,
+     * identity, first role, second role - and since `P17-TSK-122` the read is strictly after {@code after} when one is named:
+     * a keyset page of the review, never an offset.
      */
-    java.util.List<ConflictingHolding> conflictingHoldings(T unitOfWork, java.util.List<RoleConflicts.Pair> pairs, int limit);
+    java.util.List<ConflictingHolding> conflictingHoldings(
+            T unitOfWork, java.util.List<RoleConflicts.Pair> pairs, java.util.Optional<ConflictingHolding> after, int limit);
 
     /** One identity holding both roles of a pair, and since when - the later of the two grants. */
     record ConflictingHolding(IdentityId identityId, RoleName first, RoleName second, Instant since) {}

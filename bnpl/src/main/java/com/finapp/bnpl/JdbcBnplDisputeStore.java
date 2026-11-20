@@ -301,7 +301,7 @@ public final class JdbcBnplDisputeStore implements BnplDisputeStore {
 
     @Override
     public List<BnplDispute> queue(Connection unitOfWork, BnplDisputeStatus status, UUID excludingParty,
-            Optional<BnplDisputeId> after, int limit) {
+            Optional<QueuePosition> after, int limit) {
         Objects.requireNonNull(status, "status");
         Objects.requireNonNull(excludingParty, "excludingParty");
         Objects.requireNonNull(after, "after");
@@ -315,12 +315,17 @@ public final class JdbcBnplDisputeStore implements BnplDisputeStore {
             default -> throw new IllegalArgumentException("the queue is of the open disputes: OPEN or MERCHANT_RESPONDED");
         };
         List<Object> parameters = new ArrayList<>(List.of(status.name(), excludingParty));
-        after.ifPresent(cursor -> parameters.add(cursor.value()));
+        after.ifPresent(cursor -> {
+            parameters.add(java.time.OffsetDateTime.ofInstant(cursor.entered(), java.time.ZoneOffset.UTC));
+            parameters.add(cursor.id().value());
+        });
         parameters.add(limit);
-        // Oldest first, keyset-paged after the cursor's (instant, id); never the reading operator's own party's.
+        // Oldest first, keyset-paged after the cursor's own (instant, id) - bound directly since P17-TSK-122, so a page
+        // resumes even when the dispute it ended on has since left the status; never the reading operator's own party's.
+        // No index serves the OPEN order today (bnpl's next migration is another task's): the OPEN queue keeps the scan it
+        // had, as the backlog records.
         return disputes(unitOfWork, "SELECT " + COLUMNS + FROM + " WHERE d.status = ? AND d.party_id <> ?"
-                + (after.isPresent() ? " AND (d." + entered + ", d.id) > (SELECT a." + entered + ", a.id"
-                        + " FROM bnpl.bnpl_dispute a WHERE a.id = ?)" : "")
+                + (after.isPresent() ? " AND (d." + entered + ", d.id) > (?, ?)" : "")
                 + " ORDER BY d." + entered + ", d.id LIMIT ?", parameters, "reading the BNPL dispute queue");
     }
 

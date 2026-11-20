@@ -1,5 +1,6 @@
 package com.finapp.app.accounting;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.accounting.AccountingErrorCode;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.AccountingPeriods;
@@ -17,6 +18,7 @@ import com.finapp.accounting.RunStatus;
 import com.finapp.accounting.SubmissionStatus;
 import com.finapp.identity.PermissionName;
 import com.finapp.identity.RoleName;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.CommandResult;
@@ -100,8 +102,14 @@ public final class RegulatorySubmissionDesk {
             boolean monthMoved, boolean overtaken, boolean overdue, boolean resendsExhausted, boolean nonDeliveryOpen, long contraryAnswers, String correctsSubmissionId, String correctedBySubmissionId, String preparedAt,
             String preparedBy, String periodId) {}
 
-    /** One page of what stands. {@code nextAfter} is the cursor of the next, and null only when no more exist. */
-    public record RegulatorySubmissionStandingView(List<RegulatorySubmissionSummaryView> submissions, String nextAfter) {}
+    /** One page of what stands (`API_CONVENTIONS.md` section 7, `P17-TSK-122`): {@code nextCursor} absent on the last page. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record RegulatorySubmissionStandingView(List<RegulatorySubmissionSummaryView> items, String nextCursor) {}
+
+    /** The standing list's collection name, default and largest page (`P17-TSK-122`). */
+    static final String STANDING_COLLECTION = "accounting.regulatory-submissions";
+    static final int STANDING_DEFAULT = 50;
+    static final int STANDING_MAXIMUM = RegulatorySubmissions.LIST_LIMIT;
 
     /** The route that holds a figure's journal lines, what it asks, and who holds that: said plainly, because the reader of this view may hold none of them. */
     public record RegulatoryDrillDownView(String route, String requiresPermission, List<String> heldByRoles, String note) {}
@@ -294,15 +302,30 @@ public final class RegulatorySubmissionDesk {
         return view(view, withReason);
     }
 
-    /** What a preparer must act on or know of, one page, oldest first. Recorded before it is served. */
-    public RegulatorySubmissionStandingView standing(String rawAfter, Integer rawLimit) {
+    /**
+     * What a preparer must act on or know of, one section 7 page, oldest first - recorded order, the id breaking the tie: {@code limit} {@value #STANDING_DEFAULT} unless named, {@value #STANDING_MAXIMUM} at most and refused above, never reduced; the opaque {@code cursor} of the
+     * page before, carrying the last row's recorded order and id, so it needs no row to resolve it. A refused parameter reads and records nothing. Recorded before it is served.
+     */
+    public RegulatorySubmissionStandingView standing(String rawCursor, String rawLimit) {
+        int limit = OperatorCollection.limit(rawLimit, STANDING_DEFAULT, STANDING_MAXIMUM);
+        Optional<RegulatorySubmissionStore.StandingCursor> after = standingCursor(rawCursor);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        Optional<RegulatorySubmissionId> after = Optional.ofNullable(rawAfter).map(raw -> named(raw, RegulatorySubmissionId::of, "after is the cursor of a previous page"));
-        int limit = rawLimit == null ? RegulatorySubmissions.LIST_LIMIT : rawLimit;
         RegulatorySubmissions.Standing page = flow.door(READ_SPAN, () -> guarded(() -> transactions.inTransaction(uow -> submissions.standing(uow, after, limit))));
-        recordRead("standing", "door=standing, rows=" + page.rows().size() + ", page=" + (after.isPresent() ? "next" : "first") + ", more=" + page.nextAfter().isPresent(), actor, correlation);
-        return new RegulatorySubmissionStandingView(page.rows().stream().map(RegulatorySubmissionDesk::summary).toList(), id(page.nextAfter()));
+        recordRead("standing", "door=standing, rows=" + page.rows().size() + ", page=" + (after.isPresent() ? "next" : "first") + ", more=" + page.next().isPresent(), actor, correlation);
+        return new RegulatorySubmissionStandingView(page.rows().stream().map(RegulatorySubmissionDesk::summary).toList(),
+                page.next().map(next -> OperatorCollection.cursor(STANDING_COLLECTION, Long.toString(next.recordedOrder()), next.id().value().toString())).orElse(null));
+    }
+
+    /** The position {@code cursor} names in what stands, or none for the first page; anything else refused. */
+    static Optional<RegulatorySubmissionStore.StandingCursor> standingCursor(String cursor) {
+        return OperatorCollection.key(STANDING_COLLECTION, cursor, 2).map(key -> {
+            try {
+                return new RegulatorySubmissionStore.StandingCursor(Long.parseLong(key.get(0)), RegulatorySubmissionId.of(UUID.fromString(key.get(1))));
+            } catch (RuntimeException unreadable) {
+                throw OperatorCollection.invalidCursor();
+            }
+        });
     }
 
     /** What this controller can decide: never their own. Recorded before it is served. */

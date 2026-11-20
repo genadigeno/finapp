@@ -71,7 +71,7 @@ public final class ReportRunLinesDesk {
     public record ReportRunLinesView(String run, String status, boolean exact, GeneralLedgerDesk.GlActivityView activity) {}
 
     /** One page of what composes {@code rawCode}'s figure in {@code rawMonth}, under the run's version. */
-    public ReportRunLinesView lines(String rawRunId, String rawCode, String rawMonth, String rawCurrency, String rawAfter, Integer rawLimit) {
+    public ReportRunLinesView lines(String rawRunId, String rawCode, String rawMonth, String rawCurrency, String rawCursor, String rawLimit) {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = GeneralLedgerDesk.correlation();
         ReportRunId runId = runId(rawRunId);
@@ -81,7 +81,7 @@ public final class ReportRunLinesDesk {
             throw GeneralLedgerDesk.invalid("a figure's lines are read in one currency");
         }
         String currency = GeneralLedgerDesk.currency(rawCurrency);
-        Optional<JournalReads.LineCursor> after = GeneralLedgerDesk.after(rawAfter, month);
+        Optional<JournalReads.LineCursor> after = GeneralLedgerDesk.cursor(rawCursor, month);
         int limit = GeneralLedgerDesk.limit(rawLimit);
         Served served = GeneralLedgerDesk.guarded(() -> flow.door(SPAN, () -> snapshots.read(snapshot -> {
             ReportRunStore.RunRow run = runs.find(snapshot, runId).orElseThrow(GeneralLedgerDesk::notFound);

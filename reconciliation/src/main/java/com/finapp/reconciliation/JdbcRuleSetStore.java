@@ -403,8 +403,10 @@ public final class JdbcRuleSetStore implements RuleSetStore {
     // ------------------------------------------------------------------ the reading
 
     @Override
-    public List<VersionView> versions(Connection unitOfWork, UUID sourceId, int limit) {
+    public List<VersionView> versions(
+            Connection unitOfWork, UUID sourceId, java.util.OptionalInt beforeVersion, int limit) {
         Objects.requireNonNull(sourceId, "sourceId must not be null");
+        Objects.requireNonNull(beforeVersion, "beforeVersion must not be null");
         if (limit < 1) {
             throw new IllegalArgumentException("limit must be at least 1");
         }
@@ -412,9 +414,15 @@ public final class JdbcRuleSetStore implements RuleSetStore {
         try (PreparedStatement read =
                 unitOfWork.prepareStatement(
                         "SELECT " + COLUMNS + " FROM reconciliation.rule_set"
-                                + " WHERE source_id = ? ORDER BY version DESC LIMIT ?")) {
-            read.setObject(1, sourceId);
-            read.setInt(2, limit);
+                                + " WHERE source_id = ?"
+                                + (beforeVersion.isPresent() ? " AND version < ?" : "")
+                                + " ORDER BY version DESC LIMIT ?")) {
+            int index = 1;
+            read.setObject(index++, sourceId);
+            if (beforeVersion.isPresent()) {
+                read.setInt(index++, beforeVersion.getAsInt());
+            }
+            read.setInt(index, limit);
             try (ResultSet rows = read.executeQuery()) {
                 while (rows.next()) {
                     VersionRow version = row(rows);

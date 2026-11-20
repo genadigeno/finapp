@@ -3,17 +3,34 @@ package com.finapp.app.api;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.finapp.accounting.JdbcAccountingPeriodStore;
+import com.finapp.bnpl.BnplDisputeId;
+import com.finapp.bnpl.BnplDisputeStatus;
+import com.finapp.bnpl.BnplDisputeStore;
+import com.finapp.bnpl.JdbcBnplDisputeStore;
+import com.finapp.accounting.JdbcRegulatoryObligationStore;
+import com.finapp.accounting.JdbcRegulatorySubmissionStore;
+import com.finapp.accounting.RegulatoryObligationId;
+import com.finapp.accounting.RegulatoryObligationStore;
+import com.finapp.accounting.RegulatorySubmissionId;
+import com.finapp.accounting.RegulatorySubmissionStore;
 import com.finapp.credit.JdbcUnderwritingCaseStore;
 import com.finapp.credit.UnderwritingCaseId;
 import com.finapp.credit.UnderwritingCaseStore;
+import com.finapp.crossborder.JdbcCorridorPolicyStore;
 import com.finapp.identity.IdentityId;
 import com.finapp.identity.JdbcRoleAssignmentStore;
 import com.finapp.identity.RoleAssignmentStore;
+import com.finapp.identity.RoleConflicts;
 import com.finapp.identity.RoleName;
 import com.finapp.platform.deadletter.DeadLetterStore;
 import com.finapp.platform.deadletter.JdbcDeadLetterStore;
 import com.finapp.reconciliation.BreakInquiries;
+import com.finapp.reconciliation.ExpectationInquiries;
 import com.finapp.reconciliation.JdbcBreakInquiries;
+import com.finapp.reconciliation.JdbcExpectationInquiries;
+import com.finapp.reconciliation.JdbcMatchingStore;
+import com.finapp.reconciliation.JdbcRuleSetStore;
+import com.finapp.reconciliation.MatchingStore;
 import com.finapp.settlement.JdbcSettlementFileStore;
 import com.finapp.settlement.SettlementFileCipher;
 import com.finapp.settlement.SettlementFileStore;
@@ -30,6 +47,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -86,7 +104,28 @@ class OperatorListKeysetsTest {
             new Resumed("deadletter.parked", connection -> new JdbcDeadLetterStore().parked(connection,
                     Optional.of(new DeadLetterStore.Position(AT, ID)), 10)),
             new Resumed("deadletter.discards", connection -> new JdbcDeadLetterStore().standingProposals(connection,
-                    Optional.of(new DeadLetterStore.Position(AT, ID)), 10)));
+                    Optional.of(new DeadLetterStore.Position(AT, ID)), 10)),
+            new Resumed("reconciliation.runs", connection -> new JdbcMatchingStore().runs(connection,
+                    Optional.of(new MatchingStore.RunCursor(AT, ID)), 10)),
+            new Resumed("reconciliation.expectations", connection -> new JdbcExpectationInquiries().expectations(connection,
+                    new ExpectationInquiries.ExpectationFilter(Optional.empty(), Optional.empty(), Optional.empty()),
+                    Optional.of(new ExpectationInquiries.ExpectationCursor(AT, ID)), 10)),
+            new Resumed("reconciliation.rule-sets", connection -> new JdbcRuleSetStore().versions(connection, ID,
+                    OptionalInt.of(2), 10)),
+            new Resumed("accounting.regulatory-obligations", connection -> new JdbcRegulatoryObligationStore().recent(connection,
+                    Optional.of(new RegulatoryObligationStore.ObligationCursor(AT, RegulatoryObligationId.of(ID))), 10)),
+            new Resumed("accounting.regulatory-submissions", connection -> new JdbcRegulatorySubmissionStore().standing(connection,
+                    Optional.of(new RegulatorySubmissionStore.StandingCursor(7L, RegulatorySubmissionId.of(ID))), 10)),
+            new Resumed("identity.sod-conflicts", connection -> new JdbcRoleAssignmentStore(IDS).conflictingHoldings(connection,
+                    RoleConflicts.PAIRS, Optional.of(new RoleAssignmentStore.ConflictingHolding(IdentityId.of(ID),
+                            RoleName.ADMINISTRATOR, RoleName.ADMINISTRATOR, AT)), 10)),
+            new Resumed("crossborder.corridor-policies", connection -> new JdbcCorridorPolicyStore(IDS).versions(connection,
+                    Optional.of(2), 10)),
+            new Resumed("bnpl.disputes.open", connection -> new JdbcBnplDisputeStore().queue(connection, BnplDisputeStatus.OPEN,
+                    ID, Optional.of(new BnplDisputeStore.QueuePosition(AT, BnplDisputeId.of(ID))), 10)),
+            new Resumed("bnpl.disputes.merchant-responded", connection -> new JdbcBnplDisputeStore().queue(connection,
+                    BnplDisputeStatus.MERCHANT_RESPONDED, ID, Optional.of(new BnplDisputeStore.QueuePosition(AT,
+                            BnplDisputeId.of(ID))), 10)));
 
     @Test
     @DisplayName("every resumed read compares in its order's direction over exactly its order's columns: < where the order"

@@ -818,7 +818,33 @@ public interface MatchingStore {
             Instant at,
             CorrelationId correlation);
 
-    List<RunRow> runs(Connection unitOfWork, int limit);
+    /**
+     * Where a page of the run list resumes (`P17-TSK-122`, `API_CONVENTIONS.md` section 7): after the run whose
+     * {@code (created_at, id)} this is, in the list's newest-first order. Both are fixed at the run's birth, so a page boundary
+     * never moves while runs are born or progress around it.
+     */
+    record RunCursor(Instant createdAt, UUID id) {
+
+        public RunCursor {
+            java.util.Objects.requireNonNull(createdAt, "createdAt must not be null");
+            java.util.Objects.requireNonNull(id, "id must not be null");
+        }
+    }
+
+    /** A listed run with its birth instant - the order key a cursor carries. */
+    record ListedRun(RunRow run, Instant createdAt) {
+
+        public ListedRun {
+            java.util.Objects.requireNonNull(run, "run must not be null");
+            java.util.Objects.requireNonNull(createdAt, "createdAt must not be null");
+        }
+    }
+
+    /**
+     * The runs, at most {@code limit}: born newest first, the id breaking the tie (descending too), so the order is total;
+     * strictly after {@code after} when one is named - a keyset read, never an offset.
+     */
+    List<ListedRun> runs(Connection unitOfWork, Optional<RunCursor> after, int limit);
 
     /** The run's decisions per outcome — the completion event's counts. */
     Map<DecisionOutcome, Long> outcomeCounts(Connection unitOfWork, UUID runId);

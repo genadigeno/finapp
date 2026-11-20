@@ -181,7 +181,7 @@ public final class JpyAndBhdRuleSets {
     /** The source's ACTIVE version with its whole content, read through the door. */
     public static RuleSetStore.VersionView activeVersion(
             RuleSetAdministration administration, Connection unitOfWork, UUID source) {
-        return administration.versions(unitOfWork, source, VERSION_BOUND).stream()
+        return administration.versions(unitOfWork, source, java.util.OptionalInt.empty(), VERSION_BOUND).stream()
                 .filter(view -> view.row().status() == RuleSetStatus.ACTIVE)
                 .findFirst()
                 .orElseThrow(

@@ -30,7 +30,7 @@ import java.util.UUID;
  *
  * <p><strong>Bounded.</strong> A range is at most {@link Range#MAX_DAYS} days of {@code posting_date} (ledger {@code V029}'s
  * index {@code journal_entry (posting_date, id)} serves it); drill-down pages are keyset pages of at most
- * {@link LineQuery#MAX_LIMIT} lines.
+ * {@link LineQuery#MAX_LIMIT} lines, read with one look-ahead row.
  */
 public interface JournalReads {
 
@@ -197,12 +197,16 @@ public interface JournalReads {
 
     /**
      * A drill-down page: the lines in {@code range} and {@code currency} whose account's key is one of {@code keys} - the
-     * keys a GL account's rules map - after {@code after}, at most {@code limit}.
+     * keys a GL account's rules map - after {@code after}, at most {@code limit}: a page of at most {@link #MAX_LIMIT} and
+     * the one look-ahead row that says whether another page follows (`P17-TSK-122`).
      */
     record LineQuery(Range range, Set<String> keys, String currency, Optional<LineCursor> after, int limit) {
 
         /** The largest page. */
         public static final int MAX_LIMIT = 500;
+
+        /** The largest read: the largest page and its look-ahead row. */
+        public static final int MAX_READ = MAX_LIMIT + 1;
 
         public LineQuery {
             Objects.requireNonNull(range, "range");
@@ -212,8 +216,8 @@ public interface JournalReads {
             if (keys.isEmpty()) {
                 throw new IllegalArgumentException("a drill-down names the keys its figure folds");
             }
-            if (limit < 1 || limit > MAX_LIMIT) {
-                throw new IllegalArgumentException("a drill-down page holds 1 to " + MAX_LIMIT + " lines");
+            if (limit < 1 || limit > MAX_READ) {
+                throw new IllegalArgumentException("a drill-down read holds 1 to " + MAX_READ + " lines");
             }
         }
     }

@@ -215,21 +215,21 @@ class AccountingBreakDeskTest {
         refused(() -> as(CONTROLLER, () -> desk.approveAcknowledgement("k-a", id, "none proposed")),
                 AccountingErrorCode.BREAK_STALE, 409);
         for (Supplier<?> malformed : List.<Supplier<?>>of(() -> desk.list("2097-3", null, null, null),
-                () -> desk.list("2097-03", "CLOSED", null, null), () -> desk.list("2097-03", null, 0, null),
-                () -> desk.list("2097-03", null, null, "not-a-cursor"))) {
+                () -> desk.list("2097-03", "CLOSED", null, null), () -> desk.list("2097-03", null, null, "0"),
+                () -> desk.list("2097-03", null, "not-a-cursor", null))) {
             assertThatThrownBy(() -> as(ACCOUNTANT, malformed)).isInstanceOfSatisfying(ApiException.class, refused ->
                     assertThat(refused.errorCode()).isEqualTo(PlatformErrorCode.VALIDATION_FAILED));
         }
         AccountingBreakDesk.AccountingBreakPage page = as(ACCOUNTANT, () -> desk.list("2097-03", null, null, null));
-        assertThat(page.next()).isNull();
-        assertThat(page.breaks()).singleElement().satisfies(view -> {
+        assertThat(page.nextCursor()).isNull();
+        assertThat(page.items()).singleElement().satisfies(view -> {
             assertThat(view.id()).isEqualTo(id);
             assertThat(view.type()).isEqualTo("SHAPE_MISMATCH");
             assertThat(view.check()).isEqualTo("RULE_CONFORMANCE");
             assertThat(view.status()).isEqualTo("OPEN");
         });
-        assertThat(as(ACCOUNTANT, () -> desk.list("2097-03", "RESOLVED", 10, null)).breaks()).isEmpty();
-        assertThat(as(ACCOUNTANT, () -> desk.list("2097-04", null, null, null)).breaks()).isEmpty();
+        assertThat(as(ACCOUNTANT, () -> desk.list("2097-03", "RESOLVED", null, "10")).items()).isEmpty();
+        assertThat(as(ACCOUNTANT, () -> desk.list("2097-04", null, null, null)).items()).isEmpty();
     }
 
     @Test
@@ -246,9 +246,9 @@ class AccountingBreakDeskTest {
         int pages = 0;
         do {
             String cursor = after;
-            AccountingBreakDesk.AccountingBreakPage page = as(ACCOUNTANT, () -> desk.list("2097-03", null, 2, cursor));
-            page.breaks().forEach(view -> assertThat(served.add(view.id())).as("no break served twice").isTrue());
-            after = page.next();
+            AccountingBreakDesk.AccountingBreakPage page = as(ACCOUNTANT, () -> desk.list("2097-03", null, cursor, "2"));
+            page.items().forEach(view -> assertThat(served.add(view.id())).as("no break served twice").isTrue());
+            after = page.nextCursor();
             pages++;
         } while (after != null);
         assertThat(served).isEqualTo(raised);

@@ -180,6 +180,12 @@ class RuleSetAdministrationDatabaseTest {
         assertThat(versions(source, 1).stream().map(only -> only.row().id()).toList())
                 .as("bounded, newest version first")
                 .containsExactly(proposed.ruleSetId());
+        assertThat(inCommittedTransaction(
+                        unitOfWork -> administration.versions(
+                                unitOfWork, source, java.util.OptionalInt.of(2), 10))
+                .stream().map(older -> older.row().id()).toList())
+                .as("resumed strictly below the cursor's version (P17-TSK-122)")
+                .containsExactly(v1);
     }
 
     // ----------------------------------------------------------------- (2) four eyes
@@ -719,7 +725,7 @@ class RuleSetAdministrationDatabaseTest {
 
     private static List<RuleSetStore.VersionView> versions(UUID source, int limit) {
         return inCommittedTransaction(
-                unitOfWork -> administration.versions(unitOfWork, source, limit));
+                unitOfWork -> administration.versions(unitOfWork, source, java.util.OptionalInt.empty(), limit));
     }
 
     // ----------------------------------------------------------------- the content

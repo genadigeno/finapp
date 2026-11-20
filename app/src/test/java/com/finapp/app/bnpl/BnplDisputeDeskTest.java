@@ -122,7 +122,7 @@ class BnplDisputeDeskTest {
 
     @Test
     @DisplayName("the operator's queue (the Phase 12 to 13 gate's A7-2): an item carries the figures, instants and deadline -"
-            + " never the reason or the statement; its status is MERCHANT_RESPONDED or OPEN and its cursor a dispute id,"
+            + " never the reason or the statement; its status is MERCHANT_RESPONDED or OPEN,"
             + " anything else 422 before anything")
     void theQueueIsClosed() {
         assertThat(Arrays.stream(BnplDisputeDesk.BnplDisputeQueueItem.class.getRecordComponents())
@@ -139,6 +139,27 @@ class BnplDisputeDeskTest {
             assertThatThrownBy(() -> BnplDisputeDesk.queueStatus(refused)).as(refused).isInstanceOf(ApiException.class);
         }
         assertThatThrownBy(() -> BnplDisputeDesk.queueStatus(null)).isInstanceOf(ApiException.class);
+    }
+
+    @Test
+    @DisplayName("the queue's cursor (P17-TSK-122): each status its own collection - a cursor carries the (entered, id) position"
+            + " its page ended on and is read back exactly by its own status's queue, refused 422 by the other's, and a bare"
+            + " dispute id, the cursor before, is refused too")
+    void theQueueCursorIsTheStatusOwn() {
+        BnplDisputeId id = BnplDisputeId.next(IDS);
+        String cursor = com.finapp.app.api.OperatorCollection.cursor(
+                BnplDisputeDesk.queueCollection(BnplDisputeStatus.OPEN), "2026-10-21T12:00:00.123456Z", id.value().toString());
+        assertThat(BnplDisputeDesk.queueCursor(BnplDisputeStatus.OPEN, cursor)).contains(
+                new com.finapp.bnpl.BnplDisputeStore.QueuePosition(Instant.parse("2026-10-21T12:00:00.123456Z"), id));
+        assertThat(BnplDisputeDesk.queueCursor(BnplDisputeStatus.OPEN, null)).isEmpty();
+        assertThatThrownBy(() -> BnplDisputeDesk.queueCursor(BnplDisputeStatus.MERCHANT_RESPONDED, cursor))
+                .isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> BnplDisputeDesk.queueCursor(BnplDisputeStatus.OPEN, id.value().toString()))
+                .isInstanceOf(ApiException.class);
+        String unreadable = com.finapp.app.api.OperatorCollection.cursor(
+                BnplDisputeDesk.queueCollection(BnplDisputeStatus.OPEN), "yesterday", id.value().toString());
+        assertThatThrownBy(() -> BnplDisputeDesk.queueCursor(BnplDisputeStatus.OPEN, unreadable))
+                .isInstanceOf(ApiException.class);
     }
 
     @Test

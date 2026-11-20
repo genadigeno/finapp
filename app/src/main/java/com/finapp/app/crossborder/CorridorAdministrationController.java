@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -40,11 +41,17 @@ public class CorridorAdministrationController {
 
     @NonNull private final CorridorAdministrationDesk desk;
 
-    /** The versions, newest first - each with its corridors and its proposer (`P17-TSK-118`). */
+    /**
+     * The versions, newest first - each with its corridors and its proposer (`P17-TSK-118`). A §7 collection
+     * (`P17-TSK-122`; read "at most 100 with {@code truncated}" until then): version descending; {@code limit} 20 by
+     * default, 100 at most, refused above; {@code nextCursor} absent on the last page.
+     */
     @GetMapping("/corridor-policies")
     @RequiresPermission(PermissionName.CROSSBORDER_ADMINISTER)
-    public CorridorAdministrationDesk.CorridorPolicyList listCorridorPolicies() {
-        return desk.policies();
+    public CorridorAdministrationDesk.CorridorPolicyPage listCorridorPolicies(
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.policies(cursor, limit);
     }
 
     /** Proposes a whole new version - keyed per principal; frozen from here. */

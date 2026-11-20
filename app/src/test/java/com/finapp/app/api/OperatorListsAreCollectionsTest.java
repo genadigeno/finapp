@@ -85,22 +85,10 @@ class OperatorListsAreCollectionsTest {
             entry("GET /v1/operator/regulatory/obligations/awaiting-activation",
                     "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape"),
             entry("GET /v1/operator/regulatory/submissions/awaiting-approval",
-                    "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape"),
-            entry("GET /v1/operator/regulatory/obligations",
-                    "capped (the latest versions, LIMIT) with nothing saying so - not in P17-TSK-042's scope - the section 7 retrofit's second batch, proposed at its gate")));
+                    "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape")));
 
     /** Routes on the operator surface answering a top-level {@code truncated}, each with why it may. */
     static final Map<String, String> TRUNCATED = new TreeMap<>(Map.ofEntries(
-            entry("GET /v1/operator/cross-border/corridor-policies",
-                    "capped at 100 with truncated always false (found by P17-TSK-118's session) - not in P17-TSK-042's scope - the section 7 retrofit's second batch, proposed at its gate"),
-            entry("GET /v1/operator/access-review/sod-conflicts",
-                    "capped at 200 with truncated, the factorless review's sibling - not in P17-TSK-042's scope - the section 7 retrofit's second batch, proposed at its gate"),
-            entry("GET /v1/operator/reconciliation/runs",
-                    "capped at 100 with truncated (ADR-C133's context names it) - not in P17-TSK-042's scope - the section 7 retrofit's second batch, proposed at its gate"),
-            entry("GET /v1/operator/reconciliation/expectations",
-                    "capped at 100 with truncated - not in P17-TSK-042's scope - the section 7 retrofit's second batch, proposed at its gate"),
-            entry("GET /v1/operator/reconciliation/rule-sets",
-                    "capped at 100 with truncated - not in P17-TSK-042's scope - the section 7 retrofit's second batch, proposed at its gate"),
             entry("GET /v1/operator/reconciliation/breaks/{id}/trace",
                     "one break's stored chain, bounded per break - a detail's children, not a list"),
             entry("GET /v1/operator/reconciliation/settlement-status",
@@ -133,17 +121,7 @@ class OperatorListsAreCollectionsTest {
                     "a report as of one date - ADR-C133 decision 5's report, not a collection")));
 
     /** Routes on the operator surface taking {@code after}, each with why it may. */
-    static final Map<String, String> AFTER_STYLE = new TreeMap<>(Map.ofEntries(
-            entry("GET /v1/operator/accounting/breaks",
-                    "after/limit paged - not in P17-TSK-042's scope - the section 7 retrofit's second batch, proposed at its gate"),
-            entry("GET /v1/operator/accounting/gl/accounts/{code}/activity",
-                    "after/limit paged (ADR-C133's context names it) - not in P17-TSK-042's scope - the section 7 retrofit's second batch, proposed at its gate"),
-            entry("GET /v1/operator/accounting/report-runs/{runId}/lines",
-                    "after/limit paged, one run's lines - not in P17-TSK-042's scope - the section 7 retrofit's second batch, proposed at its gate"),
-            entry("GET /v1/operator/bnpl-disputes",
-                    "after/limit paged (ADR-C133's context names it) - not in P17-TSK-042's scope - the section 7 retrofit's second batch, proposed at its gate"),
-            entry("GET /v1/operator/regulatory/submissions",
-                    "after/limit paged (ADR-C133's context names it) - not in P17-TSK-042's scope - the section 7 retrofit's second batch, proposed at its gate")));
+    static final Map<String, String> AFTER_STYLE = new TreeMap<>();
 
     private static final String CONVENTIONS = "docs/architecture/API_CONVENTIONS.md";
 
@@ -199,6 +177,16 @@ class OperatorListsAreCollectionsTest {
                 "GET /v1/operator/risk/alerts",
                 "GET /v1/operator/risk/cases",
                 "GET /v1/operator/accounting/periods");
+        assertThat(pages).as("the second batch answers pages (P17-TSK-122)").contains(
+                "GET /v1/operator/cross-border/corridor-policies",
+                "GET /v1/operator/access-review/sod-conflicts",
+                "GET /v1/operator/reconciliation/runs",
+                "GET /v1/operator/reconciliation/expectations",
+                "GET /v1/operator/reconciliation/rule-sets",
+                "GET /v1/operator/regulatory/obligations",
+                "GET /v1/operator/accounting/breaks",
+                "GET /v1/operator/bnpl-disputes",
+                "GET /v1/operator/regulatory/submissions");
         assertThat(sectionSevenRoutes()).as("section 7's table and the pages served are one list")
                 .containsExactlyInAnyOrderElementsOf(pages);
     }

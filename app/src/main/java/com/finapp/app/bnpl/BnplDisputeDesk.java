@@ -1,6 +1,8 @@
 package com.finapp.app.bnpl;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.DecimalText;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.bnpl.AllocationAnomaly;
 import com.finapp.bnpl.BnplAccruals;
 import com.finapp.bnpl.BnplAgreementId;
@@ -9,6 +11,7 @@ import com.finapp.bnpl.BnplDisputeId;
 import com.finapp.bnpl.BnplDisputeProposal;
 import com.finapp.bnpl.BnplDisputeReason;
 import com.finapp.bnpl.BnplDisputeStatus;
+import com.finapp.bnpl.BnplDisputeStore;
 import com.finapp.bnpl.BnplDisputes;
 import com.finapp.bnpl.BnplErrorCode;
 import com.finapp.bnpl.BnplObligations;
@@ -37,6 +40,7 @@ import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -137,8 +141,22 @@ public final class BnplDisputeDesk {
             String merchantRespondedAt,
             int heldInstalments) {}
 
-    /** A page of the operator's queue, oldest first, and the cursor of the next page ({@code null} when none remains). */
-    public record BnplDisputeQueue(List<BnplDisputeQueueItem> disputes, String next) {}
+    /**
+     * A page of the operator's queue, oldest first (section 7, `P17-TSK-122`; read "{@code disputes} and {@code next}" until then):
+     * {@code nextCursor} absent, not null, on the last one.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record BnplDisputeQueuePage(List<BnplDisputeQueueItem> items, String nextCursor) {}
+
+    /**
+     * The queue's collections (`API_CONVENTIONS.md` section 7, `P17-TSK-122`), one per status: the order is each status's own
+     * entered instant, so a cursor one status's page served is refused by the other's.
+     */
+    static final String QUEUE_OPEN = "bnpl.disputes.open";
+
+    static final String QUEUE_MERCHANT_RESPONDED = "bnpl.disputes.merchant-responded";
+
+    static final int QUEUE_DEFAULT_LIMIT = 50;
 
     /**
      * The operator's audited read: the dispute's figures, the customer's reason and the merchant's statement
@@ -284,20 +302,23 @@ public final class BnplDisputeDesk {
 
     /**
      * One page of the operator's queue (the gate's A7-2): the disputes in {@code status} - {@code MERCHANT_RESPONDED}, the
-     * contested awaiting an operator, or {@code OPEN} - oldest first, at most {@link BnplDisputes#QUEUE_PAGE}, after the
-     * cursor {@code after}; never the operator's own party's; every page recorded. No free text.
+     * contested awaiting an operator, or {@code OPEN} - oldest first by the instant each entered it, the id breaking the
+     * tie; {@code limit} {@value #QUEUE_DEFAULT_LIMIT} unless named, {@value BnplDisputes#QUEUE_PAGE} at most and refused
+     * above; the opaque {@code cursor} of the page before (`P17-TSK-122`); never the operator's own party's; every page
+     * recorded. No free text.
      */
-    public BnplDisputeQueue queue(String rawStatus, String rawAfter) {
+    public BnplDisputeQueuePage queue(String rawStatus, String cursor, String limit) {
         BnplDisputeStatus status = queueStatus(rawStatus);
-        Optional<BnplDisputeId> after = rawAfter == null || rawAfter.isBlank() ? Optional.empty()
-                : Optional.of(cursor(rawAfter));
+        int size = OperatorCollection.limit(limit, QUEUE_DEFAULT_LIMIT, BnplDisputes.QUEUE_PAGE);
+        Optional<BnplDisputeStore.QueuePosition> after = queueCursor(status, cursor);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         try {
             BnplDisputes.Queue page = transactions.inTransaction(unitOfWork -> disputes.queue(unitOfWork, status, after,
-                    actor, correlation));
-            return new BnplDisputeQueue(page.disputes().stream().map(BnplDisputeDesk::queued).toList(),
-                    page.next().map(next -> next.value().toString()).orElse(null));
+                    size, actor, correlation));
+            return new BnplDisputeQueuePage(page.disputes().stream().map(BnplDisputeDesk::queued).toList(),
+                    page.next().map(next -> OperatorCollection.cursor(queueCollection(status), next.entered().toString(),
+                            next.id().value().toString())).orElse(null));
         } catch (BnplDisputes.SelfDealingRefused selfDealing) {
             throw selfDealingRecorded(selfDealing, actor, correlation, "The queue read was refused",
                     "an operator the platform cannot place in a party reads no BNPL dispute; nothing was read.");
@@ -593,12 +614,21 @@ public final class BnplDisputeDesk {
         throw invalid("the status is MERCHANT_RESPONDED or OPEN.");
     }
 
-    private static BnplDisputeId cursor(String raw) {
-        try {
-            return BnplDisputeId.of(UUID.fromString(raw));
-        } catch (IllegalArgumentException malformed) {
-            throw invalid("the cursor is the next value a page of the queue returned.");
-        }
+    /** The queue's collection for {@code status}: its name inside the cursors its pages serve. */
+    static String queueCollection(BnplDisputeStatus status) {
+        return status == BnplDisputeStatus.OPEN ? QUEUE_OPEN : QUEUE_MERCHANT_RESPONDED;
+    }
+
+    /** The position {@code cursor} names as the last one served in {@code status}'s queue, or none; anything else refused. */
+    static Optional<BnplDisputeStore.QueuePosition> queueCursor(BnplDisputeStatus status, String cursor) {
+        return OperatorCollection.key(queueCollection(status), cursor, 2).map(key -> {
+            try {
+                return new BnplDisputeStore.QueuePosition(
+                        Instant.parse(key.get(0)), BnplDisputeId.of(UUID.fromString(key.get(1))));
+            } catch (RuntimeException unreadable) {
+                throw OperatorCollection.invalidCursor();
+            }
+        });
     }
 
     private static BnplAgreementId agreementId(String raw) {
