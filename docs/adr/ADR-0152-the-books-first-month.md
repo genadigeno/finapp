@@ -5,7 +5,7 @@ Date: 2026-11-19
 Phase: 17
 Context: Accounting (periods) · the Operator Console's end-to-end seed
 Rests on: ADR-0113, ADR-0114 (periods, the lock and the close); `P14-TSK-005` (`V003`'s contiguous periods); the owner's decision of
-2026-11-19 on `P17-TSK-112`; `BACKLOG.md` `P17-TSK-113`.
+2026-11-19 on `P17-TSK-112`; `BACKLOG.md` `P17-TSK-120`.
 
 ## Context
 

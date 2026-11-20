@@ -4,7 +4,7 @@ import java.time.YearMonth;
 import java.util.Objects;
 
 /**
- * The first month the platform keeps books for (`P17-TSK-113`, ADR-0152; the owner's decision of 2026-11-19): when no accounting
+ * The first month the platform keeps books for (`P17-TSK-120`, ADR-0152; the owner's decision of 2026-11-19): when no accounting
  * period exists yet, {@link AccountingPeriods#openNext} opens its first one {@code monthsBack} months before today's month, then
  * every month through today's - each an empty, {@code OPEN} month, lockable at once since its grace has passed. Configuration
  * ({@code finapp.accounting.period.books-open-months-back}), {@code 0} by default: the books open in the month the platform first

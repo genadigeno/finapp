@@ -277,7 +277,7 @@ objectives and the post-recovery gate) and ADR-0129 (availability and the multi-
 *(`P16-TSK-025`, 2026-11-13, wrote ADR-0149 (the disaster-recovery plan), `Proposed`, the number the coordinator reserved for it in wave F.)*
 *(`P16-TSK-026`, 2026-11-14, wrote ADR-0150 (the recovery region's standing site), `Proposed`, the next free number; wave G reserved none.)*
 *(`P16-TSK-030`, 2026-11-15, wrote ADR-0151 (no module leaves the monolith: the service-extraction evaluation), `Proposed`, the next free number.)*
-*(`P17-TSK-113`, 2026-11-19, wrote ADR-0152 (the books' first month), `Proposed`, the next free number - the first of this register's Phase 17 ADRs; the console's own are finapp-admin-panel's ADR-C130…)*
+*(`P17-TSK-120`, 2026-11-19, wrote ADR-0152 (the books' first month), `Proposed`, the next free number - the first of this register's Phase 17 ADRs; the console's own are finapp-admin-panel's ADR-C130…)*
 *(2026-11-13: the partitioning half of the Phase 16 row is decided by
 ADR-0142, no table partitioned, the decision derived and its overturning measurement built and owed under `POSTPONED_ISSUES.md`
 PI-025. The row stays for the service-extraction decision.)* *(the Phase 16 exit review, 2026-11-16 (`P16-DOC-001`): the extraction is decided too, ADR-0151, so the row is closed. The review read all twenty Phase 16 ADRs against the tree and accepted them - seventeen corrected in place first, ADR-0137, ADR-0148 and ADR-0150 as written. ADR-0130, 0131, 0132, 0138, 0143 and 0146 were never written: 0132, 0138, 0143 and 0146 were reserved by tasks that needed none, 0130 and 0131 never reserved (the operator console's own repository cites an ADR-0130 and ADR-0131 of its own; they are not this register's). **The next free number is ADR-0152.**)*

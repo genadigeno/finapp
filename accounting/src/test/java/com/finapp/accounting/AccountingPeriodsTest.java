@@ -99,7 +99,7 @@ class AccountingPeriodsTest {
     }
 
     @Test
-    @DisplayName("P17-TSK-113, ADR-0152: the books' first month - when no period exists the first opens that many months before"
+    @DisplayName("P17-TSK-120, ADR-0152: the books' first month - when no period exists the first opens that many months before"
             + " today's and every month through today's follows; once any exists the setting is never read again; 0 to 24 months")
     void theBooksOpenMonthsBack() {
         assertThat(openedWith(2, "2026-11-19"))
