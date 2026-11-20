@@ -708,9 +708,13 @@ public class PaymentBeans {
     RoutingPolicyOperations routingPolicyOperations(
             com.finapp.payments.RoutingAdministration routingAdministration,
             org.springframework.transaction.support.TransactionTemplate paymentTransactions,
-            javax.sql.DataSource dataSource) {
+            javax.sql.DataSource dataSource,
+            com.finapp.payments.RoutingStore<Connection> routingStore,
+            com.finapp.payments.PaymentRails paymentRails) {
         return new RoutingPolicyOperations(
-                routingAdministration, paymentTransactions, dataSource);
+                routingAdministration, paymentTransactions, dataSource,
+                // P17-TSK-032: the version list, the availability facts and the declared rails, read back.
+                new com.finapp.payments.JdbcPaymentCollections(), routingStore, paymentRails);
     }
 
     @Bean
@@ -1727,5 +1731,46 @@ public class PaymentBeans {
             IdGenerator ids,
             Clock clock) {
         return new PaymentCancellation(paymentIntentStore, auditWriter, ids, clock);
+    }
+
+    /**
+     * The operator's payment reads (`P17-TSK-032`): the search and one payment, a party's payment methods, the payments
+     * report and the dispute queue - each recorded in the read's own transaction. The held card payments are risk's desk,
+     * wired in risk's own configuration ({@code HeldPaymentBeans}).
+     */
+    @Bean
+    PaymentReadDesk paymentReadDesk(
+            PaymentIntentStore<Connection> paymentIntentStore,
+            PaymentAttemptStore<Connection> paymentAttemptStore,
+            com.finapp.payments.RefundStore<Connection> refundStore,
+            com.finapp.payments.RoutingStore<Connection> routingStore,
+            com.finapp.payments.DisputeStore<Connection> disputeStore,
+            com.finapp.payments.PaymentRails paymentRails,
+            com.finapp.ledger.LedgerAccountStore<Connection> ledgerAccountStore,
+            com.finapp.paymentmethods.PaymentMethodStore<Connection> paymentMethodStore,
+            com.finapp.party.PartyStore<Connection> partyStore,
+            com.finapp.app.api.RecordedReads recordedReads,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            TransactionTemplate paymentTransactions,
+            DataSource dataSource) {
+        return new PaymentReadDesk(
+                new com.finapp.payments.JdbcPaymentCollections(),
+                paymentIntentStore,
+                paymentAttemptStore,
+                refundStore,
+                routingStore,
+                disputeStore,
+                paymentRails,
+                ledgerAccountStore,
+                paymentMethodStore,
+                partyStore,
+                recordedReads,
+                auditWriter,
+                idGenerator,
+                clock,
+                paymentTransactions,
+                dataSource);
     }
 }

@@ -13567,6 +13567,47 @@
         ],
         "type": "object"
       },
+      "AttemptView": {
+        "properties": {
+          "attemptId": {
+            "type": "string"
+          },
+          "authProviderReference": {
+            "type": "string"
+          },
+          "authorizedAmount": {
+            "type": "string"
+          },
+          "captureProviderReference": {
+            "type": "string"
+          },
+          "capturedAmount": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "interactionModel": {
+            "type": "string"
+          },
+          "rail": {
+            "type": "string"
+          },
+          "schemeReference": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "voidProviderReference": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AttestationView": {
         "properties": {
           "attestedAt": {
@@ -13767,6 +13808,9 @@
             "type": "boolean"
           },
           "changedAt": {
+            "type": "string"
+          },
+          "changedBy": {
             "type": "string"
           },
           "rail": {
@@ -19855,6 +19899,75 @@
         ],
         "type": "object"
       },
+      "DisputeQueueItem": {
+        "properties": {
+          "chargebackAmount": {
+            "type": "string"
+          },
+          "chargebackCurrency": {
+            "type": "string"
+          },
+          "disputeId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "paymentIntentId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "respondBy": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DisputeQueuePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DisputeQueueItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DisputeSummaryView": {
+        "properties": {
+          "chargebackAmount": {
+            "type": "string"
+          },
+          "chargebackCurrency": {
+            "type": "string"
+          },
+          "disputeId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "respondBy": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "DocumentUploadRequest": {
         "properties": {
           "content": {
@@ -22027,6 +22140,49 @@
             "type": "string"
           },
           "purpose": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "HeldPaymentPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/HeldPaymentView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "HeldPaymentView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "attemptId": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "heldAt": {
+            "type": "string"
+          },
+          "heldUntil": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "paymentIntentId": {
+            "type": "string"
+          },
+          "rail": {
             "type": "string"
           }
         },
@@ -24747,6 +24903,29 @@
         ],
         "type": "object"
       },
+      "OperatorRefundView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "providerReference": {
+            "type": "string"
+          },
+          "refundId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "OperatorResponseView": {
         "properties": {
           "createdAt": {
@@ -25274,6 +25453,70 @@
         ],
         "type": "object"
       },
+      "PaymentDetailView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "attempt": {
+            "$ref": "#/components/schemas/AttemptView"
+          },
+          "captureMode": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "disputes": {
+            "items": {
+              "$ref": "#/components/schemas/DisputeSummaryView"
+            },
+            "type": "array"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "paymentIntentId": {
+            "type": "string"
+          },
+          "paymentMethodId": {
+            "type": "string"
+          },
+          "refunds": {
+            "items": {
+              "$ref": "#/components/schemas/OperatorRefundView"
+            },
+            "type": "array"
+          },
+          "routingDecision": {
+            "$ref": "#/components/schemas/RoutingDecisionView"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PaymentMethodList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentMethodView"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "PaymentMethodView": {
         "properties": {
           "brand": {
@@ -25300,6 +25543,67 @@
             "type": "string"
           },
           "payeeCheck": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PaymentOutcomeRow": {
+        "properties": {
+          "attemptStatus": {
+            "type": "string"
+          },
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "intentStatus": {
+            "type": "string"
+          },
+          "rail": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PaymentPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentSummary"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PaymentSummary": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "attemptStatus": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "paymentIntentId": {
+            "type": "string"
+          },
+          "rail": {
+            "type": "string"
+          },
+          "status": {
             "type": "string"
           }
         },
@@ -25367,6 +25671,24 @@
         },
         "type": "object"
       },
+      "PaymentUnknownRow": {
+        "properties": {
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "oldestCreatedAt": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "PaymentView": {
         "properties": {
           "amount": {
@@ -25398,6 +25720,29 @@
           },
           "status": {
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "PaymentsReportView": {
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentOutcomeRow"
+            },
+            "type": "array"
+          },
+          "unknownBacklog": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentUnknownRow"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -26880,6 +27225,17 @@
           "fixedSide",
           "sourceCurrency"
         ],
+        "type": "object"
+      },
+      "RailList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AvailabilityView"
+            },
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "RateSetItem": {
@@ -31654,6 +32010,24 @@
         ],
         "type": "object"
       },
+      "RoutingDecisionView": {
+        "properties": {
+          "chosenRail": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "matchedRuleIndex": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "routingDecisionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "RuleBody": {
         "properties": {
           "ceilingAmountMinor": {
@@ -33711,6 +34085,20 @@
             "type": "integer"
           },
           "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "VersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/VersionView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -42010,6 +42398,57 @@
         }
       }
     },
+    "/v1/operator/disputes": {
+      "get": {
+        "operationId": "listDisputeQueue",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "stage",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deadlineBefore",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DisputeQueuePage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/disputes/{disputeId}": {
       "get": {
         "operationId": "viewDisputeAsOperator",
@@ -43023,6 +43462,41 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ReversalReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/held-payments": {
+      "get": {
+        "operationId": "listHeldPayments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HeldPaymentPage"
                 }
               }
             },
@@ -45326,6 +45800,143 @@
         }
       }
     },
+    "/v1/operator/parties/{partyId}/payment-methods": {
+      "get": {
+        "operationId": "listPartyPaymentMethods",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "partyId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentMethodList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/payments": {
+      "get": {
+        "operationId": "listOperatorPayments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "partyId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "merchantId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "rail",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/payments/{intentId}": {
+      "get": {
+        "operationId": "viewOperatorPayment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "intentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentDetailView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/payments/{intentId}/disputes": {
       "get": {
         "operationId": "listPaymentDisputesAsOperator",
@@ -45380,6 +45991,23 @@
         }
       }
     },
+    "/v1/operator/rails": {
+      "get": {
+        "operationId": "listRails",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RailList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/rails/{rail}/availability": {
       "post": {
         "operationId": "setRailAvailability",
@@ -45387,6 +46015,14 @@
           {
             "in": "path",
             "name": "rail",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
             "required": true,
             "schema": {
               "type": "string"
@@ -47492,6 +48128,33 @@
         }
       }
     },
+    "/v1/operator/reports/payments": {
+      "get": {
+        "operationId": "readPaymentsReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentsReportView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/reports/reconciliation/positions": {
       "get": {
         "operationId": "readReconciliationPositionsReport",
@@ -49477,6 +50140,39 @@
       }
     },
     "/v1/operator/routing-policy/versions": {
+      "get": {
+        "operationId": "listRoutingPolicyVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "createRoutingPolicyVersion",
         "parameters": [
@@ -49509,6 +50205,33 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/routing-policy/versions/{version}": {
+      "get": {
+        "operationId": "viewRoutingPolicyVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VersionView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

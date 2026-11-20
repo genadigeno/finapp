@@ -140,6 +140,17 @@ class RoutePermissionRegisterTest {
                     entry("POST /v1/operator/routing-policy/versions", PermissionName.PAYMENT_ROUTING_ADMINISTER),
                     entry("POST /v1/operator/rails/{rail}/availability", PermissionName.PAYMENT_ROUTING_ADMINISTER),
                     entry("GET /v1/operator/payments/{intentId}/routing", PermissionName.PAYMENT_ROUTING_ADMINISTER),
+                    // P17-TSK-032: the routing versions and the rails read back; the payment reads, each under the
+                    // permission the console's gap names.
+                    entry("GET /v1/operator/routing-policy/versions", PermissionName.PAYMENT_ROUTING_ADMINISTER),
+                    entry("GET /v1/operator/routing-policy/versions/{version}", PermissionName.PAYMENT_ROUTING_ADMINISTER),
+                    entry("GET /v1/operator/rails", PermissionName.PAYMENT_ROUTING_ADMINISTER),
+                    entry("GET /v1/operator/payments", PermissionName.PAYMENT_READ),
+                    entry("GET /v1/operator/payments/{intentId}", PermissionName.PAYMENT_READ),
+                    entry("GET /v1/operator/parties/{partyId}/payment-methods", PermissionName.PAYMENT_READ),
+                    entry("GET /v1/operator/reports/payments", PermissionName.PAYMENT_READ),
+                    entry("GET /v1/operator/disputes", PermissionName.DISPUTE_ADMINISTER),
+                    entry("GET /v1/operator/held-payments", PermissionName.RISK_INVESTIGATE),
                     // Disputes: the operator's reads, each dispute shown audited (Phase 7, ADR-0061)
                     entry("GET /v1/operator/disputes/{disputeId}", PermissionName.DISPUTE_ADMINISTER),
                     entry("GET /v1/operator/payments/{intentId}/disputes", PermissionName.DISPUTE_ADMINISTER),

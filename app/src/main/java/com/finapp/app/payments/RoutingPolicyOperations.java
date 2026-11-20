@@ -61,9 +61,12 @@ public class RoutingPolicyOperations {
             String createdBy,
             List<RuleView> rules) {}
 
-    /** The recorded availability fact, as every instance will read it. */
+    /**
+     * The recorded availability fact, as every instance will read it. Since `P17-TSK-032` it names who recorded it - an
+     * identity's id, never a name - absent with the instant for a rail never switched.
+     */
     public record AvailabilityView(
-            String rail, boolean available, String reason, String changedAt) {}
+            String rail, boolean available, String reason, String changedAt, String changedBy) {}
 
     /** One step of the trail: the candidate, the verdict, what it was judged from. */
     public record StepView(
@@ -91,6 +94,29 @@ public class RoutingPolicyOperations {
     @NonNull private final RoutingAdministration administration;
     @NonNull private final TransactionTemplate transactions;
     @NonNull private final DataSource dataSource;
+
+    /** The version list's read (`P17-TSK-032`) - last, so no positional argument moved. */
+    @NonNull private final com.finapp.payments.PaymentCollections collections;
+
+    /** The availability facts every instance routes by (`P17-TSK-032`, the rails' read). */
+    @NonNull private final com.finapp.payments.RoutingStore<Connection> routingStore;
+
+    /** The declared rails (`P17-TSK-032`): the rails' read lists each, a never-switched one available. */
+    @NonNull private final com.finapp.payments.PaymentRails rails;
+
+    static final String VERSIONS = "payments.routing-versions";
+    static final int DEFAULT_LIMIT = 50;
+    static final int MAXIMUM_LIMIT = 200;
+
+    /** A page of routing policy versions, newest number first: {@code nextCursor} absent on the last one. */
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    public record VersionPage(List<VersionView> items, String nextCursor) {}
+
+    /**
+     * Every declared rail's availability as every instance routes by it: the newest act's fact, or - for a rail never
+     * switched - available, with no reason and no instant (ADR-0060 section 4: an absent row means available).
+     */
+    public record RailList(List<AvailabilityView> items) {}
 
     /** Creates an immutable version, effective forward; a replay answers the original. */
     public VersionView createVersion(CreateRoutingPolicyVersionRequest body, String key) {
@@ -125,24 +151,98 @@ public class RoutingPolicyOperations {
         }
     }
 
-    /** Records the rail's availability — the newest act wins, every act is audited. */
-    public AvailabilityView setAvailability(String rawRail, SetRailAvailabilityRequest body) {
+    /**
+     * Records the rail's availability — the newest act wins, every act is audited. Keyed since `P17-TSK-032` (finapp-admin-panel
+     * ADR-C135 decision 2): a retried key answers the original act and records nothing; the key with another body is the 409.
+     */
+    public AvailabilityView setAvailability(String rawRail, SetRailAvailabilityRequest body, String idempotencyKey) {
         Objects.requireNonNull(body, "body must not be null");
+        Objects.requireNonNull(idempotencyKey, "idempotencyKey must not be null");
         RailId rail = parsedRail(rawRail);
         try {
             RailAvailability fact =
                     inOneTransaction(
-                            unitOfWork ->
-                                    administration.setAvailability(
-                                            unitOfWork, rail, body.available(), body.reason()));
-            return new AvailabilityView(
-                    fact.rail().value(),
-                    fact.available(),
-                    fact.reason(),
-                    fact.changedAt().toString());
+                                    unitOfWork ->
+                                            administration.setAvailability(
+                                                    unitOfWork, rail, body.available(), body.reason(), idempotencyKey))
+                            .fact();
+            return availabilityView(fact);
         } catch (UnknownRailException unknown) {
             throw unknownRail();
         }
+    }
+
+    /** Every declared rail's availability, ordered by the rail's name (`P17-TSK-032`, gap G-47). Unrecorded: configuration. */
+    public RailList rails() {
+        java.util.Map<RailId, RailAvailability> facts = inOneTransaction(routingStore::availabilityByRail);
+        return new RailList(rails.declaredIds().stream()
+                .sorted(java.util.Comparator.comparing(RailId::value))
+                .map(rail -> Optional.ofNullable(facts.get(rail))
+                        .map(RoutingPolicyOperations::availabilityView)
+                        .orElse(new AvailabilityView(rail.value(), true, null, null, null)))
+                .toList());
+    }
+
+    /**
+     * A page of the routing policy versions, newest number first (`P17-TSK-032`, gap G-46) - each with its rules, as its
+     * creation answered it. Unrecorded: configuration, as the fee schedules' reads are.
+     */
+    public VersionPage versions(String cursor, String limit) {
+        int size = com.finapp.app.api.OperatorCollection.limit(limit, DEFAULT_LIMIT, MAXIMUM_LIMIT);
+        Optional<Integer> before = versionCursor(cursor);
+        List<RoutingPolicyVersion> rows = inOneTransaction(uow -> collections.routingVersions(uow, before, size + 1));
+        List<RoutingPolicyVersion> served = rows.subList(0, Math.min(size, rows.size()));
+        String next = rows.size() > size
+                ? com.finapp.app.api.OperatorCollection.cursor(VERSIONS, Integer.toString(served.get(served.size() - 1).version()))
+                : null;
+        return new VersionPage(served.stream().map(RoutingPolicyOperations::renderVersion).toList(), next);
+    }
+
+    static Optional<Integer> versionCursor(String cursor) {
+        return com.finapp.app.api.OperatorCollection.key(VERSIONS, cursor, 1).map(key -> {
+            int version;
+            try {
+                version = Integer.parseInt(key.get(0));
+            } catch (NumberFormatException unreadable) {
+                throw com.finapp.app.api.OperatorCollection.invalidCursor();
+            }
+            if (version < 1) {
+                throw com.finapp.app.api.OperatorCollection.invalidCursor();
+            }
+            return version;
+        });
+    }
+
+    /** One version by its number - what a payment's routing explanation names. Unknown and malformed are one 404. */
+    public VersionView version(String rawVersion) {
+        int number;
+        try {
+            number = Integer.parseInt(rawVersion);
+        } catch (NumberFormatException | NullPointerException malformed) {
+            throw versionNotFound();
+        }
+        if (number < 1) {
+            throw versionNotFound();
+        }
+        return inOneTransaction(uow -> collections.routingVersion(uow, number))
+                .map(RoutingPolicyOperations::renderVersion)
+                .orElseThrow(RoutingPolicyOperations::versionNotFound);
+    }
+
+    private static AvailabilityView availabilityView(RailAvailability fact) {
+        return new AvailabilityView(
+                fact.rail().value(),
+                fact.available(),
+                fact.reason(),
+                fact.changedAt().toString(),
+                fact.changedBy());
+    }
+
+    private static ApiException versionNotFound() {
+        return new ApiException(
+                PlatformErrorCode.NOT_FOUND,
+                "A routing policy version read found nothing at the number",
+                "the requested resource does not exist.");
     }
 
     /** The payment's routing explanation — audited; unknown and unrouted are one 404. */

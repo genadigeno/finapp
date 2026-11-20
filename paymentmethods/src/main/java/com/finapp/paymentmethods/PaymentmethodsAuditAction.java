@@ -39,6 +39,16 @@ public enum PaymentmethodsAuditAction implements AuditableAction {
     PAYMENT_METHOD_DETACHED(
             "paymentmethods.PaymentMethodDetached",
             "A party detached a payment instrument; the detached row survives as evidence.",
+            false),
+
+    /**
+     * A holder of {@code PAYMENT_READ} was served a party's live payment methods (`P17-TSK-032`, gap G-44; finapp-admin-panel
+     * ADR-C132 decision 5), masked as the party's own list serves them - display metadata, never a token reference - recorded
+     * by {@code RecordedReads} in the read's own transaction. The target the party; the summary how many it served.
+     */
+    PAYMENT_METHODS_READ(
+            "paymentmethods.PaymentMethodsRead",
+            "A party's live payment methods were served to an operator, masked; the record names the party and a count.",
             false);
 
     private final String code;

@@ -160,7 +160,8 @@ public final class PaymentMethodService {
             String payeeCheck,
             String createdAt) {
 
-        static PaymentMethodView of(PaymentMethod method) {
+        /** Package-crossing since `P17-TSK-032`: the operator's read of a party's methods serves exactly this view. */
+        public static PaymentMethodView of(PaymentMethod method) {
             return new PaymentMethodView(
                     method.id().value().toString(),
                     method.kind().name(),

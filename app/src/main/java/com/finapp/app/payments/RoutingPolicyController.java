@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -71,9 +72,43 @@ public class RoutingPolicyController {
             path = "/operator/rails/{rail}/availability",
             consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.PAYMENT_ROUTING_ADMINISTER)
+    // Keyed since P17-TSK-032 (finapp-admin-panel ADR-C135 decision 2): a lost response retried answers the original act and
+    // records no second one on the trail.
+    @RequiresIdempotencyKey
     public RoutingPolicyOperations.AvailabilityView setRailAvailability(
-            @PathVariable("rail") String rail, @Valid @RequestBody SetRailAvailabilityRequest body) {
-        return routing.setAvailability(rail, body);
+            @PathVariable("rail") String rail,
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @Valid @RequestBody SetRailAvailabilityRequest body) {
+        return routing.setAvailability(rail, body, idempotencyKey);
+    }
+
+    /**
+     * Every declared rail's availability, as every instance routes by it (`P17-TSK-032`, gap G-47): the newest act's fact
+     * with who recorded it, or available with no reason for a rail never switched. Configuration - unrecorded.
+     */
+    @GetMapping("/operator/rails")
+    @RequiresPermission(PermissionName.PAYMENT_ROUTING_ADMINISTER)
+    public RoutingPolicyOperations.RailList listRails() {
+        return routing.rails();
+    }
+
+    /**
+     * The routing policy versions, newest number first (`P17-TSK-032`, gap G-46): a §7 collection - {@code limit} 50 unless
+     * named, 200 at most - each version with its rules. Configuration - unrecorded.
+     */
+    @GetMapping("/operator/routing-policy/versions")
+    @RequiresPermission(PermissionName.PAYMENT_ROUTING_ADMINISTER)
+    public RoutingPolicyOperations.VersionPage listRoutingPolicyVersions(
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return routing.versions(cursor, limit);
+    }
+
+    /** One routing policy version by its number - what a payment's explanation names. Unknown and malformed are one 404. */
+    @GetMapping("/operator/routing-policy/versions/{version}")
+    @RequiresPermission(PermissionName.PAYMENT_ROUTING_ADMINISTER)
+    public RoutingPolicyOperations.VersionView viewRoutingPolicyVersion(@PathVariable("version") String version) {
+        return routing.version(version);
     }
 
     /**

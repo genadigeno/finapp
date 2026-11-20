@@ -99,6 +99,29 @@ class RoutingPolicyDatabaseTest {
                         reason))
                 .isEqualTo(1);
 
+        // P17-TSK-032 (gap G-46): read back - by its number, what an explanation names, and on the list, newest number first,
+        // walked by the cursor. Configuration: no read writes a record.
+        long records = count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?", versionId);
+        HttpResponse<String> byNumber = get(VERSIONS_PATH + "/" + number, operator);
+        assertThat(byNumber.statusCode()).as(byNumber.body()).isEqualTo(200);
+        assertThat(field(byNumber.body(), "routingPolicyVersionId")).isEqualTo(versionId);
+        assertThat(byNumber.body()).contains("\"rules\":[{");
+        for (String absent : List.of("0", "-1", "not-a-number", "999999999")) {
+            assertThat(get(VERSIONS_PATH + "/" + absent, operator).statusCode()).as(absent).isEqualTo(404);
+        }
+        HttpResponse<String> first = get(VERSIONS_PATH + "?limit=1", operator);
+        assertThat(first.statusCode()).isEqualTo(200);
+        int newest = intField(first.body(), "version");
+        assertThat(newest).isGreaterThanOrEqualTo(number);
+        HttpResponse<String> second = get(VERSIONS_PATH + "?limit=1&cursor="
+                + java.net.URLEncoder.encode(field(first.body(), "nextCursor"), java.nio.charset.StandardCharsets.UTF_8),
+                operator);
+        assertThat(second.statusCode()).isEqualTo(200);
+        assertThat(intField(second.body(), "version")).as("the next page is the next number down").isEqualTo(newest - 1);
+        assertThat(get(VERSIONS_PATH + "?limit=201", operator).statusCode()).isEqualTo(422);
+        assertThat(get(VERSIONS_PATH + "?cursor=not-a-cursor", operator).statusCode()).isEqualTo(422);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?", versionId)).isEqualTo(records);
+
         // The act is audited with the operator's own words (INV-AUD-03).
         assertThat(count(
                         "SELECT count(*) FROM platform.audit_record"
@@ -228,13 +251,26 @@ class RoutingPolicyDatabaseTest {
                         + " WHERE operation = 'payments.RailAvailabilityChanged'"
                         + " AND target_id = 'card'");
         try {
-            HttpResponse<String> disabled = post(
-                    CARD_AVAILABILITY,
-                    availabilityBody(false, "incident " + suffix()),
-                    operator,
-                    null);
+            String disableKey = someKey();
+            String incident = availabilityBody(false, "incident " + suffix());
+            HttpResponse<String> disabled = post(CARD_AVAILABILITY, incident, operator, disableKey);
             assertThat(disabled.statusCode()).isEqualTo(200);
             assertThat(disabled.body()).contains("\"available\":false");
+
+            // P17-TSK-032 (finapp-admin-panel ADR-C135 decision 2): the switch is keyed. The lost response retried answers
+            // the original act - its instant included - and writes no second record; the key with another body is the 409.
+            HttpResponse<String> replayed = post(CARD_AVAILABILITY, incident, operator, disableKey);
+            assertThat(replayed.statusCode()).isEqualTo(200);
+            assertThat(replayed.body()).isEqualTo(disabled.body());
+            assertThat(post(CARD_AVAILABILITY, availabilityBody(false, "another " + suffix()), operator, disableKey)
+                            .statusCode())
+                    .isEqualTo(409);
+            assertThat(post(CARD_AVAILABILITY, availabilityBody(false, "no key"), operator, null).statusCode())
+                    .as("a switch without its key is refused before anything is read")
+                    .isEqualTo(422);
+            HttpResponse<String> listed = get("/v1/operator/rails", operator);
+            assertThat(listed.statusCode()).isEqualTo(200);
+            assertThat(listed.body()).contains("{\"rail\":\"card\",\"available\":false");
 
             // The same state set again converges on it - and is still an audited act:
             // "I checked and held it out of service" is operational evidence.
@@ -242,7 +278,7 @@ class RoutingPolicyDatabaseTest {
                     CARD_AVAILABILITY,
                     availabilityBody(false, "still out " + suffix()),
                     operator,
-                    null);
+                    someKey());
             assertThat(again.statusCode()).isEqualTo(200);
             assertThat(count("SELECT count(*) FROM payments.rail_availability"
                             + " WHERE rail = 'card'"))
@@ -253,7 +289,7 @@ class RoutingPolicyDatabaseTest {
                                     CARD_AVAILABILITY,
                                     availabilityBody(true, "restored " + suffix()),
                                     operator,
-                                    null)
+                                    someKey())
                             .statusCode())
                     .isEqualTo(200);
         }
@@ -281,7 +317,7 @@ class RoutingPolicyDatabaseTest {
                 "/v1/operator/rails/sepa/availability",
                 availabilityBody(false, "typo"),
                 operator,
-                null);
+                someKey());
         assertThat(unknownAvailability.statusCode()).isEqualTo(422);
         assertThat(unknownAvailability.body()).contains("payments.UnknownRail");
 
@@ -331,9 +367,11 @@ class RoutingPolicyDatabaseTest {
                             .statusCode())
                     .isEqualTo(403);
             assertThat(post(CARD_AVAILABILITY, availabilityBody(false, "sneaky"), bearer,
-                            null)
+                            someKey())
                             .statusCode())
                     .isEqualTo(403);
+            assertThat(get("/v1/operator/rails", bearer).statusCode()).isEqualTo(403);
+            assertThat(get(VERSIONS_PATH, bearer).statusCode()).isEqualTo(403);
             assertThat(get("/v1/operator/payments/" + UUID.randomUUID() + "/routing", bearer)
                             .statusCode())
                     .isEqualTo(403);

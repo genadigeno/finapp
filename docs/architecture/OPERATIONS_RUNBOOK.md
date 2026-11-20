@@ -5611,7 +5611,8 @@ once the reference is older than its pair's maximum age (section 4 for the cover
    sweep's dispatched age and five minutes (the default age is 10 minutes). A person re-driving a payment is the duplicate this
    design exists to prevent.
 3. **If it lasts, stop new traffic to the rail, as a recorded act.** `POST /v1/operator/rails/{rail}/availability` with a reason
-   (ADR-0060 decision 4), so new payments route elsewhere or are refused before any effect; FX and corridors have their own doors
+   and an `Idempotency-Key` (`P17-TSK-032`: a retry under the same key answers the original act; `GET /v1/operator/rails` shows
+   each rail's state) (ADR-0060 decision 4), so new payments route elsewhere or are refused before any effect; FX and corridors have their own doors
    (sections 2 and 3b). Automation does not do this (owner decision C12, `TIMEOUTS_AND_RETRIES.md` section 5).
 4. **When it answers again**, watch the unknown-age gauges fall to nothing, then make the rail available again with a reason. A late
    answer that contradicts a concluded failure is reconciliation's break, never a second effect.
@@ -5971,6 +5972,18 @@ past 1,000 settled lines stores a new one in a savepoint that never fails it. Th
   No `Seq Scan` in any of them, and no full `Sort` but the rare account's own rows, so a page costs its own rows. The reads run
   on the GL's bounded snapshot (`GlSnapshots`, 10 s a statement): a statement past it answers `503`, nothing served and nothing
   recorded - narrow the window or the filters. They stay on the application's pool, never a replica (ADR-0129).
+- **Before payments `V042` runs on a large payment table** (`P17-TSK-032`). Its three indexes serve the operator's payment search
+  and the payments report's day. Each holds `SHARE` on `payments.payment_intent` while it reads the table, and every payment's
+  creation inserts there, so build them first, by hand, outside a transaction, by these names. The migration's `IF NOT EXISTS`
+  then keeps them: `CREATE INDEX CONCURRENTLY payment_intent_by_creation ON payments.payment_intent (created_at, id);`,
+  `CREATE INDEX CONCURRENTLY payment_intent_by_party_and_creation ON payments.payment_intent (party_id, created_at, id);` and
+  `CREATE INDEX CONCURRENTLY payment_intent_by_credit_account_and_creation ON payments.payment_intent (credit_account_id,
+  created_at, id);`. A failed build leaves an `INVALID` index: drop it and build again. **The plans' shape**, recorded by app's
+  `PaymentReadsApiDatabaseTest` with sequential scans disabled in a transaction it rolls back (2026-11-20): the window, a
+  party's and a merchant's walks each an index scan backward on its index, the keyset row the index condition, no `Sort`. Plans
+  measured on a large table, as `-020`'s and `-022`'s were, are owed. The dispute queue and the held payments read the open
+  disputes and the open holds whole and order them; the payments report's backlog reads the attempts and refunds in an unknown
+  state. They stay on the application's pool, never a replica (ADR-0129).
 
 ### 11.49 The connection budget at ten replicas, the autoscaler's metric on `kind`, and a pooler refused (`P16-TSK-009`, ADR-0134)
 

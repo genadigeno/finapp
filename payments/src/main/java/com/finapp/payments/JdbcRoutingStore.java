@@ -217,6 +217,54 @@ public final class JdbcRoutingStore implements RoutingStore<Connection> {
         }
     }
 
+    /**
+     * The versions newest number first, below {@code before} when named, at most {@code limit} - each with its rules
+     * (`P17-TSK-032`, the operator's list; {@link JdbcPaymentCollections}). The version number is unique (`V013`'s `routing_policy_version_number_is_unique`),
+     * so it alone is the total order.
+     */
+    List<RoutingPolicyVersion> pageVersions(Connection unitOfWork, java.util.Optional<Integer> before, int limit) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + VERSION_COLUMNS + " FROM payments.routing_policy_version"
+                                + (before.isPresent() ? " WHERE version < ?" : "")
+                                + " ORDER BY version DESC LIMIT ?")) {
+            int index = 1;
+            if (before.isPresent()) {
+                read.setInt(index++, before.get());
+            }
+            read.setInt(index, limit);
+            List<RoutingPolicyVersion> page = new ArrayList<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    page.add(rehydrateVersion(unitOfWork, row));
+                }
+            }
+            return List.copyOf(page);
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("paging the routing policy versions", failure));
+        }
+    }
+
+    /** The version numbered {@code version}, with its rules (`P17-TSK-032`). */
+    Optional<RoutingPolicyVersion> findVersionByNumber(Connection unitOfWork, int version) {
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT " + VERSION_COLUMNS + " FROM payments.routing_policy_version"
+                                + " WHERE version = ?")) {
+            read.setInt(1, version);
+            try (ResultSet row = read.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(rehydrateVersion(unitOfWork, row));
+            }
+        } catch (SQLException failure) {
+            throw new PaymentsStorageException(
+                    DatabaseFailure.describe("reading a routing policy version by number", failure));
+        }
+    }
+
     private RoutingPolicyVersion rehydrateVersion(Connection unitOfWork, ResultSet row)
             throws SQLException {
         RoutingPolicyVersionId versionId =

@@ -5435,6 +5435,16 @@ class OwnershipIsScopedTest {
                                         + " (INV-MER-01). FOR UPDATE is the serialization"
                                         + " point, never the ownership check.")),
                     Map.entry(
+                            "com.finapp.payments.JdbcPaymentCollections.heldPayments",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-032. The held card payments of every party but one, behind"
+                                        + " @RequiresPermission(RISK_INVESTIGATE): the UUID is the party WITHHELD - the reader's"
+                                        + " own, resolved from the session's identity (IdentityActingParty) - never a subject"
+                                        + " named by a request. Ownership inverted, risk's rule: an investigator never reads their"
+                                        + " own party's held payments, and a reader the platform cannot place is refused before"
+                                        + " this runs.")),
+                    Map.entry(
                             "com.finapp.merchant.JdbcMerchantStore.read",
                             new Entry(
                                     Scope.ADMINISTERED,

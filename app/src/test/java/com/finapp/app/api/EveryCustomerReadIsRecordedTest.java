@@ -33,7 +33,12 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 class EveryCustomerReadIsRecordedTest {
 
     /** {@code Controller#method} → the {@code <module>.<Thing>Read} it records. */
-    static final Map<String, String> REGISTER = Map.of();
+    static final Map<String, String> REGISTER = Map.of(
+            // P17-TSK-032: the payment reads under PAYMENT_READ.
+            "PaymentReadController#listOperatorPayments", "payments.PaymentsListed",
+            "PaymentReadController#viewOperatorPayment", "payments.PaymentRead",
+            "PaymentReadController#listPartyPaymentMethods", "paymentmethods.PaymentMethodsRead",
+            "PaymentReadController#readPaymentsReport", "payments.PaymentsReportRead");
 
     @Autowired private ApplicationContext context;
 
