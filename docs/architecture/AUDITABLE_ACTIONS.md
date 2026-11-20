@@ -74,6 +74,8 @@ question, not a refactor.
 | `party.CustomerRegistered` | No | A party was registered and a customer relationship was opened for it. |
 | `party.OrganisationRegistered` | No | An organisation was registered, with the acting person recorded as its registrant. |
 | `party.ProfileChanged` | No | A party's own profile data was changed, recording which field and by whom. |
+| `party.CustomerLookedUp` | No | A holder of `CUSTOMER_READ` looked a customer up by an exact identifier (`P17-TSK-026`; `POST /v1/operator/customers/lookup`, the value in the body, on a `MULTI_FACTOR` session): `kind` one of `CUSTOMER_ID`, `PARTY_ID`, `LOGIN_IDENTIFIER`, `ACCOUNT_ID`. Recorded whether it matched or not, the customer it resolved to the target (`no-match` otherwise), the kind and the outcome the summary - **never the value**. Written by app's `RecordedReads` in the lookup's own transaction; an unknown `kind` is a `422` and records nothing. |
+| `party.CustomerRead` | No | A holder of `CUSTOMER_READ` read a customer's profile (`P17-TSK-026`; `GET /v1/operator/customers/{id}`, on a `MULTI_FACTOR` session): identifiers and statuses, never a name or contact detail. The customer the target; the party, how many identities and the latest KYC case the summary. In the read's own transaction; an unknown customer records nothing. |
 
 `party.CustomerRegistered` is **one action for two writes**, deliberately. `PHASE_1_PLAN.md` §4
 lists `RegisterParty` and `OpenCustomerRelationship` as separate commands, and they are — but
@@ -334,6 +336,7 @@ point. No reason: registering one's own organisation is not an action taken agai
 |---|---|---|
 | `consent.ConsentGranted` | No | A party granted consent for a purpose, against a named version of the consent text. |
 | `consent.ConsentWithdrawn` | No | A party withdrew consent for a purpose; the gated capability blocks from this record on. |
+| `consent.HistoryRead` | No | A holder of `CUSTOMER_READ` read a page of a party's consent history (`P17-TSK-026`; `GET /v1/operator/parties/{id}/consents`, on a `MULTI_FACTOR` session): once per page, never per fact - the party the target, whether it followed a cursor and how many facts it served the summary. In the read's own transaction; an unknown party records nothing. |
 
 Neither requires a reason: both are a person's own act, and for withdrawal specifically a
 demanded justification would be pressure applied exactly where none may exist. The audit record

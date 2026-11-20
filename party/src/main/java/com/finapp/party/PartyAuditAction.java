@@ -108,6 +108,28 @@ public enum PartyAuditAction implements AuditableAction {
     PARTY_PROFILE_CHANGED(
             "party.ProfileChanged",
             "A party's own profile data was changed, recording which field and by whom.",
+            false),
+
+    /**
+     * An operator looked a customer up by an exact identifier (`P17-TSK-026`; finapp-admin-panel ADR-C132 decisions 4 and 5;
+     * {@code POST /v1/operator/customers/lookup}, {@code CUSTOMER_READ}, on a {@code MULTI_FACTOR} session). Recorded whether
+     * it matched or not - a probe that found nothing is still a probe - the customer it resolved to the target, the kind asked
+     * by and the outcome the summary, <strong>never the value</strong>, which may be a person's own login handle. Written by
+     * app's {@code RecordedReads} in the lookup's own transaction.
+     */
+    CUSTOMER_LOOKED_UP(
+            "party.CustomerLookedUp",
+            "An operator looked a customer up by an exact identifier; the kind and the outcome recorded, never the value.",
+            false),
+
+    /**
+     * An operator read a customer's profile (`P17-TSK-026`; {@code GET /v1/operator/customers/{id}}, {@code CUSTOMER_READ}, on
+     * a {@code MULTI_FACTOR} session): identifiers and statuses only. The customer the target; the party, how many identities
+     * and the latest KYC case the summary. Written in the read's own transaction.
+     */
+    CUSTOMER_READ(
+            "party.CustomerRead",
+            "An operator read a customer's profile: identifiers and statuses, never a name or contact detail.",
             false);
 
     private final String code;

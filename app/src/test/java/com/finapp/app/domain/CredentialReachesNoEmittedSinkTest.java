@@ -211,6 +211,9 @@ class CredentialReachesNoEmittedSinkTest {
                         // P17-TSK-014: the staff directory's lookup. A login identifier - a person's handle, never a
                         // credential - in the body so that it is in no URL (ADR-C132 decision 4); nothing else.
                         "IdentityLookupRequest",
+                        // P17-TSK-026: the customer lookup. A kind and an identifier - a login identifier among them, a person's
+                        // handle and never a credential - in the body so that it is in no URL (ADR-C132 decision 4); nothing else.
+                        "CustomerLookupRequest",
                         // P17-TSK-015: ending another identity's session. A reason, and nothing else.
                         "SessionRevocationRequest",
                         // P17-TSK-111: a ledger adjustment's rejection with a reason. A reason, and nothing else.

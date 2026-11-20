@@ -162,6 +162,24 @@ public final class JdbcCustomerAccountStore implements CustomerAccountStore<Conn
     }
 
     @Override
+    public Optional<CustomerAccount> findById(Connection unitOfWork, CustomerAccountId accountId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // P17-TSK-026: the operator's read by identifier alone; the permission, the factor and the record at
+                        // app's door stand in for an owner predicate (OwnershipIsScopedTest, ADMINISTERED).
+                        "SELECT " + COLUMNS + " FROM " + TABLE + " WHERE id = ?")) {
+            read.setObject(1, accountId.value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new AccountsStorageException(DatabaseFailure.describe("reading an agreement by its id", failure));
+        }
+    }
+
+    @Override
     public Optional<UUID> customerOf(Connection unitOfWork, CustomerAccountId accountId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
         Objects.requireNonNull(accountId, "accountId must not be null");

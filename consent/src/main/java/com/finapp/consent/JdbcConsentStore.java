@@ -41,6 +41,43 @@ public final class JdbcConsentStore implements ConsentStore<Connection> {
     }
 
     @Override
+    public java.util.List<HistoryEntry> historyFor(
+            Connection unitOfWork, UUID partyId, Optional<Long> beforeSeq, int limit) {
+        String sql =
+                "SELECT id, party_id, purpose, action, text_version, recorded_at, seq"
+                        + " FROM consent.consent_record"
+                        + " WHERE party_id = ?"
+                        + (beforeSeq.isPresent() ? " AND seq < ?" : "")
+                        + " ORDER BY seq DESC LIMIT ?";
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            int parameter = 1;
+            select.setObject(parameter++, partyId);
+            if (beforeSeq.isPresent()) {
+                select.setLong(parameter++, beforeSeq.get());
+            }
+            select.setInt(parameter, limit);
+            java.util.List<HistoryEntry> page = new java.util.ArrayList<>();
+            try (ResultSet rows = select.executeQuery()) {
+                while (rows.next()) {
+                    page.add(new HistoryEntry(
+                            ConsentRecord.rehydrate(
+                                    ConsentRecordId.of((UUID) rows.getObject("id")),
+                                    (UUID) rows.getObject("party_id"),
+                                    ConsentPurpose.valueOf(rows.getString("purpose")),
+                                    ConsentAction.valueOf(rows.getString("action")),
+                                    rows.getInt("text_version"),
+                                    rows.getTimestamp("recorded_at").toInstant()),
+                            rows.getLong("seq")));
+                }
+            }
+            return page;
+        } catch (SQLException e) {
+            throw new ConsentStorageException(
+                    DatabaseFailure.describe("reading the consent history of party " + partyId, e));
+        }
+    }
+
+    @Override
     public Optional<ConsentRecord> latestFor(
             Connection unitOfWork, UUID partyId, ConsentPurpose purpose) {
         String sql =

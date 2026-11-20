@@ -1087,6 +1087,10 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/assessments",
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/policies/versions",
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/screening-lists/{listVersionId}",
+                        // P17-TSK-026: the customer lookup, profile and consent history (CUSTOMER_READ).
+                        ApiVersion.CURRENT_PREFIX + "/operator/customers/lookup",
+                        ApiVersion.CURRENT_PREFIX + "/operator/customers/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/parties/{id}/consents",
                         // P17-TSK-014: the staff directory, its detail, the lookup and the role catalogue (IDENTITY_READ).
                         ApiVersion.CURRENT_PREFIX + "/operator/identities",
                         ApiVersion.CURRENT_PREFIX + "/operator/identities/{id}",

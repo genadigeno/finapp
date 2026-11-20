@@ -82,6 +82,54 @@ public final class JdbcPartyStore implements PartyStore<Connection> {
     }
 
     @Override
+    public Optional<Customer> findCustomer(Connection unitOfWork, CustomerId customerId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(customerId, "customerId must not be null");
+
+        // P17-TSK-026: an operator's read by the customer's identifier alone - the subject is somebody else by design, and
+        // the permission, the factor and the record at app's door stand in for an owner predicate (OwnershipIsScopedTest).
+        String sql = "SELECT id, party_id, status, opened_at, status_changed_at FROM party.customer WHERE id = ?";
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            select.setObject(1, customerId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next() ? Optional.of(customer(rows)) : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new PartyStorageException(DatabaseFailure.describe("Could not read customer " + customerId, e));
+        }
+    }
+
+    @Override
+    public Optional<Customer> latestCustomerFor(Connection unitOfWork, PartyId partyId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(partyId, "partyId must not be null");
+
+        // The live relationship first - the terminal states are the one-live index's own predicate, so "live" here and there
+        // is one definition - then the newest opening, the UUIDv7 id breaking a tie: a total order, so two instances answer
+        // the same customer for the same party.
+        String sql = "SELECT id, party_id, status, opened_at, status_changed_at FROM party.customer WHERE party_id = ?"
+                + " ORDER BY (status IN (" + CustomerStatus.sqlTerminalValueList() + ")), opened_at DESC, id DESC LIMIT 1";
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
+            select.setObject(1, partyId.value());
+            try (ResultSet rows = select.executeQuery()) {
+                return rows.next() ? Optional.of(customer(rows)) : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new PartyStorageException(
+                    DatabaseFailure.describe("Could not read the latest customer of party " + partyId, e));
+        }
+    }
+
+    private static Customer customer(ResultSet rows) throws SQLException {
+        return Customer.rehydrate(
+                CustomerId.of((UUID) rows.getObject("id")),
+                PartyId.of((UUID) rows.getObject("party_id")),
+                CustomerStatus.valueOf(rows.getString("status")),
+                rows.getTimestamp("opened_at").toInstant(),
+                rows.getTimestamp("status_changed_at").toInstant());
+    }
+
+    @Override
     public Optional<Customer> organisationRegisteredBy(
             Connection unitOfWork, PartyId registrantPartyId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");

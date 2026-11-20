@@ -194,6 +194,16 @@ class KycScreeningClearancesTest {
         }
 
         @Override
+        public Optional<Customer> findCustomer(Connection unitOfWork, CustomerId customerId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Optional<Customer> latestCustomerFor(Connection unitOfWork, PartyId partyId) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public java.util.List<PartyId> customerPartiesAfter(Connection unitOfWork,
                 java.util.Set<com.finapp.party.CustomerStatus> statuses, Optional<PartyId> after, int limit) {
             throw new UnsupportedOperationException();
