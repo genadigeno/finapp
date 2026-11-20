@@ -29,8 +29,9 @@ import org.junit.jupiter.api.Test;
  * assessment (`P17-TSK-110`) by {@code E2eSeedRiskDatabaseTest}, the finance plants (`P17-TSK-112`) by {@code E2eSeedFinanceDatabaseTest},
  * the merchant plants and the dispute's statement (`P17-TSK-115`) by {@code E2eSeedMerchantDatabaseTest}, the credit desks' doors and
  * the review case (`P17-TSK-117`) by {@code E2eSeedCreditDatabaseTest}, the FX desks' doors and the booked trade (`P17-TSK-119`) by
- * {@code E2eSeedFxDatabaseTest}, the KYC review states (`P17-TSK-113`) by {@code E2eSeedKycDatabaseTest}; the script's run against a
- * running stack is the console's end-to-end run.
+ * {@code E2eSeedFxDatabaseTest}, the KYC review states (`P17-TSK-113`) by {@code E2eSeedKycDatabaseTest}, the customer history and
+ * its transfers (`P17-TSK-121`) by {@code E2eSeedCustomersDatabaseTest}; the script's run against a running stack is the console's
+ * end-to-end run.
  */
 @Tag("architecture")
 @DisplayName("the end-to-end seed is test-only and stays so (P17-TSK-106)")
@@ -275,8 +276,7 @@ class E2eSeedStaysTestOnlyTest {
 
     @Test
     @DisplayName("P17-TSK-113: what the KYC scenarios hand a plant or splice into a query is checked first - the applicant, after its"
-            + " consent went through the door; the plant's task; the task's case and check; the remitter - and the customer history is"
-            + " named as owed")
+            + " consent went through the door; the plant's task; the task's case and check; the remitter")
     void theKycValuesAreCheckedBeforeSql() {
         int applicantChecked = script.indexOf("uuid_like \"$applicant\" ||");
         int consented = script.indexOf("[ \"$consented\" = KYC_PROCESSING ] ||");
@@ -294,8 +294,41 @@ class E2eSeedStaysTestOnlyTest {
         assertThat(remitterChecked).as("the remitter is checked").isPositive();
         assertThat(script.indexOf("plant counterparty-screening.sql -v requester=\"$remitter\"")).as("and only then planted")
                 .isGreaterThan(remitterChecked);
-        assertThat(script).as("the customer's account, transfers and consent history are named as owed, not planted")
-                .contains("NOT SEEDED YET: THE KYC CUSTOMER'S ACCOUNT, TRANSFERS AND CONSENT HISTORY (P17-TSK-121)");
+    }
+
+    @Test
+    @DisplayName("P17-TSK-121: the customer history goes through the doors - each customer checked before its verdict is planted and"
+            + " the verdict's customer before it reaches SQL; the consent's three facts, the wallets and every transfer the doors' own"
+            + " answers, each judged before the run goes on; nothing writes a balance, a posting or a transfer; and posted-transfers,"
+            + " funded by kind's card top-up, refused off kind before anything is touched")
+    void theCustomerHistoryGoesThroughTheDoors() {
+        int holderChecked = script.indexOf("uuid_like \"$holder\" ||");
+        int holderPlanted = script.indexOf("plant customer-verdict.sql -v identity=\"$holder\"");
+        int consented = script.indexOf("[ \"$history\" = GRANTED,WITHDRAWN,GRANTED ] ||");
+        assertThat(holderChecked).as("the holder is checked").isPositive();
+        assertThat(holderPlanted).as("and only then its verdict planted").isGreaterThan(holderChecked);
+        assertThat(consented).as("its consent's three facts made through the doors after, and checked").isGreaterThan(holderPlanted);
+        int customerChecked = script.indexOf("uuid_like \"$customer\" || { say \"$1's verdict");
+        assertThat(customerChecked).as("the verdict's customer is checked").isGreaterThan(holderPlanted);
+        assertThat(script.indexOf("WHERE id = '$customer'")).as("before it reaches SQL").isGreaterThan(customerChecked);
+        int payeeChecked = script.indexOf("uuid_like \"$payee\" ||");
+        assertThat(payeeChecked).as("the payee is checked").isPositive();
+        assertThat(script.indexOf("plant customer-verdict.sql -v identity=\"$payee\"")).as("and only then its verdict planted")
+                .isGreaterThan(payeeChecked);
+        assertThat(script).as("every transfer is judged by the door's status and reason before the run goes on")
+                .contains("[ \"$judged\" = \"$4\" ] && [ \"$why\" = \"$5\" ] ||")
+                .contains("transferred holder \"$destination\" 100.00 FAILED INSUFFICIENT_FUNDS")
+                .contains("transferred sender \"$destination\" 2.00 COMPLETED NONE")
+                .contains("transferred sender \"$destination\" 3.00 COMPLETED NONE");
+        int judged = script.indexOf("posted-transfers)\n            HTTP=yes\n            [ \"$TARGET\" = kind ] || refuse");
+        assertThat(judged).as("posted-transfers refused off kind, in the scenarios' judgement").isPositive();
+        assertThat(script.indexOf("psql")).as("before anything is touched").isGreaterThan(judged);
+        assertThat(script).as("no balance, posting or transfer is written: money enters a wallet only by the card top-up")
+                .doesNotContainPattern("(?i)(INSERT INTO|UPDATE) (ledger|transfers|accounts)\\.");
+        String seed = EvidenceCitations.read(root.resolve(SEED + "Seed.java"));
+        assertThat(seed).as("the consent withdrawn through its door, and the transfers made through theirs")
+                .contains("call(\"DELETE\", publicBase + \"/v1/me/consents/KYC_PROCESSING\"")
+                .contains("post(publicBase, \"/v1/transfers\"");
     }
 
     /** The tables a plant's statement inserts into, in order. */

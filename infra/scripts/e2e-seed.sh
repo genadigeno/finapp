@@ -1,7 +1,7 @@
 #!/bin/sh
 # TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112, P17-TSK-113,
-# P17-TSK-115, P17-TSK-117, P17-TSK-119; finapp-admin-panel docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4, B5.5, B6.7, B7.4, B8.6,
-# B9.4).
+# P17-TSK-115, P17-TSK-117, P17-TSK-119, P17-TSK-121; finapp-admin-panel docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4, B5.5, B6.7,
+# B7.4, B8.6, B9.4).
 #
 #   infra/scripts/e2e-seed.sh <scenario>...
 #
@@ -99,6 +99,14 @@
 #   screening-review  a counterparty screening IN_REVIEW on a HIT, requested by a fresh customer: the console's KYC_REVIEWER releases
 #                     or blocks it -> COUNTERPARTY_SCREENING_ID
 #   kyc               each of the two once
+#   customer-history  a fresh ACTIVE customer whose KYC_PROCESSING consent was granted, withdrawn and granted again, holding an EUR
+#                     wallet, and one transfer of 100.00 EUR from it to another fresh customer's wallet, which the transfer door
+#                     judged FAILED for INSUFFICIENT_FUNDS: the console reads the profile, the consent history, the account and the
+#                     transfer -> HISTORY_CUSTOMER_ID, HISTORY_PARTY_ID, HISTORY_ACCOUNT_ID, HISTORY_TRANSFER_ID
+#   posted-transfers  KIND ONLY. A fresh ACTIVE customer with the same consent history, funded by a 12.50 EUR card top-up, and two
+#                     transfers from its wallet - 2.00 and 3.00 EUR - to another fresh customer's wallet, each COMPLETED and posted:
+#                     the console reads them and the account's ledger lines -> POSTED_CUSTOMER_ID, POSTED_PARTY_ID,
+#                     POSTED_ACCOUNT_ID, POSTED_TRANSFER_IDS (two, comma-separated, in the order made)
 #
 # THE CREDIT SCENARIOS CHANGE THE STACK'S PERSONAL_LOAN POLICY, AND HOLD ONE VERSION PER PRODUCT PENDING. No test stack has a credit
 # bureau or a financial-data provider - the platform refuses either's URL until it holds what a pull needs (unresolved questions
@@ -144,8 +152,11 @@
 # (kyc-review.sql, counterparty-screening.sql) - new kyc rows only, on both stacks - while the customers and the consent go through
 # their doors. Everything the console does to them is the platform's own doors, as E2eSeedKycDatabaseTest proves.
 #
-# NOT SEEDED YET: THE KYC CUSTOMER'S ACCOUNT, TRANSFERS AND CONSENT HISTORY (P17-TSK-121). They are read through the operator doors
-# P17-TSK-026 and P17-TSK-027 add, which this script's line does not have yet; they follow once both are merged.
+# THE CUSTOMER HISTORY GOES THROUGH THE DOORS; ONLY KIND CAN FUND IT. The customer is made ACTIVE by its planted verdict
+# (customer-verdict.sql, as booked-trade's), and its consent, its wallet and its transfers go through the consent, accounts and transfer
+# doors. Money enters a customer's wallet only by an economic event, and the one a test stack offers is the card top-up, which needs
+# the card PSP - kind's alone. So on a local stack the customer's transfer is the one the door judges for an unfunded wallet, FAILED
+# for INSUFFICIENT_FUNDS; nothing here writes a balance or a posting. posted-transfers, funded and COMPLETED, is refused there.
 #
 # THE DISPUTE NEEDS THE CARD PSP, AND ONLY KIND HAS ONE. A local stack configures no card or tokenisation provider, so no card payment
 # exists there; open-dispute is refused on compose. On kind the rehearsal's simulator is the card PSP. A dispute is the network's word
@@ -205,7 +216,7 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 SEED="$ROOT/infra/scripts/e2e-seed"
 TARGET=${E2E_SEED_TARGET:-compose}
-SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy, all, closable-period, prior-period-adjustment, proposed-mapping, draft-submission, accounting-break, finance, onboardable-organisation, active-merchant, proposed-destination, merchants, open-dispute, review-case, proposed-credit-policy, proposed-lending-terms, proposed-bnpl-terms, credit, proposed-fx-policy, proposed-corridor-policy, fx-enable-request, corridor-enable-request, fx, booked-trade, kyc-review, screening-review or kyc"
+SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy, all, closable-period, prior-period-adjustment, proposed-mapping, draft-submission, accounting-break, finance, onboardable-organisation, active-merchant, proposed-destination, merchants, open-dispute, review-case, proposed-credit-policy, proposed-lending-terms, proposed-bnpl-terms, credit, proposed-fx-policy, proposed-corridor-policy, fx-enable-request, corridor-enable-request, fx, booked-trade, kyc-review, screening-review, kyc, customer-history or posted-transfers"
 
 say() { printf '%s\n' "e2e-seed: $*" >&2; }
 refuse() { printf '%s\n' "e2e-seed: refused: $*" >&2; exit 2; }
@@ -228,7 +239,11 @@ for scenario in "$@"; do
         active-merchant|proposed-destination|merchants) HTTP=yes ;;
         review-case|proposed-credit-policy|proposed-lending-terms|proposed-bnpl-terms|credit) HTTP=yes ;;
         proposed-fx-policy|proposed-corridor-policy|fx-enable-request|corridor-enable-request|fx) HTTP=yes ;;
-        kyc-review|screening-review|kyc) HTTP=yes ;;
+        kyc-review|screening-review|kyc|customer-history) HTTP=yes ;;
+        posted-transfers)
+            HTTP=yes
+            [ "$TARGET" = kind ] || refuse "posted-transfers needs a card PSP to fund the customer, and only kind has one (its simulator): a local stack configures no card provider, so no wallet there holds money to transfer - customer-history seeds the unfunded customer"
+            ;;
         booked-trade)
             HTTP=yes
             [ "$TARGET" = kind ] || refuse "booked-trade needs an FX provider and a reference feed, and only kind's FX scopes have them (its simulator): a local stack configures neither, so no conversion can be priced"
@@ -1004,11 +1019,7 @@ seed_kyc_review() {
     customer=$(psql_seed -c "SELECT customer_id FROM kyc.kyc_case WHERE id = '$reviewed'" | tr -d '[:space:]')
     uuid_like "$customer" || { say "the case's customer came out '$customer'"; exit 1; }
     say "KYC case $reviewed IN_REVIEW for customer $customer: sanctions check $hit HIT, review task $task OPEN - resolve it, then decide"
-    printf 'KYC_CASE_ID=%s
-KYC_REVIEW_TASK_ID=%s
-KYC_CHECK_ID=%s
-KYC_CUSTOMER_ID=%s
-' "$reviewed" "$task" "$hit" "$customer"
+    printf 'KYC_CASE_ID=%s\nKYC_REVIEW_TASK_ID=%s\nKYC_CHECK_ID=%s\nKYC_CUSTOMER_ID=%s\n' "$reviewed" "$task" "$hit" "$customer"
 }
 
 # A screening planted IN_REVIEW on a HIT, requested by a fresh customer - so the console's reviewer is another person.
@@ -1020,8 +1031,77 @@ seed_screening_review() {
     screening=$(plant counterparty-screening.sql -v requester="$remitter" | tr -d '[:space:]')
     uuid_like "$screening" || { say "the screening's plant printed '$screening'"; exit 1; }
     say "counterparty screening $screening IN_REVIEW on a HIT, requested by customer $remitter - release or block it"
-    printf 'COUNTERPARTY_SCREENING_ID=%s
-' "$screening"
+    printf 'COUNTERPARTY_SCREENING_ID=%s\n' "$screening"
+}
+
+# history_holder <who>: a fresh customer made ACTIVE by its planted verdict, its consent granted, withdrawn and granted again through
+# the consent doors. Prints "<identity> <customer> <party>", each checked before the next step uses it.
+history_holder() {
+    holder_login=$(value LOGIN "$(seed_http register-bare "$1")")
+    holder=$(identity_of "$holder_login")
+    uuid_like "$holder" || { say "$1's id came out '$holder'"; exit 1; }
+    customer=$(plant customer-verdict.sql -v identity="$holder" | tr -d '[:space:]')
+    uuid_like "$customer" || { say "$1's verdict printed '$customer'"; exit 1; }
+    history=$(value CONSENT_HISTORY "$(seed_http consent-history "$1")")
+    [ "$history" = GRANTED,WITHDRAWN,GRANTED ] || { say "$1's consent history printed '$history'"; exit 1; }
+    party=$(psql_seed -c "SELECT party_id FROM party.customer WHERE id = '$customer'" | tr -d '[:space:]')
+    uuid_like "$party" || { say "$1's party came out '$party'"; exit 1; }
+    printf '%s %s %s\n' "$holder" "$customer" "$party"
+}
+
+# payee_wallet <who>: a fresh ACTIVE customer's EUR wallet, opened through the accounts door - the transfers' destination. Prints its id.
+payee_wallet() {
+    payee_login=$(value LOGIN "$(seed_http register-bare "$1")")
+    payee=$(identity_of "$payee_login")
+    uuid_like "$payee" || { say "$1's id came out '$payee'"; exit 1; }
+    verdict=$(plant customer-verdict.sql -v identity="$payee" | tr -d '[:space:]')
+    uuid_like "$verdict" || { say "$1's verdict printed '$verdict'"; exit 1; }
+    wallet=$(value ACCOUNT_ID "$(seed_http wallet "$1")")
+    uuid_like "$wallet" || { say "$1's wallet came out '$wallet'"; exit 1; }
+    printf '%s\n' "$wallet"
+}
+
+# transferred <who> <destination> <amount> <status> <failure>: one transfer through the door, judged as <status> with <failure> (NONE
+# for none) or the run stops. Prints its id.
+transferred() {
+    made=$(seed_http transfer "$1" "$2" "$3")
+    moved=$(value TRANSFER_ID "$made")
+    judged=$(value TRANSFER_STATUS "$made")
+    why=$(value TRANSFER_FAILURE "$made")
+    uuid_like "$moved" || { say "the transfer of $3 EUR printed '$moved'"; exit 1; }
+    [ "$judged" = "$4" ] && [ "$why" = "$5" ] || { say "the transfer $moved of $3 EUR was judged $judged ($why), not $4 ($5)"; exit 1; }
+    printf '%s\n' "$moved"
+}
+
+# Both stacks: an unfunded customer's history - the consent's three facts, the wallet, and the transfer the door judged FAILED.
+seed_customer_history() {
+    administrator
+    held=$(history_holder holder)
+    customer=$(printf '%s' "$held" | cut -d' ' -f2)
+    party=$(printf '%s' "$held" | cut -d' ' -f3)
+    account=$(value ACCOUNT_ID "$(seed_http wallet holder)")
+    uuid_like "$account" || { say "the holder's wallet came out '$account'"; exit 1; }
+    destination=$(payee_wallet payee)
+    refused=$(transferred holder "$destination" 100.00 FAILED INSUFFICIENT_FUNDS)
+    say "customer $customer ACTIVE: KYC_PROCESSING granted, withdrawn and granted again; wallet $account; transfer $refused of 100.00 EUR FAILED for INSUFFICIENT_FUNDS"
+    printf 'HISTORY_CUSTOMER_ID=%s\nHISTORY_PARTY_ID=%s\nHISTORY_ACCOUNT_ID=%s\nHISTORY_TRANSFER_ID=%s\n' "$customer" "$party" "$account" "$refused"
+}
+
+# Kind only, with the card PSP: refused before anything was touched. The top-up opens the wallet and funds it; two transfers post.
+seed_posted_transfers() {
+    administrator
+    held=$(history_holder sender)
+    customer=$(printf '%s' "$held" | cut -d' ' -f2)
+    party=$(printf '%s' "$held" | cut -d' ' -f3)
+    funded=$(value PAYMENT_ID "$(seed_http top-up sender)")
+    uuid_like "$funded" || { say "the sender's top-up printed '$funded'"; exit 1; }
+    account=$(value ACCOUNT_ID "$(seed_http account sender)")
+    uuid_like "$account" || { say "the sender's wallet came out '$account'"; exit 1; }
+    destination=$(payee_wallet recipient)
+    first=$(transferred sender "$destination" 2.00 COMPLETED NONE)
+    second=$(transferred sender "$destination" 3.00 COMPLETED NONE)
+    say "customer $customer ACTIVE, funded by top-up $funded: transfers $first (2.00 EUR) and $second (3.00 EUR) COMPLETED from wallet $account"
+    printf 'POSTED_CUSTOMER_ID=%s\nPOSTED_PARTY_ID=%s\nPOSTED_ACCOUNT_ID=%s\nPOSTED_TRANSFER_IDS=%s,%s\n' "$customer" "$party" "$account" "$first" "$second"
 }
 
 # booked-trade's provider and feed, judged before any scenario touches the stack.
@@ -1066,6 +1146,8 @@ for scenario in "$@"; do
         kyc-review) seed_kyc_review ;;
         screening-review) seed_screening_review ;;
         kyc) seed_kyc_review; seed_screening_review ;;
+        customer-history) seed_customer_history ;;
+        posted-transfers) seed_posted_transfers ;;
         all) seed_abandoned_event; seed_parked_record; seed_parsed_file; seed_fee_break; seed_factorless_holding; seed_sod_conflict
              seed_open_alert; seed_investigated_case; seed_overridable_assessment; seed_proposed_policy ;;
     esac
