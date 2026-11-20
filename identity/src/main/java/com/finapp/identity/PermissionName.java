@@ -93,6 +93,45 @@ public enum PermissionName {
     AUDIT_READ,
 
     /**
+     * Read a customer (`P17-TSK-025`; finapp-admin-panel ADR-C132 decisions 2 to 5): find one by an exact identifier, read its
+     * profile - identifiers and statuses, never a name, contact detail or document - and its consent history (`P17-TSK-026`).
+     * <strong>Every read recorded</strong> ({@code RecordedReads}, held by app's {@code UnrecordedReadAdvice}). The
+     * {@code CUSTOMER_SUPPORT_AGENT}'s alone: ADR-C132 proposed the KYC reviewer and the risk analyst as holders too, and the
+     * roles are a partition ({@code RoleNameTest#theGrantsArePairwiseDisjoint}, the owner's C12), so such a person holds that
+     * role as well ({@code PRIVILEGED_ACCESS_REVIEW.md} §3).
+     */
+    CUSTOMER_READ,
+
+    /**
+     * Read a customer's accounts: the list, one account's posted, held and available balances as of a stated instant, and its
+     * ledger lines (`P17-TSK-025`, served by `P17-TSK-027`; ADR-C132). Every read recorded. The {@code CUSTOMER_SUPPORT_AGENT}'s
+     * alone, {@link #CUSTOMER_READ}'s reason.
+     */
+    ACCOUNT_READ,
+
+    /**
+     * Read transfers on the operator surface: a customer's within a bounded window, one with its journal entry's reference
+     * (`P17-TSK-025`, served by `P17-TSK-027`; ADR-C132). Never {@link #TRANSFER_REVERSE}, which moves money and is another
+     * population's. Every read recorded. The {@code CUSTOMER_SUPPORT_AGENT}'s alone.
+     */
+    TRANSFER_READ,
+
+    /**
+     * Read payments on the operator surface (`P17-TSK-025`, served by `P17-TSK-032`; ADR-C132). Never {@link #PAYMENT_REFUND}.
+     * Every read recorded. The {@code CUSTOMER_SUPPORT_AGENT}'s alone. Until `P17-TSK-032` it guards no route, so it counts as
+     * an act ({@link #guardsAnAct}) and its holder needs a factor: the rule fails towards one.
+     */
+    PAYMENT_READ,
+
+    /**
+     * Read the cross-domain overview reports (`P17-TSK-025`; finapp-admin-panel ADR-C132 decision 2's name; the reports are
+     * `P17-TSK-039`'s, gap G-151). The {@code OPERATIONS_VIEWER}'s alone. It guards no route until `P17-TSK-039`, so it counts as
+     * an act and its holder needs a factor - the rule fails towards one, and no factorless holder is left behind when the reads
+     * arrive.
+     */
+    PLATFORM_OVERVIEW_READ,
+
+    /**
      * Review KYC/KYB cases: read a case with its evidence, resolve screening hits, record
      * decisions (`P2-TSK-004`).
      *
