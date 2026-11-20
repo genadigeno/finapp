@@ -1,6 +1,6 @@
 #!/bin/sh
-# TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110; finapp-admin-panel
-# docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4).
+# TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112; finapp-admin-panel
+# docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4, B5.5).
 #
 #   infra/scripts/e2e-seed.sh <scenario>...
 #
@@ -35,6 +35,28 @@
 #   proposed-policy   a PROPOSED TRANSFER version - the seed's own content - proposed by the seed's officer: a different
 #                     officer, the console's, activates it -> POLICY_VERSION_ID, POLICY_PROPOSER_ID
 #   all               each of the above once
+#
+# The finance scenarios (P17-TSK-112) - each proposal by the seed's accountant, never by the console's people, so the console's
+# controller approves it:
+#   closable-period   the month before today's LOCKED with its valuation rate set captured: the console's controller approves the
+#                     set, the close run completes (the schedule's checks, about half a minute), its accountant proposes the close
+#                     and its controller approves it -> CLOSABLE_PERIOD_ID, RATE_SET_ID, RATE_SET_CAPTURER_ID
+#   prior-period-adjustment  a correction of the CLOSED month two before today's, 0.50 EUR, dated today: the console's controller
+#                     approves it -> PPA_ID, PPA_PROPOSER_ID
+#   proposed-mapping  a GL mapping version PROPOSED from next month: the console's controller activates it -> MAPPING_VERSION_ID,
+#                     MAPPING_PROPOSER_ID
+#   draft-submission  a reference return of the CLOSED month, VALIDATED under an ACTIVE obligation of a fresh form: the console's
+#                     controller approves it -> SUBMISSION_ID, OBLIGATION_ID, SUBMISSION_PREPARER_ID
+#   accounting-break  an OPEN accounting break in today's month: the console's accountant proposes its acknowledgement, its
+#                     controller approves or rejects it -> ACCOUNTING_BREAK_ID
+#   finance           each of the five once
+#
+# THE PERIOD SCENARIOS NEED THE BOOKS OPENED MONTHS BACK (ADR-0152). closable-period, prior-period-adjustment and draft-submission
+# need the two months before today's held and OPEN, which only a local stack started on a fresh database with
+# FINAPP_ACCOUNTING_PERIOD_BOOKSOPENMONTHSBACK=2 holds; the seed then closes the earlier one end to end, once per stack - a GL
+# mapping version in force from it, a manual adjustment in it, the four required sources' nil reports and the month-end reference
+# rates for both months (fx-rates.sql: a local stack has no reference feed), the lock, the set, the run, the close by four eyes.
+# They are refused on kind, whose books open in today's month and whose reference feed observes only the present.
 #
 # THE RISK SCENARIOS CHANGE THE STACK'S TRANSFER POLICY. Every risk queue starts empty and no policy is active, under which the
 # engine ALLOWs every movement and nothing can be overridden. So the first of them proposes and activates - two of the seed's
@@ -79,7 +101,7 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 SEED="$ROOT/infra/scripts/e2e-seed"
 TARGET=${E2E_SEED_TARGET:-compose}
-SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy or all"
+SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy, all, closable-period, prior-period-adjustment, proposed-mapping, draft-submission, accounting-break or finance"
 
 say() { printf '%s\n' "e2e-seed: $*" >&2; }
 refuse() { printf '%s\n' "e2e-seed: refused: $*" >&2; exit 2; }
@@ -97,6 +119,7 @@ for scenario in "$@"; do
     case "$scenario" in
         abandoned-event|parked-record) ;;
         parsed-file|fee-break|factorless-holding|sod-conflict|open-alert|investigated-case|overridable-assessment|proposed-policy|all) HTTP=yes ;;
+        closable-period|prior-period-adjustment|proposed-mapping|draft-submission|accounting-break|finance) HTTP=yes ;;
         *) refuse "unknown scenario '$scenario': $SCENARIOS" ;;
     esac
 done
@@ -380,6 +403,146 @@ seed_proposed_policy() {
     printf 'POLICY_PROPOSER_ID=%s\n' "$OFFICER_ID"
 }
 
+# ---------------------------------------------------------------------------------------------------
+# The finance desks' rows (P17-TSK-112).
+
+# The run's finance desks: an accountant who also prepares returns (ACCOUNTANT and REGULATORY_REPORTER, a pair the segregation-of-
+# duties table admits) and a controller (FINANCIAL_CONTROLLER) - the seed's proposers and its approver. The console's own are other
+# identities: none of these approves what it proposed, and the console's controller decides what these propose.
+FINANCE_READY=no
+finance_desks() {
+    [ "$FINANCE_READY" = no ] || return 0
+    administrator
+    accountant=$(operator accountant)
+    ACCOUNTANT_ID=${accountant%% *}
+    controller=$(operator controller)
+    CONTROLLER_ID=${controller%% *}
+    seed_http grant admin ACCOUNTANT "$ACCOUNTANT_ID" >/dev/null
+    seed_http grant admin REGULATORY_REPORTER "$ACCOUNTANT_ID" >/dev/null
+    seed_http grant admin FINANCIAL_CONTROLLER "$CONTROLLER_ID" >/dev/null
+    BOOKS=$(seed_http books accountant)
+    CURRENT_MONTH=$(value CURRENT_MONTH "$BOOKS")
+    NEXT_MONTH=$(value NEXT_MONTH "$BOOKS")
+    month_like "$CURRENT_MONTH" && month_like "$NEXT_MONTH" || { say "the books printed months '$CURRENT_MONTH' and '$NEXT_MONTH'"; exit 1; }
+    say "the run's finance desks: accountant $ACCOUNTANT_ID (also the reporter) and controller $CONTROLLER_ID"
+    FINANCE_READY=yes
+}
+
+month_like() {
+    printf '%s' "$1" | grep -Eq '^[0-9]{4}-(0[1-9]|1[0-2])$'
+}
+
+# decimal <minor>: a two-decimal amount from minor units, its sign kept.
+decimal() {
+    minor=$1
+    sign=
+    case "$minor" in -*) sign=-; minor=${minor#-} ;; esac
+    while [ "${#minor}" -lt 3 ]; do minor="0$minor"; done
+    printf '%s%s.%s' "$sign" "${minor%??}" "${minor#"${minor%??}"}"
+}
+
+# rates <instant>: a month's four reference rates (fx-rates.sql), refused unless all four were kept - the plant writes nothing on a
+# stack whose feed observed something later.
+rates() {
+    printf '%s' "$1" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T12:00:00Z$' || { say "the books printed rates at '$1'"; exit 1; }
+    kept=$(plant fx-rates.sql -v observed="$1" | grep -c '^ *[A-Z][A-Z][A-Z] *$' || true)
+    [ "$kept" = 4 ] || refuse "only $kept of the four reference rates at $1 were kept: a reference feed has observed later than the month, so a past month's valuation set cannot be captured here (ADR-0152: the period scenarios run on a local stack)"
+}
+
+# The books, closed once per stack: the month two before today's closed end to end by the seed's own desks, and the month before
+# today's left OPEN for the console. The books must have opened months back (ADR-0152), which only a fresh database started with
+# FINAPP_ACCOUNTING_PERIOD_BOOKSOPENMONTHSBACK at 2 or more does; a stack whose closing month is no longer OPEN has been seeded already.
+BOOKS_READY=no
+finance_books() {
+    [ "$BOOKS_READY" = no ] || return 0
+    [ "$TARGET" = compose ] || refuse "the finance books are a local stack's: the kind rehearsal keeps the books' first month at today's and its reference feed observes only the present (ADR-0152)"
+    finance_desks
+    CLOSING_MONTH=$(value CLOSING_MONTH "$BOOKS")
+    CLOSABLE_MONTH=$(value CLOSABLE_MONTH "$BOOKS")
+    CLOSING_ID=$(value CLOSING_ID "$BOOKS")
+    CLOSABLE_ID=$(value CLOSABLE_ID "$BOOKS")
+    if [ "$(value CLOSING_STATUS "$BOOKS")" != OPEN ] || [ "$(value CLOSABLE_STATUS "$BOOKS")" != OPEN ]; then
+        refuse "the finance books need $CLOSING_MONTH and $CLOSABLE_MONTH held and OPEN: start the platform on a fresh database with FINAPP_ACCOUNTING_PERIOD_BOOKSOPENMONTHSBACK=2 (ADR-0152) - the books are seeded once per stack"
+    fi
+    month_like "$CLOSING_MONTH" && month_like "$CLOSABLE_MONTH" && uuid_like "$CLOSING_ID" && uuid_like "$CLOSABLE_ID" \
+        || { say "the books printed '$CLOSING_MONTH' $CLOSING_ID and '$CLOSABLE_MONTH' $CLOSABLE_ID"; exit 1; }
+    booker=$(operator booker)
+    BOOKER_ID=${booker%% *}
+    checker=$(operator checker)
+    CHECKER_ID=${checker%% *}
+    seed_http grant admin LEDGER_OPERATOR "$BOOKER_ID" "$CHECKER_ID" >/dev/null
+    settlement_operators
+    mapping=$(value MAPPING_VERSION_ID "$(seed_http propose-mapping accountant "$CLOSING_MONTH" "$SEED/gl-mapping.json")")
+    uuid_like "$mapping" || { say "the books' mapping proposal printed '$mapping'"; exit 1; }
+    seed_http activate-mapping controller "$mapping" >/dev/null
+    seed_http adjust booker checker "$CLOSING_MONTH-15" >/dev/null
+    chain=$(psql_seed -c "SELECT b.statement_sequence || '|' || b.closing_minor FROM settlement.batch b JOIN settlement.source s ON s.id = b.source_id WHERE s.code = 'simulated-bank.statement' AND b.currency = 'EUR' AND b.status = 'ACCEPTED' ORDER BY b.statement_sequence DESC LIMIT 1" | tr -d '[:space:]')
+    sequence=${chain%%|*}
+    closing=${chain#*|}
+    [ -n "$chain" ] || { sequence=0; closing=0; }
+    printf '%s|%s' "$sequence" "$closing" | grep -Eq '^[0-9]+\|-?[0-9]+$' || { say "the bank statement chain read '$chain'"; exit 1; }
+    opening=$(decimal "$closing")
+    seed_http nil-reports submitter attester "$CLOSING_MONTH-15" "$((sequence + 1))" "$opening" >/dev/null
+    seed_http nil-reports submitter attester "$CLOSABLE_MONTH-15" "$((sequence + 2))" "$opening" >/dev/null
+    rates "$(value CLOSING_RATES_AT "$BOOKS")"
+    rates "$(value CLOSABLE_RATES_AT "$BOOKS")"
+    seed_http close-month accountant controller "$CLOSING_ID" >/dev/null
+    say "the books: $CLOSING_MONTH CLOSED by the seed's accountant and controller, under mapping version $mapping; $CLOSABLE_MONTH OPEN with its nil reports and rates"
+    BOOKS_READY=yes
+}
+
+seed_closable_period() {
+    finance_books
+    captured=$(value RATE_SET_ID "$(seed_http lock-and-capture accountant "$CLOSABLE_ID")")
+    uuid_like "$captured" || { say "the capture printed '$captured'"; exit 1; }
+    say "$CLOSABLE_MONTH LOCKED, its rate set $captured captured by $ACCOUNTANT_ID: a controller approves the set, the close run completes, then an accountant proposes the close and a controller approves it"
+    printf 'CLOSABLE_PERIOD_ID=%s\n' "$CLOSABLE_ID"
+    printf 'RATE_SET_ID=%s\n' "$captured"
+    printf 'RATE_SET_CAPTURER_ID=%s\n' "$ACCOUNTANT_ID"
+}
+
+seed_prior_period_adjustment() {
+    finance_books
+    revision=$(value CLOSING_REVISION "$(seed_http books accountant)")
+    printf '%s' "$revision" | grep -Eq '^[0-9]+$' || { say "the books printed revision '$revision'"; exit 1; }
+    ppa=$(value PPA_ID "$(seed_http propose-ppa accountant "$CLOSING_ID" "$revision")")
+    uuid_like "$ppa" || { say "the prior-period adjustment printed '$ppa'"; exit 1; }
+    say "prior-period adjustment $ppa of $CLOSING_MONTH PROPOSED by $ACCOUNTANT_ID: a controller approves it"
+    printf 'PPA_ID=%s\n' "$ppa"
+    printf 'PPA_PROPOSER_ID=%s\n' "$ACCOUNTANT_ID"
+}
+
+seed_proposed_mapping() {
+    finance_desks
+    pending=$(value MAPPING_VERSION_ID "$(seed_http propose-mapping accountant "$NEXT_MONTH" "$SEED/gl-mapping.json")")
+    uuid_like "$pending" || { say "the mapping proposal printed '$pending'"; exit 1; }
+    say "GL mapping version $pending PROPOSED from $NEXT_MONTH by $ACCOUNTANT_ID: a controller activates it"
+    printf 'MAPPING_VERSION_ID=%s\n' "$pending"
+    printf 'MAPPING_PROPOSER_ID=%s\n' "$ACCOUNTANT_ID"
+}
+
+seed_draft_submission() {
+    finance_books
+    obligation=$(value OBLIGATION_ID "$(seed_http obligation accountant controller)")
+    uuid_like "$obligation" || { say "the obligation printed '$obligation'"; exit 1; }
+    submission=$(value SUBMISSION_ID "$(seed_http draft-submission accountant "$obligation" "$CLOSING_ID")")
+    uuid_like "$submission" || { say "the draft printed '$submission'"; exit 1; }
+    say "return $submission of $CLOSING_MONTH VALIDATED, prepared by $ACCOUNTANT_ID under ACTIVE obligation $obligation: a controller approves it"
+    printf 'SUBMISSION_ID=%s\n' "$submission"
+    printf 'OBLIGATION_ID=%s\n' "$obligation"
+    printf 'SUBMISSION_PREPARER_ID=%s\n' "$ACCOUNTANT_ID"
+}
+
+seed_accounting_break() {
+    finance_desks
+    subject="e2e-seed:$(od -An -N6 -tx1 /dev/urandom | tr -d ' \n')"
+    printf '%s' "$subject" | grep -Eq '^e2e-seed:[0-9a-f]{12}$' || { say "a break subject came out '$subject'"; exit 1; }
+    raised=$(plant accounting-break.sql -v month="$CURRENT_MONTH-01" -v subject="$subject" | tr -d '[:space:]')
+    uuid_like "$raised" || { say "the break's plant printed '$raised'"; exit 1; }
+    say "accounting break $raised OPEN in $CURRENT_MONTH: an accountant proposes its acknowledgement, a controller approves or rejects it"
+    printf 'ACCOUNTING_BREAK_ID=%s\n' "$raised"
+}
+
 for scenario in "$@"; do
     case "$scenario" in
         abandoned-event) seed_abandoned_event ;;
@@ -392,6 +555,12 @@ for scenario in "$@"; do
         investigated-case) seed_investigated_case ;;
         overridable-assessment) seed_overridable_assessment ;;
         proposed-policy) seed_proposed_policy ;;
+        closable-period) seed_closable_period ;;
+        prior-period-adjustment) seed_prior_period_adjustment ;;
+        proposed-mapping) seed_proposed_mapping ;;
+        draft-submission) seed_draft_submission ;;
+        accounting-break) seed_accounting_break ;;
+        finance) seed_closable_period; seed_prior_period_adjustment; seed_proposed_mapping; seed_draft_submission; seed_accounting_break ;;
         all) seed_abandoned_event; seed_parked_record; seed_parsed_file; seed_fee_break; seed_factorless_holding; seed_sod_conflict
              seed_open_alert; seed_investigated_case; seed_overridable_assessment; seed_proposed_policy ;;
     esac

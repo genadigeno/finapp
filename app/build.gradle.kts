@@ -448,6 +448,9 @@ extra["ownContainerSuites"] =
         // P15-TSK-033: PI-013's reproduction locks, unlocks and proposes January 1999 on a shadowed database clock, as
         // PeriodCloseDatabaseTest does without one.
         "com.finapp.app.accounting.CloseRunClockStepDatabaseTest",
+        // P17-TSK-112: the console's end-to-end seed's finance scenarios - its books open two months back on a fresh database,
+        // and the close's, the intake's and the matcher's real schedules run, which would tick under every later suite.
+        "com.finapp.app.accounting.E2eSeedFinanceDatabaseTest",
         "com.finapp.app.accounting.GlReadModelDatabaseTest",
         // P16-REM-003: it closes January and February 1999 for real and locks March, as the close suites do.
         "com.finapp.app.accounting.OpeningCheckpointDatabaseTest",
