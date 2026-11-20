@@ -289,10 +289,10 @@ class FeeScheduleOperationsTest {
         PendingDecisions.PendingDecision oneItem = page.items().get(0).id().equals(one) ? page.items().get(0)
                 : rest.items().get(0);
         assertThat(oneItem).isEqualTo(new PendingDecisions.PendingDecision(one, "merchant.FeeScheduleVersion",
-                ADMINISTRATOR.id(), CLOCK.instant().toString(), "annual repricing", first));
+                ADMINISTRATOR.id(), CLOCK.instant().toString(), "annual repricing", first, null));
         assertThat(as(CONTROLLER, () -> desk.pendingAssignments(null, null, null)).items()).singleElement()
                 .isEqualTo(new PendingDecisions.PendingDecision(assignment, "merchant.FeeAssignment", ADMINISTRATOR.id(),
-                        CLOCK.instant().toString(), "standard terms", merchant));
+                        CLOCK.instant().toString(), "standard terms", merchant, null));
         assertThatThrownBy(() -> as(CONTROLLER, () -> desk.pendingVersions("APPROVED", null, null)))
                 .isInstanceOf(ApiException.class);
         assertThatThrownBy(() -> as(CONTROLLER, () -> desk.pendingAssignments(null, page.nextCursor(), null)))
