@@ -25,7 +25,8 @@ import org.junit.jupiter.api.Test;
  * file", which this holds by the seed's own markers. What the plants do is held on a real PostgreSQL - the dead letters by
  * {@code E2eSeedPlantsDatabaseTest}, the held role (`P17-TSK-108`) by {@code E2eSeedReviewsDatabaseTest}, the alert and the sealed
  * assessment (`P17-TSK-110`) by {@code E2eSeedRiskDatabaseTest}, the finance plants (`P17-TSK-112`) by {@code E2eSeedFinanceDatabaseTest},
- * the merchant plants and the dispute's statement (`P17-TSK-115`) by {@code E2eSeedMerchantDatabaseTest}; the script's run against a
+ * the merchant plants and the dispute's statement (`P17-TSK-115`) by {@code E2eSeedMerchantDatabaseTest}, the credit desks' doors and
+ * the review case (`P17-TSK-117`) by {@code E2eSeedCreditDatabaseTest}; the script's run against a
  * running stack is the console's end-to-end run.
  */
 @Tag("architecture")
@@ -112,6 +113,11 @@ class E2eSeedStaysTestOnlyTest {
         int checked = script.indexOf("uuid_like \"$payer\" ||");
         assertThat(checked).as("the identity is checked").isPositive();
         assertThat(script.indexOf("plant customer-verdict.sql -v identity=\"$payer\"")).as("and only then planted").isGreaterThan(checked);
+        // P17-TSK-117: the borrower's verdict, the same way.
+        int borrowerChecked = script.indexOf("uuid_like \"$borrower\" ||");
+        assertThat(borrowerChecked).as("the borrower is checked").isPositive();
+        assertThat(script.indexOf("plant customer-verdict.sql -v identity=\"$borrower\"")).as("and only then planted")
+                .isGreaterThan(borrowerChecked);
     }
 
     @Test
@@ -204,6 +210,37 @@ class E2eSeedStaysTestOnlyTest {
         assertThat(script.indexOf("WHERE provider_dispute_reference = '$dispute'")).isGreaterThan(disputeChecked);
         assertThat(seed).as("the provider's signing key is read from the run's state and printed nowhere")
                 .contains("state.resolve(\"provider-key\")").doesNotContainPattern("System\\.out\\.println\\([^)]*(signing|provider-key)");
+        // P17-TSK-117: the credit request's id, checked before the database is asked for its case.
+        int requestChecked = script.indexOf("uuid_like \"$request\" ||");
+        assertThat(requestChecked).isPositive();
+        assertThat(script.indexOf("WHERE decision_request_id = '$request'")).isGreaterThan(requestChecked);
+    }
+
+    @Test
+    @DisplayName("P17-TSK-117: the credit desks act through their doors - the seed's policy reads no source and refers, a pending version"
+            + " is withdrawn only by the rejection door, the customer applies stepped up - and nothing writes a credit, lending or BNPL row")
+    void theCreditDesksActThroughTheirDoors() {
+        String seed = EvidenceCitations.read(root.resolve(SEED + "Seed.java"));
+        assertThat(seed).as("the seed's policy reads no source, refers on the bureau's absence, and keeps the exposure rule every"
+                        + " policy must have")
+                .contains("\\\"sources\\\":[]").contains("\\\"operator\\\":\\\"IS_ABSENT\\\",\\\"effect\\\":\\\"REFER\\\"")
+                .contains("\\\"subject\\\":\\\"EXPOSURE_HEADROOM\\\"");
+        assertThat(seed).as("the customer applies on a stepped-up public session, as applying for credit always is")
+                .contains("elevatedOn(publicBase, who)").contains("\"/v1/me/credit/decision-requests\"");
+        assertThat(script).as("a version left pending is withdrawn through the rejection door")
+                .contains("seed_http decide-version \"$1\" \"$2\" \"$left\" rejection");
+        assertThat(script.lines().filter(line -> line.strip().startsWith("withdraw ")).toList())
+                .as("every withdrawal names one of the three version tables and a product, as this script's own literals - pending()"
+                        + " splices them")
+                .hasSize(3)
+                .allMatch(line -> line.strip().matches(
+                        "withdraw [a-z]+ [a-z-]+ (credit\\.credit_policy_version|lending\\.loan_terms_version|bnpl\\.bnpl_terms_version)"
+                                + " [A-Z][A-Z_0-9]*"));
+        assertThat(script).as("nothing writes a credit, lending or BNPL row: the doors make every version, request and case")
+                .doesNotContainPattern("(?i)INSERT INTO (credit|lending|bnpl)\\.")
+                .doesNotContainPattern("(?i)UPDATE (credit|lending|bnpl)\\.");
+        assertThat(script).as("the states no running finapp can reach are named, not seeded").contains(
+                "NOT SEEDED: A LOAN, A BNPL AGREEMENT, AND WHAT HANGS ON THEM");
     }
 
     @Test
