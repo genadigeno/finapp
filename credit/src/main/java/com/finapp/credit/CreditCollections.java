@@ -80,4 +80,29 @@ public interface CreditCollections {
 
     /** One scorecard model version's head, whatever its status. */
     Optional<VersionHead> scorecardVersion(Connection unitOfWork, ScorecardModelVersionId id);
+
+    /**
+     * The credit policy versions awaiting a decision ({@code PROPOSED}), proposed oldest first and the id breaking the tie,
+     * strictly after {@code after}: the approver's pending-decision queue (`P17-TSK-040`).
+     */
+    List<VersionHead> pendingPolicyVersions(Connection unitOfWork, Optional<Cursor> after, int limit);
+
+    /**
+     * The scorecard model versions awaiting a decision ({@code PROPOSED}), proposed oldest first and the id breaking the tie,
+     * strictly after {@code after}: the approver's pending-decision queue (`P17-TSK-040`).
+     */
+    List<VersionHead> pendingScorecardVersions(Connection unitOfWork, Optional<Cursor> after, int limit);
+
+    /**
+     * A review case's first decision awaiting a different underwriter's second approval ({@code AWAITING_SECOND}): the case, the
+     * first underwriter, when and why they decided, and the decision request it decides.
+     */
+    record PendingSecondApproval(UUID caseId, String firstDecidedBy, Instant firstDecidedAt, String firstReason,
+            UUID decisionRequest) {}
+
+    /**
+     * The review cases awaiting a second approval, first decided oldest first and the case's id breaking the tie, strictly
+     * after {@code after}: the second approver's pending-decision queue (`P17-TSK-040`).
+     */
+    List<PendingSecondApproval> pendingSecondApprovals(Connection unitOfWork, Optional<Cursor> after, int limit);
 }

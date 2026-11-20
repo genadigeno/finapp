@@ -29,4 +29,10 @@ public class CrossBorderReadBeans {
                 clock,
                 crossborderTransactionRunner);
     }
+
+    /** Cross-border's queues of proposals awaiting a decision (`P17-TSK-040`). */
+    @Bean
+    CrossBorderPendingDecisionDesk crossBorderPendingDecisionDesk(TransactionRunner crossborderTransactionRunner) {
+        return new CrossBorderPendingDecisionDesk(new JdbcCrossBorderCollections(), crossborderTransactionRunner);
+    }
 }

@@ -1,14 +1,17 @@
 package com.finapp.app.accounting;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.finapp.accounting.AccountingCollections;
 import com.finapp.accounting.AccountingErrorCode;
 import com.finapp.accounting.AccountingReasons;
 import com.finapp.accounting.RegulatoryObligationConfiguration;
 import com.finapp.accounting.RegulatoryObligationId;
+import com.finapp.accounting.RegulatoryObligationStatus;
 import com.finapp.accounting.RegulatoryObligationStore;
 import com.finapp.accounting.RegulatoryObligations;
 import com.finapp.accounting.RegulatoryRuleType;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.CommandResult;
@@ -181,13 +184,28 @@ public final class RegulatoryObligationDesk {
         });
     }
 
-    /** What this controller can decide: never their own. Recorded before it is served. */
-    public List<RegulatoryObligationSummaryView> awaitingActivation() {
+    /** The queue's cursor collection and its item's kind (`P17-TSK-040`). */
+    static final String PENDING_COLLECTION = "pending.accounting.regulatory-obligations";
+    static final String PENDING_KIND = "accounting.RegulatoryObligation";
+
+    /**
+     * What this controller can decide, never their own, in the one pending-decision shape (`P17-TSK-040`; ADR-C133 decision 3): oldest
+     * first, a section 7 page, {@code status} {@code PROPOSED} or absent. The item's reason is the proposer's, cut to 120 characters -
+     * served to the controller's door alone, as {@code DATA_CLASSIFICATION.md} has it, and this read recorded before it is served. No
+     * subject: an obligation version acts on nothing but itself.
+     */
+    public PendingDecisions.PendingDecisionPage awaitingActivation(String status, String cursor, String rawLimit) {
+        PendingDecisions.pendingOnly(status, RegulatoryObligationStatus.PROPOSED.name());
+        int limit = PendingDecisions.limit(rawLimit);
+        Optional<AccountingCollections.PendingCursor> after = PendingDecisions.position(PENDING_COLLECTION, cursor)
+                .map(position -> new AccountingCollections.PendingCursor(position.proposedAt(), position.id()));
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        List<RegulatoryObligationStore.Row> rows = flow.door(READ_SPAN, () -> guarded(() -> transactions.inTransaction(uow -> obligations.awaitingActivation(uow, actor))));
-        recordRead("awaiting-activation", "door=awaiting-activation, rows=" + rows.size(), actor, correlation);
-        return rows.stream().map(RegulatoryObligationDesk::summary).toList();
+        List<RegulatoryObligationStore.Row> rows = flow.door(READ_SPAN, () -> guarded(() -> transactions.inTransaction(uow -> obligations.awaitingActivation(uow, actor, after, limit + 1))));
+        PendingDecisions.PendingDecisionPage page = PendingDecisions.page(PENDING_COLLECTION, rows.stream()
+                .map(row -> PendingDecisions.of(row.id().value(), PENDING_KIND, row.proposedBy(), row.proposedAt(), row.proposalReason(), null)).toList(), limit);
+        recordRead("awaiting-activation", "door=awaiting-activation, rows=" + page.items().size() + ", page=" + (after.isPresent() ? "next" : "first") + ", more=" + (page.nextCursor() != null), actor, correlation);
+        return page;
     }
 
     private void recordRead(String target, String summary, Actor actor, CorrelationId correlation) {

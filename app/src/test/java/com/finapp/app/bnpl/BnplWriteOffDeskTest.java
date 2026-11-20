@@ -59,7 +59,7 @@ class BnplWriteOffDeskTest {
         Method reject = BnplWriteOffController.class.getMethod("rejectBnplWriteOff", String.class, String.class, String.class,
                 BnplWriteOffController.BnplWriteOffRejectionRequest.class);
         Method read = BnplWriteOffController.class.getMethod("readBnplWriteOff", String.class, String.class);
-        Method list = BnplWriteOffController.class.getMethod("listPendingBnplWriteOffs");
+        Method list = BnplWriteOffController.class.getMethod("listPendingBnplWriteOffs", String.class, String.class, String.class);
         assertThat(propose.getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.BNPL_WRITE_OFF_PROPOSE);
         for (Method approver : List.of(approve, reject, read, list)) {
             assertThat(approver.getAnnotation(RequiresPermission.class).value()).as(approver.getName())

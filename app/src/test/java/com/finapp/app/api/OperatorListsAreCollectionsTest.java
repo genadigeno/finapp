@@ -76,16 +76,6 @@ class OperatorListsAreCollectionsTest {
                     "the platform's own price list, every schedule served whole - never capped (ADR-C133's 'unbounded', complete)"),
             entry("GET /v1/operator/accounting/periods/{periodId}/prior-period-adjustments",
                     "one month's corrections, served whole - a subject's children, never capped"),
-            entry("GET /v1/operator/accounting/prior-period-adjustments",
-                    "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape"),
-            entry("GET /v1/operator/bnpl-agreements/write-offs",
-                    "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape"),
-            entry("GET /v1/operator/loans/write-offs",
-                    "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape"),
-            entry("GET /v1/operator/regulatory/obligations/awaiting-activation",
-                    "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape"),
-            entry("GET /v1/operator/regulatory/submissions/awaiting-approval",
-                    "owed to P17-TSK-040: a pending-decision list converted in place to ADR-C133's shape"),
             // P17-TSK-125: byte[] is an array to this rule, and is no list.
             entry("GET /v1/operator/kyc/documents/{id}/content",
                     "not a list: one KYC document's bytes, an attachment of at most 512 KiB (DocumentBytes.MAX_BYTES)")));

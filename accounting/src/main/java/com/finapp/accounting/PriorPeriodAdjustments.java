@@ -80,9 +80,6 @@ public final class PriorPeriodAdjustments {
      */
     public static final int MAX_POSTED_CORRECTIONS = MAX_NAMED_CORRECTIONS + 1;
 
-    /** The most standing proposals one read answers. */
-    public static final int PENDING_LIMIT = 100;
-
     /**
      * The entry's {@code reference}, one constant, naming no adjustment, month or proposal. A line on a customer's wallet or a merchant's payable no longer serves it (`P14-TSK-022`: one label for every adjustment, at each rendering); it is the entry's column, read by an operator. The
      * trace is the row's {@code journal_entry_id} and {@code adjustment_proposal_id}, and the entry's scope {@code ledger.adjust.approve:<proposal>}.
@@ -462,10 +459,14 @@ public final class PriorPeriodAdjustments {
         return store.ofCorrected(unitOfWork, period).stream().filter(row -> row.status() == PriorPeriodAdjustmentStatus.POSTED).map(row -> row.id().value()).toList();
     }
 
-    /** The oldest standing proposals, so one that can no longer post can be found. */
-    public List<PriorPeriodAdjustmentStore.Row> pending(Connection unitOfWork) {
+    /** The oldest standing proposals, a page at a time, so one that can no longer post can be found (`P17-TSK-040`). */
+    public List<PriorPeriodAdjustmentStore.Row> pending(Connection unitOfWork, Optional<AccountingCollections.PendingCursor> after, int limit) {
         Objects.requireNonNull(unitOfWork, "unitOfWork");
-        return store.pending(unitOfWork, PENDING_LIMIT);
+        Objects.requireNonNull(after, "after");
+        if (limit < 1) {
+            throw new IllegalArgumentException("a page holds at least one row, not " + limit);
+        }
+        return store.pending(unitOfWork, after, limit);
     }
 
     /** Records an operator's read ({@code accounting.PriorPeriodAdjustmentRead}) - before it is served. */

@@ -305,7 +305,7 @@ class PriorPeriodAdjustmentsTest {
         PriorPeriodAdjustments.View view = machine().view(UOW, proposed.id());
         assertThat(view.stillStands()).isFalse();
         assertThat(view.blockedBy()).contains(blocked);
-        assertThat(machine().pending(UOW)).as("it can be found").extracting(PriorPeriodAdjustmentStore.Row::id).contains(proposed.id());
+        assertThat(machine().pending(UOW, java.util.Optional.empty(), 50)).as("it can be found").extracting(PriorPeriodAdjustmentStore.Row::id).contains(proposed.id());
 
         PriorPeriodAdjustments.Acted rejected = machine().reject(UOW, proposed.id(), CONTROLLER, "it can no longer post", FLOW);
 

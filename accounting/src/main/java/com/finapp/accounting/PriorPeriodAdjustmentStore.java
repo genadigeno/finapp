@@ -36,8 +36,11 @@ public interface PriorPeriodAdjustmentStore {
     /** Every adjustment of {@code corrected}, whatever its status and revision, oldest first. Unlocked. */
     List<Row> ofCorrected(Connection unitOfWork, AccountingPeriodId corrected);
 
-    /** The oldest {@code limit} still {@code PROPOSED}. Unlocked. */
-    List<Row> pending(Connection unitOfWork, int limit);
+    /**
+     * At most {@code limit} still {@code PROPOSED}, oldest first - proposed at ascending, the id ascending breaking the tie - strictly
+     * after {@code after} when given (`P17-TSK-040`: the controller's pending-decision queue). Unlocked.
+     */
+    List<Row> pending(Connection unitOfWork, Optional<AccountingCollections.PendingCursor> after, int limit);
 
     /**
      * How many stand {@code PROPOSED}, born at least {@code bound} ago on the database's clock - {@code finapp.accounting.adjustment.standing} (`P14-TSK-020`; `P14-TSK-013`'s routed note). A count, whether or

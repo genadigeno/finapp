@@ -121,4 +121,20 @@ public interface LendingOperatorLists {
     /** The terms versions, proposed newest first and the id breaking the tie, of one product and one status when named. */
     List<TermsVersionHead> termsVersions(Connection unitOfWork, Optional<LoanProduct> product,
             Optional<LoanTermsVersionStatus> status, Optional<Cursor> after, int limit);
+
+    /**
+     * The terms versions awaiting a decision ({@code PROPOSED}), proposed oldest first and the id breaking the tie, strictly
+     * after {@code after}: the approver's pending-decision queue (`P17-TSK-040`).
+     */
+    List<TermsVersionHead> pendingTermsVersions(Connection unitOfWork, Optional<Cursor> after, int limit);
+
+    /** A capital contribution awaiting a decision: its id, its proposer's identity id, stamp and reason, and its currency. */
+    record PendingContribution(CapitalContributionId id, String proposedBy, Instant proposedAt, String reason,
+            CurrencyCode currency) {}
+
+    /**
+     * The capital contributions awaiting a decision - no decision event yet ({@code lending V002}'s machine) - proposed oldest
+     * first and the id breaking the tie, strictly after {@code after}: the approver's pending-decision queue (`P17-TSK-040`).
+     */
+    List<PendingContribution> pendingCapitalContributions(Connection unitOfWork, Optional<Cursor> after, int limit);
 }

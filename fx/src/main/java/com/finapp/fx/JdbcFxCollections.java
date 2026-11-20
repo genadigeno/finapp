@@ -87,7 +87,78 @@ public final class JdbcFxCollections implements FxCollections {
         });
         sql.append(" ORDER BY proposed_at DESC, id DESC LIMIT ?");
         arguments.add(limit);
-        try (PreparedStatement select = unitOfWork.prepareStatement(sql.toString())) {
+        return requests(unitOfWork, sql.toString(), arguments, "listing the enable requests");
+    }
+
+    @Override
+    public List<EnableRequestEntry> pendingEnableRequests(
+            Connection unitOfWork, Optional<EnableRequestCursor> after, int limit) {
+        Objects.requireNonNull(after, "after must not be null");
+        StringBuilder sql = new StringBuilder(
+                "SELECT id, subject_kind, subject, status, proposed_by, proposed_at, proposal_reason, decided_by, decided_at,"
+                        + " decision_reason FROM fx.availability_enable_request WHERE status = 'PROPOSED'");
+        List<Object> arguments = new ArrayList<>();
+        after.ifPresent(cursor -> {
+            sql.append(" AND (proposed_at, id) > (?, ?)");
+            arguments.add(Timestamp.from(cursor.proposedAt()));
+            arguments.add(cursor.id());
+        });
+        sql.append(" ORDER BY proposed_at ASC, id ASC LIMIT ?");
+        arguments.add(limit);
+        return requests(unitOfWork, sql.toString(), arguments, "listing the enable requests awaiting a decision");
+    }
+
+    @Override
+    public List<PendingProposal> pendingPricingPolicies(Connection unitOfWork, Optional<PendingPosition> after, int limit) {
+        return pending(unitOfWork,
+                "SELECT id, proposed_by, proposed_at, proposal_reason AS reason, version::text AS subject"
+                        + " FROM fx.pricing_policy_version WHERE status = 'PROPOSED'",
+                after, limit, "listing the pricing policies awaiting a decision");
+    }
+
+    @Override
+    public List<PendingProposal> pendingTradeReversals(Connection unitOfWork, Optional<PendingPosition> after, int limit) {
+        return pending(unitOfWork,
+                "SELECT id, proposed_by, proposed_at, proposed_reason AS reason, trade_id::text AS subject"
+                        + " FROM fx.trade_reversal WHERE status = 'PROPOSED'",
+                after, limit, "listing the trade reversals awaiting a decision");
+    }
+
+    /** A queue's page: the pending rows of {@code select}, oldest first, strictly after {@code after}. */
+    private static List<PendingProposal> pending(
+            Connection unitOfWork, String select, Optional<PendingPosition> after, int limit, String doing) {
+        Objects.requireNonNull(after, "after must not be null");
+        StringBuilder sql = new StringBuilder(select);
+        List<Object> arguments = new ArrayList<>();
+        after.ifPresent(position -> {
+            sql.append(" AND (proposed_at, id) > (?, ?)");
+            arguments.add(Timestamp.from(position.proposedAt()));
+            arguments.add(position.id());
+        });
+        sql.append(" ORDER BY proposed_at ASC, id ASC LIMIT ?");
+        arguments.add(limit);
+        try (PreparedStatement statement = unitOfWork.prepareStatement(sql.toString())) {
+            bind(statement, arguments);
+            List<PendingProposal> page = new ArrayList<>();
+            try (ResultSet row = statement.executeQuery()) {
+                while (row.next()) {
+                    page.add(new PendingProposal(
+                            row.getObject("id", UUID.class),
+                            row.getString("proposed_by"),
+                            row.getTimestamp("proposed_at").toInstant(),
+                            row.getString("reason"),
+                            row.getString("subject")));
+                }
+            }
+            return List.copyOf(page);
+        } catch (SQLException failure) {
+            throw new FxStorageException(DatabaseFailure.describe(doing, failure));
+        }
+    }
+
+    private static List<EnableRequestEntry> requests(
+            Connection unitOfWork, String sql, List<Object> arguments, String doing) {
+        try (PreparedStatement select = unitOfWork.prepareStatement(sql)) {
             bind(select, arguments);
             List<EnableRequestEntry> page = new ArrayList<>();
             try (ResultSet row = select.executeQuery()) {
@@ -107,7 +178,7 @@ public final class JdbcFxCollections implements FxCollections {
             }
             return List.copyOf(page);
         } catch (SQLException failure) {
-            throw new FxStorageException(DatabaseFailure.describe("listing the enable requests", failure));
+            throw new FxStorageException(DatabaseFailure.describe(doing, failure));
         }
     }
 

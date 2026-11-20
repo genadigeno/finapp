@@ -348,4 +348,11 @@ public class MerchantBeans {
                 ids,
                 clock);
     }
+
+    /** The merchant domain's queues of proposals awaiting a decision (`P17-TSK-040`). */
+    @Bean
+    MerchantPendingDecisionDesk merchantPendingDecisionDesk(PlatformTransactionManager transactionManager, DataSource dataSource) {
+        return new MerchantPendingDecisionDesk(
+                new com.finapp.merchant.JdbcMerchantCollections(), new TransactionTemplate(transactionManager), dataSource);
+    }
 }

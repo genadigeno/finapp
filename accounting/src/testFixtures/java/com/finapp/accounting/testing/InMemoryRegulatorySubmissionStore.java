@@ -389,9 +389,11 @@ public final class InMemoryRegulatorySubmissionStore implements RegulatorySubmis
     }
 
     @Override
-    public List<Row> awaitingApproval(Connection unitOfWork, String reader, int limit) {
+    public List<Row> awaitingApproval(Connection unitOfWork, String reader, Optional<com.finapp.accounting.AccountingCollections.PendingCursor> after, int limit) {
         return rows.values().stream().map(this::read).filter(row -> row.status() == SubmissionStatus.VALIDATED && !row.preparedBy().equals(reader))
-                .sorted(Comparator.comparing((Row row) -> row.validatedAt().orElseThrow()).thenComparing(row -> row.id().value())).limit(limit).toList();
+                .filter(row -> after.map(cursor -> row.validatedAt().orElseThrow().isAfter(cursor.proposedAt())
+                        || row.validatedAt().orElseThrow().equals(cursor.proposedAt()) && com.finapp.accounting.JournalReads.LineCursor.compareIds(row.id().value(), cursor.id()) > 0).orElse(true))
+                .sorted(Comparator.comparing((Row row) -> row.validatedAt().orElseThrow()).thenComparing((Row row) -> row.id().value(), com.finapp.accounting.JournalReads.LineCursor::compareIds)).limit(limit).toList();
     }
 
     @Override

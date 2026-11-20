@@ -1,15 +1,18 @@
 package com.finapp.app.accounting;
 
+import com.finapp.accounting.AccountingCollections;
 import com.finapp.accounting.AccountingErrorCode;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.AccountingPeriods;
 import com.finapp.accounting.AccountingReasons;
 import com.finapp.accounting.PriorPeriodAdjustmentId;
+import com.finapp.accounting.PriorPeriodAdjustmentStatus;
 import com.finapp.accounting.PriorPeriodAdjustmentStore;
 import com.finapp.accounting.PriorPeriodAdjustments;
 import com.finapp.accounting.PriorPeriodPostings;
 import com.finapp.accounting.Side;
 import com.finapp.app.api.DecimalText;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.CommandResult;
@@ -30,6 +33,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -116,10 +120,6 @@ public final class PriorPeriodAdjustmentDesk {
         }
     }
 
-    /** A standing proposal in a controller's list - read one to decide it. */
-    public record PendingPriorPeriodAdjustmentView(String id, String correctedPeriod, int correctedRevision, String targetPeriod, String postingDate, String proposedAt,
-            String proposedBy) {}
-
     // ------------------------------------------------------------------ acts
 
     public PriorPeriodAdjustmentReceipt propose(String idempotencyKey, String rawCorrected, int correctedRevision, String reason, List<StatedLine> stated) {
@@ -164,14 +164,28 @@ public final class PriorPeriodAdjustmentDesk {
         return view(view);
     }
 
-    /** Those standing, oldest first - so one that can no longer post can be found. Recorded before it is served. */
-    public List<PendingPriorPeriodAdjustmentView> pending() {
+    /** The queue's cursor collection and its item's kind (`P17-TSK-040`). */
+    static final String PENDING_COLLECTION = "pending.accounting.prior-period-adjustments";
+    static final String PENDING_KIND = "accounting.PriorPeriodAdjustment";
+
+    /**
+     * Those standing, oldest first - so one that can no longer post can be found - in the one pending-decision shape (`P17-TSK-040`;
+     * ADR-C133 decision 3): a section 7 page, {@code status} {@code PROPOSED} or absent. The subject is the month it corrects; the
+     * reason the proposer's, cut to 120 characters - served to the controller who decides it, as the adjustment's own read serves it
+     * whole. Recorded before it is served.
+     */
+    public PendingDecisions.PendingDecisionPage pending(String status, String cursor, String rawLimit) {
+        PendingDecisions.pendingOnly(status, PriorPeriodAdjustmentStatus.PROPOSED.name());
+        int limit = PendingDecisions.limit(rawLimit);
+        Optional<AccountingCollections.PendingCursor> after = PendingDecisions.position(PENDING_COLLECTION, cursor)
+                .map(position -> new AccountingCollections.PendingCursor(position.proposedAt(), position.id()));
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        List<PriorPeriodAdjustmentStore.Row> rows = flow.door(READ_SPAN, () -> guarded(() -> transactions.inTransaction(adjustments::pending)));
-        recordRead(PriorPeriodAdjustments.TARGET_TYPE, "pending", "door=pending, rows=" + rows.size(), actor, correlation);
-        return rows.stream().map(row -> new PendingPriorPeriodAdjustmentView(row.id().value().toString(), row.correctedMonth().toString(), row.correctedRevision(), row.targetMonth().toString(), row.postingDate().toString(),
-                row.proposedAt().toString(), row.proposedBy())).toList();
+        List<PriorPeriodAdjustmentStore.Row> rows = flow.door(READ_SPAN, () -> guarded(() -> transactions.inTransaction(uow -> adjustments.pending(uow, after, limit + 1))));
+        PendingDecisions.PendingDecisionPage page = PendingDecisions.page(PENDING_COLLECTION, rows.stream()
+                .map(row -> PendingDecisions.of(row.id().value(), PENDING_KIND, row.proposedBy(), row.proposedAt(), row.proposalReason(), row.correctedPeriod().value())).toList(), limit);
+        recordRead(PriorPeriodAdjustments.TARGET_TYPE, "pending", "door=pending, rows=" + page.items().size() + ", page=" + (after.isPresent() ? "next" : "first") + ", more=" + (page.nextCursor() != null), actor, correlation);
+        return page;
     }
 
     /** Every correction of a month, whatever its status and revision. Recorded before it is served. */

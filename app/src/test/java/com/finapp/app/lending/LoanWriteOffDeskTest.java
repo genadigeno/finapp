@@ -58,7 +58,7 @@ class LoanWriteOffDeskTest {
         Method reject = LoanWriteOffController.class.getMethod("rejectLoanWriteOff", String.class, String.class, String.class,
                 LoanWriteOffController.LoanWriteOffRejectionRequest.class);
         Method read = LoanWriteOffController.class.getMethod("readLoanWriteOff", String.class, String.class);
-        Method list = LoanWriteOffController.class.getMethod("listPendingLoanWriteOffs");
+        Method list = LoanWriteOffController.class.getMethod("listPendingLoanWriteOffs", String.class, String.class, String.class);
         assertThat(propose.getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.LOAN_WRITE_OFF_PROPOSE);
         for (Method approver : List.of(approve, reject, read, list)) {
             assertThat(approver.getAnnotation(RequiresPermission.class).value()).as(approver.getName())

@@ -3,6 +3,7 @@ package com.finapp.app.accounting;
 import com.finapp.accounting.PriorPeriodAdjustments;
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.api.DecimalText;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -51,11 +53,17 @@ public class PriorPeriodAdjustmentController {
                 : body.lines().stream().map(line -> new PriorPeriodAdjustmentDesk.StatedLine(line.ledgerAccountId(), line.direction(), line.amount(), line.currency())).toList());
     }
 
-    /** The oldest prior-period adjustments standing, so one that can no longer post can be found. Audited. */
+    /**
+     * The oldest prior-period adjustments standing, so one that can no longer post can be found - the one pending-decision shape
+     * (`P17-TSK-040`), {@code status} {@code PROPOSED} or absent. A read, so a password session (the owner's D-6). Audited.
+     */
     @GetMapping("/prior-period-adjustments")
     @RequiresPermission(PermissionName.ACCOUNTING_ADJUST_APPROVE)
-    public List<PriorPeriodAdjustmentDesk.PendingPriorPeriodAdjustmentView> listPendingPriorPeriodAdjustments() {
-        return desk.pending();
+    public PendingDecisions.PendingDecisionPage listPendingPriorPeriodAdjustments(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.pending(status, cursor, limit);
     }
 
     /** One prior-period adjustment as its approver reads it: the date it posts on, the revision it corrects, its lines, the proposer's reason, the month's other corrections, whether it still stands. Audited. */

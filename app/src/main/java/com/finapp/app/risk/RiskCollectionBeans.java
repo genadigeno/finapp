@@ -45,4 +45,16 @@ public class RiskCollectionBeans {
             RiskFlowScope riskFlowScope) {
         return new RiskCollectionDesk(assessmentSearch, riskCollections, screeningListStore, riskTransactions, riskFlowScope);
     }
+
+    /** Risk's queues of proposals awaiting a decision (`P17-TSK-040`), the investigative ones recorded. */
+    @Bean
+    RiskPendingDecisionDesk riskPendingDecisionDesk(
+            RiskCollections riskCollections,
+            RiskTransactions riskTransactions,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock,
+            RiskFlowScope riskFlowScope) {
+        return new RiskPendingDecisionDesk(riskCollections, riskTransactions, auditWriter, idGenerator, clock, riskFlowScope);
+    }
 }

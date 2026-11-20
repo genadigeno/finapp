@@ -11,6 +11,7 @@ import com.finapp.accounting.RunStatus;
 import com.finapp.accounting.ValuationRateSetStatus;
 import com.finapp.accounting.ValuationRateSetStore;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.audit.AuditId;
@@ -71,6 +72,20 @@ public final class AccountingCollectionDesk {
     static final String OWN_RATE_SETS = "accounting.valuation-rate-sets.mine";
     static final int DEFAULT_LIMIT = 50;
     static final int MAXIMUM_LIMIT = 200;
+
+    /** The pending-decision queues (`P17-TSK-040`): each one's cursor collection, and its item's kind. */
+    static final String PENDING_MAPPING_VERSIONS = "pending.accounting.mapping-versions";
+    static final String PENDING_RATE_SETS = "pending.accounting.valuation-rate-sets";
+    static final String PENDING_CLOSES = "pending.accounting.close-requests";
+    static final String PENDING_REOPENS = "pending.accounting.reopen-requests";
+    static final String PENDING_UNLOCKS = "pending.accounting.unlock-requests";
+    static final String MAPPING_VERSION_KIND = "accounting.MappingVersion";
+    static final String RATE_SET_KIND = "accounting.ValuationRateSet";
+    static final String CLOSE_KIND = "accounting.CloseRequest";
+    static final String REOPEN_KIND = "accounting.ReopenRequest";
+    static final String UNLOCK_KIND = "accounting.UnlockRequest";
+    /** The word each of these five queues answers to in {@code status}: their proposals' own {@code PROPOSED}. */
+    static final String PENDING_WORD = "PROPOSED";
 
     static final String RUNS_TARGET = "report_run_list";
     static final String STATEMENTS_TARGET = "final_statement_list";
@@ -270,6 +285,61 @@ public final class AccountingCollectionDesk {
                 throw OperatorCollection.invalidCursor();
             }
         });
+    }
+
+    // ------------------------------------------------------------------ the pending-decision queues (`P17-TSK-040`)
+
+    /**
+     * The GL mapping versions awaiting a decision, oldest first (ADR-C133 decision 3's shape); recording nothing, as the versions'
+     * list does not. No subject: a version acts on nothing but itself. No reason: {@code proposal_reason} is never served.
+     */
+    public PendingDecisions.PendingDecisionPage pendingMappingVersions(String status, String cursor, String limit) {
+        return pending(PENDING_MAPPING_VERSIONS, MAPPING_VERSION_KIND, status, cursor, limit, collections::pendingMappingVersions);
+    }
+
+    /** The valuation rate sets awaiting a decision, oldest capture first; the subject the set's period. Recording nothing. */
+    public PendingDecisions.PendingDecisionPage pendingRateSets(String status, String cursor, String limit) {
+        return pending(PENDING_RATE_SETS, RATE_SET_KIND, status, cursor, limit, collections::pendingRateSets);
+    }
+
+    /** The close proposals awaiting a decision, oldest first; the subject the period. Recording nothing, as the period's requests read. */
+    public PendingDecisions.PendingDecisionPage pendingCloses(String status, String cursor, String limit) {
+        return pending(PENDING_CLOSES, CLOSE_KIND, status, cursor, limit, collections::pendingCloses);
+    }
+
+    /** The reopen proposals awaiting a decision, oldest first; the subject the period. Recording nothing. */
+    public PendingDecisions.PendingDecisionPage pendingReopens(String status, String cursor, String limit) {
+        return pending(PENDING_REOPENS, REOPEN_KIND, status, cursor, limit, collections::pendingReopens);
+    }
+
+    /**
+     * The unlock proposals awaiting a decision, oldest first. An unlock has no row of its own: its id and its subject are the period's,
+     * and its decision doors name the period and the instant it was proposed - this item's {@code proposedAt}. Recording nothing.
+     */
+    public PendingDecisions.PendingDecisionPage pendingUnlocks(String status, String cursor, String limit) {
+        return pending(PENDING_UNLOCKS, UNLOCK_KIND, status, cursor, limit, collections::pendingUnlocks);
+    }
+
+    /** One queue's read: the order, the limit, the status and the cursor are the shared rules' ({@link PendingDecisions}). */
+    @FunctionalInterface
+    interface PendingRead {
+        List<AccountingCollections.PendingRow> read(Connection snapshot, Optional<AccountingCollections.PendingCursor> after, int limit);
+    }
+
+    private PendingDecisions.PendingDecisionPage pending(String collection, String kind, String status, String cursor, String rawLimit,
+            PendingRead read) {
+        PendingDecisions.pendingOnly(status, PENDING_WORD);
+        int size = PendingDecisions.limit(rawLimit);
+        Optional<AccountingCollections.PendingCursor> after = pendingCursor(collection, cursor);
+        List<AccountingCollections.PendingRow> rows = bounded(() -> snapshots.read(snapshot -> read.read(snapshot, after, size + 1)));
+        return PendingDecisions.page(collection, rows.stream().map(row -> PendingDecisions.of(row.id(), kind, row.proposedBy(),
+                row.proposedAt(), null, row.subject().orElse(null))).toList(), size);
+    }
+
+    /** A pending queue's cursor in the store's words. */
+    static Optional<AccountingCollections.PendingCursor> pendingCursor(String collection, String cursor) {
+        return PendingDecisions.position(collection, cursor)
+                .map(position -> new AccountingCollections.PendingCursor(position.proposedAt(), position.id()));
     }
 
     // ------------------------------------------------------------------ the request in the domain's words

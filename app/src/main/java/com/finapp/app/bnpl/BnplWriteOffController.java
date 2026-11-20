@@ -2,6 +2,7 @@ package com.finapp.app.bnpl;
 
 import com.finapp.app.api.ClosedBody;
 import com.finapp.app.api.DecimalText;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
@@ -13,7 +14,6 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-import java.util.List;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -56,11 +57,17 @@ public class BnplWriteOffController {
         return flow.doorOnAgreement(BnplSpans.CORRECT, id, () -> desk.propose(id, idempotencyKey, body.reason()));
     }
 
-    /** The oldest write-offs awaiting a decision, so one that can no longer post can be found. Audited. */
+    /**
+     * The write-offs awaiting a decision, oldest first - so one that can no longer post can be found - in the one pending-decision
+     * shape (`P17-TSK-040`), under the approve door's permission. Audited.
+     */
     @GetMapping("/write-offs")
     @RequiresPermission(PermissionName.BNPL_WRITE_OFF_APPROVE)
-    public List<BnplWriteOffDesk.BnplWriteOffReceipt> listPendingBnplWriteOffs() {
-        return desk.pending();
+    public PendingDecisions.PendingDecisionPage listPendingBnplWriteOffs(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.pending(status, cursor, limit);
     }
 
     /**

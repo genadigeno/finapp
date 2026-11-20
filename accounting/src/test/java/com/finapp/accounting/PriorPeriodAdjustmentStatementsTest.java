@@ -26,7 +26,9 @@ class PriorPeriodAdjustmentStatementsTest {
         assertThat(JdbcPriorPeriodAdjustmentStore.LOCK_CORRECTIONS_SQL).endsWith("WHERE a.corrected_period_id = ? AND a.status <> 'REJECTED' ORDER BY a.id FOR UPDATE OF a");
         assertThat(JdbcPriorPeriodAdjustmentStore.LOCK_SQL).endsWith("WHERE a.id = ? FOR UPDATE OF a");
         assertThat(JdbcPriorPeriodAdjustmentStore.OF_CORRECTED_SQL).endsWith("WHERE a.corrected_period_id = ? ORDER BY a.id").doesNotContain("FOR ");
-        assertThat(JdbcPriorPeriodAdjustmentStore.PENDING_SQL).endsWith("WHERE a.status = 'PROPOSED' ORDER BY a.proposed_at, a.id LIMIT ?");
+        assertThat(JdbcPriorPeriodAdjustmentStore.PENDING_SQL).endsWith("WHERE a.status = 'PROPOSED' ORDER BY a.proposed_at ASC, a.id ASC LIMIT ?");
+        assertThat(JdbcPriorPeriodAdjustmentStore.PENDING_AFTER_SQL)
+                .endsWith("WHERE a.status = 'PROPOSED' AND (a.proposed_at, a.id) > (?, ?) ORDER BY a.proposed_at ASC, a.id ASC LIMIT ?");
     }
 
     @Test

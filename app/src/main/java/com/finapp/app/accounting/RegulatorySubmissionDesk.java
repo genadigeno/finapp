@@ -1,6 +1,7 @@
 package com.finapp.app.accounting;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.finapp.accounting.AccountingCollections;
 import com.finapp.accounting.AccountingErrorCode;
 import com.finapp.accounting.AccountingPeriodId;
 import com.finapp.accounting.AccountingPeriods;
@@ -19,6 +20,7 @@ import com.finapp.accounting.SubmissionStatus;
 import com.finapp.identity.PermissionName;
 import com.finapp.identity.RoleName;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.CommandResult;
@@ -328,13 +330,30 @@ public final class RegulatorySubmissionDesk {
         });
     }
 
-    /** What this controller can decide: never their own. Recorded before it is served. */
-    public List<RegulatorySubmissionSummaryView> awaitingApproval() {
+    /** The queue's cursor collection and its item's kind (`P17-TSK-040`). */
+    static final String PENDING_COLLECTION = "pending.accounting.regulatory-submissions";
+    static final String PENDING_KIND = "accounting.RegulatorySubmission";
+
+    /**
+     * What this controller can decide, never their own, in the one pending-decision shape (`P17-TSK-040`; ADR-C133 decision 3): the
+     * returns {@code VALIDATED}, oldest validation first, a section 7 page, {@code status} {@code VALIDATED} or absent. A return is
+     * put to the approver by its validation, so {@code proposedAt} is when it was validated and {@code proposedBy} its preparer - the
+     * person the approval's four eyes are judged against. The reason is the preparer's, cut to 120 characters - served to the
+     * approver's door alone, as {@code DATA_CLASSIFICATION.md} has it, and this read recorded before it is served. The subject is the
+     * month it reports.
+     */
+    public PendingDecisions.PendingDecisionPage awaitingApproval(String status, String cursor, String rawLimit) {
+        PendingDecisions.pendingOnly(status, SubmissionStatus.VALIDATED.name());
+        int limit = PendingDecisions.limit(rawLimit);
+        Optional<AccountingCollections.PendingCursor> after = PendingDecisions.position(PENDING_COLLECTION, cursor)
+                .map(position -> new AccountingCollections.PendingCursor(position.proposedAt(), position.id()));
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        List<RegulatorySubmissionStore.Row> rows = flow.door(READ_SPAN, () -> guarded(() -> transactions.inTransaction(uow -> submissions.awaitingApproval(uow, actor))));
-        recordRead("awaiting-approval", "door=awaiting-approval, rows=" + rows.size(), actor, correlation);
-        return rows.stream().map(RegulatorySubmissionDesk::summary).toList();
+        List<RegulatorySubmissionStore.Row> rows = flow.door(READ_SPAN, () -> guarded(() -> transactions.inTransaction(uow -> submissions.awaitingApproval(uow, actor, after, limit + 1))));
+        PendingDecisions.PendingDecisionPage page = PendingDecisions.page(PENDING_COLLECTION, rows.stream()
+                .map(row -> PendingDecisions.of(row.id().value(), PENDING_KIND, row.preparedBy(), row.validatedAt().orElseThrow(), row.preparationReason(), row.period().value())).toList(), limit);
+        recordRead("awaiting-approval", "door=awaiting-approval, rows=" + page.items().size() + ", page=" + (after.isPresent() ? "next" : "first") + ", more=" + (page.nextCursor() != null), actor, correlation);
+        return page;
     }
 
     /** The document its adapter would send. Recorded before it is served. */

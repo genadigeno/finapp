@@ -1,6 +1,7 @@
 package com.finapp.app.accounting;
 
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
@@ -63,11 +64,17 @@ public class RegulatoryObligationController {
         return desk.recent(cursor, limit);
     }
 
-    /** What this controller can decide: those proposed, never their own. Audited. */
+    /**
+     * What this controller can decide: those proposed, never their own - the one pending-decision shape (`P17-TSK-040`), oldest first,
+     * {@code status} {@code PROPOSED} or absent. A read, so a password session (the owner's D-6). Audited.
+     */
     @GetMapping("/awaiting-activation")
     @RequiresPermission(PermissionName.REGULATORY_REPORT_APPROVE)
-    public List<RegulatoryObligationDesk.RegulatoryObligationSummaryView> listRegulatoryObligationsAwaitingActivation() {
-        return desk.awaitingActivation();
+    public PendingDecisions.PendingDecisionPage listRegulatoryObligationsAwaitingActivation(
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.awaitingActivation(status, cursor, limit);
     }
 
     /** One version as a preparer reads it. Audited. */

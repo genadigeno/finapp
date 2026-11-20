@@ -57,6 +57,31 @@ public interface CrossBorderCollections {
             Optional<CorridorRequestCursor> after,
             int limit);
 
+    /** Where a queue of proposals awaiting a decision resumes (`P17-TSK-040`): the last row served, oldest first. */
+    record PendingPosition(Instant proposedAt, UUID id) {
+        public PendingPosition {
+            Objects.requireNonNull(proposedAt, "proposedAt must not be null");
+            Objects.requireNonNull(id, "id must not be null");
+        }
+    }
+
+    /**
+     * A proposal awaiting a decision (`P17-TSK-040`): its id, its proposer and their reason, when, and what it acts on - a
+     * corridor, or a corridor policy's version number.
+     */
+    record PendingProposal(UUID id, String proposedBy, Instant proposedAt, String reason, String subject) {
+        public PendingProposal {
+            Objects.requireNonNull(id, "id must not be null");
+            Objects.requireNonNull(proposedAt, "proposedAt must not be null");
+        }
+    }
+
+    /** The corridor enable requests awaiting a decision: {@code PROPOSED} alone, oldest first, the id the tiebreak. */
+    List<PendingProposal> pendingCorridorEnableRequests(Connection unitOfWork, Optional<PendingPosition> after, int limit);
+
+    /** The corridor policy versions awaiting a decision: {@code PROPOSED} alone, oldest first, the id the tiebreak. */
+    List<PendingProposal> pendingCorridorPolicies(Connection unitOfWork, Optional<PendingPosition> after, int limit);
+
     /** A payment search: a creation window {@code [from, to)}, and optionally a corridor and a status. */
     record CrossBorderPaymentFilter(
             Instant from, Instant to, Optional<CorridorKey> corridor, Optional<PaymentStore.Status> status) {

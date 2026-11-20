@@ -57,8 +57,12 @@ class RegulatorySubmissionStatementsTest {
     void theLocks() {
         assertThat(JdbcRegulatorySubmissionStore.LOCK_SQL).endsWith("WHERE s.id = ? FOR UPDATE OF s");
         assertThat(JdbcRegulatorySubmissionStore.FIND_SQL).doesNotContain("FOR ");
-        assertThat(JdbcRegulatorySubmissionStore.AWAITING_SQL).endsWith("WHERE s.status = 'VALIDATED' AND s.prepared_by <> ? ORDER BY s.validated_at, s.id LIMIT ?");
-        assertThat(JdbcRegulatoryObligationStore.AWAITING_SQL).endsWith("WHERE status = 'PROPOSED' AND proposed_by <> ? ORDER BY proposed_at, id LIMIT ?");
+        assertThat(JdbcRegulatorySubmissionStore.AWAITING_SQL).endsWith("WHERE s.status = 'VALIDATED' AND s.prepared_by <> ? ORDER BY s.validated_at ASC, s.id ASC LIMIT ?");
+        assertThat(JdbcRegulatorySubmissionStore.AWAITING_AFTER_SQL)
+                .endsWith("WHERE s.status = 'VALIDATED' AND s.prepared_by <> ? AND (s.validated_at, s.id) > (?, ?) ORDER BY s.validated_at ASC, s.id ASC LIMIT ?");
+        assertThat(JdbcRegulatoryObligationStore.AWAITING_SQL).endsWith("WHERE status = 'PROPOSED' AND proposed_by <> ? ORDER BY proposed_at ASC, id ASC LIMIT ?");
+        assertThat(JdbcRegulatoryObligationStore.AWAITING_AFTER_SQL)
+                .endsWith("WHERE status = 'PROPOSED' AND proposed_by <> ? AND (proposed_at, id) > (?, ?) ORDER BY proposed_at ASC, id ASC LIMIT ?");
         assertThat(JdbcRegulatoryObligationStore.LOCK_SHARED_SQL).endsWith("WHERE id = ? FOR SHARE");
         assertThat(JdbcRegulatoryObligationStore.LOCK_FORM_SQL).endsWith("WHERE jurisdiction_code = ? AND form_code = ? ORDER BY id FOR UPDATE");
         assertThat(JdbcRegulatorySubmissionStore.STANDING_SQL).contains("f.flag = 'CONTRARY'").contains(JdbcRegulatorySubmissionStore.OVERTAKEN);

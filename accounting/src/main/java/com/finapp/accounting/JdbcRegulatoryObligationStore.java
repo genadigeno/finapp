@@ -39,7 +39,10 @@ public final class JdbcRegulatoryObligationStore implements RegulatoryObligation
     static final String RECENT_AFTER_SQL = ROW + " WHERE (proposed_at, id) < (?, ?) ORDER BY proposed_at DESC, id DESC LIMIT ?";
 
     /** Selected in the statement: the filter is the database's, before the {@code LIMIT}. */
-    static final String AWAITING_SQL = ROW + " WHERE status = 'PROPOSED' AND proposed_by <> ? ORDER BY proposed_at, id LIMIT ?";
+    static final String AWAITING_SQL = ROW + " WHERE status = 'PROPOSED' AND proposed_by <> ? ORDER BY proposed_at ASC, id ASC LIMIT ?";
+
+    /** The next page: strictly after the last row served, in the order's own key (`P17-TSK-040`). */
+    static final String AWAITING_AFTER_SQL = ROW + " WHERE status = 'PROPOSED' AND proposed_by <> ? AND (proposed_at, id) > (?, ?) ORDER BY proposed_at ASC, id ASC LIMIT ?";
 
     static final String ACTIVATE_SQL = "UPDATE accounting.regulatory_obligation SET status = 'ACTIVE', decided_by = ?, decided_by_type = ?, decided_at = clock_timestamp(), decision_reason = ?"
             + " WHERE id = ? AND status = 'PROPOSED'";
@@ -104,10 +107,15 @@ public final class JdbcRegulatoryObligationStore implements RegulatoryObligation
     }
 
     @Override
-    public List<Row> awaitingActivation(Connection unitOfWork, String reader, int limit) {
-        try (PreparedStatement read = unitOfWork.prepareStatement(AWAITING_SQL)) {
-            read.setString(1, reader);
-            read.setInt(2, limit);
+    public List<Row> awaitingActivation(Connection unitOfWork, String reader, Optional<AccountingCollections.PendingCursor> after, int limit) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(after.isPresent() ? AWAITING_AFTER_SQL : AWAITING_SQL)) {
+            int next = 1;
+            read.setString(next++, reader);
+            if (after.isPresent()) {
+                read.setTimestamp(next++, java.sql.Timestamp.from(after.get().proposedAt()));
+                read.setObject(next++, after.get().id());
+            }
+            read.setInt(next, limit);
             return rows(read);
         } catch (SQLException failure) {
             throw failed("reading the regulatory obligations awaiting activation", failure);

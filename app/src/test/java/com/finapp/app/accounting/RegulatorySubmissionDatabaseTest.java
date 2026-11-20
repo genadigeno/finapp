@@ -1116,9 +1116,9 @@ class RegulatorySubmissionDatabaseTest {
         assertThat(next).extracting(RegulatorySubmissionStore.Row::id).doesNotContain(first.get(0).id(), first.get(1).id());
 
         Case validated = validated(drafted());
-        List<RegulatorySubmissionStore.Row> own = inScope(validated.preparer(), uow -> machine.awaitingApproval(uow, validated.preparer()));
+        List<RegulatorySubmissionStore.Row> own = inScope(validated.preparer(), uow -> machine.awaitingApproval(uow, validated.preparer(), Optional.empty(), 50));
         assertThat(own).extracting(RegulatorySubmissionStore.Row::id).doesNotContain(validated.id());
-        List<RegulatorySubmissionStore.Row> decidable = inScope(validated.approver(), uow -> machine.awaitingApproval(uow, validated.approver()));
+        List<RegulatorySubmissionStore.Row> decidable = inScope(validated.approver(), uow -> machine.awaitingApproval(uow, validated.approver(), Optional.empty(), 50));
         assertThat(decidable).extracting(RegulatorySubmissionStore.Row::id).contains(validated.id());
     }
 

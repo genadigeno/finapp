@@ -2,6 +2,7 @@ package com.finapp.app.lending;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.RecordedReads;
 import com.finapp.lending.CreditLineStatements;
 import com.finapp.lending.DelinquencyBucket;
@@ -67,7 +68,9 @@ public final class LendingListDesk {
 
     static final String APPLICATIONS = "lending.loan-applications";
     static final String LOANS = "lending.loans";
-    static final String SERVICING_REQUESTS = "lending.servicing-requests";
+    static final String SERVICING_REQUESTS = "pending.lending.servicing-requests";
+    static final String PENDING_TERMS_VERSIONS = "pending.lending.terms-versions";
+    static final String PENDING_CAPITAL_CONTRIBUTIONS = "pending.lending.capital-contributions";
     static final String TERMS_VERSIONS = "lending.terms-versions";
     static final int DEFAULT_LIMIT = 50;
     static final int MAXIMUM_LIMIT = 200;
@@ -124,27 +127,6 @@ public final class LendingListDesk {
             String closedAt,
             String bucket,
             Boolean defaulted) {}
-
-    /** A page of the servicing proposals awaiting a decision: {@code nextCursor} absent on the last one. */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record LoanServicingRequestPage(List<LoanServicingRequestView> items, String nextCursor) {}
-
-    /**
-     * One proposal awaiting a decision, in ADR-C133's pending-decision shape: its {@code id}, {@code kind}
-     * ({@code lending.WAIVER}, {@code lending.AMENDMENT}, {@code lending.REPAYMENT_REVERSAL}), the loan it corrects
-     * ({@code subjectKind} {@code LOAN}, {@code subjectId}), its proposer - and whether that is the caller, who may not decide
-     * it - its stamp and the proposer's reason; for a repayment reversal the repayment its doors are addressed by.
-     */
-    public record LoanServicingRequestView(
-            String id,
-            String kind,
-            String subjectKind,
-            String subjectId,
-            String proposedBy,
-            boolean proposedByCaller,
-            String proposedAt,
-            String reasonSummary,
-            String repaymentId) {}
 
     /** A page of terms versions: {@code nextCursor} absent on the last one. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -254,15 +236,14 @@ public final class LendingListDesk {
 
     /**
      * A page of the waivers, amendments and repayment reversals awaiting a decision, proposed oldest first - {@code status}
-     * {@code PROPOSED} or absent - the reader's own party's loans withheld; recorded {@code lending.ServicingRequestsRead}.
+     * {@code PROPOSED} or absent - the reader's own party's loans withheld, in the one pending-decision shape (`P17-TSK-040`;
+     * until then a page of its own items naming {@code subjectKind}, {@code proposedByCaller} and {@code repaymentId}, the last
+     * now its {@code relatedId}); recorded {@code lending.ServicingRequestsRead}.
      */
-    public LoanServicingRequestPage servicingRequests(String status, String cursor, String limit) {
-        int size = OperatorCollection.limit(limit, DEFAULT_LIMIT, MAXIMUM_LIMIT);
-        if (status != null && !"PROPOSED".equals(status)) {
-            throw OperatorCollection.invalid("status is PROPOSED: the queue holds the proposals awaiting a decision.");
-        }
-        Optional<LendingOperatorLists.Cursor> after = after(SERVICING_REQUESTS, cursor);
-        String caller = SecurityContext.require().id();
+    public PendingDecisions.PendingDecisionPage servicingRequests(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        Optional<LendingOperatorLists.Cursor> after = pendingAfter(SERVICING_REQUESTS, cursor);
         List<LendingOperatorLists.ServicingRequest> rows = listed("loan_servicing_requests", "all", "status=PROPOSED",
                 Optional.empty(), (uow, withheld) -> {
                     List<LendingOperatorLists.ServicingRequest> read = collections.pendingServicing(uow, withheld, after, size + 1);
@@ -270,8 +251,40 @@ public final class LendingListDesk {
                             "status=PROPOSED, continued=" + after.isPresent() + ", served=" + Math.min(size, read.size()));
                     return read;
                 });
-        return page(rows, size, SERVICING_REQUESTS, LendingOperatorLists.ServicingRequest::proposedAt,
-                LendingOperatorLists.ServicingRequest::id, row -> servicingView(row, caller), LoanServicingRequestPage::new);
+        return PendingDecisions.page(SERVICING_REQUESTS, rows.stream().map(LendingListDesk::servicingItem).toList(), size);
+    }
+
+    /**
+     * A page of the terms versions awaiting a decision, proposed oldest first, in the one pending-decision shape (`P17-TSK-040`);
+     * its subject the product the version would govern. Unrecorded, as the terms versions are: configuration.
+     */
+    public PendingDecisions.PendingDecisionPage pendingTermsVersions(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        Optional<LendingOperatorLists.Cursor> after = pendingAfter(PENDING_TERMS_VERSIONS, cursor);
+        List<LendingOperatorLists.TermsVersionHead> rows = transactions.inTransaction(
+                uow -> collections.pendingTermsVersions(uow, after, size + 1));
+        return PendingDecisions.page(PENDING_TERMS_VERSIONS, rows.stream()
+                .map(head -> PendingDecisions.of(head.id().value(), "lending.TermsVersion", head.proposedBy(), head.proposedAt(),
+                        head.reason(), head.product().name()))
+                .toList(), size);
+    }
+
+    /**
+     * A page of the capital contributions awaiting a decision, proposed oldest first, in the one pending-decision shape
+     * (`P17-TSK-040`); each one's subject its currency. Unrecorded, as one contribution's read is: the platform's own capital,
+     * no party's.
+     */
+    public PendingDecisions.PendingDecisionPage pendingCapitalContributions(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        Optional<LendingOperatorLists.Cursor> after = pendingAfter(PENDING_CAPITAL_CONTRIBUTIONS, cursor);
+        List<LendingOperatorLists.PendingContribution> rows = transactions.inTransaction(
+                uow -> collections.pendingCapitalContributions(uow, after, size + 1));
+        return PendingDecisions.page(PENDING_CAPITAL_CONTRIBUTIONS, rows.stream()
+                .map(row -> PendingDecisions.of(row.id().value(), "lending.CapitalContribution", row.proposedBy(),
+                        row.proposedAt(), row.reason(), row.currency().code()))
+                .toList(), size);
     }
 
     // ------------------------------------------------------------------ the terms versions
@@ -304,10 +317,13 @@ public final class LendingListDesk {
                 head.condition().map(LendingOperatorLists.RecordedCondition::defaulted).orElse(null));
     }
 
-    private static LoanServicingRequestView servicingView(LendingOperatorLists.ServicingRequest request, String caller) {
-        return new LoanServicingRequestView(request.id().toString(), "lending." + request.kind().name(), "LOAN",
-                request.loan().value().toString(), request.proposedBy(), request.proposedBy().equals(caller),
-                request.proposedAt().toString(), request.reason(), request.repayment().map(UUID::toString).orElse(null));
+    /** One servicing proposal as a pending decision: the loan it corrects its subject, a reversal's repayment its related id. */
+    private static PendingDecisions.PendingDecision servicingItem(LendingOperatorLists.ServicingRequest request) {
+        return PendingDecisions.of(request.id(), "lending." + switch (request.kind()) {
+            case WAIVER -> "Waiver";
+            case AMENDMENT -> "Amendment";
+            case REPAYMENT_REVERSAL -> "RepaymentReversal";
+        }, request.proposedBy(), request.proposedAt(), request.reason(), request.loan().value(), request.repayment().orElse(null));
     }
 
     private static LoanTermsVersionHeadView termsView(LendingOperatorLists.TermsVersionHead head, String caller) {
@@ -402,6 +418,12 @@ public final class LendingListDesk {
                     Long.toString(ChronoUnit.MICROS.between(Instant.EPOCH, stamp.apply(tail))), id.apply(tail).toString());
         }
         return paged.of(served.stream().map(view).toList(), next);
+    }
+
+    /** A pending-decision queue's cursor ({@link PendingDecisions#position}) in the store's words. */
+    private static Optional<LendingOperatorLists.Cursor> pendingAfter(String collection, String cursor) {
+        return PendingDecisions.position(collection, cursor)
+                .map(position -> new LendingOperatorLists.Cursor(position.proposedAt(), position.id()));
     }
 
     private static Optional<LendingOperatorLists.Cursor> after(String collection, String cursor) {

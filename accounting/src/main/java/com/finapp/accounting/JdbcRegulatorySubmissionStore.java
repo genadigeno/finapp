@@ -151,7 +151,10 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     }
 
     /** Selected in the statement: the filter is the database's, before the {@code LIMIT} - what its reader cannot decide never counts toward it. */
-    static final String AWAITING_SQL = ROW + " WHERE s.status = 'VALIDATED' AND s.prepared_by <> ? ORDER BY s.validated_at, s.id LIMIT ?";
+    static final String AWAITING_SQL = ROW + " WHERE s.status = 'VALIDATED' AND s.prepared_by <> ? ORDER BY s.validated_at ASC, s.id ASC LIMIT ?";
+
+    /** The next page: strictly after the last row served, in the order's own key (`P17-TSK-040`). */
+    static final String AWAITING_AFTER_SQL = ROW + " WHERE s.status = 'VALIDATED' AND s.prepared_by <> ? AND (s.validated_at, s.id) > (?, ?) ORDER BY s.validated_at ASC, s.id ASC LIMIT ?";
 
     static final String ATTENTION_SQL = "SELECT"
             + " count(*) FILTER (WHERE s.status = 'SUBMITTED' AND s.answer_horizon_at <= clock_timestamp()) AS overdue,"
@@ -563,10 +566,15 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     }
 
     @Override
-    public List<Row> awaitingApproval(Connection unitOfWork, String reader, int limit) {
-        try (PreparedStatement read = unitOfWork.prepareStatement(AWAITING_SQL)) {
-            read.setString(1, reader);
-            read.setInt(2, limit);
+    public List<Row> awaitingApproval(Connection unitOfWork, String reader, Optional<AccountingCollections.PendingCursor> after, int limit) {
+        try (PreparedStatement read = unitOfWork.prepareStatement(after.isPresent() ? AWAITING_AFTER_SQL : AWAITING_SQL)) {
+            int next = 1;
+            read.setString(next++, reader);
+            if (after.isPresent()) {
+                read.setTimestamp(next++, java.sql.Timestamp.from(after.get().proposedAt()));
+                read.setObject(next++, after.get().id());
+            }
+            read.setInt(next, limit);
             return rows(read);
         } catch (SQLException failure) {
             throw failed("reading the regulatory submissions awaiting approval", failure);

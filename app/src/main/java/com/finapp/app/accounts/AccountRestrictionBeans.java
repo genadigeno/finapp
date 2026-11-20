@@ -45,4 +45,14 @@ public class AccountRestrictionBeans {
         return new AccountRestrictionDesk(accountRestrictions, idempotentExecutor, new TransactionTemplate(transactionManager),
                 dataSource, recordedReads);
     }
+
+    /** The restrictions awaiting a decision (`P17-TSK-040`), read over the store's own statement. */
+    @Bean
+    AccountRestrictionPendingDecisionDesk accountRestrictionPendingDecisionDesk(
+            AccountRestrictionStore<Connection> accountRestrictionStore,
+            PlatformTransactionManager transactionManager,
+            DataSource dataSource) {
+        return new AccountRestrictionPendingDecisionDesk(accountRestrictionStore, new TransactionTemplate(transactionManager),
+                dataSource);
+    }
 }

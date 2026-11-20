@@ -18,6 +18,7 @@ import com.finapp.accounting.SubmissionStatus;
 import com.finapp.accounting.testing.RegulatoryWorld;
 import com.finapp.accounting.testing.ScriptedRegulatoryProvider;
 import com.finapp.app.api.ClosedBody;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
@@ -616,11 +617,12 @@ class RegulatorySubmissionDeskTest {
     void theLists() {
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt validated = validated();
 
-        assertThat(as(APPROVER, desk::awaitingApproval)).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::submissionId).containsExactly(validated.submissionId());
-        assertThat(as(PREPARER, desk::awaitingApproval)).isEmpty();
+        assertThat(as(APPROVER, () -> desk.awaitingApproval(null, null, null)).items()).extracting(PendingDecisions.PendingDecision::id).containsExactly(validated.submissionId());
+        assertThat(as(APPROVER, () -> desk.awaitingApproval(null, null, null)).items()).extracting(PendingDecisions.PendingDecision::kind).containsExactly("accounting.RegulatorySubmission");
+        assertThat(as(PREPARER, () -> desk.awaitingApproval(null, null, null)).items()).isEmpty();
         assertThat(as(PREPARER, () -> desk.standing(null, null)).items()).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::status).containsExactly("VALIDATED");
         assertThat(world.audit.stream().map(record -> record.changeSummary().orElse(""))).anyMatch(summary -> summary.contains("door=awaiting-approval")).anyMatch(summary -> summary.contains("door=standing"));
-        assertThat(as(APPROVER, desk::awaitingApproval).get(0).toString()).doesNotContain("10000");
+        assertThat(as(APPROVER, () -> desk.awaitingApproval(null, null, null)).items().get(0).toString()).doesNotContain("10000");
         assertThat(as(PREPARER, () -> desk.standing(null, null)).items().get(0).toString()).doesNotContain("10000");
     }
 

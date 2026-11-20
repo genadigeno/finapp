@@ -1,9 +1,11 @@
 package com.finapp.app.bnpl;
 
 import com.finapp.app.api.DecimalText;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.bnpl.AllocationAnomaly;
 import com.finapp.bnpl.BnplReasons;
 import com.finapp.bnpl.BnplErrorCode;
+import com.finapp.bnpl.BnplOperatorLists;
 import com.finapp.bnpl.BnplAgreementId;
 import com.finapp.bnpl.BnplProduct;
 import com.finapp.bnpl.BnplWriteOff;
@@ -50,6 +52,9 @@ import lombok.RequiredArgsConstructor;
  */
 @RequiredArgsConstructor
 public final class BnplWriteOffDesk {
+
+    /** The approver's pending-decision queue's cursor collection (`P17-TSK-040`). */
+    static final String PENDING = "pending.bnpl.write-offs";
 
     @NonNull private final BnplWriteOffs writeOffs;
     @NonNull private final IdempotentExecutor executor;
@@ -170,13 +175,24 @@ public final class BnplWriteOffDesk {
         }
     }
 
-    /** The oldest write-offs awaiting a decision, audited. */
-    public List<BnplWriteOffReceipt> pending() {
+    /**
+     * The write-offs awaiting a decision, oldest first, in the one pending-decision shape (`P17-TSK-040`; until then the oldest
+     * hundred as a bare array of receipts): the agreement each would write off its subject - the one its doors are addressed by -
+     * the proposer and their reason named; {@code status} {@code PROPOSED} or absent; audited, the officer's own party withheld.
+     */
+    public PendingDecisions.PendingDecisionPage pending(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        Optional<BnplOperatorLists.Cursor> after = PendingDecisions.position(PENDING, cursor)
+                .map(position -> new BnplOperatorLists.Cursor(position.proposedAt(), position.id()));
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         try {
-            return transactions.inTransaction(unitOfWork -> writeOffs.pending(unitOfWork, actor, correlation).stream()
-                    .map(BnplWriteOffDesk::receipt).toList());
+            return transactions.inTransaction(unitOfWork -> PendingDecisions.page(PENDING,
+                    writeOffs.pending(unitOfWork, actor, correlation, after, size + 1).stream()
+                            .map(found -> PendingDecisions.of(found.id(), "bnpl.WriteOff", found.proposedBy(), found.proposedAt(),
+                                    found.proposalReason(), found.agreement().value()))
+                            .toList(), size));
         } catch (BnplWriteOffs.UnplacedReaderRefused unplaced) {
             transactions.inTransaction(uow -> {
                 writeOffs.recordRefusal(uow, unplaced, actor, correlation);

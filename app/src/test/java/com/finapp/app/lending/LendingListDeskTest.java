@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.RecordedReads;
 import com.finapp.lending.LendingAuditAction;
 import com.finapp.lending.LendingErrorCode;
@@ -117,8 +118,8 @@ class LendingListDeskTest {
     }
 
     @Test
-    @DisplayName("the servicing queue walks once, oldest first, in the pending-decision shape: lending.<KIND>, the loan its"
-            + " subject, the proposer named and the caller's own marked, a reversal's repayment beside it")
+    @DisplayName("the servicing queue walks once, oldest first, in the one pending-decision shape (P17-TSK-040): lending.<Kind>,"
+            + " the loan its subject, a reversal's repayment its related id, the proposer and their reason named")
     void theServicingQueueWalksOnce() {
         Instant start = Instant.parse("2026-11-01T00:00:00Z");
         UUID repayment = UUID.randomUUID();
@@ -129,22 +130,23 @@ class LendingListDeskTest {
         lists.servicing.add(new LendingOperatorLists.ServicingRequest(IDS.next(),
                 LendingOperatorLists.ServicingKind.REPAYMENT_REVERSAL, LoanId.of(IDS.next()), "another-agent",
                 start.plusSeconds(120), "the payment bounced", Optional.of(repayment)));
-        List<LendingListDesk.LoanServicingRequestView> walked = new ArrayList<>();
+        List<PendingDecisions.PendingDecision> walked = new ArrayList<>();
         String cursor = null;
         do {
             String after = cursor;
-            LendingListDesk.LoanServicingRequestPage page = as(() -> desk.servicingRequests("PROPOSED", after, "2"));
+            PendingDecisions.PendingDecisionPage page = as(() -> desk.servicingRequests("PROPOSED", after, "2"));
             walked.addAll(page.items());
             cursor = page.nextCursor();
         } while (cursor != null);
-        assertThat(walked).extracting(LendingListDesk.LoanServicingRequestView::kind)
-                .containsExactly("lending.WAIVER", "lending.AMENDMENT", "lending.REPAYMENT_REVERSAL");
-        assertThat(walked).allSatisfy(item -> assertThat(item.subjectKind()).isEqualTo("LOAN"));
-        assertThat(walked.getFirst().proposedByCaller()).isTrue();
+        assertThat(walked).extracting(PendingDecisions.PendingDecision::kind)
+                .containsExactly("lending.Waiver", "lending.Amendment", "lending.RepaymentReversal");
+        assertThat(walked).extracting(PendingDecisions.PendingDecision::subjectId)
+                .containsExactlyElementsOf(lists.servicing.stream().map(request -> request.loan().value().toString()).toList());
+        assertThat(walked.getFirst().proposedBy()).isEqualTo(READER.id());
         assertThat(walked.getFirst().reasonSummary()).isEqualTo("a late fee charged in error");
-        assertThat(walked.get(1).proposedByCaller()).isFalse();
-        assertThat(walked.getLast().repaymentId()).isEqualTo(repayment.toString());
-        assertThat(walked.getFirst().repaymentId()).isNull();
+        assertThat(walked.get(1).proposedBy()).isEqualTo("another-agent");
+        assertThat(walked.getLast().relatedId()).as("a reversal names its repayment").isEqualTo(repayment.toString());
+        assertThat(walked.getFirst().relatedId()).isNull();
         assertThat(written).hasSize(2).allSatisfy(record ->
                 assertThat(record.operation()).isEqualTo(LendingAuditAction.SERVICING_REQUESTS_READ));
     }
@@ -266,6 +268,17 @@ class LendingListDeskTest {
                 Optional<LoanTermsVersionStatus> status, Optional<Cursor> after, int limit) {
             read++;
             return terms.stream().limit(limit).toList();
+        }
+
+        @Override
+        public List<TermsVersionHead> pendingTermsVersions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+            read++;
+            return terms.stream().limit(limit).toList();
+        }
+
+        @Override
+        public List<PendingContribution> pendingCapitalContributions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+            throw new UnsupportedOperationException("the pending queues are not under test here");
         }
     }
 }

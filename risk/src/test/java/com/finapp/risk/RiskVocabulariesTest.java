@@ -325,7 +325,9 @@ class RiskVocabulariesTest {
                         // P13-TSK-023: the operations reports' audited read.
                         "risk.ReportRead",
                         // P17-TSK-020: the assessment search's page, recorded.
-                        "risk.AssessmentsSearched");
+                        "risk.AssessmentsSearched",
+                        // P17-TSK-040: an investigative pending-decision queue's page, recorded.
+                        "risk.PendingDecisionsRead");
         assertThat(RiskAuditAction.LIST_VERSION_RECORDED.requiresReason()).isTrue();
         assertThat(RiskAuditAction.LIST_VERSION_ACTIVATED.requiresReason()).isTrue();
         assertThat(RiskAuditAction.ACTION_PROPOSED.requiresReason()).isTrue();

@@ -124,6 +124,56 @@ public final class JdbcCreditCollections implements CreditCollections {
                 "reading a scorecard version", JdbcCreditCollections::head).stream().findFirst();
     }
 
+    @Override
+    public List<VersionHead> pendingPolicyVersions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+        return pending(unitOfWork, "SELECT id, product AS subject," + VERSION_COLUMNS + " FROM credit.credit_policy_version",
+                after, limit, "listing the credit policy versions awaiting a decision");
+    }
+
+    @Override
+    public List<VersionHead> pendingScorecardVersions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+        return pending(unitOfWork, "SELECT id, family AS subject," + VERSION_COLUMNS + " FROM credit.scorecard_model_version",
+                after, limit, "listing the scorecard versions awaiting a decision");
+    }
+
+    @Override
+    public List<PendingSecondApproval> pendingSecondApprovals(Connection unitOfWork, Optional<Cursor> after, int limit) {
+        Objects.requireNonNull(after, "after");
+        StringBuilder sql = new StringBuilder("SELECT id, first_decided_by, first_decided_at, first_reason, decision_request_id"
+                + " FROM credit.underwriting_case WHERE status = 'AWAITING_SECOND'");
+        List<Object> arguments = new ArrayList<>();
+        after.ifPresent(cursor -> {
+            sql.append(" AND (first_decided_at, id) > (?, ?)");
+            arguments.add(Timestamp.from(cursor.at()));
+            arguments.add(cursor.id());
+        });
+        sql.append(" ORDER BY first_decided_at ASC, id ASC LIMIT ?");
+        arguments.add(bounded(limit));
+        return read(unitOfWork, sql.toString(), arguments, "listing the review cases awaiting a second approval",
+                rows -> new PendingSecondApproval(
+                        rows.getObject("id", UUID.class),
+                        rows.getString("first_decided_by"),
+                        rows.getTimestamp("first_decided_at").toInstant(),
+                        rows.getString("first_reason"),
+                        rows.getObject("decision_request_id", UUID.class)));
+    }
+
+    /** The {@code PROPOSED} versions of {@code select}'s table, oldest first, strictly after the cursor (`P17-TSK-040`). */
+    private static List<VersionHead> pending(Connection unitOfWork, String select, Optional<Cursor> after, int limit,
+            String what) {
+        Objects.requireNonNull(after, "after");
+        StringBuilder sql = new StringBuilder(select).append(" WHERE status = 'PROPOSED'");
+        List<Object> arguments = new ArrayList<>();
+        after.ifPresent(cursor -> {
+            sql.append(" AND (proposed_at, id) > (?, ?)");
+            arguments.add(Timestamp.from(cursor.at()));
+            arguments.add(cursor.id());
+        });
+        sql.append(" ORDER BY proposed_at ASC, id ASC LIMIT ?");
+        arguments.add(bounded(limit));
+        return read(unitOfWork, sql.toString(), arguments, what, JdbcCreditCollections::head);
+    }
+
     private static VersionHead head(ResultSet rows) throws SQLException {
         return new VersionHead(
                 rows.getObject("id", UUID.class),

@@ -1376,6 +1376,14 @@ public class PaymentBeans {
                 recordedReads);
     }
 
+    /** The refunds above the four-eyes threshold awaiting a decision (`P17-TSK-040`), on the payment transaction. */
+    @Bean
+    RefundProposalPendingDecisionDesk refundProposalPendingDecisionDesk(
+            TransactionTemplate paymentTransactions, DataSource dataSource) {
+        return new RefundProposalPendingDecisionDesk(new com.finapp.payments.JdbcPaymentCollections(), paymentTransactions,
+                dataSource);
+    }
+
     /**
      * The webhook signature verifier (`P5-TSK-012`, ADR-0047 §1) — credential seven through
      * the confinement, the freshness tolerance server-clock judged. Conditional with the

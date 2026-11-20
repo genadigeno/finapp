@@ -251,11 +251,17 @@ public final class RegulatoryObligations {
     }
 
     /**
-     * Those waiting on a decision {@code reader} could make: never their own - excluded in the statement, before its limit.
+     * Those waiting on a decision {@code reader} could make, a page at a time (`P17-TSK-040`): never their own - excluded in the
+     * statement, before its limit.
      */
-    public List<RegulatoryObligationStore.Row> awaitingActivation(Connection unitOfWork, Actor reader) {
+    public List<RegulatoryObligationStore.Row> awaitingActivation(Connection unitOfWork, Actor reader,
+            Optional<AccountingCollections.PendingCursor> after, int limit) {
         person(reader);
-        return store.awaitingActivation(unitOfWork, reader.id(), LIST_LIMIT);
+        Objects.requireNonNull(after, "after");
+        if (limit < 1) {
+            throw new IllegalArgumentException("a page holds at least one row, not " + limit);
+        }
+        return store.awaitingActivation(unitOfWork, reader.id(), after, limit);
     }
 
     /** Records an operator's read ({@code regulatory.ObligationRead}) - before it is served. */

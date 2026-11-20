@@ -237,7 +237,7 @@ public final class JdbcLedgerCollections implements LedgerCollections {
     private static PreparedStatement pending(Connection unitOfWork, String select, Optional<PendingCursor> after, int limit)
             throws SQLException {
         List<Object> arguments = new ArrayList<>();
-        String sql = select + (after.isPresent() ? " AND (proposed_at, id) > (?, ?)" : "") + " ORDER BY proposed_at, id LIMIT ?";
+        String sql = select + (after.isPresent() ? " AND (proposed_at, id) > (?, ?)" : "") + " ORDER BY proposed_at ASC, id ASC LIMIT ?";
         after.ifPresent(cursor -> {
             arguments.add(Timestamp.from(cursor.proposedAt()));
             arguments.add(cursor.id());

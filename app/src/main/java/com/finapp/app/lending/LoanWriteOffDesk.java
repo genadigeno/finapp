@@ -1,9 +1,11 @@
 package com.finapp.app.lending;
 
 import com.finapp.app.api.DecimalText;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.lending.AllocationAnomaly;
 import com.finapp.lending.LendingCapitalAdministration;
 import com.finapp.lending.LendingErrorCode;
+import com.finapp.lending.LendingOperatorLists;
 import com.finapp.lending.LoanId;
 import com.finapp.lending.LoanProduct;
 import com.finapp.lending.LoanWriteOff;
@@ -52,6 +54,9 @@ import lombok.RequiredArgsConstructor;
  */
 @RequiredArgsConstructor
 public final class LoanWriteOffDesk {
+
+    /** The approver's pending-decision queue's cursor collection (`P17-TSK-040`). */
+    static final String PENDING = "pending.lending.write-offs";
 
     @NonNull private final LoanWriteOffs writeOffs;
     @NonNull private final IdempotentExecutor executor;
@@ -174,14 +179,25 @@ public final class LoanWriteOffDesk {
         }
     }
 
-    /** The oldest write-offs awaiting a decision, audited. */
-    public List<LoanWriteOffReceipt> pending() {
+    /**
+     * The write-offs awaiting a decision, oldest first, in the one pending-decision shape (`P17-TSK-040`; until then the oldest
+     * hundred as a bare array of receipts): the loan each would write off its subject, the proposer and their reason named;
+     * {@code status} {@code PROPOSED} or absent; audited, the officer's own party withheld.
+     */
+    public PendingDecisions.PendingDecisionPage pending(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        Optional<LendingOperatorLists.Cursor> after = PendingDecisions.position(PENDING, cursor)
+                .map(position -> new LendingOperatorLists.Cursor(position.proposedAt(), position.id()));
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         try {
             return transactions.inTransaction(unitOfWork -> {
                 snapshot(unitOfWork);
-                return writeOffs.pending(unitOfWork, actor, correlation).stream().map(LoanWriteOffDesk::receipt).toList();
+                return PendingDecisions.page(PENDING, writeOffs.pending(unitOfWork, actor, correlation, after, size + 1).stream()
+                        .map(found -> PendingDecisions.of(found.id(), "lending.WriteOff", found.proposedBy(), found.proposedAt(),
+                                found.proposalReason(), found.loan().value()))
+                        .toList(), size);
             });
         } catch (LoanWriteOffs.UnplacedReaderRefused unplaced) {
             transactions.inTransaction(uow -> {

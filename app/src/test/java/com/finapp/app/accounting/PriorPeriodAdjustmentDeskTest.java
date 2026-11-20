@@ -351,9 +351,11 @@ class PriorPeriodAdjustmentDeskTest {
         });
         assertThat(Arrays.stream(PriorPeriodAdjustmentDesk.PriorPeriodAdjustmentView.class.getRecordComponents()).map(RecordComponent::getName)).as("no decider leaves; the proposer does, by identifier, since P17-TSK-111").doesNotContain("decidedBy");
 
-        assertThat(as(CONTROLLER, desk::pending)).singleElement().satisfies(pending -> {
+        assertThat(as(CONTROLLER, () -> desk.pending(null, null, null)).items()).singleElement().satisfies(pending -> {
             assertThat(pending.id()).isEqualTo(second);
+            assertThat(pending.kind()).as("P17-TSK-040: the one pending-decision shape").isEqualTo("accounting.PriorPeriodAdjustment");
             assertThat(pending.proposedBy()).as("P17-TSK-111: the proposer named, by identifier").isEqualTo(ACCOUNTANT.id());
+            assertThat(pending.subjectId()).as("the month it corrects").isEqualTo(january.value().toString());
         });
         assertThat(as(ACCOUNTANT, () -> desk.ofPeriod(january.value().toString()))).hasSize(2);
         assertThat(audited).hasSize(records + 3);

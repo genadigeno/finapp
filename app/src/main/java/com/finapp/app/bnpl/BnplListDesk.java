@@ -2,10 +2,12 @@ package com.finapp.app.bnpl;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.RecordedReads;
 import com.finapp.bnpl.BnplActingParty;
 import com.finapp.bnpl.BnplApplicationStatus;
 import com.finapp.bnpl.BnplAuditAction;
+import com.finapp.bnpl.BnplDisputes;
 import com.finapp.bnpl.BnplErrorCode;
 import com.finapp.bnpl.BnplObligationStatus;
 import com.finapp.bnpl.BnplOperatorLists;
@@ -58,7 +60,10 @@ public final class BnplListDesk {
     static final String APPLICATIONS = "bnpl.applications";
     static final String AGREEMENTS = "bnpl.agreements";
     static final String REFUNDS = "bnpl.purchase-refunds";
-    static final String SERVICING_REQUESTS = "bnpl.servicing-requests";
+    static final String SERVICING_REQUESTS = "pending.bnpl.servicing-requests";
+    static final String PENDING_TERMS_VERSIONS = "pending.bnpl.terms-versions";
+    static final String PENDING_REFUND_PROPOSALS = "pending.bnpl.refund-proposals";
+    static final String PENDING_DISPUTE_RESOLUTIONS = "pending.bnpl.dispute-resolutions";
     static final int DEFAULT_LIMIT = 50;
     static final int MAXIMUM_LIMIT = 200;
 
@@ -150,27 +155,6 @@ public final class BnplListDesk {
             String journalEntryId,
             String valueDate,
             String createdAt) {}
-
-    /** A page of the servicing proposals awaiting a decision: {@code nextCursor} absent on the last one. */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record BnplServicingRequestPage(List<BnplServicingRequestView> items, String nextCursor) {}
-
-    /**
-     * One proposal awaiting a decision, in ADR-C133's pending-decision shape: its {@code id}, {@code kind}
-     * ({@code bnpl.WAIVER}, {@code bnpl.REPAYMENT_REVERSAL}), the agreement its doors are addressed by ({@code subjectKind}
-     * {@code BNPL_AGREEMENT}, {@code subjectId}), its proposer - and whether that is the caller, who may not decide it - its
-     * stamp and the proposer's reason; for a repayment reversal the repayment its doors are addressed by.
-     */
-    public record BnplServicingRequestView(
-            String id,
-            String kind,
-            String subjectKind,
-            String subjectId,
-            String proposedBy,
-            boolean proposedByCaller,
-            String proposedAt,
-            String reasonSummary,
-            String repaymentId) {}
 
     // ------------------------------------------------------------------ the investigator's lists
 
@@ -296,15 +280,14 @@ public final class BnplListDesk {
 
     /**
      * A page of the waivers and repayment reversals awaiting a decision, proposed oldest first - {@code status}
-     * {@code PROPOSED} or absent - the reader's own party's agreements withheld; recorded {@code bnpl.ServicingRequestsRead}.
+     * {@code PROPOSED} or absent - the reader's own party's agreements withheld, in the one pending-decision shape
+     * (`P17-TSK-040`; until then a page of its own items naming {@code subjectKind}, {@code proposedByCaller} and
+     * {@code repaymentId}, which is now its {@code relatedId}); recorded {@code bnpl.ServicingRequestsRead}.
      */
-    public BnplServicingRequestPage servicingRequests(String status, String cursor, String limit) {
-        int size = OperatorCollection.limit(limit, DEFAULT_LIMIT, MAXIMUM_LIMIT);
-        if (status != null && !"PROPOSED".equals(status)) {
-            throw OperatorCollection.invalid("status is PROPOSED: the queue holds the proposals awaiting a decision.");
-        }
-        Optional<BnplOperatorLists.Cursor> after = after(SERVICING_REQUESTS, cursor);
-        String caller = SecurityContext.require().id();
+    public PendingDecisions.PendingDecisionPage servicingRequests(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        Optional<BnplOperatorLists.Cursor> after = pendingAfter(SERVICING_REQUESTS, cursor);
         List<BnplOperatorLists.ServicingRequest> rows = listed("bnpl_servicing_requests", "status=PROPOSED",
                 (uow, withheld) -> {
                     List<BnplOperatorLists.ServicingRequest> read = lists.pendingServicing(uow, withheld, after, size + 1);
@@ -312,8 +295,79 @@ public final class BnplListDesk {
                             "status=PROPOSED, continued=" + after.isPresent() + ", served=" + Math.min(size, read.size()));
                     return read;
                 });
-        return page(rows, size, SERVICING_REQUESTS, BnplOperatorLists.ServicingRequest::proposedAt,
-                BnplOperatorLists.ServicingRequest::id, row -> servicingView(row, caller), BnplServicingRequestPage::new);
+        return PendingDecisions.page(SERVICING_REQUESTS, rows.stream()
+                .map(row -> PendingDecisions.of(row.id(), switch (row.kind()) {
+                    case WAIVER -> "bnpl.Waiver";
+                    case REPAYMENT_REVERSAL -> "bnpl.RepaymentReversal";
+                }, row.proposedBy(), row.proposedAt(), row.reason(), row.agreement().value(), row.repayment().orElse(null)))
+                .toList(), size);
+    }
+
+    // ------------------------------------------------------------------ the pending-decision queues (`P17-TSK-040`)
+
+    /**
+     * A page of the BNPL terms versions awaiting a decision, proposed oldest first, in the one pending-decision shape; each one's
+     * subject the product it would govern. Unrecorded, as the terms reads are: configuration, not a party's records.
+     */
+    public PendingDecisions.PendingDecisionPage pendingTermsVersions(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        Optional<BnplOperatorLists.Cursor> after = pendingAfter(PENDING_TERMS_VERSIONS, cursor);
+        List<BnplOperatorLists.PendingProposal> rows = transactions.inTransaction(
+                uow -> lists.pendingTermsVersions(uow, after, size + 1));
+        return pendingPage(PENDING_TERMS_VERSIONS, "bnpl.TermsVersion", rows, size);
+    }
+
+    /**
+     * A page of the operator refunds proposed above the four-eyes threshold and awaiting a decision, proposed oldest first, in
+     * the one pending-decision shape - each one's subject the purchase - the reader's own party's purchases withheld; recorded
+     * {@code bnpl.RefundsRead}, as a purchase's refunds are.
+     */
+    public PendingDecisions.PendingDecisionPage pendingRefundProposals(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        Optional<BnplOperatorLists.Cursor> after = pendingAfter(PENDING_REFUND_PROPOSALS, cursor);
+        List<BnplOperatorLists.PendingProposal> rows = listed("bnpl_refund_proposals", "status=PROPOSED",
+                (uow, withheld) -> {
+                    List<BnplOperatorLists.PendingProposal> read = lists.pendingRefundProposals(uow, withheld, after, size + 1);
+                    reads.record(uow, BnplAuditAction.REFUNDS_READ, "bnpl_refund_proposals", "pending",
+                            "status=PROPOSED, continued=" + after.isPresent() + ", served=" + Math.min(size, read.size()));
+                    return read;
+                });
+        return pendingPage(PENDING_REFUND_PROPOSALS, "bnpl.RefundProposal", rows, size);
+    }
+
+    /**
+     * A page of the disputes whose resolution awaits a second operator's approval, proposed oldest first, in the one
+     * pending-decision shape - the id the dispute's, whose doors decide it, the subject its purchase - the reader's own party's
+     * disputes withheld; recorded {@code bnpl.DisputeQueueRead}, as the dispute queue is.
+     */
+    public PendingDecisions.PendingDecisionPage pendingDisputeResolutions(String status, String cursor, String limit) {
+        PendingDecisions.pendingOnly(status, "PROPOSED");
+        int size = PendingDecisions.limit(limit);
+        Optional<BnplOperatorLists.Cursor> after = pendingAfter(PENDING_DISPUTE_RESOLUTIONS, cursor);
+        List<BnplOperatorLists.PendingProposal> rows = listed(BnplDisputes.QUEUE_TARGET, "status=PROPOSED",
+                (uow, withheld) -> {
+                    List<BnplOperatorLists.PendingProposal> read =
+                            lists.pendingDisputeResolutions(uow, withheld, after, size + 1);
+                    reads.record(uow, BnplAuditAction.DISPUTE_QUEUE_READ, BnplDisputes.QUEUE_TARGET, "PROPOSED",
+                            "status=PROPOSED, continued=" + after.isPresent() + ", served=" + Math.min(size, read.size()));
+                    return read;
+                });
+        return pendingPage(PENDING_DISPUTE_RESOLUTIONS, "bnpl.DisputeResolution", rows, size);
+    }
+
+    private static PendingDecisions.PendingDecisionPage pendingPage(String collection, String kind,
+            List<BnplOperatorLists.PendingProposal> rows, int size) {
+        return PendingDecisions.page(collection, rows.stream()
+                .map(row -> PendingDecisions.of(row.id(), kind, row.proposedBy(), row.proposedAt(), row.reason(), row.subject()))
+                .toList(), size);
+    }
+
+    /** A pending-decision queue's cursor ({@link PendingDecisions#position}) in the store's words. */
+    private static Optional<BnplOperatorLists.Cursor> pendingAfter(String collection, String cursor) {
+        return PendingDecisions.position(collection, cursor)
+                .map(position -> new BnplOperatorLists.Cursor(position.proposedAt(), position.id()));
     }
 
     // ------------------------------------------------------------------ the views
@@ -340,12 +394,6 @@ public final class BnplListDesk {
                 decimal(head.interestAccruedReleased()), decimal(head.interestDueReleased()),
                 head.agreement().value().toString(), head.agreementVersion(), head.scheduleVersion(), head.reason(),
                 head.journalEntry().toString(), head.valueDate().toString(), head.createdAt().toString());
-    }
-
-    private static BnplServicingRequestView servicingView(BnplOperatorLists.ServicingRequest request, String caller) {
-        return new BnplServicingRequestView(request.id().toString(), "bnpl." + request.kind().name(), "BNPL_AGREEMENT",
-                request.agreement().value().toString(), request.proposedBy(), request.proposedBy().equals(caller),
-                request.proposedAt().toString(), request.reason(), request.repayment().map(UUID::toString).orElse(null));
     }
 
     private static String decimal(Money amount) {

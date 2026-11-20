@@ -444,6 +444,42 @@ public final class JdbcRuleSetStore implements RuleSetStore {
         return contents.values().stream().map(Content::view).toList();
     }
 
+    @Override
+    public List<PendingVersion> pending(Connection unitOfWork, Optional<PendingCursor> after, int limit) {
+        Objects.requireNonNull(after, "after must not be null");
+        if (limit < 1) {
+            throw new IllegalArgumentException("limit must be at least 1");
+        }
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        "SELECT id, source_id, version, proposed_by, created_at"
+                                + " FROM reconciliation.rule_set WHERE status = 'PROPOSED'"
+                                + (after.isPresent() ? " AND (created_at, id) > (?, ?)" : "")
+                                + " ORDER BY created_at ASC, id ASC LIMIT ?")) {
+            int index = 1;
+            if (after.isPresent()) {
+                read.setTimestamp(index++, Timestamp.from(after.get().proposedAt()));
+                read.setObject(index++, after.get().id());
+            }
+            read.setInt(index, limit);
+            List<PendingVersion> page = new ArrayList<>();
+            try (ResultSet rows = read.executeQuery()) {
+                while (rows.next()) {
+                    page.add(new PendingVersion(
+                            rows.getObject("id", UUID.class),
+                            rows.getObject("source_id", UUID.class),
+                            rows.getInt("version"),
+                            rows.getString("proposed_by"),
+                            rows.getObject("created_at", OffsetDateTime.class).toInstant()));
+                }
+            }
+            return page;
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException(
+                    "could not read the rule set versions awaiting a decision", failure);
+        }
+    }
+
     /** One version's content, gathered member table by member table. */
     private static final class Content {
         private final VersionRow row;

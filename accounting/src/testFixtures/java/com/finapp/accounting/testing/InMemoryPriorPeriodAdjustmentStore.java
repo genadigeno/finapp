@@ -86,8 +86,11 @@ public final class InMemoryPriorPeriodAdjustmentStore implements PriorPeriodAdju
     }
 
     @Override
-    public List<Row> pending(Connection unitOfWork, int limit) {
-        return rows.values().stream().filter(row -> row.status() == PriorPeriodAdjustmentStatus.PROPOSED).limit(limit).toList();
+    public List<Row> pending(Connection unitOfWork, Optional<com.finapp.accounting.AccountingCollections.PendingCursor> after, int limit) {
+        return rows.values().stream().filter(row -> row.status() == PriorPeriodAdjustmentStatus.PROPOSED)
+                .filter(row -> after.map(cursor -> row.proposedAt().isAfter(cursor.proposedAt())
+                        || row.proposedAt().equals(cursor.proposedAt()) && com.finapp.accounting.JournalReads.LineCursor.compareIds(row.id().value(), cursor.id()) > 0).orElse(true))
+                .sorted(java.util.Comparator.comparing(Row::proposedAt).thenComparing((Row row) -> row.id().value(), com.finapp.accounting.JournalReads.LineCursor::compareIds)).limit(limit).toList();
     }
 
     @Override

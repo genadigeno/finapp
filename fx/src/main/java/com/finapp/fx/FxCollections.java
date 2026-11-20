@@ -60,6 +60,37 @@ public interface FxCollections {
             Optional<EnableRequestCursor> after,
             int limit);
 
+    /**
+     * The enable requests awaiting a decision (`P17-TSK-040`): {@code PROPOSED} alone, the oldest proposal first, the id the
+     * tiebreak, strictly after {@code after} when named.
+     */
+    List<EnableRequestEntry> pendingEnableRequests(Connection unitOfWork, Optional<EnableRequestCursor> after, int limit);
+
+    /** Where a queue of proposals awaiting a decision resumes (`P17-TSK-040`): the last row served, oldest first. */
+    record PendingPosition(Instant proposedAt, UUID id) {
+        public PendingPosition {
+            Objects.requireNonNull(proposedAt, "proposedAt must not be null");
+            Objects.requireNonNull(id, "id must not be null");
+        }
+    }
+
+    /**
+     * A proposal awaiting a decision (`P17-TSK-040`): its id, its proposer and their reason, when, and what it acts on - a
+     * pricing policy's version number, a trade reversal's trade.
+     */
+    record PendingProposal(UUID id, String proposedBy, Instant proposedAt, String reason, String subject) {
+        public PendingProposal {
+            Objects.requireNonNull(id, "id must not be null");
+            Objects.requireNonNull(proposedAt, "proposedAt must not be null");
+        }
+    }
+
+    /** The pricing policy versions awaiting a decision: {@code PROPOSED} alone, oldest first, the id the tiebreak. */
+    List<PendingProposal> pendingPricingPolicies(Connection unitOfWork, Optional<PendingPosition> after, int limit);
+
+    /** The trade reversals awaiting a decision: {@code PROPOSED} alone, oldest first, the id the tiebreak. */
+    List<PendingProposal> pendingTradeReversals(Connection unitOfWork, Optional<PendingPosition> after, int limit);
+
     /** A trade search: a booking window {@code [from, to)}, and optionally a pair and a status. */
     record TradeFilter(Instant from, Instant to, Optional<AvailabilitySubject> pair, Optional<TradeStatus> status) {
         public TradeFilter {

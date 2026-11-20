@@ -344,6 +344,21 @@ public enum RiskAuditAction implements AuditableAction {
                     + " risk.SelfDealingRefused instead.",
             false),
 
+    /**
+     * An approver was served a page of one of risk's investigative queues of proposals awaiting a decision (`P17-TSK-040`):
+     * suppressions, dispositions, risk actions, overrides or regulatory reports - every page recorded, as the alert and case
+     * queues' pages are.
+     */
+    PENDING_DECISIONS_READ(
+            "risk.PendingDecisionsRead",
+            "An approver was served a page of one of risk's investigative queues of proposals awaiting a decision (GET"
+                    + " /v1/operator/pending-decisions/risk.{suppressions,dispositions,actions,overrides,reports}, P17-TSK-040),"
+                    + " under the permission its approve door takes, recorded in the read's own transaction so nothing is"
+                    + " served unrecorded. Its target the queue (risk_pending_decisions, the queue's name); the summary the"
+                    + " cursor's presence, the count served and whether more remain - never a subject, a proposer or a"
+                    + " reason.",
+            false),
+
     /** An analyst read a case's file, or was served a page of the case queue (`P13-TSK-018`). */
     CASE_READ(
             "risk.CaseRead",

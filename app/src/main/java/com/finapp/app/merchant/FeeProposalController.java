@@ -35,7 +35,8 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>Each kind's proposals awaiting a decision are a queue in `P17-TSK-040`'s one pending-decision shape (finapp-admin-panel
  * ADR-C133 decision 3) - {@code /operator/pending-decisions/merchant/fee-schedule-versions} and
- * {@code .../merchant/fee-assignments} - on the approve door's factor, and one proposal of any kind (the BNPL fee
+ * {@code .../merchant/fee-assignments} - reads, so on a password session as every `P17-TSK-040` queue is (the owner's D-6: a
+ * factor on every act, never on a read; aligned at the merge, 2026-11-21), and one proposal of any kind (the BNPL fee
  * assignments are read at `P17-TSK-124`'s door beside their own) is read by its identifier with the schedule it names,
  * recorded and on the factor as `P17-TSK-124`'s reads are: the approver holds no {@code FEE_ADMINISTER}, and four eyes that
  * cannot see the price decide nothing. The queues are unrecorded, configuration.
@@ -48,7 +49,6 @@ public class FeeProposalController {
     @NonNull private final FeeScheduleOperations feeSchedules;
 
     /** The fee schedule version proposals awaiting a decision, oldest first: `P17-TSK-040`'s pending-decision shape. */
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @GetMapping("/pending-decisions/merchant/fee-schedule-versions")
     @RequiresPermission(PermissionName.FEE_SCHEDULE_APPROVE)
     public PendingDecisions.PendingDecisionPage listPendingFeeScheduleVersions(
@@ -59,7 +59,6 @@ public class FeeProposalController {
     }
 
     /** The merchant fee assignment proposals awaiting a decision, oldest first: the same shape. */
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @GetMapping("/pending-decisions/merchant/fee-assignments")
     @RequiresPermission(PermissionName.FEE_SCHEDULE_APPROVE)
     public PendingDecisions.PendingDecisionPage listPendingFeeAssignments(

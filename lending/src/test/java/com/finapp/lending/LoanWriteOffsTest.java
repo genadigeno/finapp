@@ -939,7 +939,8 @@ class LoanWriteOffsTest {
                 }
 
                 @Override
-                public List<LoanWriteOff> oldestPending(Connection unitOfWork, UUID excludedParty, int limit) {
+                public List<LoanWriteOff> oldestPending(Connection unitOfWork, UUID excludedParty,
+                        Optional<LendingOperatorLists.Cursor> after, int limit) {
                     return rows.values().stream().filter(row -> !excludedParty.equals(party))
                             .filter(row -> row.status() == LoanWriteOffStatus.PROPOSED).limit(limit).toList();
                 }

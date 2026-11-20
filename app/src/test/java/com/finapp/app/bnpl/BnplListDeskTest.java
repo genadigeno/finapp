@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.RecordedReads;
 import com.finapp.bnpl.BnplAgreementId;
 import com.finapp.bnpl.BnplApplicationStatus;
@@ -134,7 +135,8 @@ class BnplListDeskTest {
 
     @Test
     @DisplayName("the lists withhold the reader's own party and pass the filter whole; the queue is in the pending-decision"
-            + " shape - bnpl.<KIND>, the agreement its subject, a reversal's repayment beside it")
+            + " shape (P17-TSK-040) - bnpl.<Kind>, the agreement its subject, a reversal's repayment its related id, the proposer"
+            + " and their reason named")
     void theListsWithholdTheReadersParty() {
         UUID merchant = UUID.randomUUID();
         as(() -> desk.agreements("ACTIVE", merchant.toString(), null, null));
@@ -146,11 +148,12 @@ class BnplListDeskTest {
         lists.servicing.add(new BnplOperatorLists.ServicingRequest(IDS.next(), BnplOperatorLists.ServicingKind.REPAYMENT_REVERSAL,
                 BnplAgreementId.of(IDS.next()), "another-agent", Instant.parse("2026-11-01T00:00:00Z"), "the payment bounced",
                 Optional.of(repayment)));
-        BnplListDesk.BnplServicingRequestView view = as(() -> desk.servicingRequests("PROPOSED", null, null)).items().getFirst();
-        assertThat(view.kind()).isEqualTo("bnpl.REPAYMENT_REVERSAL");
-        assertThat(view.subjectKind()).isEqualTo("BNPL_AGREEMENT");
-        assertThat(view.repaymentId()).isEqualTo(repayment.toString());
-        assertThat(view.proposedByCaller()).isFalse();
+        PendingDecisions.PendingDecision view = as(() -> desk.servicingRequests("PROPOSED", null, null)).items().getFirst();
+        assertThat(view.kind()).isEqualTo("bnpl.RepaymentReversal");
+        assertThat(view.subjectId()).isEqualTo(lists.servicing.getFirst().agreement().value().toString());
+        assertThat(view.proposedBy()).isEqualTo("another-agent");
+        assertThat(view.reasonSummary()).isEqualTo("the payment bounced");
+        assertThat(view.relatedId()).as("a reversal names its repayment").isEqualTo(repayment.toString());
         assertThat(written).extracting(AuditRecord::operation).containsExactly(BnplAuditAction.AGREEMENTS_READ,
                 BnplAuditAction.APPLICATIONS_READ, BnplAuditAction.SERVICING_REQUESTS_READ);
     }
@@ -320,6 +323,23 @@ class BnplListDeskTest {
             read++;
             withheld = withheldParty;
             return servicing.stream().limit(limit).toList();
+        }
+
+        @Override
+        public List<PendingProposal> pendingTermsVersions(Connection unitOfWork, Optional<Cursor> after, int limit) {
+            throw new UnsupportedOperationException("the pending queues are not under test here");
+        }
+
+        @Override
+        public List<PendingProposal> pendingRefundProposals(Connection unitOfWork, UUID withheldParty, Optional<Cursor> after,
+                int limit) {
+            throw new UnsupportedOperationException("the pending queues are not under test here");
+        }
+
+        @Override
+        public List<PendingProposal> pendingDisputeResolutions(Connection unitOfWork, UUID withheldParty,
+                Optional<Cursor> after, int limit) {
+            throw new UnsupportedOperationException("the pending queues are not under test here");
         }
     }
 }
