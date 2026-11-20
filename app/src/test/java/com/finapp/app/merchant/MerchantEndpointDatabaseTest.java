@@ -1,6 +1,7 @@
 package com.finapp.app.merchant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
@@ -143,7 +144,7 @@ class MerchantEndpointDatabaseTest {
                                         "/v1/operator/merchants/" + merchantId + "/suspension",
                                         "{\"reason\":\"  \"}",
                                         admin,
-                                        null)
+                                        someKey())
                                 .statusCode())
                 .as("a judgement without its reasoning is refused at the boundary - the"
                         + " platform's validation refusal shape")
@@ -154,7 +155,7 @@ class MerchantEndpointDatabaseTest {
                         "/v1/operator/merchants/" + merchantId + "/suspension",
                         "{\"reason\":\"chargeback ratio breached\"}",
                         admin,
-                        null);
+                        someKey());
         assertThat(suspended.statusCode()).isEqualTo(200);
         assertThat(field(suspended.body(), "status")).isEqualTo("SUSPENDED");
 
@@ -163,7 +164,7 @@ class MerchantEndpointDatabaseTest {
                         "/v1/operator/merchants/" + merchantId + "/closure",
                         "{\"reason\":\"tidy up\"}",
                         admin,
-                        null);
+                        someKey());
         assertThat(refused.statusCode()).isEqualTo(409);
         assertThat(refused.body()).contains("merchant.IllegalTransition");
     }
@@ -200,7 +201,7 @@ class MerchantEndpointDatabaseTest {
                                                     + "/suspension",
                                             "{\"reason\":\"chargeback ratio breached\"}",
                                             admin,
-                                            null);
+                                            someKey());
                                 }));
             }
             start.countDown();
@@ -237,6 +238,83 @@ class MerchantEndpointDatabaseTest {
                                         + " 'merchant.MerchantSuspended' AND target_id = ?",
                                 merchantId))
                 .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a closure is four eyes (P17-TSK-031): the administrator proposes and cannot approve, a controller approves"
+            + " and the merchant is CLOSED; a rejection moves nothing and a decided proposal is decided once; approvals racing"
+            + " rejections produce one winner; V019's CHECK refuses the proposer's decision written by hand")
+    void aClosureIsFourEyes() throws Exception {
+        String admin = sessionWith(RoleName.MERCHANT_ADMINISTRATOR);
+        String controller = sessionWith(RoleName.FINANCIAL_CONTROLLER);
+        String merchantId = field(post("/v1/operator/merchants", onboardBody(verifiedOrganisation()), admin, someKey())
+                .body(), "merchantId");
+
+        HttpResponse<String> proposed = post("/v1/operator/merchants/" + merchantId + "/closure",
+                "{\"reason\":\"relationship ended\"}", admin, someKey());
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        assertThat(field(proposed.body(), "status")).isEqualTo("PROPOSED");
+        assertThat(field(proposed.body(), "merchantStatus")).as("a proposal moves nothing").isEqualTo("ACTIVE");
+        String proposal = field(proposed.body(), "proposalId");
+        assertThat(post("/v1/operator/merchant-closures/" + proposal + "/approval", "{\"reason\":\"mine\"}", admin,
+                someKey()).statusCode()).as("the proposer's population holds no approval").isEqualTo(403);
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement forged = app.prepareStatement("UPDATE merchant.merchant_closure_proposal"
+                        + " SET status = 'APPROVED', decided_by = proposed_by, decided_by_type = 'EMPLOYEE',"
+                        + " decided_at = proposed_at + interval '1 second', decision_reason = 'mine',"
+                        + " decision_correlation_id = 'c' WHERE id = ?")) {
+            forged.setObject(1, UUID.fromString(proposal));
+            assertThatThrownBy(forged::executeUpdate).isInstanceOf(java.sql.SQLException.class)
+                    .hasMessageContaining("merchant_closure_proposal_four_eyes");
+        }
+        HttpResponse<String> approved = post("/v1/operator/merchant-closures/" + proposal + "/approval",
+                "{\"reason\":\"agreed: nothing owed\"}", controller, someKey());
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        assertThat(field(approved.body(), "merchantStatus")).isEqualTo("CLOSED");
+        assertThat(field(get("/v1/operator/merchants/" + merchantId, admin).body(), "status")).isEqualTo("CLOSED");
+        assertThat(post("/v1/operator/merchants/" + merchantId + "/closure", "{\"reason\":\"again\"}", admin,
+                someKey()).body()).contains("merchant.IllegalTransition");
+
+        String other = field(post("/v1/operator/merchants", onboardBody(verifiedOrganisation()), admin, someKey()).body(),
+                "merchantId");
+        String rejectedOne = field(post("/v1/operator/merchants/" + other + "/closure", "{\"reason\":\"maybe\"}", admin,
+                someKey()).body(), "proposalId");
+        HttpResponse<String> rejected = post("/v1/operator/merchant-closures/" + rejectedOne + "/rejection",
+                "{\"reason\":\"they still trade\"}", controller, someKey());
+        assertThat(field(rejected.body(), "status")).isEqualTo("REJECTED");
+        assertThat(field(rejected.body(), "merchantStatus")).isEqualTo("ACTIVE");
+        assertThat(post("/v1/operator/merchant-closures/" + rejectedOne + "/approval", "{\"reason\":\"late\"}",
+                controller, someKey()).body()).contains("merchant.ClosureAlreadyDecided");
+
+        String raced = field(post("/v1/operator/merchants/" + other + "/closure", "{\"reason\":\"again\"}", admin,
+                someKey()).body(), "proposalId");
+        int racers = 10;
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<HttpResponse<String>>> results = new ArrayList<>();
+        ExecutorService pool = Executors.newFixedThreadPool(racers);
+        try {
+            for (int i = 0; i < racers; i++) {
+                String door = i % 2 == 0 ? "/approval" : "/rejection";
+                results.add(pool.submit(() -> {
+                    start.await();
+                    return post("/v1/operator/merchant-closures/" + raced + door, "{\"reason\":\"the race\"}",
+                            controller, someKey());
+                }));
+            }
+            start.countDown();
+            int won = 0;
+            for (Future<HttpResponse<String>> result : results) {
+                HttpResponse<String> answered = result.get(60, TimeUnit.SECONDS);
+                if (answered.statusCode() == 200) {
+                    won++;
+                } else {
+                    assertThat(answered.body()).contains("merchant.ClosureAlreadyDecided");
+                }
+            }
+            assertThat(won).as("one decision, whichever door won").isEqualTo(1);
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test

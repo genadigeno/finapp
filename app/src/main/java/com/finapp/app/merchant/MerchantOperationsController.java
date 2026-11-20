@@ -1,5 +1,6 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
@@ -41,6 +42,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class MerchantOperationsController {
 
     @NonNull private final MerchantOperations merchants;
+    @NonNull private final MerchantClosureDesk closures;
 
     /**
      * Onboards the merchant and opens its books, or replays the recorded outcome for a
@@ -77,30 +79,45 @@ public class MerchantOperationsController {
         return merchants.view(id);
     }
 
-    /** Freezes new dispatches, reasoned. Landed money still lands; reversible. */
+    /** Freezes new dispatches, reasoned and keyed (`P17-TSK-031`). Landed money still lands; reversible. */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/suspension", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
+    @RequiresIdempotencyKey
+    @RecordsRefusals
     public MerchantOperations.MerchantView suspend(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id, @Valid @RequestBody MerchantStandingRequest body) {
-        return merchants.suspend(id, body);
+        return merchants.suspend(id, body, idempotencyKey);
     }
 
-    /** Lifts the freeze, reasoned. */
+    /** Lifts the freeze, reasoned and keyed (`P17-TSK-031`). */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/reinstatement", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
+    @RequiresIdempotencyKey
+    @RecordsRefusals
     public MerchantOperations.MerchantView reinstate(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id, @Valid @RequestBody MerchantStandingRequest body) {
-        return merchants.reinstate(id, body);
+        return merchants.reinstate(id, body, idempotencyKey);
     }
 
-    /** Ends the relationship, reasoned. Terminal; the books remain ({@code INV-HIST-01}). */
+    /**
+     * Proposes the merchant's closure (`P17-TSK-031`, ADR-0154; ADR-C135 decision 3: terminal, so four eyes). Moves nothing: a
+     * holder of {@code MERCHANT_CLOSE_APPROVE} who did not propose it decides at
+     * {@code /v1/operator/merchant-closures/{id}/approval}, and the approval closes it - settled-money judgement and the
+     * payable's closing included. Answers {@code 201} with the proposal; keyed; refusals recorded.
+     */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/closure", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
-    public MerchantOperations.MerchantView close(
+    @RequiresIdempotencyKey
+    @RecordsRefusals
+    @ResponseStatus(HttpStatus.CREATED)
+    public MerchantClosureDesk.ClosureReceipt proposeMerchantClosure(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id, @Valid @RequestBody MerchantStandingRequest body) {
-        return merchants.close(id, body);
+        return closures.propose(idempotencyKey, id, body.reason());
     }
 }

@@ -1089,6 +1089,9 @@ class OpenApiContractTest {
                         // P17-TSK-031: a transfer reversal decided by four eyes.
                         ApiVersion.CURRENT_PREFIX + "/operator/transfer-reversals/{id}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/transfer-reversals/{id}/rejection",
+                        // P17-TSK-031: a merchant closure decided by four eyes.
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchant-closures/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchant-closures/{id}/rejection",
                         // P17-TSK-014: the staff directory, its detail, the lookup and the role catalogue (IDENTITY_READ).
                         ApiVersion.CURRENT_PREFIX + "/operator/identities",
                         ApiVersion.CURRENT_PREFIX + "/operator/identities/{id}",

@@ -1293,6 +1293,18 @@ public class PaymentBeans {
                 new com.finapp.checkout.JdbcCheckoutSessionStore());
     }
 
+    /** The operator void's key (`P17-TSK-031`): the conflict guard before the void, the record after it. */
+    @Bean
+    OperatorVoidDesk operatorVoidDesk(
+            PaymentService paymentService,
+            com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
+            com.finapp.platform.idempotency.IdempotencyRecordStore<Connection> idempotencyRecordStore,
+            TransactionTemplate paymentTransactions,
+            DataSource dataSource) {
+        return new OperatorVoidDesk(paymentService, idempotentExecutor, idempotencyRecordStore, paymentTransactions,
+                dataSource);
+    }
+
     /**
      * The refund command (`P5-TSK-015`): hold, then post — provider-conditional like every
      * consumer of the wire.

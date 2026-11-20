@@ -3723,7 +3723,7 @@ class CheckoutFlowDatabaseTest {
                                         "/v1/operator/merchants/" + merchant.id() + "/suspension",
                                         "{\"reason\":\"under investigation\"}",
                                         operatorSession(),
-                                        null)
+                                        someKey())
                                 .statusCode())
                 .isEqualTo(200);
     }

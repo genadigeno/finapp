@@ -65,6 +65,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PaymentController {
 
     @NonNull private final PaymentService payments;
+    @NonNull private final OperatorVoidDesk voids;
 
     /**
      * Creates the caller's payment intent, or replays the judgement — {@code 201} for the
@@ -131,17 +132,20 @@ public class PaymentController {
      * {@code PAYMENT_REFUND} (the money-operating population; releasing a promise is that
      * desk's judgement exactly as taking money back is). Converges by machine; a rail
      * without the reversal answers 409 {@code payments.ReversalNotSupported} with nothing
-     * written or sent ({@code INV-REV-03}). No idempotency key, deliberately: the void is
-     * state-driven like the capture — the conditional out of AUTHORIZED admits one, and a
-     * retry converges on the machine's truth.
+     * written or sent ({@code INV-REV-03}). Stays one person's - it releases a promise and moves
+     * no captured money (ADR-C135 decision 3) - and is <strong>keyed</strong> since
+     * `P17-TSK-031` (ADR-C135 decision 2): a different request under the key is {@code 409},
+     * and a retry converges on the machine's truth with nothing sent twice ({@link OperatorVoidDesk}).
      */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/void", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.PAYMENT_REFUND)
+    @RequiresIdempotencyKey
     @RecordsRefusals
     public PaymentService.PaymentView voidPayment(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id, @Valid @RequestBody VoidPaymentRequest body) {
-        return payments.operatorVoid(parsedOrAbsent(id), body.reason());
+        return voids.voidPayment(idempotencyKey, parsedOrAbsent(id), body.reason());
     }
 
     /** The caller's payment — its current state, the mapped reason included when it failed. */

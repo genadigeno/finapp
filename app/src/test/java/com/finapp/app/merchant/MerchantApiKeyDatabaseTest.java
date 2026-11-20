@@ -97,7 +97,7 @@ class MerchantApiKeyDatabaseTest {
                                         "/v1/operator/merchants/" + merchant.id() + "/suspension",
                                         "{\"reason\":\"under investigation\"}",
                                         admin,
-                                        null)
+                                        someKey())
                                 .statusCode())
                 .isEqualTo(200);
 
@@ -112,7 +112,7 @@ class MerchantApiKeyDatabaseTest {
                                                 + "/reinstatement",
                                         "{\"reason\":\"cleared\"}",
                                         admin,
-                                        null)
+                                        someKey())
                                 .statusCode())
                 .isEqualTo(200);
         assertThat(get("/v1/merchant/me", key).statusCode()).isEqualTo(200);
@@ -396,12 +396,21 @@ class MerchantApiKeyDatabaseTest {
     void aClosedMerchantCannotBeIssuedAKey() throws Exception {
         String admin = administrator();
         Merchant merchant = onboarded(admin);
+        // P17-TSK-031 (ADR-0154): closure is four eyes - the administrator proposes, a controller approves.
+        HttpResponse<String> proposed =
+                post(
+                        "/v1/operator/merchants/" + merchant.id() + "/closure",
+                        "{\"reason\":\"relationship ended\"}",
+                        admin,
+                        someKey());
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
         assertThat(
                         post(
-                                        "/v1/operator/merchants/" + merchant.id() + "/closure",
-                                        "{\"reason\":\"relationship ended\"}",
-                                        admin,
-                                        null)
+                                        "/v1/operator/merchant-closures/" + field(proposed.body(), "proposalId")
+                                                + "/approval",
+                                        "{\"reason\":\"agreed\"}",
+                                        sessionWith(RoleName.FINANCIAL_CONTROLLER),
+                                        someKey())
                                 .statusCode())
                 .isEqualTo(200);
 

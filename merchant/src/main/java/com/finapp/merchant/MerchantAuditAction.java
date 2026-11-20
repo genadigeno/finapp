@@ -78,6 +78,22 @@ public enum MerchantAuditAction implements AuditableAction {
             true),
 
     /**
+     * A holder of {@code MERCHANT_ADMINISTER} proposed a merchant's closure (`P17-TSK-031`, ADR-0154): nothing moved yet; a
+     * holder of {@code MERCHANT_CLOSE_APPROVE} who did not propose it decides. The approval's record is
+     * {@link #MERCHANT_CLOSED}, written by the closure itself under the approver.
+     */
+    CLOSURE_PROPOSED(
+            "merchant.ClosureProposed",
+            "A merchant's closure was proposed with a reason; nothing moved until a second person approves.",
+            true),
+
+    /** A holder of {@code MERCHANT_CLOSE_APPROVE} rejected a closure it did not propose (`P17-TSK-031`); nothing moved. */
+    CLOSURE_REJECTED(
+            "merchant.ClosureRejected",
+            "A proposed merchant closure was rejected by a second person, with a reason; nothing moved.",
+            true),
+
+    /**
      * An operator created a named pricing identity (`P6-TSK-004`). No reason required: a named
      * container carries no price, and the judgement worth reasoning about is the
      * {@link #FEE_SCHEDULE_VERSION_CREATED version} — the {@code MERCHANT_API_KEY_ISSUED}

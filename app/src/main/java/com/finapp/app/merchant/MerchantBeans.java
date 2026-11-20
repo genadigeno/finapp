@@ -266,11 +266,36 @@ public class MerchantBeans {
             MerchantOnboarding merchantOnboarding,
             MerchantAdministration merchantAdministration,
             PlatformTransactionManager transactionManager,
-            DataSource dataSource) {
+            DataSource dataSource,
+            com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor) {
         return new MerchantOperations(
                 merchantOnboarding,
                 merchantAdministration,
                 new TransactionTemplate(transactionManager),
+                dataSource,
+                idempotentExecutor);
+    }
+
+    /** A merchant's closure by four eyes (`P17-TSK-031`, ADR-0154): the proposal machine over the existing closure. */
+    @Bean
+    com.finapp.merchant.MerchantClosures merchantClosures(
+            com.finapp.merchant.MerchantAdministration merchantAdministration,
+            com.finapp.platform.audit.AuditWriter<Connection> auditWriter,
+            com.finapp.sharedkernel.id.IdGenerator idGenerator,
+            java.time.Clock clock) {
+        return new com.finapp.merchant.MerchantClosures(new com.finapp.merchant.JdbcMerchantStore(),
+                new com.finapp.merchant.JdbcMerchantClosureProposalStore(), merchantAdministration, auditWriter, idGenerator,
+                clock);
+    }
+
+    /** The closure's keyed door (`P17-TSK-031`), each act in a transaction of its own. */
+    @Bean
+    MerchantClosureDesk merchantClosureDesk(
+            com.finapp.merchant.MerchantClosures merchantClosures,
+            com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
+            PlatformTransactionManager transactionManager,
+            DataSource dataSource) {
+        return new MerchantClosureDesk(merchantClosures, idempotentExecutor, new TransactionTemplate(transactionManager),
                 dataSource);
     }
 }

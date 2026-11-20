@@ -98,6 +98,9 @@ class RoutePermissionRegisterTest {
                     // P17-TSK-031: a transfer reversal's decision - the second person of an act always four eyes.
                     entry("POST /v1/operator/transfer-reversals/{id}/approval", PermissionName.TRANSFER_REVERSE_APPROVE),
                     entry("POST /v1/operator/transfer-reversals/{id}/rejection", PermissionName.TRANSFER_REVERSE_APPROVE),
+                    // P17-TSK-031: a merchant closure's decision - terminal, so four eyes.
+                    entry("POST /v1/operator/merchant-closures/{id}/approval", PermissionName.MERCHANT_CLOSE_APPROVE),
+                    entry("POST /v1/operator/merchant-closures/{id}/rejection", PermissionName.MERCHANT_CLOSE_APPROVE),
                     // P17-TSK-017: the audit trail, read - the AUDITOR's alone (ADR-C134; the owner, 2026-11-18).
                     entry("GET /v1/operator/audit-records", PermissionName.AUDIT_READ),
                     entry("GET /v1/operator/audit-records/{id}", PermissionName.AUDIT_READ),
@@ -786,6 +789,8 @@ class RoutePermissionRegisterTest {
             // P17-TSK-031: deciding a reversal - money moves on a factor, as every privileged act.
             "POST /v1/operator/transfer-reversals/{id}/approval",
             "POST /v1/operator/transfer-reversals/{id}/rejection",
+            "POST /v1/operator/merchant-closures/{id}/approval",
+            "POST /v1/operator/merchant-closures/{id}/rejection",
             // P17-TSK-014: who holds the privileged roles, one of them, and who a login names - the same map, not on a password.
             "GET /v1/operator/identities",
             "GET /v1/operator/identities/{id}",
