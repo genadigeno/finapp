@@ -1,5 +1,7 @@
 package com.finapp.app.reconciliation;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.PermissionName;
@@ -9,8 +11,10 @@ import com.finapp.reconciliation.MatchingStore;
 import com.finapp.reconciliation.ReconciliationErrorCode;
 import java.math.BigDecimal;
 import java.sql.Connection;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
 import lombok.NonNull;
@@ -21,6 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -43,8 +48,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ReconciliationExplanationController {
 
-    /** The runs listing's bound — the platform's listing bound. */
-    static final int BOUND = 100;
+    /** The run list's collection name, inside its cursors (`P17-TSK-122`). */
+    static final String RUNS = "reconciliation.runs";
+
+    static final int RUN_PAGE_DEFAULT = 50;
+    static final int RUN_PAGE_MAXIMUM = 200;
 
     @NonNull private final MatchingStore store;
     @NonNull private final TransactionTemplate reconciliationTransactions;
@@ -65,7 +73,9 @@ public class ReconciliationExplanationController {
             String businessDate,
             Map<String, Long> outcomes) {}
 
-    public record RunList(List<RunView> runs, boolean truncated) {}
+    /** A page of the run list (`API_CONVENTIONS.md` section 7): {@code nextCursor} absent on the last page. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record RunPage(List<RunView> items, String nextCursor) {}
 
     public record CandidateView(
             String expectationId,
@@ -112,19 +122,43 @@ public class ReconciliationExplanationController {
 
     // ------------------------------------------------------------------ doors
 
-    /** The newest runs — identity, progress and per-outcome counts, bounded at 100. */
+    /**
+     * The runs - identity, progress and per-outcome counts - as a section 7 collection (`P17-TSK-122`; read "the newest 100
+     * with {@code truncated}", ordered by birth alone, until then): born newest first, the id breaking the tie;
+     * {@code limit} {@value #RUN_PAGE_DEFAULT} unless named, {@value #RUN_PAGE_MAXIMUM} at most and refused above, never
+     * reduced; the opaque {@code cursor} of the page before.
+     */
     @GetMapping("/runs")
     @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
-    public RunList listReconciliationRuns() {
+    public RunPage listReconciliationRuns(
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        int size = OperatorCollection.limit(limit, RUN_PAGE_DEFAULT, RUN_PAGE_MAXIMUM);
+        Optional<MatchingStore.RunCursor> after = runCursor(cursor);
         return inOneTransaction(
                 unitOfWork -> {
-                    List<MatchingStore.RunRow> rows = store.runs(unitOfWork, BOUND + 1);
-                    return new RunList(
-                            rows.stream()
-                                    .limit(BOUND)
-                                    .map(row -> runView(unitOfWork, row))
-                                    .toList(),
-                            rows.size() > BOUND);
+                    List<MatchingStore.ListedRun> rows = store.runs(unitOfWork, after, size + 1);
+                    List<MatchingStore.ListedRun> served = rows.subList(0, Math.min(size, rows.size()));
+                    String next = null;
+                    if (rows.size() > size) {
+                        MatchingStore.ListedRun tail = served.get(served.size() - 1);
+                        next = OperatorCollection.cursor(
+                                RUNS, tail.createdAt().toString(), tail.run().id().toString());
+                    }
+                    return new RunPage(
+                            served.stream().map(listed -> runView(unitOfWork, listed.run())).toList(), next);
+                });
+    }
+
+    /** The position {@code cursor} names in the run list, or none for the first page; anything else refused. */
+    static Optional<MatchingStore.RunCursor> runCursor(String cursor) {
+        return OperatorCollection.key(RUNS, cursor, 2)
+                .map(key -> {
+                    try {
+                        return new MatchingStore.RunCursor(Instant.parse(key.get(0)), UUID.fromString(key.get(1)));
+                    } catch (RuntimeException unreadable) {
+                        throw OperatorCollection.invalidCursor();
+                    }
                 });
     }
 

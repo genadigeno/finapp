@@ -97,12 +97,18 @@ public class ReconciliationAdministrationController {
     /** A controller's reason for requeueing a blocked run. */
     public record RunRequeueRequest(@NotBlank @Size(min = 1, max = 1000) String reason) {}
 
-    /** A source's rule set versions, newest first, each with its whole content. */
+    /**
+     * A source's rule set versions, each with its whole content, as a section 7 collection (`P17-TSK-122`; read "the newest
+     * 20 with {@code truncated}" until then): version descending; {@code limit} 20 unless named, 50 at most; the opaque
+     * {@code cursor} of the page before. The source stays required.
+     */
     @GetMapping("/rule-sets")
     @RequiresPermission(PermissionName.RECONCILIATION_ADMINISTER)
-    public ReconciliationAdministrationDesk.RuleSetList listReconciliationRuleSets(
-            @RequestParam("source") String source) {
-        return desk.ruleSets(source);
+    public ReconciliationAdministrationDesk.RuleSetPage listReconciliationRuleSets(
+            @RequestParam("source") String source,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.ruleSets(source, cursor, limit);
     }
 
     /** Proposes a new version: frozen at once, awaiting a different controller. */

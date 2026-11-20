@@ -686,7 +686,7 @@ class StatementsDatabaseTest {
                         credits = credits.add(new BigDecimal(line.amount()));
                     }
                 }
-                after = read.activity().next();
+                after = read.activity().nextCursor();
             } while (after != null);
         }
         assertThat(counted).as("exactly the lines the figure counts").isEqualTo(wanted);
@@ -698,7 +698,7 @@ class StatementsDatabaseTest {
         ReportRunLinesDesk desk = new ReportRunLinesDesk(runs(), new JdbcGlMappingStore(), new JdbcPeriodPins(), new GeneralLedger(new LedgerJournalReads()), GL_SNAPSHOTS, TRANSACTIONS, new JdbcAuditWriter(), AccountingFlowScope.NONE, IDS, NOW);
         try (SecurityContext.Scope who = SecurityContext.enter(person());
                 CorrelationContext.Scope flow = CorrelationContext.enter(Correlation.startingWith(correlation()))) {
-            return desk.lines(run.id().value().toString(), account, month.toString(), currency, after, 500);
+            return desk.lines(run.id().value().toString(), account, month.toString(), currency, after, "500");
         }
     }
 

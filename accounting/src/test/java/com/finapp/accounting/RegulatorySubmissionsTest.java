@@ -155,7 +155,7 @@ class RegulatorySubmissionsTest {
         assertThat(empty.row(JANUARY).status()).isEqualTo(PeriodStatus.CLOSED);
         assertThatThrownBy(() -> empty.drafted(version, JANUARY)).isInstanceOf(RegulatorySubmissions.SourceNotFinal.class).hasMessageContaining("revision 2");
 
-        assertThat(world.store.standing(UOW, Optional.empty(), 100)).isEmpty();
+        assertThat(world.store.standing(UOW, Optional.empty(), 100).stream().map(RegulatorySubmissionStore.Placed::row).toList()).isEmpty();
         assertThat(empty.store.standing(UOW, Optional.empty(), 100)).isEmpty();
     }
 
@@ -171,7 +171,7 @@ class RegulatorySubmissionsTest {
         RegulatoryObligationId notAnAmount = world.active(4, form("body.equation[currency=EUR].currency"));
         assertThatThrownBy(() -> world.drafted(notAnAmount, JANUARY)).isInstanceOf(RegulatoryForm.FigureUnresolved.class)
                 .satisfies(refused -> assertThat(((RegulatoryForm.FigureUnresolved) refused).why()).isEqualTo(FigurePath.Why.NOT_AN_AMOUNT));
-        assertThat(world.store.standing(UOW, Optional.empty(), 100)).isEmpty();
+        assertThat(world.store.standing(UOW, Optional.empty(), 100).stream().map(RegulatorySubmissionStore.Placed::row).toList()).isEmpty();
     }
 
     private static RegulatoryObligationConfiguration form(String figure) {
@@ -212,7 +212,7 @@ class RegulatorySubmissionsTest {
         RegulatorySubmissions noAdapter = new RegulatorySubmissions(world.periods, world.store, world.obligationStore, world.runs, new RegulatoryAdapters(List.of()), (uow, record) -> { }, (uow, envelope, payload, mediaType) -> { }, world.ids, world.clock,
                 Duration.ofDays(1));
         assertThatThrownBy(() -> noAdapter.draft(UOW, new Draft(inForce, world.row(FEBRUARY).id(), Optional.empty(), REASON), PREPARER, world.correlation())).isInstanceOf(RegulatorySubmissions.SubmissionStale.class).hasMessageContaining("no adapter");
-        assertThat(world.store.standing(UOW, Optional.empty(), 100)).extracting(RegulatorySubmissionStore.Row::month).doesNotContain(FEBRUARY);
+        assertThat(world.store.standing(UOW, Optional.empty(), 100).stream().map(RegulatorySubmissionStore.Placed::row).toList()).extracting(RegulatorySubmissionStore.Row::month).doesNotContain(FEBRUARY);
     }
 
     @Test
@@ -239,7 +239,7 @@ class RegulatorySubmissionsTest {
         }
         pool.shutdownNow();
         assertThat(born).isEqualTo(1);
-        assertThat(world.store.standing(UOW, Optional.empty(), 100)).hasSize(1);
+        assertThat(world.store.standing(UOW, Optional.empty(), 100).stream().map(RegulatorySubmissionStore.Placed::row).toList()).hasSize(1);
     }
 
     @Test
@@ -417,7 +417,7 @@ class RegulatorySubmissionsTest {
 
         // Answered, it stays frozen and flagged.
         asThePlatform(() -> machine.record(UOW, machine.claim(UOW, sent.id(), Duration.ofMinutes(2)).orElseThrow(), new Answered(CallKind.SUBMIT, Answer.acknowledged("PROVIDER-1", "{}".getBytes(StandardCharsets.UTF_8))), Duration.ofMinutes(15), world.correlation()));
-        assertThat(world.store.standing(UOW, Optional.empty(), 100)).extracting(RegulatorySubmissionStore.Row::id).contains(sent.id());
+        assertThat(world.store.standing(UOW, Optional.empty(), 100).stream().map(RegulatorySubmissionStore.Placed::row).toList()).extracting(RegulatorySubmissionStore.Row::id).contains(sent.id());
         assertThat(world.store.attention(UOW, RegulatorySubmissions.MAX_RESENDS).overtaken()).isEqualTo(1);
         world.reclosed(JANUARY);
         world.issued(JANUARY, RegulatoryWorld.body(90_00, 90_00, 50_00, 50_00));
@@ -431,7 +431,7 @@ class RegulatorySubmissionsTest {
         Acted rejectedCorrection = world.submitted(world.approved(world.validated(correction)));
         rejected(rejectedCorrection);
         assertThat(world.store.attention(UOW, RegulatorySubmissions.MAX_RESENDS).overtaken()).isEqualTo(1);
-        assertThat(world.store.standing(UOW, Optional.empty(), 100)).extracting(RegulatorySubmissionStore.Row::id).contains(sent.id());
+        assertThat(world.store.standing(UOW, Optional.empty(), 100).stream().map(RegulatorySubmissionStore.Placed::row).toList()).extracting(RegulatorySubmissionStore.Row::id).contains(sent.id());
 
         // Only an acknowledged return of the form at the present revision does, down a chain of corrections.
         Acted second = world.submitted(world.approved(world.validated(machine.draft(UOW, new Draft(obligation, world.row(JANUARY).id(), Optional.of(rejectedCorrection.id()), REASON), PREPARER, world.correlation()))));
@@ -439,7 +439,7 @@ class RegulatorySubmissionsTest {
         assertThat(world.store.attention(UOW, RegulatorySubmissions.MAX_RESENDS).overtaken()).isZero();
         assertThat(row(sent).overtaken()).isFalse();
         assertThat(row(sent).monthMoved()).as("the month still moved: only the alarm cleared").isTrue();
-        assertThat(world.store.standing(UOW, Optional.empty(), 100)).extracting(RegulatorySubmissionStore.Row::id).doesNotContain(sent.id());
+        assertThat(world.store.standing(UOW, Optional.empty(), 100).stream().map(RegulatorySubmissionStore.Placed::row).toList()).extracting(RegulatorySubmissionStore.Row::id).doesNotContain(sent.id());
     }
 
     // ------------------------------------------------------------------ a month that moved before the send
@@ -641,7 +641,7 @@ class RegulatorySubmissionsTest {
     }
 
     @Test
-    @DisplayName("what stands comes a page at a time, oldest first, and says truthfully when more exist; a page out of bounds and a cursor no return answers are refused")
+    @DisplayName("what stands comes a page at a time, oldest first, and says truthfully when more exist; a page out of bounds is refused, and a position no return holds resumes in its place (P17-TSK-122)")
     void whatStandsIsPaged() {
         java.time.YearMonth march = java.time.YearMonth.of(2096, 3);
         world.closed(FEBRUARY);
@@ -656,16 +656,17 @@ class RegulatorySubmissionsTest {
 
         RegulatorySubmissions.Standing first = machine.standing(UOW, Optional.empty(), 2);
         assertThat(first.rows()).hasSize(2);
-        assertThat(first.nextAfter()).contains(first.rows().get(1).id());
-        RegulatorySubmissions.Standing second = machine.standing(UOW, first.nextAfter(), 2);
+        assertThat(first.next()).map(RegulatorySubmissionStore.StandingCursor::id).contains(first.rows().get(1).id());
+        RegulatorySubmissions.Standing second = machine.standing(UOW, first.next(), 2);
         assertThat(second.rows()).hasSize(1);
-        assertThat(second.nextAfter()).as("no more exist").isEmpty();
+        assertThat(second.next()).as("no more exist").isEmpty();
         assertThat(java.util.stream.Stream.concat(first.rows().stream(), second.rows().stream()).map(RegulatorySubmissionStore.Row::id)).containsExactlyElementsOf(drafted);
 
-        assertThat(machine.standing(UOW, Optional.empty(), 3).nextAfter()).as("exactly a page: no more exist").isEmpty();
+        assertThat(machine.standing(UOW, Optional.empty(), 3).next()).as("exactly a page: no more exist").isEmpty();
         assertThatThrownBy(() -> machine.standing(UOW, Optional.empty(), 0)).isInstanceOf(RegulatorySubmissions.SubmissionInvalid.class);
         assertThatThrownBy(() -> machine.standing(UOW, Optional.empty(), RegulatorySubmissions.LIST_LIMIT + 1)).isInstanceOf(RegulatorySubmissions.SubmissionInvalid.class);
-        assertThatThrownBy(() -> machine.standing(UOW, Optional.of(RegulatorySubmissionId.next(world.ids)), 2)).isInstanceOf(RegulatorySubmissions.SubmissionInvalid.class);
+        RegulatorySubmissionStore.StandingCursor nowhere = new RegulatorySubmissionStore.StandingCursor(first.next().orElseThrow().recordedOrder(), RegulatorySubmissionId.next(world.ids));
+        assertThat(machine.standing(UOW, Optional.of(nowhere), 2).rows()).as("a position, not a row: the walk resumes after it").isNotEmpty().doesNotContain(first.rows().get(0));
     }
 
     @Test
@@ -679,7 +680,7 @@ class RegulatorySubmissionsTest {
         assertThat(row(later).preparedAt()).as("the precondition: the later return is stamped before the earlier one").isBefore(row(earlier).preparedAt());
 
         RegulatorySubmissions.Standing first = machine.standing(UOW, Optional.empty(), 1);
-        RegulatorySubmissions.Standing second = machine.standing(UOW, first.nextAfter(), 1);
+        RegulatorySubmissions.Standing second = machine.standing(UOW, first.next(), 1);
 
         assertThat(first.rows()).extracting(RegulatorySubmissionStore.Row::id).containsExactly(earlier.id());
         assertThat(second.rows()).extracting(RegulatorySubmissionStore.Row::id).containsExactly(later.id());
@@ -1113,7 +1114,7 @@ class RegulatorySubmissionsTest {
         assertThat(kept.get(1).flag()).contains(RegulatorySubmissionStore.Flag.CONTRARY);
         assertThat(codes()).contains("regulatory.SubmissionContraryAnswer");
         assertThat(world.events.stream().filter(event -> event.eventType().equals(RegulatorySubmissions.REJECTED_EVENT))).isEmpty();
-        assertThat(world.store.standing(UOW, Optional.empty(), 100)).as("so that a person can find which return").extracting(RegulatorySubmissionStore.Row::id).contains(sent.id());
+        assertThat(world.store.standing(UOW, Optional.empty(), 100).stream().map(RegulatorySubmissionStore.Placed::row).toList()).as("so that a person can find which return").extracting(RegulatorySubmissionStore.Row::id).contains(sent.id());
 
         // One agreeing, after the conclusion: kept, flagged late.
         asThePlatform(() -> assertThat(machine.record(UOW, first, new Answered(CallKind.INQUIRE, Answer.acknowledged("PROVIDER-1", "third".getBytes(StandardCharsets.UTF_8))), Duration.ofMinutes(15), world.correlation()).disposition())

@@ -590,14 +590,18 @@ public final class IdentityAdministration {
 
     /**
      * The live holdings that conflict under the segregation-of-duties table (`P17-TSK-016`): those granted before the rule, which
-     * the grant now refuses. It revokes nothing - a role a person holds is theirs until someone decides otherwise, with a reason,
-     * through the revocation door - and is recorded in the read's own transaction, as the factorless review is.
+     * the grant now refuses, at most {@code mostServed} after {@code after} (a page of the review since `P17-TSK-122`), and
+     * whether more follow. It revokes nothing - a role a person holds is theirs until someone decides otherwise, with a reason,
+     * through the revocation door - and every page is recorded in the read's own transaction, as the factorless review's is.
      */
-    public SodConflicts sodConflicts(Connection unitOfWork, int mostServed) {
+    public SodConflicts sodConflicts(
+            Connection unitOfWork, Optional<RoleAssignmentStore.ConflictingHolding> after, int mostServed) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
-        List<RoleAssignmentStore.ConflictingHolding> found = authorization.conflictingHoldings(unitOfWork, mostServed + 1);
-        boolean truncated = found.size() > mostServed;
-        List<RoleAssignmentStore.ConflictingHolding> served = truncated ? found.subList(0, mostServed) : found;
+        Objects.requireNonNull(after, "after must not be null");
+        List<RoleAssignmentStore.ConflictingHolding> found =
+                authorization.conflictingHoldings(unitOfWork, after, mostServed + 1);
+        boolean more = found.size() > mostServed;
+        List<RoleAssignmentStore.ConflictingHolding> served = more ? found.subList(0, mostServed) : found;
         auditWriter.append(
                 unitOfWork,
                 new AuditRecord(
@@ -610,12 +614,12 @@ public final class IdentityAdministration {
                         Optional.empty(),
                         AuditOutcome.SUCCEEDED,
                         currentCorrelation().correlationId(),
-                        Optional.of("served=" + served.size() + ", truncated=" + truncated)));
-        return new SodConflicts(served, truncated);
+                        Optional.of("served=" + served.size() + ", continued=" + after.isPresent() + ", more=" + more)));
+        return new SodConflicts(served, more);
     }
 
-    /** The conflicting holdings served and whether there were more than were. */
-    public record SodConflicts(List<RoleAssignmentStore.ConflictingHolding> conflicts, boolean truncated) {}
+    /** A page of the conflicting holdings: those served, and whether more follow the last of them. */
+    public record SodConflicts(List<RoleAssignmentStore.ConflictingHolding> conflicts, boolean more) {}
 
     /** A role of {@code subject}'s live roles that {@code role} conflicts with, read without a lock: for a refusal's words only. */
     public Optional<RoleName> heldConflict(Connection unitOfWork, IdentityId subject, RoleName role) {

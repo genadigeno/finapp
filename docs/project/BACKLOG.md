@@ -32702,6 +32702,17 @@ showing how fresh it is. Both say what is missing.
   gate; on merging `P17-TSK-118`, its register entry for the FX list deleted. **Multi-instance**: `PASS` - reads only; a keyset
   position is a row's own key, so a row inserted or removed between pages moves no other, on any instance.
 
+**P17-TSK-122 — The section 7 retrofit's second batch: the eleven operator lists P17-TSK-042 left registered (G-03)** — `COMPLETE` (2026-11-20; record in `CURRENT_STATE.md` §Just completed) *(read "`READY` (added and marked 2026-11-20; ...)" until its gate)* — (added and marked 2026-11-20 on the owner's "take a task yourself too", every backlog task being held; proposed at `P17-TSK-042`'s gate; no dependency; branch `P17-TSK-122` from master `28460c49b`)
+- **Context**: `identity`, `crossborder`, `reconciliation`, `accounting`, `ledger` (its journal reads), `bnpl`, `app`; `API_CONVENTIONS.md` section 7; ADR-C133 decisions 1 and 2; `OperatorListsAreCollectionsTest`'s three registers.
+- **Scope**: each a section 7 collection (`{ items, nextCursor }`, a declared total order, `OperatorCollection`'s limit and opaque cursor, a look-ahead row deciding `nextCursor`), replaced in place (ADR-C133 decision 2, the owner's ruling at `P17-TSK-042`):
+  the corridor policies (version descending, 20/100; `truncated` was always false); the SoD-conflict review (since, identity, first role, second role, 50/200); the reconciliation runs (created at descending, the id added as the tiebreak it lacked, 50/200), expectations (opened at descending, id descending, 50/200) and one source's rule sets (version descending, 20/50); the regulatory obligations (proposed at descending, id descending, 50/100; a bare array until now);
+  and, paged by `after` until now: the accounting breaks of a period (id, 100/500), the BNPL dispute queue (entered, id, 50/100; no limit until now) and the regulatory submissions (recorded order, id, 50/100). The GL account activity and a report run's lines keep their view - a period's figure and its lines, one subject's children - and take an opaque `cursor` in place of `after`, answering `nextCursor` decided by a look-ahead row; section 7's prose names them.
+  Reconciliation V028 and accounting V019: index-only expand migrations for the new keysets. No bnpl migration (its V023 is `P17-TSK-035`'s, and Flyway runs in order): the OPEN dispute queue keeps the scan it has today.
+- **Deps**: none.
+- **Accept**: `OperatorListsAreCollectionsTest`'s TRUNCATED register holds only lists bounded by what they are, AFTER_STYLE is empty, BARE_ARRAYS loses the obligations; `OperatorListKeysetsTest` covers each new keyset; each list resumes, refuses a foreign cursor and an over-maximum limit in a database case; section 7's table lists the new pages; the OpenAPI baseline and the operator routes regenerated.
+- **Multi-instance**: reads only; a keyset position is a row's own key, so a row inserted or removed between pages moves no other, on any instance. `PASS`.
+- **Risk**: Medium - breadth, and lists replaced in place (the console is their one client; its callers are finapp-admin-panel's, owed there). **Cx**: L. **DoD**: `DOD-API`, `DOD-SEC`.
+
 *M17.11 — Hardening and exit*
 
 The console's side is done: an accessibility and CSP audit of every route in both themes, an independent security review with

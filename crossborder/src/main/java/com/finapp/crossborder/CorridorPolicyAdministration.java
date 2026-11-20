@@ -302,9 +302,10 @@ public final class CorridorPolicyAdministration {
         return new Decided(row.id(), row.version(), CorridorPolicyStatus.REJECTED, Optional.empty(), false);
     }
 
-    /** Versions newest first, at most {@code limit}, each with its corridors. */
-    public List<CorridorPolicyStore.VersionView> versions(Connection unitOfWork, int limit) {
-        return store.versions(unitOfWork, limit);
+    /** Versions newest first, below {@code beforeVersion} when one is named, at most {@code limit}, each with its corridors. */
+    public List<CorridorPolicyStore.VersionView> versions(
+            Connection unitOfWork, Optional<Integer> beforeVersion, int limit) {
+        return store.versions(unitOfWork, beforeVersion, limit);
     }
 
     /** The {@code ACTIVE} version with its corridors, if one exists. */

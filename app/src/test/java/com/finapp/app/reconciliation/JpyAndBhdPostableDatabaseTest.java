@@ -288,7 +288,7 @@ class JpyAndBhdPostableDatabaseTest {
         try (Connection app = DatabaseRoles.application()) {
             for (UUID source : JpyAndBhdRuleSets.SEEDED_SOURCES) {
                 List<RuleSetStore.VersionView> versions =
-                        ruleSetAdministration.versions(app, source, 10);
+                        ruleSetAdministration.versions(app, source, java.util.OptionalInt.empty(), 10);
                 assertThat(versions).as("v2 and v1, nothing else").hasSize(2);
                 RuleSetStore.VersionView v2 = versions.get(0);
                 RuleSetStore.VersionView v1 = versions.get(1);

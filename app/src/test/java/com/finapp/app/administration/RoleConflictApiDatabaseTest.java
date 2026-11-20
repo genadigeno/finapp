@@ -85,7 +85,7 @@ class RoleConflictApiDatabaseTest {
 
         HttpResponse<String> review = send("GET", admin, "/v1/operator/access-review/sod-conflicts", null);
         assertThat(review.statusCode()).as(review.body()).isEqualTo(200);
-        assertThat(review.body()).startsWith("{\"conflicts\":[").contains("\"truncated\":");
+        assertThat(review.body()).startsWith("{\"items\":[");
         assertThat(send("GET", reviewer, "/v1/operator/access-review/sod-conflicts", null).statusCode()).isEqualTo(403);
         HttpResponse<String> stepUp = send("GET", password, "/v1/operator/access-review/sod-conflicts", null);
         assertThat(stepUp.statusCode()).isEqualTo(403);

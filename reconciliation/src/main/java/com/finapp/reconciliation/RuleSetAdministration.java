@@ -368,10 +368,13 @@ public final class RuleSetAdministration {
 
     // ------------------------------------------------------------------ read
 
-    /** The source's versions, newest first, at most {@code limit}, each with its content. */
+    /**
+     * The source's versions, newest first, at most {@code limit}, each with its content; strictly older than
+     * {@code beforeVersion} when one is named (a page's resumption, `P17-TSK-122`).
+     */
     public List<RuleSetStore.VersionView> versions(
-            Connection unitOfWork, UUID sourceId, int limit) {
-        return store.versions(unitOfWork, sourceId, limit);
+            Connection unitOfWork, UUID sourceId, java.util.OptionalInt beforeVersion, int limit) {
+        return store.versions(unitOfWork, sourceId, beforeVersion, limit);
     }
 
     // ------------------------------------------------------------------ plumbing

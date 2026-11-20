@@ -317,6 +317,15 @@ The operator collections that implement this section exactly, the first two from
 | `GET /v1/operator/fx/trades` (`P17-TSK-037`) | `FX_INVESTIGATE` | booked at descending, trade id descending | 50 / 200 | `from`, `to` (instants, `[from, to)`, required, 31 days at most); `pair` (`SOURCE-DESTINATION`), `status` (`BOOKED` or `REVERSED`). Every page recorded as the audit action fx.TradesListed |
 | `GET /v1/operator/cross-border/corridor-enable-requests` (`P17-TSK-037`) | `CROSSBORDER_ADMINISTER` | proposed at descending, request id descending | 50 / 200 | `status` (`PROPOSED`, `APPROVED` or `REJECTED`). Configuration, unrecorded |
 | `GET /v1/operator/cross-border/payments` (`P17-TSK-037`) | `FX_INVESTIGATE` | created at descending, payment id descending | 50 / 200 | `from`, `to` (instants, `[from, to)`, required, 31 days at most); `corridor` (`S-D-CC`), `status` (a payment status). Every page recorded as the audit action crossborder.CrossBorderPaymentsListed |
+| `GET /v1/operator/cross-border/corridor-policies` (`P17-TSK-122`) | `CROSSBORDER_ADMINISTER` | version descending | 20 / 100 | none. Each version with its corridors. Was `{ versions, truncated }`, its flag never set |
+| `GET /v1/operator/access-review/sod-conflicts` (`P17-TSK-122`) | `ROLE_ASSIGN`, on a `MULTI_FACTOR` session | conflicting since ascending, identity id, first role, second role ascending | 50 / 200 | none. Every page recorded. Was `{ conflicts, truncated }` at 200 |
+| `GET /v1/operator/reconciliation/runs` (`P17-TSK-122`) | `RECONCILIATION_INVESTIGATE` | created at descending, run id descending (the tiebreak it lacked) | 50 / 200 | none. Was `{ runs, truncated }` at 100 |
+| `GET /v1/operator/reconciliation/expectations` (`P17-TSK-122`) | `RECONCILIATION_INVESTIGATE` | opened at descending, expectation id descending | 50 / 200 | `status`, `overdue`, `source`, as before. Was `{ expectations, truncated }` at 100 |
+| `GET /v1/operator/reconciliation/rule-sets` (`P17-TSK-122`) | `RECONCILIATION_ADMINISTER` | version descending, within the required `source` | 20 / 50 | `source` (required). Was `{ versions, truncated }` at 20 |
+| `GET /v1/operator/regulatory/obligations` (`P17-TSK-122`) | `REGULATORY_REPORT_PREPARE` | proposed at descending, obligation id descending | 50 / 100 | none. Recorded, as before. Was a bare array capped at 100 with nothing saying so |
+| `GET /v1/operator/accounting/breaks` (`P17-TSK-122`) | `ACCOUNTING_READ` | break id ascending (a UUIDv7: birth order) | 100 / 500 | `period` (required), `status`. Was paged by `after`, its `next` set on any full page |
+| `GET /v1/operator/bnpl-disputes` (`P17-TSK-122`) | `BNPL_DISPUTE_RESOLVE` | entered the status ascending (opened, or the merchant's response), dispute id ascending | 50 / 100 | `status` (required: `OPEN`, `MERCHANT_RESPONDED`); a cursor names its status. The operator's own party's disputes withheld and every page recorded, as before. Was paged by `after` at a fixed 100 |
+| `GET /v1/operator/regulatory/submissions` (`P17-TSK-122`) | `REGULATORY_REPORT_PREPARE` | recorded order ascending, submission id ascending | 50 / 100 | none. Was paged by `after` with `nextAfter` |
 
 All are keyset reads. `app`'s `OperatorCollection` is the one implementation of the request rules: the limit is refused above
 its maximum rather than reduced, and the cursor names its collection, so one collection's cursor is refused by another. Every
@@ -331,6 +340,8 @@ application serves: no `GET` there answers a bare array, a top-level `truncated`
 route with its reason - a list bounded by what it is (a closed vocabulary, one subject's children, one period's report), or one
 this section has not reached yet, named there so it is owed - and the table above lists exactly the routes answering a page.
 The FX pricing policy list was retrofitted first, by `P17-TSK-118`: its old shape replaced in place, the operator surface being internal.
+
+**The second batch** (`P17-TSK-122`, proposed at `P17-TSK-042`'s gate). The nine rows after the retrofit's eleven are the lists `P17-TSK-042` registered as not reached: capped with `truncated`, capped with nothing saying so, or paged by `after`. Each was replaced in place by its row's collection, its next page decided by a look-ahead row rather than by a full page. A GL account's activity (`GET /v1/operator/accounting/gl/accounts/{code}/activity`) and a report run's lines (`GET /v1/operator/accounting/report-runs/{runId}/lines`) are not lists but one period's figure with its lines - one subject's children - so they keep their view; each takes this section's `limit` (100 / 500) and opaque `cursor` in place of `after` and answers `nextCursor` only when there is a next page. No operator `GET` takes `after` any more.
 
 **Cursor-based, never offset.** `?limit=&cursor=`. The reason is correctness before performance:
 an offset re-reads a moving set, so when rows are inserted or removed between page 1 and page 2, a

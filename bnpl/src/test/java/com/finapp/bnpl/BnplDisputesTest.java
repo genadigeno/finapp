@@ -817,7 +817,7 @@ class BnplDisputesTest {
                 .isInstanceOf(BnplDisputes.SelfDealingRefused.class);
         BnplDisputes.SelfDealingRefused queue = org.junit.jupiter.api.Assertions.assertThrows(
                 BnplDisputes.SelfDealingRefused.class, () -> disputes.queue(BnplApplicationFakes.UOW,
-                        BnplDisputeStatus.MERCHANT_RESPONDED, Optional.empty(), UNPLACED, CORRELATION));
+                        BnplDisputeStatus.MERCHANT_RESPONDED, Optional.empty(), BnplDisputes.QUEUE_PAGE, UNPLACED, CORRELATION));
         assertThat(queue.targetType()).isEqualTo(BnplDisputes.QUEUE_TARGET);
         assertThat(queue.dispute()).isEmpty();
 
@@ -862,21 +862,29 @@ class BnplDisputesTest {
                 .hasSize(3);
 
         BnplDisputes.Queue page = disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.MERCHANT_RESPONDED,
-                Optional.empty(), OPERATOR_A, CORRELATION);
+                Optional.empty(), BnplDisputes.QUEUE_PAGE, OPERATOR_A, CORRELATION);
         assertThat(page.disputes()).extracting(BnplDispute::id).containsExactly(contested.get(1).id(),
                 contested.get(2).id(), contested.get(0).id());
         assertThat(page.next()).isEmpty();
+        BnplDisputes.Queue firstOfOne = disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.MERCHANT_RESPONDED,
+                Optional.empty(), 1, OPERATOR_A, CORRELATION);
+        assertThat(firstOfOne.disputes()).extracting(BnplDispute::id).containsExactly(contested.get(1).id());
+        assertThat(firstOfOne.next()).as("the position of the page's last: when it was answered, and its id").contains(
+                new BnplDisputeStore.QueuePosition(Instant.parse("2026-10-21T09:00:00Z"), contested.get(1).id()));
         assertThat(disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.MERCHANT_RESPONDED,
-                Optional.of(contested.get(1).id()), OPERATOR_A, CORRELATION).disputes()).extracting(BnplDispute::id)
+                firstOfOne.next(), BnplDisputes.QUEUE_PAGE, OPERATOR_A, CORRELATION).disputes()).extracting(BnplDispute::id)
                 .containsExactly(contested.get(2).id(), contested.get(0).id());
-        assertThat(disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.OPEN, Optional.empty(), OPERATOR_A,
-                CORRELATION).disputes()).extracting(BnplDispute::id).containsExactly(open.id());
+        assertThat(disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.OPEN, Optional.empty(), BnplDisputes.QUEUE_PAGE,
+                OPERATOR_A, CORRELATION).disputes()).extracting(BnplDispute::id).containsExactly(open.id());
         operatorParties.put(OPERATOR_B.id(), world.party);
         assertThat(disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.MERCHANT_RESPONDED, Optional.empty(),
-                OPERATOR_B, CORRELATION).disputes()).as("never the operator's own party's").isEmpty();
+                BnplDisputes.QUEUE_PAGE, OPERATOR_B, CORRELATION).disputes()).as("never the operator's own party's").isEmpty();
         assertThatThrownBy(() -> disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.WITHDRAWN, Optional.empty(),
-                OPERATOR_A, CORRELATION)).isInstanceOf(IllegalArgumentException.class);
-        assertThat(audited(BnplAuditAction.DISPUTE_QUEUE_READ)).hasSize(4)
+                BnplDisputes.QUEUE_PAGE, OPERATOR_A, CORRELATION)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.MERCHANT_RESPONDED,
+                Optional.empty(), BnplDisputes.QUEUE_PAGE + 1, OPERATOR_A, CORRELATION))
+                .as("never more than a hundred").isInstanceOf(IllegalArgumentException.class);
+        assertThat(audited(BnplAuditAction.DISPUTE_QUEUE_READ)).hasSize(5)
                 .allSatisfy(record -> assertThat(record.changeSummary().orElseThrow()).doesNotContain("100.00"));
     }
 
@@ -892,11 +900,12 @@ class BnplDisputesTest {
                     BnplDisputes.Decision.CONTEST);
         }
         BnplDisputes.Queue first = disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.MERCHANT_RESPONDED,
-                Optional.empty(), OPERATOR_A, CORRELATION);
+                Optional.empty(), BnplDisputes.QUEUE_PAGE, OPERATOR_A, CORRELATION);
         assertThat(first.disputes()).hasSize(BnplDisputes.QUEUE_PAGE);
-        assertThat(first.next()).contains(first.disputes().get(BnplDisputes.QUEUE_PAGE - 1).id());
+        assertThat(first.next().map(BnplDisputeStore.QueuePosition::id))
+                .contains(first.disputes().get(BnplDisputes.QUEUE_PAGE - 1).id());
         BnplDisputes.Queue second = disputes.queue(BnplApplicationFakes.UOW, BnplDisputeStatus.MERCHANT_RESPONDED,
-                first.next(), OPERATOR_A, CORRELATION);
+                first.next(), BnplDisputes.QUEUE_PAGE, OPERATOR_A, CORRELATION);
         assertThat(second.disputes()).hasSize(1).doesNotContainAnyElementsOf(first.disputes());
         assertThat(second.next()).isEmpty();
     }

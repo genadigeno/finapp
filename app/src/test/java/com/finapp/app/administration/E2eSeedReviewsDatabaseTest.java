@@ -110,13 +110,13 @@ class E2eSeedReviewsDatabaseTest {
         backDate(holder, 2);
 
         String session = elevated("admin");
-        assertThat(get(session, "/v1/operator/access-review/sod-conflicts"))
+        assertThat(sodReview(session))
                 .contains("{\"identityId\":\"" + holder + "\",\"roles\":[\"ACCOUNTANT\",\"FINANCIAL_CONTROLLER\"],");
         assertThat(get(session, "/v1/operator/access-review/factorless-holdings?limit=200"))
                 .as("the holder has a factor: the scenarios are apart").doesNotContain(holder);
 
         assertThat(revoke(session, holder, "FINANCIAL_CONTROLLER")).as("the console's decision, through the door").isEqualTo(204);
-        assertThat(get(session, "/v1/operator/access-review/sod-conflicts")).doesNotContain(holder);
+        assertThat(sodReview(session)).doesNotContain(holder);
         assertThat(single("SELECT string_agg(role_name, ',') FROM identity.role_assignment WHERE identity_id = '" + holder
                 + "' AND revoked_at IS NULL")).isEqualTo("ACCOUNTANT");
     }
@@ -246,6 +246,20 @@ class E2eSeedReviewsDatabaseTest {
         HttpResponse<String> answer = send("GET", session, path, null);
         assertThat(answer.statusCode()).as(answer.body()).isEqualTo(200);
         return answer.body();
+    }
+
+    /** The whole SoD review, every page of it walked by its cursor (a section 7 collection since `P17-TSK-122`). */
+    private String sodReview(String session) throws Exception {
+        StringBuilder pages = new StringBuilder();
+        String cursor = null;
+        do {
+            String page = get(session, "/v1/operator/access-review/sod-conflicts?limit=200"
+                    + (cursor == null ? "" : "&cursor=" + cursor));
+            pages.append(page);
+            Matcher next = Pattern.compile("\"nextCursor\":\"([A-Za-z0-9_-]+)\"").matcher(page);
+            cursor = next.find() ? next.group(1) : null;
+        } while (cursor != null);
+        return pages.toString();
     }
 
     private int revoke(String session, String holder, String role) throws Exception {

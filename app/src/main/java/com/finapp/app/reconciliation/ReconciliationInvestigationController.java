@@ -148,14 +148,20 @@ public class ReconciliationInvestigationController {
 
     // ------------------------------------------------------------------ expectations
 
-    /** The newest expectations matching the filters, bounded at 100 with {@code truncated}. */
+    /**
+     * The expectations matching the filters, as a section 7 collection (`P17-TSK-122`; read "the newest 100 with
+     * {@code truncated}" until then): opened newest first, the id breaking the tie; {@code limit} 50 unless named, 200 at
+     * most; the opaque {@code cursor} of the page before.
+     */
     @GetMapping("/expectations")
     @RequiresPermission(PermissionName.RECONCILIATION_INVESTIGATE)
-    public BreakInvestigation.ExpectationList listSettlementExpectations(
+    public BreakInvestigation.ExpectationPage listSettlementExpectations(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "overdue", required = false) Boolean overdue,
-            @RequestParam(name = "source", required = false) String source) {
-        return investigation.listExpectations(status, overdue, source);
+            @RequestParam(name = "source", required = false) String source,
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return investigation.listExpectations(status, overdue, source, cursor, limit);
     }
 
     /** One expectation: keys, history, allocations and the breaks standing on it. */

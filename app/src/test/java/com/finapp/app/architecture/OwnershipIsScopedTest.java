@@ -3613,7 +3613,7 @@ class OwnershipIsScopedTest {
                             "com.finapp.bnpl.JdbcBnplDisputeStore.queue",
                             new Entry(
                                     Scope.ADMINISTERED,
-                                    "The Phase 12 -> 13 gate's A7-2. GET /v1/operator/bnpl-disputes?status= - the operator's queue by permission (BNPL_DISPUTE_RESOLVE at the boundary), every page recorded bnpl.DisputeQueueRead; the party bound is the reading operator's OWN (BnplActingParty), excluded in the statement (d.party_id <> ?) so an operator never sees a dispute of their own party - an unplaced operator is refused before any read. The cursor is a dispute id the previous page returned; it orders the page, it selects no one's row. No free text leaves.")),
+                                    "The Phase 12 -> 13 gate's A7-2. GET /v1/operator/bnpl-disputes?status= - the operator's queue by permission (BNPL_DISPUTE_RESOLVE at the boundary), every page recorded bnpl.DisputeQueueRead; the party bound is the reading operator's OWN (BnplActingParty), excluded in the statement (d.party_id <> ?) so an operator never sees a dispute of their own party - an unplaced operator is refused before any read. The cursor is the (entered instant, id) position the previous page ended on (P17-TSK-122); it orders the page, it selects no one's row. No free text leaves.")),
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplPurchaseStore.disputeHold",
                             new Entry(
@@ -4443,11 +4443,6 @@ class OwnershipIsScopedTest {
                             new Entry(
                                     Scope.ADMINISTERED,
                                     "P14-TSK-018. How many answers a return holds, by the id of the row the permission-guarded read named - a return of the platform's reference reporting, no owner to scope by.")),
-                    Map.entry(
-                            "com.finapp.accounting.JdbcRegulatorySubmissionStore.standing",
-                            new Entry(
-                                    Scope.ADMINISTERED,
-                                    "P14-TSK-018. A page of what stands, after the id of the row the last page ended on, behind @RequiresPermission(REGULATORY_REPORT_PREPARE) - a return of the platform's reference reporting, no owner to scope by.")),
                     Map.entry(
                             "com.finapp.accounting.JdbcRegulatorySubmissionStore.one",
                             new Entry(

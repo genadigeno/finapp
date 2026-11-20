@@ -1386,7 +1386,7 @@ public final class Rehearsal {
         if (listed.status() != 200) {
             return null;
         }
-        for (Object version : arr(obj(tryJson(listed.body())).get("versions"))) {
+        for (Object version : arr(obj(tryJson(listed.body())).get("items"))) {
             if (status.equals(text(obj(version).get("status")))) {
                 return obj(version);
             }
@@ -1508,9 +1508,9 @@ public final class Rehearsal {
         say("activate-pricing quote-after status=" + after.status() + " code=" + codeOf(after));
     }
 
-    /** The state of version {@code id} in a "versions" list answer. */
+    /** The state of version {@code id} in a versions page (section 7: its "items", P17-TSK-118 and P17-TSK-122). */
     private static String stateOf(Answer listed, String id) {
-        for (Object version : arr(obj(tryJson(listed.body())).get("versions"))) {
+        for (Object version : arr(obj(tryJson(listed.body())).get("items"))) {
             if (id.equals(text(obj(version).get("id")))) {
                 return text(obj(version).get("status"));
             }

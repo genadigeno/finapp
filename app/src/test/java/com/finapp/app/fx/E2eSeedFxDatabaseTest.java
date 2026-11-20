@@ -205,7 +205,7 @@ class E2eSeedFxDatabaseTest {
         assertThat(reference.status()).as(reference.body()).isEqualTo(201);
         String referenceId = field(reference.body(), "id");
         JsonNode versions = JSON.readTree(send("GET", console, "/v1/operator/cross-border/corridor-policies", null, false).body())
-                .get("versions");
+                .get("items"); // a section 7 page since P17-TSK-122; both versions the newest, so on the first
         assertThat(terms(versions, proposed, "corridors")).hasSize(4).isEqualTo(terms(versions, referenceId, "corridors"));
         Answer withdrawn = post(console, "/v1/operator/cross-border/corridor-policies/" + referenceId + "/rejection",
                 "{\"reason\":\"e2e: compared, withdrawn\"}");

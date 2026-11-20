@@ -126,28 +126,25 @@ class ReportRunLinesDeskTest {
         journal.post(SEPTEMBER.atDay(3), "EUR", 2, 250, "CUSTOMER_WALLET", "CUSTOMER", "CASH_AT_BANK", "OPERATIONAL");
         journal.post(SEPTEMBER.atDay(4), "EUR", 2, 40, "CUSTOMER_WALLET", "CUSTOMER", "CASH_AT_BANK", "OPERATIONAL");
 
-        ReportRunLinesDesk.ReportRunLinesView first = as(ACCOUNTANT, () -> desk().lines(run.id().value().toString(), "1000", "2026-09", "EUR", null, 1));
+        ReportRunLinesDesk.ReportRunLinesView first = as(ACCOUNTANT, () -> desk().lines(run.id().value().toString(), "1000", "2026-09", "EUR", null, "1"));
         assertThat(first.run()).isEqualTo(run.id().value().toString());
         assertThat(first.status()).isEqualTo("FINAL");
         assertThat(first.exact()).as("a FINAL run's pages sum to its figure").isTrue();
         assertThat(first.activity().lines()).hasSize(1);
         assertThat(first.activity().figure().credits()).isEqualTo("2.90");
-        assertThat(first.activity().next()).isNotNull();
-        ReportRunLinesDesk.ReportRunLinesView second = as(ACCOUNTANT, () -> desk().lines(run.id().value().toString(), "1000", "2026-09", "EUR", first.activity().next(), 1));
+        assertThat(first.activity().nextCursor()).isNotNull();
+        ReportRunLinesDesk.ReportRunLinesView second = as(ACCOUNTANT, () -> desk().lines(run.id().value().toString(), "1000", "2026-09", "EUR", first.activity().nextCursor(), "1"));
         assertThat(second.activity().lines()).hasSize(1);
-        assertThat(second.activity().next()).as("a full page says there may be more").isNotNull();
-        ReportRunLinesDesk.ReportRunLinesView last = as(ACCOUNTANT, () -> desk().lines(run.id().value().toString(), "1000", "2026-09", "EUR", second.activity().next(), 1));
-        assertThat(last.activity().lines()).isEmpty();
-        assertThat(last.activity().next()).isNull();
+        assertThat(second.activity().nextCursor()).as("a full last page names no next: the look-ahead row decides (P17-TSK-122)").isNull();
         BigDecimal credits = new BigDecimal(first.activity().lines().get(0).amount()).add(new BigDecimal(second.activity().lines().get(0).amount()));
         assertThat(credits).as("the pages sum to the figure").isEqualByComparingTo(first.activity().figure().credits());
 
         ReportRunLinesDesk.ReportRunLinesView earlier = as(ACCOUNTANT, () -> desk().lines(run.id().value().toString(), "1000", "2026-08", "EUR", null, null));
         assertThat(earlier.activity().lines()).as("an opening walked back, a month the run read and did not report").singleElement().satisfies(line -> assertThat(line.amount()).isEqualTo("100.00"));
 
-        assertThat(sessions).as("one snapshot each").hasSize(4);
+        assertThat(sessions).as("one snapshot each").hasSize(3);
         assertThat(sessions).allSatisfy(session -> assertThat(session.calls).contains("readOnly=true", "verify").endsWith("rollback", "close"));
-        assertThat(audit).hasSize(4).allSatisfy(record -> {
+        assertThat(audit).hasSize(3).allSatisfy(record -> {
             assertThat(record.operation()).isEqualTo(AccountingAuditAction.GL_READ);
             assertThat(record.actor()).isEqualTo(ACCOUNTANT);
             assertThat(record.targetType()).isEqualTo("report_run");
@@ -204,7 +201,7 @@ class ReportRunLinesDeskTest {
         refused(() -> as(ACCOUNTANT, () -> desk().lines(id, "1000", "2026-09", "euro", null, null)), PlatformErrorCode.VALIDATION_FAILED, 422);
         refused(() -> as(ACCOUNTANT, () -> desk().lines(id, "1000", "2026-09", null, null, null)), PlatformErrorCode.VALIDATION_FAILED, 422);
         refused(() -> as(ACCOUNTANT, () -> desk().lines(id, "1000", "2026-09", "EUR", "nonsense", null)), PlatformErrorCode.VALIDATION_FAILED, 422);
-        refused(() -> as(ACCOUNTANT, () -> desk().lines(id, "1000", "2026-09", "EUR", null, 501)), PlatformErrorCode.VALIDATION_FAILED, 422);
+        refused(() -> as(ACCOUNTANT, () -> desk().lines(id, "1000", "2026-09", "EUR", null, "501")), PlatformErrorCode.VALIDATION_FAILED, 422);
         assertThat(audit).isEmpty();
 
         YearMonth october = SEPTEMBER.plusMonths(1);

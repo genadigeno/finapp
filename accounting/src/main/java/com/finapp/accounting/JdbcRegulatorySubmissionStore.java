@@ -135,14 +135,20 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
             + " OR EXISTS (SELECT 1 FROM accounting.regulatory_provider_answer f WHERE f.submission_id = s.id AND f.flag = 'CONTRARY'))";
 
     /** Selected in the statement: the filter is the database's, before the {@code LIMIT}. Oldest first by the insertion sequence ({@code accounting V014}), which no step of a clock can reorder (`P14-REM-009`). */
-    static final String STANDING_SQL = ROW + " WHERE " + STANDS + " ORDER BY s.recorded_order, s.id LIMIT ?";
+    static final String STANDING_SQL = standingRow() + " WHERE " + STANDS + " ORDER BY s.recorded_order, s.id LIMIT ?";
 
     /**
-     * The next page: a keyset on what is frozen from birth - by grant: {@code GENERATED ALWAYS} still admits {@code SET recorded_order = DEFAULT}, and {@code finapp_app} holds no {@code UPDATE} of the column - by the id the last page ended on, so the cursor is a row's id and means the same on either side of {@code V014}, whose backfill numbered every earlier row in the order this statement served them.
+     * The next page: a keyset on what is frozen from birth - by grant: {@code GENERATED ALWAYS} still admits {@code SET recorded_order = DEFAULT}, and {@code finapp_app} holds no {@code UPDATE} of the column - bound from the cursor's own recorded order and id (`P17-TSK-122`; until then the id the last page ended on,
+     * looked up), so no row need still stand, or exist, for its position to mean the same.
      * <strong>A number is drawn at the insert and is not commit order</strong>: a birth still uncommitted when a later number is served is missed by that walk. That is accepted, as the old stamp's order had it too: {@link #standing} is a person's worklist, the next walk from
      * the first page serves the row in its place, and every act judges again under its own locks.
      */
-    static final String STANDING_AFTER_SQL = ROW + " WHERE " + STANDS + " AND (s.recorded_order, s.id) > (SELECT l.recorded_order, l.id FROM accounting.regulatory_submission l WHERE l.id = ?) ORDER BY s.recorded_order, s.id LIMIT ?";
+    static final String STANDING_AFTER_SQL = standingRow() + " WHERE " + STANDS + " AND (s.recorded_order, s.id) > (?, ?) ORDER BY s.recorded_order, s.id LIMIT ?";
+
+    /** {@link #ROW} with the row's recorded order, which the standing page's cursor carries. */
+    private static String standingRow() {
+        return "SELECT s.recorded_order, " + ROW.substring("SELECT ".length());
+    }
 
     /** Selected in the statement: the filter is the database's, before the {@code LIMIT} - what its reader cannot decide never counts toward it. */
     static final String AWAITING_SQL = ROW + " WHERE s.status = 'VALIDATED' AND s.prepared_by <> ? ORDER BY s.validated_at, s.id LIMIT ?";
@@ -536,14 +542,21 @@ public final class JdbcRegulatorySubmissionStore implements RegulatorySubmission
     }
 
     @Override
-    public List<Row> standing(Connection unitOfWork, Optional<RegulatorySubmissionId> after, int limit) {
+    public List<Placed> standing(Connection unitOfWork, Optional<StandingCursor> after, int limit) {
         try (PreparedStatement read = unitOfWork.prepareStatement(after.isPresent() ? STANDING_AFTER_SQL : STANDING_SQL)) {
             int i = 0;
             if (after.isPresent()) {
-                read.setObject(++i, after.get().value());
+                read.setLong(++i, after.get().recordedOrder());
+                read.setObject(++i, after.get().id().value());
             }
             read.setInt(++i, limit);
-            return rows(read);
+            List<Placed> placed = new ArrayList<>();
+            try (ResultSet row = read.executeQuery()) {
+                while (row.next()) {
+                    placed.add(new Placed(row(row), row.getLong("recorded_order")));
+                }
+            }
+            return placed;
         } catch (SQLException failure) {
             throw failed("reading the regulatory submissions standing", failure);
         }

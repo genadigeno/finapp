@@ -415,7 +415,7 @@ class BnplDisputeApiTest {
         assertThat(BnplApplicationClient.count("SELECT count(*) FROM platform.outbox_event WHERE event_type ="
                 + " 'bnpl.BnplDisputeContested' AND aggregate_id = ?::uuid", dispute)).isEqualTo(1);
 
-        String queue = "/v1/operator/bnpl-disputes?status=MERCHANT_RESPONDED";
+        String queue = "/v1/operator/bnpl-disputes?status=MERCHANT_RESPONDED&limit=100";
         String outsider = world.client.operatorSession(authorization, RoleName.MERCHANT_ADMINISTRATOR);
         assertThat(world.client.get(queue, outsider).statusCode()).isEqualTo(403);
         String agent = world.client.operatorSession(authorization, RoleName.BNPL_SERVICING_AGENT);

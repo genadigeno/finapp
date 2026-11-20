@@ -26,6 +26,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -185,7 +186,7 @@ class RegulatoryObligationsTest {
         assertThat(machine.awaitingActivation(UOW, APPROVER)).extracting(RegulatoryObligationStore.Row::id).containsExactly(acted.id());
         assertThat(machine.awaitingActivation(UOW, PREPARER)).isEmpty();
         assertThatThrownBy(() -> machine.awaitingActivation(UOW, Actor.SYSTEM)).isInstanceOf(IllegalArgumentException.class);
-        assertThat(machine.recent(UOW)).hasSize(1);
+        assertThat(machine.recent(UOW, Optional.empty(), 2)).hasSize(1);
         assertThat(machine.view(UOW, acted.id()).adapterHeld()).isTrue();
         assertThat(machine.view(UOW, acted.id()).configuration()).isEqualTo(RegulatoryWorld.configuration());
         assertThatThrownBy(() -> machine.view(UOW, RegulatoryObligationId.next(world.ids))).isInstanceOf(RegulatoryObligations.ObligationNotFound.class);

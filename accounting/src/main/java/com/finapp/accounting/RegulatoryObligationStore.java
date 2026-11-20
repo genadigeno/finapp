@@ -26,8 +26,12 @@ public interface RegulatoryObligationStore {
     /** Every version of the form {@code FOR UPDATE}, in id order: two activations of one form take the same rows in the same order. */
     List<Row> lockForm(Connection unitOfWork, String jurisdiction, String form);
 
-    /** The latest {@code limit} versions, newest first. */
-    List<Row> recent(Connection unitOfWork, int limit);
+    /**
+     * At most {@code limit} versions, newest first - proposed at descending, the id descending breaking the tie - strictly
+     * after {@code after} in that order when given: a keyset on the row's own key, so a version proposed between two pages
+     * moves no other (`P17-TSK-122`; {@code accounting V019}'s index serves it).
+     */
+    List<Row> recent(Connection unitOfWork, Optional<ObligationCursor> after, int limit);
 
     /** Those {@code PROPOSED} by anyone but {@code reader}, oldest first: the filter is the statement's, before its limit. */
     List<Row> awaitingActivation(Connection unitOfWork, String reader, int limit);
@@ -40,6 +44,15 @@ public interface RegulatoryObligationStore {
 
     /** {@code ACTIVE -> RETIRED}; {@code false} when it was not {@code ACTIVE}. */
     boolean markRetired(Connection unitOfWork, RegulatoryObligationId id);
+
+    /** The position a page of {@link #recent} resumes after: the last version it served. */
+    record ObligationCursor(Instant proposedAt, RegulatoryObligationId id) {
+
+        public ObligationCursor {
+            Objects.requireNonNull(proposedAt, "proposedAt");
+            Objects.requireNonNull(id, "id");
+        }
+    }
 
     /** A version to birth. */
     record NewObligation(RegulatoryObligationId id, String jurisdiction, String form, int formVersion, String adapter, String configuration, String configurationSha256, Actor proposedBy,

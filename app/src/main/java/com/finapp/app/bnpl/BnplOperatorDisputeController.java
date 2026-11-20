@@ -41,15 +41,18 @@ public class BnplOperatorDisputeController {
 
     /**
      * The queue (the Phase 12 to 13 gate's A7-2): a page of the disputes in {@code status} - {@code MERCHANT_RESPONDED},
-     * contested and awaiting an operator, or {@code OPEN} - oldest first, at most a hundred, after the cursor {@code after}
-     * (the previous page's {@code next}); never the operator's own party's, no free text, every page recorded.
+     * contested and awaiting an operator, or {@code OPEN} - a section 7 collection (`P17-TSK-122`; read "at most a hundred, after
+     * the id {@code after}" until then): oldest first by the instant each entered the status, the id breaking the tie;
+     * {@code limit} 50 unless named, 100 at most, refused above; the opaque {@code cursor} of the page before, refused by the
+     * other status's queue. Never the operator's own party's, no free text, every page recorded.
      */
     @GetMapping
     @RequiresPermission(PermissionName.BNPL_DISPUTE_RESOLVE)
-    public BnplDisputeDesk.BnplDisputeQueue listBnplDisputes(
+    public BnplDisputeDesk.BnplDisputeQueuePage listBnplDisputes(
             @RequestParam(name = "status") String status,
-            @RequestParam(name = "after", required = false) String after) {
-        return desk.queue(status, after);
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.queue(status, cursor, limit);
     }
 
     /** The dispute, with the customer's reason and the merchant's statement - every access recorded. */

@@ -1,6 +1,8 @@
 package com.finapp.app.crossborder;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.DecimalText;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.crossborder.CorridorAvailability;
 import com.finapp.crossborder.CorridorAvailabilityStore;
 import com.finapp.crossborder.CorridorDirectory;
@@ -56,6 +58,15 @@ public final class CorridorAdministrationDesk {
     /** A read's bound - a list is never unbounded (`PHASE_9_PLAN.md` §9). */
     static final int BOUND = 100;
 
+    /**
+     * The versions' collection (`API_CONVENTIONS.md` §7, `P17-TSK-122`): version descending, the version number the key -
+     * {@code UNIQUE}, so the order is total. The maximum is the list's old cap, so no page reads more than the capped list did.
+     */
+    static final String CORRIDOR_POLICIES = "crossborder.corridor-policies";
+
+    static final int DEFAULT_LIMIT = 20;
+    static final int MAXIMUM_LIMIT = 100;
+
     @NonNull private final CorridorPolicyAdministration policies;
     @NonNull private final CorridorAvailability availability;
     @NonNull private final CorridorDirectory directory;
@@ -68,8 +79,9 @@ public final class CorridorAdministrationDesk {
     /** A version's receipt. */
     public record CorridorPolicyReceipt(String id, int version, String status, String retiredId) {}
 
-    /** The versions, newest first. */
-    public record CorridorPolicyList(List<CorridorPolicyView> versions, boolean truncated) {}
+    /** A page of versions, newest first; {@code nextCursor} absent on the last one (§7, `P17-TSK-122`). */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record CorridorPolicyPage(List<CorridorPolicyView> items, String nextCursor) {}
 
     /**
      * One version and every corridor it holds, and who proposed it (`P17-TSK-118`: an identity's id, so the console
@@ -124,9 +136,32 @@ public final class CorridorAdministrationDesk {
 
     // ------------------------------------------------------------------ the policy
 
-    public CorridorPolicyList policies() {
-        List<CorridorPolicyStore.VersionView> versions = transactions.inTransaction(uow -> policies.versions(uow, BOUND));
-        return new CorridorPolicyList(versions.stream().map(CorridorAdministrationDesk::view).toList(), false);
+    /** A page of versions, newest first, each with its corridors; recording nothing, as the list never did. */
+    public CorridorPolicyPage policies(String cursor, String limit) {
+        int size = OperatorCollection.limit(limit, DEFAULT_LIMIT, MAXIMUM_LIMIT);
+        Optional<Integer> before = versionCursor(cursor);
+        List<CorridorPolicyStore.VersionView> versions =
+                transactions.inTransaction(uow -> policies.versions(uow, before, size + 1));
+        List<CorridorPolicyStore.VersionView> served = versions.subList(0, Math.min(size, versions.size()));
+        String next = versions.size() > size
+                ? OperatorCollection.cursor(CORRIDOR_POLICIES, Integer.toString(served.get(served.size() - 1).row().version()))
+                : null;
+        return new CorridorPolicyPage(served.stream().map(CorridorAdministrationDesk::view).toList(), next);
+    }
+
+    /** The version a cursor resumes below; a cursor this collection did not serve is refused (422). */
+    static Optional<Integer> versionCursor(String cursor) {
+        return OperatorCollection.key(CORRIDOR_POLICIES, cursor, 1).map(key -> {
+            try {
+                int version = Integer.parseInt(key.get(0));
+                if (version < 1) {
+                    throw OperatorCollection.invalidCursor();
+                }
+                return version;
+            } catch (NumberFormatException unreadable) {
+                throw OperatorCollection.invalidCursor();
+            }
+        });
     }
 
     public CorridorPolicyReceipt propose(String idempotencyKey, CorridorAdministrationController.CorridorPolicyRequest request) {

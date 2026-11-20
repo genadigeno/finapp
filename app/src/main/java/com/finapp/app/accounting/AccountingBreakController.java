@@ -41,18 +41,19 @@ public class AccountingBreakController {
     @NonNull private final AccountingBreakDesk desk;
 
     /**
-     * One keyset page of a period's breaks ({@code period} a calendar month {@code YYYY-MM}; {@code status} optional;
-     * {@code limit} 1 to 500, default 100; {@code after} the previous page's {@code next}), in birth order: each finding
-     * with the register version it was judged by, its status and its acts. Audited {@code accounting.BreakRead}.
+     * One section 7 page of a period's breaks ({@code period} a calendar month {@code YYYY-MM}; {@code status} optional;
+     * {@code limit} 1 to 500, default 100, refused above; {@code cursor} the previous page's {@code nextCursor}, absent on
+     * the last page), in birth (id) order: each finding with the register version it was judged by, its status and its
+     * acts. Audited {@code accounting.BreakRead}.
      */
     @GetMapping
     @RequiresPermission(PermissionName.ACCOUNTING_READ)
     public AccountingBreakDesk.AccountingBreakPage listAccountingBreaks(
             @RequestParam("period") String period,
             @RequestParam(name = "status", required = false) String status,
-            @RequestParam(name = "limit", required = false) Integer limit,
-            @RequestParam(name = "after", required = false) String after) {
-        return desk.list(period, status, limit, after);
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.list(period, status, cursor, limit);
     }
 
     /**

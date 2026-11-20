@@ -1,5 +1,6 @@
 package com.finapp.app.accounting;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.accounting.AccountingAuditAction;
 import com.finapp.accounting.AccountingErrorCode;
 import com.finapp.accounting.GlAccount;
@@ -12,6 +13,7 @@ import com.finapp.accounting.reporting.GlBalances;
 import com.finapp.accounting.reporting.GlEntry;
 import com.finapp.accounting.reporting.GlFigure;
 import com.finapp.accounting.reporting.PinnedMapping;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.audit.AuditId;
@@ -28,6 +30,7 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.List;
@@ -67,6 +70,9 @@ public final class GeneralLedgerDesk {
 
     /** A drill-down page's default and largest size. */
     static final int DEFAULT_LIMIT = 100;
+
+    /** The drill-down's collection name: its opaque cursor carries a line's posting date, entry id and order (`P17-TSK-122`). */
+    static final String LINES_COLLECTION = "accounting.gl-lines";
     static final int MAX_LIMIT = JournalReads.LineQuery.MAX_LIMIT;
 
     private static final Pattern PERIOD = Pattern.compile("[0-9]{4}-[0-9]{2}");
@@ -108,8 +114,8 @@ public final class GeneralLedgerDesk {
     }
 
     /** One GL account's activity in a currency: its figure and one keyset page of its lines. */
-    public GlActivityView activity(String rawCode, String rawPeriod, String rawCurrency, String rawAfter,
-            Integer rawLimit) {
+    public GlActivityView activity(String rawCode, String rawPeriod, String rawCurrency, String rawCursor,
+            String rawLimit) {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         String code = code(rawCode);
@@ -118,7 +124,7 @@ public final class GeneralLedgerDesk {
             throw invalid("a GL account's activity is read in one currency");
         }
         String currency = currency(rawCurrency);
-        Optional<JournalReads.LineCursor> after = after(rawAfter, period);
+        Optional<JournalReads.LineCursor> after = cursor(rawCursor, period);
         int limit = limit(rawLimit);
         GlActivity activity = guarded(() -> flow.door(ACTIVITY_SPAN, () -> snapshots.read(snapshot ->
                 ledger.activity(snapshot, pins.forPeriod(snapshot, period), code, currency, after, limit))));
@@ -175,34 +181,34 @@ public final class GeneralLedgerDesk {
         }
     }
 
-    static int limit(Integer raw) {
-        if (raw == null) {
-            return DEFAULT_LIMIT;
-        }
-        if (raw < 1 || raw > MAX_LIMIT) {
-            throw invalid("a drill-down page holds 1 to " + MAX_LIMIT + " lines");
-        }
-        return raw;
+    /** A drill-down page's size: {@value #DEFAULT_LIMIT} unless named, {@value #MAX_LIMIT} at most and refused above, never reduced. */
+    static int limit(String raw) {
+        return OperatorCollection.limit(raw, DEFAULT_LIMIT, MAX_LIMIT);
     }
 
     /**
-     * The cursor, which must be a position inside {@code period}'s posting-date range: a forged or stale cursor - another
-     * month, a year far outside the calendar - is a 422, never a read and never a 5xx.
+     * The position the opaque {@code cursor} names, which must be inside {@code period}'s posting-date range: a forged or
+     * stale cursor - another collection's, another month, a year far outside the calendar - is a 422, never a read and never
+     * a 5xx.
      */
-    static Optional<JournalReads.LineCursor> after(String raw, YearMonth period) {
-        if (raw == null) {
-            return Optional.empty();
+    static Optional<JournalReads.LineCursor> cursor(String raw, YearMonth period) {
+        Optional<JournalReads.LineCursor> cursor = OperatorCollection.key(LINES_COLLECTION, raw, 3).map(key -> {
+            try {
+                return new JournalReads.LineCursor(LocalDate.parse(key.get(0)), UUID.fromString(key.get(1)), Integer.parseInt(key.get(2)));
+            } catch (RuntimeException unreadable) {
+                throw OperatorCollection.invalidCursor();
+            }
+        });
+        if (cursor.isPresent() && !JournalReads.Range.of(period).holds(cursor.get().postingDate())) {
+            throw OperatorCollection.invalidCursor();
         }
-        JournalReads.LineCursor cursor;
-        try {
-            cursor = JournalReads.LineCursor.parse(raw);
-        } catch (IllegalArgumentException malformed) {
-            throw invalid("after is the next cursor of a previous page");
-        }
-        if (!JournalReads.Range.of(period).holds(cursor.postingDate())) {
-            throw invalid("after is a cursor of this period's drill-down");
-        }
-        return Optional.of(cursor);
+        return cursor;
+    }
+
+    /** The opaque cursor that resumes a drill-down after {@code position}. */
+    static String cursor(JournalReads.LineCursor position) {
+        return OperatorCollection.cursor(LINES_COLLECTION, position.postingDate().toString(), position.entryId().toString(),
+                Integer.toString(position.seq()));
     }
 
     static String code(String raw) {
@@ -355,7 +361,11 @@ public final class GeneralLedgerDesk {
         }
     }
 
-    /** A GL account's activity: its figure and one page of its journal lines; {@code next} the cursor of the next page. */
+    /**
+     * A GL account's activity: its figure and one page of its journal lines - one subject's children, not a section 7 list,
+     * paged by its rules (`P17-TSK-122`): {@code nextCursor} the opaque cursor of the next page, present only when a
+     * look-ahead line says one exists.
+     */
     public record GlActivityView(
             String period,
             String periodStatus,
@@ -363,14 +373,14 @@ public final class GeneralLedgerDesk {
             int mappingVersion,
             GlFigureView figure,
             List<GlLineView> lines,
-            String next) {
+            @JsonInclude(JsonInclude.Include.NON_NULL) String nextCursor) {
 
         static GlActivityView of(GlActivity activity) {
             PinnedMapping mapping = activity.mapping();
             return new GlActivityView(mapping.period().toString(), status(mapping),
                     mapping.versionId().value().toString(), mapping.version(), GlFigureView.of(activity.figure()),
                     activity.lines().stream().map(line -> GlLineView.of(line, null)).toList(),
-                    activity.next().map(JournalReads.LineCursor::encoded).orElse(null));
+                    activity.next().map(GeneralLedgerDesk::cursor).orElse(null));
         }
     }
 

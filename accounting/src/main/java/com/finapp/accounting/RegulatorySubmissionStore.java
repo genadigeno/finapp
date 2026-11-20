@@ -97,8 +97,31 @@ public interface RegulatorySubmissionStore {
 
     void appendEvent(Connection unitOfWork, EventRow event);
 
-    /** What a person must act on or know of: everything live, a return rejected or undelivered with no correction, one sent or acknowledged and overtaken ({@link Row#overtaken}), and any holding a contrary answer. Oldest first by the order the rows were recorded in, from after {@code after}, a keyset on what is frozen by grant (`P14-REM-009`). */
-    List<Row> standing(Connection unitOfWork, Optional<RegulatorySubmissionId> after, int limit);
+    /**
+     * What a person must act on or know of: everything live, a return rejected or undelivered with no correction, one sent or acknowledged and overtaken ({@link Row#overtaken}), and any holding a contrary answer. Oldest first by the order the rows were recorded in, the id breaking
+     * the tie, strictly after {@code after} when given: a keyset on what is frozen by grant (`P14-REM-009`), bound from the cursor itself (`P17-TSK-122`), so a cursor naming a row that no longer stands - or never did - still resumes in its place. Each row with its order.
+     */
+    List<Placed> standing(Connection unitOfWork, Optional<StandingCursor> after, int limit);
+
+    /** The position a page of {@link #standing} resumes after: the last row it served, by its recorded order and id. */
+    record StandingCursor(long recordedOrder, RegulatorySubmissionId id) {
+
+        public StandingCursor {
+            Objects.requireNonNull(id, "id");
+        }
+    }
+
+    /** A standing row and its recorded order - the order's own key, which the row itself does not carry. */
+    record Placed(Row row, long recordedOrder) {
+
+        public Placed {
+            Objects.requireNonNull(row, "row");
+        }
+
+        public StandingCursor cursor() {
+            return new StandingCursor(recordedOrder, row.id());
+        }
+    }
 
     /** Those {@code VALIDATED} and prepared by anyone but {@code reader}, oldest first: the filter is the statement's, before its limit. */
     List<Row> awaitingApproval(Connection unitOfWork, String reader, int limit);

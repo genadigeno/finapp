@@ -1,5 +1,6 @@
 package com.finapp.app.accounting;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.accounting.AccountingAuditAction;
 import com.finapp.accounting.AccountingBreakId;
 import com.finapp.accounting.AccountingBreakStore;
@@ -7,6 +8,7 @@ import com.finapp.accounting.AccountingBreaks;
 import com.finapp.accounting.AccountingErrorCode;
 import com.finapp.accounting.AccountingReasons;
 import com.finapp.accounting.BreakStatus;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
 import com.finapp.platform.audit.AuditId;
@@ -58,7 +60,8 @@ public final class AccountingBreakDesk {
     static final String REJECT_SPAN = "accounting.break.acknowledgement.reject";
     static final String RESOLVE_SPAN = "accounting.break.resolve";
 
-    /** The list's default and largest page. */
+    /** The list's collection name (`P17-TSK-122`), default and largest page. */
+    static final String COLLECTION = "accounting.breaks";
     static final int DEFAULT_LIMIT = 100;
     static final int MAX_LIMIT = 500;
 
@@ -74,10 +77,12 @@ public final class AccountingBreakDesk {
     @NonNull private final Clock clock;
 
     /**
-     * One keyset page of a period's breaks: the breaks in birth order and, when the page is full, the cursor the next
-     * page starts after ({@code after}) - so a run's thousand breaks can all be reached and decided (the review's M-4).
+     * One keyset page of a period's breaks (`API_CONVENTIONS.md` section 7, `P17-TSK-122`): the breaks in birth order and,
+     * when a look-ahead row says another page exists, its opaque {@code nextCursor} - absent on the last page - so a run's
+     * thousand breaks can all be reached and decided (the review's M-4).
      */
-    public record AccountingBreakPage(List<AccountingBreakView> breaks, String next) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record AccountingBreakPage(List<AccountingBreakView> items, String nextCursor) {}
 
     /** An act's receipt: the break as the act left it. */
     public record AccountingBreakReceipt(String id, String period, String status, boolean acknowledgementPending) {}
@@ -103,20 +108,22 @@ public final class AccountingBreakDesk {
             String acknowledgementProposedBy) {}
 
     /**
-     * One keyset page of a period's breaks in birth order - a read, unkeyed, in one transaction; {@code limit} 1 to 500,
-     * {@code after} the previous page's {@code next}. Recorded {@code accounting.BreakRead} in a transaction of its own
-     * before the answer (the review's M-5).
+     * One keyset page of a period's breaks in birth (id) order - a read, unkeyed, in one transaction; {@code limit}
+     * {@value #DEFAULT_LIMIT} unless named, {@value #MAX_LIMIT} at most and refused above, never reduced; the opaque
+     * {@code cursor} of the page before. One row more is read, and only it says another page exists. Recorded
+     * {@code accounting.BreakRead} in a transaction of its own before the answer (the review's M-5).
      */
-    public AccountingBreakPage list(String rawPeriod, String rawStatus, Integer rawLimit, String rawAfter) {
+    public AccountingBreakPage list(String rawPeriod, String rawStatus, String rawCursor, String rawLimit) {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
         YearMonth period = GeneralLedgerDesk.period(rawPeriod);
         Optional<BreakStatus> status = status(rawStatus);
-        int limit = limit(rawLimit);
-        Optional<AccountingBreakId> after = after(rawAfter);
-        List<AccountingBreakView> page = flow.door(READ_SPAN, () -> transactions.inTransaction(uow ->
-                breaks.list(uow, period, status, after, limit).stream().map(AccountingBreakDesk::view).toList()));
-        String next = page.size() == limit ? page.get(page.size() - 1).id() : null;
+        int limit = OperatorCollection.limit(rawLimit, DEFAULT_LIMIT, MAX_LIMIT);
+        Optional<AccountingBreakId> after = cursor(rawCursor);
+        List<AccountingBreakView> read = flow.door(READ_SPAN, () -> transactions.inTransaction(uow ->
+                breaks.list(uow, period, status, after, limit + 1).stream().map(AccountingBreakDesk::view).toList()));
+        List<AccountingBreakView> page = List.copyOf(read.subList(0, Math.min(limit, read.size())));
+        String next = read.size() > limit ? OperatorCollection.cursor(COLLECTION, page.get(page.size() - 1).id()) : null;
         recordRead(actor, correlation, PERIOD_TARGET, period.toString(), "door=list, period=" + period + ", status="
                 + status.map(Enum::name).orElse("ALL") + ", breaks=" + page.size() + ", page="
                 + (after.isPresent() ? "next" : "first"));
@@ -265,16 +272,15 @@ public final class AccountingBreakDesk {
         });
     }
 
-    /** The previous page's {@code next}: a break's id; anything else {@code api.ValidationFailed}. */
-    static Optional<AccountingBreakId> after(String raw) {
-        if (raw == null) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(AccountingBreakId.of(UUID.fromString(raw)));
-        } catch (IllegalArgumentException malformed) {
-            throw invalid("after is the next cursor of a previous page");
-        }
+    /** The break {@code cursor} names - the last one a page served - or none for the first page; anything else refused. */
+    static Optional<AccountingBreakId> cursor(String raw) {
+        return OperatorCollection.key(COLLECTION, raw, 1).map(key -> {
+            try {
+                return AccountingBreakId.of(UUID.fromString(key.get(0)));
+            } catch (RuntimeException unreadable) {
+                throw OperatorCollection.invalidCursor();
+            }
+        });
     }
 
     /** The domain's refusals, in the API's words. */
@@ -303,16 +309,6 @@ public final class AccountingBreakDesk {
         } catch (IllegalArgumentException unknown) {
             throw invalid("status is OPEN, ACKNOWLEDGED or RESOLVED");
         }
-    }
-
-    static int limit(Integer raw) {
-        if (raw == null) {
-            return DEFAULT_LIMIT;
-        }
-        if (raw < 1 || raw > MAX_LIMIT) {
-            throw invalid("a page holds 1 to " + MAX_LIMIT + " breaks");
-        }
-        return raw;
     }
 
     private static UUID entryId(String raw) {

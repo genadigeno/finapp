@@ -50,13 +50,16 @@ public class RegulatorySubmissionController {
         return desk.draft(idempotencyKey, body.obligationId(), body.periodId(), body.correctsSubmissionId(), body.reason());
     }
 
-    /** What a preparer must act on or know of, oldest first, a page at a time: everything live, a return rejected or undelivered with no correction, one overtaken by a reopen, and any holding a contrary answer. Audited. */
+    /**
+     * What a preparer must act on or know of, oldest first - recorded order, the id breaking the tie - a section 7 page ({@code limit} 1 to 100, default 50, refused above; {@code cursor} the previous page's {@code nextCursor}, absent on the last page): everything live, a return
+     * rejected or undelivered with no correction, one overtaken by a reopen, and any holding a contrary answer. Audited.
+     */
     @GetMapping
     @RequiresPermission(PermissionName.REGULATORY_REPORT_PREPARE)
     public RegulatorySubmissionDesk.RegulatorySubmissionStandingView listStandingRegulatorySubmissions(
-            @RequestParam(name = "after", required = false) String after,
-            @RequestParam(name = "limit", required = false) Integer limit) {
-        return desk.standing(after, limit);
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.standing(cursor, limit);
     }
 
     /** What this controller can decide: those validated, never their own. Audited. */

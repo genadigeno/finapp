@@ -49,7 +49,7 @@ public final class JdbcExpectationInquiries implements ExpectationInquiries {
 
     @Override
     public List<ExpectationRow> expectations(
-            Connection unitOfWork, ExpectationFilter filter, int limit) {
+            Connection unitOfWork, ExpectationFilter filter, Optional<ExpectationCursor> after, int limit) {
         StringBuilder sql = new StringBuilder(EXPECTATION_COLUMNS + " WHERE TRUE");
         List<Object> args = new ArrayList<>();
         filter.status().ifPresent(status -> {
@@ -61,6 +61,13 @@ public final class JdbcExpectationInquiries implements ExpectationInquiries {
         filter.sourceId().ifPresent(source -> {
             sql.append(" AND source_id = ?");
             args.add(source);
+        });
+        after.ifPresent(cursor -> {
+            // Resuming newest-first: everything strictly before the cursor's row in (opened_at, id) - the order's own key,
+            // so the walk is served by V028's index read backwards (P17-TSK-122).
+            sql.append(" AND (opened_at, id) < (?, ?)");
+            args.add(java.time.OffsetDateTime.ofInstant(cursor.openedAt(), java.time.ZoneOffset.UTC));
+            args.add(cursor.id());
         });
         sql.append(" ORDER BY opened_at DESC, id DESC LIMIT ?");
         args.add(limit);

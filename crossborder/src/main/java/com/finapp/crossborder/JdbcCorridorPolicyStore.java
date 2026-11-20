@@ -183,15 +183,24 @@ public final class JdbcCorridorPolicyStore implements CorridorPolicyStore {
     }
 
     @Override
-    public List<VersionView> versions(Connection unitOfWork, int limit) {
-        if (limit < 1 || limit > 100) {
-            throw new IllegalArgumentException("a version list is 1..100 long");
+    public List<VersionView> versions(Connection unitOfWork, Optional<Integer> beforeVersion, int limit) {
+        if (limit < 1 || limit > PAGE_READ_BOUND) {
+            throw new IllegalArgumentException("a version list is 1.." + PAGE_READ_BOUND + " long");
         }
+        Objects.requireNonNull(beforeVersion, "beforeVersion must not be null");
         List<VersionView> views = new ArrayList<>();
+        // The keyset (P17-TSK-122): version is UNIQUE, so its order is total and that constraint's index serves the top-N
+        // below a position; a proposal landing between two pages takes a higher number and is never walked.
         try (PreparedStatement select =
                 unitOfWork.prepareStatement(
-                        "SELECT " + VERSION_COLUMNS + " FROM crossborder.corridor_policy_version ORDER BY version DESC LIMIT ?")) {
-            select.setInt(1, limit);
+                        "SELECT " + VERSION_COLUMNS + " FROM crossborder.corridor_policy_version"
+                                + (beforeVersion.isPresent() ? " WHERE version < ?" : "")
+                                + " ORDER BY version DESC LIMIT ?")) {
+            int next = 1;
+            if (beforeVersion.isPresent()) {
+                select.setInt(next++, beforeVersion.get());
+            }
+            select.setInt(next, limit);
             try (ResultSet row = select.executeQuery()) {
                 while (row.next()) {
                     views.add(new VersionView(rehydrate(row), row.getTimestamp("proposed_at").toInstant(), List.of()));

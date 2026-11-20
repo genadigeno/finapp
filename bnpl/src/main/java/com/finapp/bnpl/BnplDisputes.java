@@ -97,7 +97,7 @@ public final class BnplDisputes {
     /** The operator queue's audit target type - its target id the status read (the gate's A7-2). */
     public static final String QUEUE_TARGET = "bnpl_dispute_queue";
 
-    /** The most disputes one page of the operator's queue serves. */
+    /** The most disputes one page of the operator's queue serves: the collection's maximum {@code limit} (`P17-TSK-122`). */
     public static final int QUEUE_PAGE = 100;
 
     /**
@@ -202,8 +202,8 @@ public final class BnplDisputes {
     /** What the operator's read shows: the dispute and its live proposal. */
     public record Investigated(BnplDispute dispute, Optional<BnplDisputeProposal> proposal) {}
 
-    /** One page of the operator's queue, and the cursor of the next when more remain. */
-    public record Queue(List<BnplDispute> disputes, Optional<BnplDisputeId> next) {
+    /** One page of the operator's queue, and the position of its last dispute when more remain. */
+    public record Queue(List<BnplDispute> disputes, Optional<BnplDisputeStore.QueuePosition> next) {
 
         public Queue {
             disputes = List.copyOf(Objects.requireNonNull(disputes, "disputes must not be null"));
@@ -620,25 +620,36 @@ public final class BnplDisputes {
      *
      * @throws SelfDealingRefused the operator has no party the platform knows
      */
-    public Queue queue(Connection unitOfWork, BnplDisputeStatus status, Optional<BnplDisputeId> after, Actor actor,
-            CorrelationId correlation) {
+    public Queue queue(Connection unitOfWork, BnplDisputeStatus status, Optional<BnplDisputeStore.QueuePosition> after,
+            int mostServed, Actor actor, CorrelationId correlation) {
         Objects.requireNonNull(status, "status");
         Objects.requireNonNull(after, "after");
         requirePerson(actor);
         if (status != BnplDisputeStatus.OPEN && status != BnplDisputeStatus.MERCHANT_RESPONDED) {
             throw new IllegalArgumentException("the queue is of the open disputes: OPEN or MERCHANT_RESPONDED");
         }
+        if (mostServed < 1 || mostServed > QUEUE_PAGE) {
+            throw new IllegalArgumentException("a queue page serves 1.." + QUEUE_PAGE + " disputes, not " + mostServed);
+        }
         UUID own = actingParties.partyOf(unitOfWork, actor)
                 .orElseThrow(() -> new SelfDealingRefused(QUEUE_TARGET, status.name(), "dispute queue read"));
-        List<BnplDispute> read = store.queue(unitOfWork, status, own, after, QUEUE_PAGE + 1);
-        boolean more = read.size() > QUEUE_PAGE;
-        List<BnplDispute> page = more ? read.subList(0, QUEUE_PAGE) : read;
-        Optional<BnplDisputeId> next = more ? Optional.of(page.get(page.size() - 1).id()) : Optional.empty();
+        List<BnplDispute> read = store.queue(unitOfWork, status, own, after, mostServed + 1);
+        boolean more = read.size() > mostServed;
+        List<BnplDispute> page = more ? read.subList(0, mostServed) : read;
+        Optional<BnplDisputeStore.QueuePosition> next =
+                more ? Optional.of(queuePosition(page.get(page.size() - 1), status)) : Optional.empty();
         audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, clock.instant(),
                 BnplAuditAction.DISPUTE_QUEUE_READ, QUEUE_TARGET, status.name(), Optional.empty(), AuditOutcome.SUCCEEDED,
                 correlation, Optional.of("queue read: " + page.size() + " dispute(s), status " + status
-                        + after.map(cursor -> ", after=" + cursor.value()).orElse("") + (more ? ", more remain" : ""))));
+                        + after.map(cursor -> ", after=" + cursor.id().value()).orElse("") + (more ? ", more remain" : ""))));
         return new Queue(page, next);
+    }
+
+    /** Where {@code dispute} stands in the queue of {@code status}: the instant it entered it, and its id. */
+    static BnplDisputeStore.QueuePosition queuePosition(BnplDispute dispute, BnplDisputeStatus status) {
+        Instant entered = (status == BnplDisputeStatus.OPEN ? dispute.openedAt() : dispute.merchantRespondedAt())
+                .orElseThrow(() -> new IllegalStateException("a queued dispute has entered its status"));
+        return new BnplDisputeStore.QueuePosition(entered, dispute.id());
     }
 
     // ------------------------------------------------------------------ the refusals' records

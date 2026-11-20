@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -51,11 +52,15 @@ public class RegulatoryObligationController {
                 .map(rule -> new RegulatoryObligationDesk.RegulatoryObligationRuleItem(rule.code(), rule.type(), rule.left(), rule.right())).toList(), body.reason()));
     }
 
-    /** The latest versions, newest first. Audited. */
+    /**
+     * The versions, newest first - proposed at descending, the id breaking the tie - a section 7 page ({@code limit} 1 to 100, default 50, refused above; {@code cursor} the previous page's {@code nextCursor}, absent on the last page). Audited.
+     */
     @GetMapping
     @RequiresPermission(PermissionName.REGULATORY_REPORT_PREPARE)
-    public List<RegulatoryObligationDesk.RegulatoryObligationSummaryView> listRegulatoryObligations() {
-        return desk.recent();
+    public RegulatoryObligationDesk.RegulatoryObligationPage listRegulatoryObligations(
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.recent(cursor, limit);
     }
 
     /** What this controller can decide: those proposed, never their own. Audited. */

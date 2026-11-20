@@ -300,9 +300,9 @@ class ReconciliationAdministrationDatabaseTest {
                 PRIVATE_SOURCE)).as("the replay proposed nothing new").isEqualTo(2);
 
         JsonNode relisted = json(get(proposer.token(), "/rule-sets?source=" + PRIVATE_CODE));
-        assertThat(relisted.path("truncated").booleanValue()).isFalse();
-        assertThat(relisted.path("versions").size()).isEqualTo(2);
-        JsonNode pending = relisted.path("versions").get(0);
+        assertThat(relisted.has("nextCursor")).as("one page holds both versions").isFalse();
+        assertThat(relisted.path("items").size()).isEqualTo(2);
+        JsonNode pending = relisted.path("items").get(0);
         assertThat(pending.path("ruleSetId").stringValue())
                 .as("newest first").isEqualTo(versionTwo.toString());
         assertThat(pending.path("status").stringValue()).isEqualTo("PROPOSED");
@@ -1488,7 +1488,7 @@ class ReconciliationAdministrationDatabaseTest {
     // ----------------------------------------------------------------- the rule-set JSON
 
     private static JsonNode versionNamed(JsonNode listed, UUID ruleSetId) {
-        JsonNode versions = listed.path("versions");
+        JsonNode versions = listed.path("items");
         for (int index = 0; index < versions.size(); index++) {
             if (ruleSetId.toString().equals(versions.get(index).path("ruleSetId").stringValue())) {
                 return versions.get(index);

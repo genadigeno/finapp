@@ -538,7 +538,7 @@ class RegulatorySubmissionDeskTest {
         assertThat(run.getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.ACCOUNTING_READ);
         assertThat(ReportRunController.class.getAnnotation(org.springframework.web.bind.annotation.RequestMapping.class).path()).containsExactly("/operator/accounting/report-runs");
         assertThat(run.getAnnotation(org.springframework.web.bind.annotation.GetMapping.class).path()).containsExactly("/{runId}");
-        Method lines = ReportRunLinesController.class.getMethod("readReportRunLines", String.class, String.class, String.class, String.class, String.class, Integer.class);
+        Method lines = ReportRunLinesController.class.getMethod("readReportRunLines", String.class, String.class, String.class, String.class, String.class, String.class);
         assertThat(lines.getAnnotation(RequiresPermission.class).value()).isEqualTo(PermissionName.ACCOUNTING_READ);
         assertThat(lines.getAnnotation(org.springframework.web.bind.annotation.GetMapping.class).value()).containsExactly("/{runId}/lines");
 
@@ -567,7 +567,7 @@ class RegulatorySubmissionDeskTest {
             assertThat(line.lineage().agreesWithTheRun()).as("the run's bytes are retained: the return still traces to what it read").isTrue();
         });
         assertThat(view.overtaken()).isTrue();
-        assertThat(as(PREPARER, () -> desk.standing(null, null)).submissions()).singleElement().satisfies(summary -> {
+        assertThat(as(PREPARER, () -> desk.standing(null, null)).items()).singleElement().satisfies(summary -> {
             assertThat(summary.monthMoved()).isTrue();
             assertThat(summary.overtaken()).isTrue();
             assertThat(summary.periodRevision()).isEqualTo(1);
@@ -582,7 +582,7 @@ class RegulatorySubmissionDeskTest {
         world.issued(JANUARY, RegulatoryWorld.body(90_00, 90_00, 50_00, 50_00));
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt correction = as(PREPARER, () -> desk.draft("d-2", obligation.value().toString(), january, sent.submissionId(), REASON));
         assertThat(as(PREPARER, () -> desk.read(sent.submissionId())).overtaken()).isTrue();
-        assertThat(as(PREPARER, () -> desk.standing(null, null)).submissions()).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::submissionId).contains(sent.submissionId());
+        assertThat(as(PREPARER, () -> desk.standing(null, null)).items()).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::submissionId).contains(sent.submissionId());
 
         // Acknowledged at the present revision, it does; the month still moved under the first.
         RegulatorySubmissionDesk.RegulatorySubmissionReceipt validated = as(PREPARER, () -> desk.validate("v-2", correction.submissionId()));
@@ -591,7 +591,7 @@ class RegulatorySubmissionDeskTest {
         RegulatorySubmissionDesk.RegulatorySubmissionView after = as(PREPARER, () -> desk.read(sent.submissionId()));
         assertThat(after.overtaken()).isFalse();
         assertThat(after.monthMoved()).isTrue();
-        assertThat(as(PREPARER, () -> desk.standing(null, null)).submissions()).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::submissionId).doesNotContain(sent.submissionId());
+        assertThat(as(PREPARER, () -> desk.standing(null, null)).items()).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::submissionId).doesNotContain(sent.submissionId());
     }
 
     @Test
@@ -618,14 +618,14 @@ class RegulatorySubmissionDeskTest {
 
         assertThat(as(APPROVER, desk::awaitingApproval)).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::submissionId).containsExactly(validated.submissionId());
         assertThat(as(PREPARER, desk::awaitingApproval)).isEmpty();
-        assertThat(as(PREPARER, () -> desk.standing(null, null)).submissions()).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::status).containsExactly("VALIDATED");
+        assertThat(as(PREPARER, () -> desk.standing(null, null)).items()).extracting(RegulatorySubmissionDesk.RegulatorySubmissionSummaryView::status).containsExactly("VALIDATED");
         assertThat(world.audit.stream().map(record -> record.changeSummary().orElse(""))).anyMatch(summary -> summary.contains("door=awaiting-approval")).anyMatch(summary -> summary.contains("door=standing"));
         assertThat(as(APPROVER, desk::awaitingApproval).get(0).toString()).doesNotContain("10000");
-        assertThat(as(PREPARER, () -> desk.standing(null, null)).submissions().get(0).toString()).doesNotContain("10000");
+        assertThat(as(PREPARER, () -> desk.standing(null, null)).items().get(0).toString()).doesNotContain("10000");
     }
 
     @Test
-    @DisplayName("the preparer's list comes a page at a time and says truthfully when more exist; a malformed or unknown cursor and a page out of bounds are refused on the contract; each read recorded")
+    @DisplayName("the preparer's list comes a section 7 page at a time and says truthfully when more exist; a malformed or foreign cursor and a page out of bounds are refused on the contract, reading and recording nothing; each read recorded (P17-TSK-122)")
     void thePreparersListIsPaged() {
         for (java.time.YearMonth month : List.of(java.time.YearMonth.of(2096, 2), java.time.YearMonth.of(2096, 3))) {
             String period = world.closed(month).value().toString();
@@ -635,20 +635,23 @@ class RegulatorySubmissionDeskTest {
         draft("d-1");
         world.audit.clear();
 
-        RegulatorySubmissionDesk.RegulatorySubmissionStandingView first = as(PREPARER, () -> desk.standing(null, 2));
-        assertThat(first.submissions()).hasSize(2);
-        assertThat(first.nextAfter()).isEqualTo(first.submissions().get(1).submissionId());
-        RegulatorySubmissionDesk.RegulatorySubmissionStandingView next = as(PREPARER, () -> desk.standing(first.nextAfter(), 2));
-        assertThat(next.submissions()).hasSize(1);
-        assertThat(next.nextAfter()).isNull();
+        RegulatorySubmissionDesk.RegulatorySubmissionStandingView first = as(PREPARER, () -> desk.standing(null, "2"));
+        assertThat(first.items()).hasSize(2);
+        assertThat(first.nextCursor()).isNotNull();
+        RegulatorySubmissionDesk.RegulatorySubmissionStandingView next = as(PREPARER, () -> desk.standing(first.nextCursor(), "2"));
+        assertThat(next.items()).hasSize(1);
+        assertThat(next.nextCursor()).isNull();
         assertThat(world.audit).hasSize(2);
         assertThat(world.audit.get(0).changeSummary().orElseThrow()).contains("page=first").contains("more=true");
         assertThat(world.audit.get(1).changeSummary().orElseThrow()).contains("page=next").contains("more=false");
 
-        refused(() -> as(PREPARER, () -> desk.standing("not-a-cursor", 2)), AccountingErrorCode.REGULATORY_SUBMISSION_INVALID);
-        refused(() -> as(PREPARER, () -> desk.standing(RegulatorySubmissionId.next(world.ids).value().toString(), 2)), AccountingErrorCode.REGULATORY_SUBMISSION_INVALID);
-        refused(() -> as(PREPARER, () -> desk.standing(null, 0)), AccountingErrorCode.REGULATORY_SUBMISSION_INVALID);
-        refused(() -> as(PREPARER, () -> desk.standing(null, 101)), AccountingErrorCode.REGULATORY_SUBMISSION_INVALID);
+        for (Runnable refusedPage : List.<Runnable>of(() -> as(PREPARER, () -> desk.standing("not-a-cursor", "2")),
+                () -> as(PREPARER, () -> desk.standing(RegulatorySubmissionId.next(world.ids).value().toString(), "2")),
+                () -> as(PREPARER, () -> desk.standing(com.finapp.app.api.OperatorCollection.cursor("accounting.breaks", RegulatorySubmissionId.next(world.ids).value().toString()), "2")),
+                () -> as(PREPARER, () -> desk.standing(null, "0")), () -> as(PREPARER, () -> desk.standing(null, "101")))) {
+            assertThatThrownBy(refusedPage::run).isInstanceOfSatisfying(ApiException.class, refused -> assertThat(refused.errorCode()).isEqualTo(com.finapp.platform.api.PlatformErrorCode.VALIDATION_FAILED));
+        }
+        assertThat(world.audit).as("a refused page records nothing").hasSize(2);
     }
 
     @Test

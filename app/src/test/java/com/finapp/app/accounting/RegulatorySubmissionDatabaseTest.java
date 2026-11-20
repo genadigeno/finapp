@@ -829,7 +829,7 @@ class RegulatorySubmissionDatabaseTest {
         assertThat(after.contraryAnswers()).isEqualTo(1);
         List<RegulatorySubmissionStore.AnswerRow> kept = inScope(Actor.SYSTEM, uow -> STORE.answers(uow, sent.id(), RegulatorySubmissions.ANSWERS_SERVED));
         assertThat(kept).hasSize(2);
-        List<RegulatorySubmissionStore.Row> standing = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.empty(), 100));
+        List<RegulatorySubmissionStore.Row> standing = standing(Optional.empty(), 100);
         assertThat(standing).as("a contrary answer: a person can find which return").extracting(RegulatorySubmissionStore.Row::id).contains(sent.id());
         assertThat(kept.get(1).raw()).as("the bytes, verbatim: not text").isEqualTo(contrary);
         assertThat(kept.get(1).flag()).contains(RegulatorySubmissionStore.Flag.CONTRARY);
@@ -1003,13 +1003,18 @@ class RegulatorySubmissionDatabaseTest {
     }
 
     private static List<RegulatorySubmissionId> walkFromTheStart() {
-        List<RegulatorySubmissionStore.Row> rows = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.empty(), 1000));
-        return rows.stream().map(RegulatorySubmissionStore.Row::id).toList();
+        return standing(Optional.empty(), 1000).stream().map(RegulatorySubmissionStore.Row::id).toList();
     }
 
-    private static List<RegulatorySubmissionId> walkAfter(RegulatorySubmissionId cursor) {
-        List<RegulatorySubmissionStore.Row> rows = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.of(cursor), 1000));
-        return rows.stream().map(RegulatorySubmissionStore.Row::id).toList();
+    /** The walk after {@code served}'s position - its recorded order and id, the cursor a page ending on it names (`P17-TSK-122`). */
+    private static List<RegulatorySubmissionId> walkAfter(RegulatorySubmissionId served) {
+        RegulatorySubmissionStore.StandingCursor cursor = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.empty(), 1000)).stream()
+                .filter(placed -> placed.row().id().equals(served)).findFirst().orElseThrow().cursor();
+        return standing(Optional.of(cursor), 1000).stream().map(RegulatorySubmissionStore.Row::id).toList();
+    }
+
+    private static List<RegulatorySubmissionStore.Row> standing(Optional<RegulatorySubmissionStore.StandingCursor> after, int limit) {
+        return inScope(Actor.SYSTEM, uow -> STORE.standing(uow, after, limit)).stream().map(RegulatorySubmissionStore.Placed::row).toList();
     }
 
     private static RegulatorySubmissionStore.NewAnswer unknownAnswer(UUID id, Case sent) {
@@ -1058,7 +1063,7 @@ class RegulatorySubmissionDatabaseTest {
         reopen(sent.month());
         assertThat(attention().overtaken()).isEqualTo(before.overtaken() + 1);
         assertThat(rowOf(sent.id()).overtaken()).isTrue();
-        List<RegulatorySubmissionStore.Row> standing = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.empty(), 100));
+        List<RegulatorySubmissionStore.Row> standing = standing(Optional.empty(), 100);
         assertThat(standing).extracting(RegulatorySubmissionStore.Row::id).contains(sent.id());
 
         PeriodCloseFixture.closed(sent.month());
@@ -1104,9 +1109,10 @@ class RegulatorySubmissionDatabaseTest {
         assertThat(RegulatorySubmissions.nonDeliveryOpen(rowOf(approved.id()))).isTrue();
 
         // A page and the next, on what is frozen: no row twice.
-        List<RegulatorySubmissionStore.Row> first = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.empty(), 2));
+        List<RegulatorySubmissionStore.Placed> placed = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.empty(), 2));
+        List<RegulatorySubmissionStore.Row> first = placed.stream().map(RegulatorySubmissionStore.Placed::row).toList();
         assertThat(first).hasSize(2);
-        List<RegulatorySubmissionStore.Row> next = inScope(Actor.SYSTEM, uow -> STORE.standing(uow, Optional.of(first.get(1).id()), 2));
+        List<RegulatorySubmissionStore.Row> next = standing(Optional.of(placed.get(1).cursor()), 2);
         assertThat(next).extracting(RegulatorySubmissionStore.Row::id).doesNotContain(first.get(0).id(), first.get(1).id());
 
         Case validated = validated(drafted());

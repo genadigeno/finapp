@@ -34,7 +34,7 @@ class JournalReadsTest {
     }
 
     @Test
-    @DisplayName("a drill-down page names its keys and holds 1 to 500 lines")
+    @DisplayName("a drill-down read names its keys and holds 1 to 501 lines: a page of at most 500 and its look-ahead row (P17-TSK-122)")
     void aPageIsBounded() {
         JournalReads.Range range = JournalReads.Range.of(YearMonth.of(2026, 11));
         assertThatThrownBy(() -> new JournalReads.LineQuery(range, Set.of(), "EUR", Optional.empty(), 10))
@@ -42,9 +42,9 @@ class JournalReadsTest {
         assertThatThrownBy(() -> new JournalReads.LineQuery(range, Set.of("FEE_REVENUE/OPERATIONAL"), "EUR",
                 Optional.empty(), 0)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new JournalReads.LineQuery(range, Set.of("FEE_REVENUE/OPERATIONAL"), "EUR",
-                Optional.empty(), 501)).isInstanceOf(IllegalArgumentException.class);
-        assertThat(new JournalReads.LineQuery(range, Set.of("FEE_REVENUE/OPERATIONAL"), "EUR", Optional.empty(), 500)
-                .limit()).isEqualTo(500);
+                Optional.empty(), 502)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(new JournalReads.LineQuery(range, Set.of("FEE_REVENUE/OPERATIONAL"), "EUR", Optional.empty(), 501)
+                .limit()).isEqualTo(JournalReads.LineQuery.MAX_READ);
     }
 
     @Test

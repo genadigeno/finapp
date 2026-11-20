@@ -110,7 +110,7 @@ class RoleConflictDatabaseTest {
         }
         String flow = "p17-016-review-" + UUID.randomUUID();
 
-        IdentityAdministration.SodConflicts review = as(admin, flow, uow -> administration.sodConflicts(uow, 200));
+        IdentityAdministration.SodConflicts review = as(admin, flow, uow -> administration.sodConflicts(uow, java.util.Optional.empty(), 200));
 
         List<String> named = review.conflicts().stream().filter(conflict -> conflict.identityId().equals(legacy))
                 .map(conflict -> conflict.first() + "/" + conflict.second()).toList();

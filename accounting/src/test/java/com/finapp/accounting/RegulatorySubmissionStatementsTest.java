@@ -71,7 +71,7 @@ class RegulatorySubmissionStatementsTest {
     @DisplayName("the submissions' two orderings are the insertion sequence, no stamp: the keyset, its first page and the newest answers, inner order and outer (P14-REM-009, G-9)")
     void theOrderingsAreTheInsertionSequence() {
         assertThat(JdbcRegulatorySubmissionStore.STANDING_SQL).endsWith("ORDER BY s.recorded_order, s.id LIMIT ?");
-        assertThat(JdbcRegulatorySubmissionStore.STANDING_AFTER_SQL).endsWith("AND (s.recorded_order, s.id) > (SELECT l.recorded_order, l.id FROM accounting.regulatory_submission l WHERE l.id = ?) ORDER BY s.recorded_order, s.id LIMIT ?");
+        assertThat(JdbcRegulatorySubmissionStore.STANDING_AFTER_SQL).endsWith("AND (s.recorded_order, s.id) > (?, ?) ORDER BY s.recorded_order, s.id LIMIT ?");
         assertThat(JdbcRegulatorySubmissionStore.ANSWERS_SQL).contains("ORDER BY recorded_order DESC, id DESC LIMIT ?").endsWith("newest ORDER BY recorded_order, id");
         for (String statement : List.of(JdbcRegulatorySubmissionStore.STANDING_SQL, JdbcRegulatorySubmissionStore.STANDING_AFTER_SQL, JdbcRegulatorySubmissionStore.ANSWERS_SQL)) {
             assertThat(statement.substring(statement.indexOf("ORDER BY"))).doesNotContain("prepared_at").doesNotContain("received_at");
@@ -125,7 +125,7 @@ class RegulatorySubmissionStatementsTest {
         assertThat(placeholders(JdbcRegulatorySubmissionStore.ANSWERS_SQL)).isEqualTo(2);
         assertThat(placeholders(JdbcRegulatorySubmissionStore.ANSWER_COUNT_SQL)).isEqualTo(1);
         assertThat(placeholders(JdbcRegulatorySubmissionStore.STANDING_SQL)).isEqualTo(1);
-        assertThat(placeholders(JdbcRegulatorySubmissionStore.STANDING_AFTER_SQL)).isEqualTo(2);
+        assertThat(placeholders(JdbcRegulatorySubmissionStore.STANDING_AFTER_SQL)).isEqualTo(3);
         assertThat(placeholders(JdbcRegulatoryObligationStore.INSERT_SQL)).isEqualTo(11);
         assertThat(placeholders(JdbcRegulatoryObligationStore.ACTIVATE_SQL)).isEqualTo(4);
     }

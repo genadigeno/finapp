@@ -1,5 +1,6 @@
 package com.finapp.app.accounting;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.accounting.AccountingErrorCode;
 import com.finapp.accounting.AccountingReasons;
 import com.finapp.accounting.RegulatoryObligationConfiguration;
@@ -7,6 +8,7 @@ import com.finapp.accounting.RegulatoryObligationId;
 import com.finapp.accounting.RegulatoryObligationStore;
 import com.finapp.accounting.RegulatoryObligations;
 import com.finapp.accounting.RegulatoryRuleType;
+import com.finapp.app.api.OperatorCollection;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
 import com.finapp.platform.idempotency.CommandResult;
@@ -22,6 +24,7 @@ import java.sql.Connection;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -39,6 +42,11 @@ public final class RegulatoryObligationDesk {
 
     static final String ACT_SPAN = "accounting.regulatory.obligation";
     static final String READ_SPAN = "accounting.regulatory.obligation.read";
+
+    /** The obligation list's collection name, default and largest page (`P17-TSK-122`). */
+    static final String COLLECTION = "accounting.regulatory-obligations";
+    static final int PAGE_DEFAULT = 50;
+    static final int PAGE_MAXIMUM = 100;
 
     @NonNull private final RegulatoryObligations obligations;
     @NonNull private final IdempotentExecutor executor;
@@ -58,6 +66,10 @@ public final class RegulatoryObligationDesk {
 
     /** An act's receipt. */
     public record RegulatoryObligationReceipt(String obligationId, String status, String standing, String configurationSha256) {}
+
+    /** A page of the obligation list (`API_CONVENTIONS.md` section 7): {@code nextCursor} absent on the last page. */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record RegulatoryObligationPage(List<RegulatoryObligationSummaryView> items, String nextCursor) {}
 
     /** A version in a list. */
     public record RegulatoryObligationSummaryView(String obligationId, String standing, String jurisdictionCode, String formCode, int formVersion, String status, String configurationSha256, String proposedAt,
@@ -138,13 +150,35 @@ public final class RegulatoryObligationDesk {
         return view(view, withReason);
     }
 
-    /** The latest versions. Recorded before it is served. */
-    public List<RegulatoryObligationSummaryView> recent() {
+    /**
+     * A page of the versions, newest first - proposed at descending, the id breaking the tie (`P17-TSK-122`; `API_CONVENTIONS.md` section 7): {@code limit} {@value #PAGE_DEFAULT} unless named, {@value #PAGE_MAXIMUM} at most and refused above, never reduced; the opaque
+     * {@code cursor} of the page before. A refused parameter reads and records nothing. Recorded before it is served.
+     */
+    public RegulatoryObligationPage recent(String rawCursor, String rawLimit) {
+        int size = OperatorCollection.limit(rawLimit, PAGE_DEFAULT, PAGE_MAXIMUM);
+        Optional<RegulatoryObligationStore.ObligationCursor> after = cursor(rawCursor);
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        List<RegulatoryObligationStore.Row> rows = flow.door(READ_SPAN, () -> guarded(() -> transactions.inTransaction(obligations::recent)));
-        recordRead("recent", "door=recent, rows=" + rows.size(), actor, correlation);
-        return rows.stream().map(RegulatoryObligationDesk::summary).toList();
+        List<RegulatoryObligationStore.Row> rows = flow.door(READ_SPAN, () -> guarded(() -> transactions.inTransaction(uow -> obligations.recent(uow, after, size + 1))));
+        List<RegulatoryObligationStore.Row> served = rows.subList(0, Math.min(size, rows.size()));
+        String next = null;
+        if (rows.size() > size) {
+            RegulatoryObligationStore.Row tail = served.get(served.size() - 1);
+            next = OperatorCollection.cursor(COLLECTION, tail.proposedAt().toString(), tail.id().value().toString());
+        }
+        recordRead("recent", "door=recent, rows=" + served.size() + ", page=" + (after.isPresent() ? "next" : "first") + ", more=" + (next != null), actor, correlation);
+        return new RegulatoryObligationPage(served.stream().map(RegulatoryObligationDesk::summary).toList(), next);
+    }
+
+    /** The position {@code cursor} names in the obligation list, or none for the first page; anything else refused. */
+    static Optional<RegulatoryObligationStore.ObligationCursor> cursor(String cursor) {
+        return OperatorCollection.key(COLLECTION, cursor, 2).map(key -> {
+            try {
+                return new RegulatoryObligationStore.ObligationCursor(Instant.parse(key.get(0)), RegulatoryObligationId.of(UUID.fromString(key.get(1))));
+            } catch (RuntimeException unreadable) {
+                throw OperatorCollection.invalidCursor();
+            }
+        });
     }
 
     /** What this controller can decide: never their own. Recorded before it is served. */

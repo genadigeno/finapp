@@ -64,8 +64,10 @@ public final class GeneralLedger {
     }
 
     /**
-     * One GL account's activity in {@code currency}: its figure and the page of its lines after {@code after}, both from
-     * {@code snapshot}. A code the version does not hold is {@link GlAccountNotFound}.
+     * One GL account's activity in {@code currency}: its figure and the page of at most {@code limit} lines after
+     * {@code after}, both from {@code snapshot}; one line more is read, and its presence alone is what sets {@code next}
+     * (`P17-TSK-122`: a full last page no longer promises a page that is empty). A code the version does not hold is
+     * {@link GlAccountNotFound}.
      */
     public GlActivity activity(Connection snapshot, PinnedMapping mapping, String code, String currency,
             Optional<JournalReads.LineCursor> after, int limit) {
@@ -83,10 +85,13 @@ public final class GeneralLedger {
         if (keys.isEmpty()) {
             return new GlActivity(mapping, figure, List.of(), Optional.empty());
         }
-        List<JournalReads.Line> page = journal.lines(snapshot,
-                new JournalReads.LineQuery(range, keys, currency, after, limit));
+        if (limit < 1 || limit > JournalReads.LineQuery.MAX_LIMIT) {
+            throw new IllegalArgumentException("a drill-down page holds 1 to " + JournalReads.LineQuery.MAX_LIMIT + " lines");
+        }
+        List<JournalReads.Line> read = journal.lines(snapshot,
+                new JournalReads.LineQuery(range, keys, currency, after, limit + 1));
         JournalReads.Line previous = null;
-        for (JournalReads.Line line : page) {
+        for (JournalReads.Line line : read) {
             // The drill-down is the figure's selection or it proves nothing: a line outside it is the adapter's defect.
             if (!keys.contains(line.key()) || !line.currency().equals(currency) || !range.holds(line.postingDate())
                     || after.map(cursor -> !cursor.precedes(line)).orElse(false)
@@ -95,8 +100,12 @@ public final class GeneralLedger {
             }
             previous = line;
         }
-        Optional<JournalReads.LineCursor> next = page.size() == limit && previous != null
-                ? Optional.of(previous.cursor())
+        if (read.size() > limit + 1) {
+            throw new IllegalStateException("the journal served more drill-down lines than were asked for");
+        }
+        List<JournalReads.Line> page = read.subList(0, Math.min(limit, read.size()));
+        Optional<JournalReads.LineCursor> next = read.size() > limit
+                ? Optional.of(page.get(page.size() - 1).cursor())
                 : Optional.empty();
         return new GlActivity(mapping, figure, page, next);
     }

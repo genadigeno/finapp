@@ -226,7 +226,8 @@ class RegulatoryObligationDeskTest {
 
         assertThat(as(APPROVER, desk::awaitingActivation)).extracting(RegulatoryObligationDesk.RegulatoryObligationSummaryView::obligationId).containsExactly(proposed.obligationId());
         assertThat(as(PREPARER, desk::awaitingActivation)).isEmpty();
-        assertThat(as(PREPARER, desk::recent)).hasSize(1);
+        assertThat(as(PREPARER, () -> desk.recent(null, null)).items()).hasSize(1);
+        assertThat(as(PREPARER, () -> desk.recent(null, null)).nextCursor()).as("one version: the last page").isNull();
         refused(() -> as(PREPARER, () -> desk.read("not-a-uuid")), AccountingErrorCode.NOT_FOUND);
         refused(() -> as(PREPARER, () -> desk.read(RegulatoryObligationId.next(world.ids).value().toString())), AccountingErrorCode.NOT_FOUND);
 
@@ -237,7 +238,7 @@ class RegulatoryObligationDeskTest {
         assertThatThrownBy(() -> as(PREPARER, () -> desk.read(proposed.obligationId()))).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
         assertThatThrownBy(() -> as(APPROVER, () -> desk.attestation(proposed.obligationId()))).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
         assertThatThrownBy(() -> as(APPROVER, desk::awaitingActivation)).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
-        assertThatThrownBy(() -> as(PREPARER, desk::recent)).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
+        assertThatThrownBy(() -> as(PREPARER, () -> desk.recent(null, null))).isInstanceOf(IllegalStateException.class).hasMessageContaining("audit");
     }
 
     private final class Claims implements IdempotencyRecordStore<Connection> {

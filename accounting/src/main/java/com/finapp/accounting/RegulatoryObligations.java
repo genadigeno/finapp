@@ -238,9 +238,16 @@ public final class RegulatoryObligations {
         return new View(row, RegulatoryObligationConfiguration.parse(row.configuration()), adapters.named(row.adapter()).filter(adapter -> adapter.declares(row.jurisdiction())).isPresent());
     }
 
-    /** The latest versions, newest first. */
-    public List<RegulatoryObligationStore.Row> recent(Connection unitOfWork) {
-        return store.recent(unitOfWork, LIST_LIMIT);
+    /**
+     * At most {@code limit} versions, newest first, after {@code after} when given (`P17-TSK-122`): the caller's page and, when
+     * it asks for one more, its look-ahead row.
+     */
+    public List<RegulatoryObligationStore.Row> recent(Connection unitOfWork, Optional<RegulatoryObligationStore.ObligationCursor> after, int limit) {
+        Objects.requireNonNull(after, "after");
+        if (limit < 1 || limit > LIST_LIMIT + 1) {
+            throw new IllegalArgumentException("a read of the obligations holds 1 to " + (LIST_LIMIT + 1) + " versions");
+        }
+        return store.recent(unitOfWork, after, limit);
     }
 
     /**
