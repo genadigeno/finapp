@@ -273,4 +273,31 @@ public class MerchantBeans {
                 new TransactionTemplate(transactionManager),
                 dataSource);
     }
+
+    /**
+     * The operator's merchant collections (`P17-TSK-033`): the merchants, a merchant's payouts and its transactions, each a §7
+     * page; the money reads recorded in the read's own transaction.
+     */
+    @Bean
+    MerchantCollectionDesk merchantCollectionDesk(
+            com.finapp.merchant.MerchantPayoutStore<Connection> merchantPayoutStore,
+            com.finapp.merchant.PayoutDestinationStore<Connection> payoutDestinationStore,
+            MerchantTransactionReport merchantTransactionReport,
+            PlatformTransactionManager transactionManager,
+            DataSource dataSource,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new MerchantCollectionDesk(
+                new com.finapp.merchant.JdbcMerchantCollections(),
+                new JdbcMerchantStore(),
+                merchantPayoutStore,
+                payoutDestinationStore,
+                merchantTransactionReport,
+                new TransactionTemplate(transactionManager),
+                dataSource,
+                auditWriter,
+                ids,
+                clock);
+    }
 }

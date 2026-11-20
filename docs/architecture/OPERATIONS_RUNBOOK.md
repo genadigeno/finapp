@@ -5971,6 +5971,18 @@ past 1,000 settled lines stores a new one in a savepoint that never fails it. Th
   No `Seq Scan` in any of them, and no full `Sort` but the rare account's own rows, so a page costs its own rows. The reads run
   on the GL's bounded snapshot (`GlSnapshots`, 10 s a statement): a statement past it answers `503`, nothing served and nothing
   recorded - narrow the window or the filters. They stay on the application's pool, never a replica (ADR-0129).
+- **Before merchant `V018` runs on a large payout table** (`P17-TSK-033`). Its index serves one merchant's payouts, newest
+  first. It holds `SHARE` on `merchant.merchant_payout` while it reads the table, and every payout dispatch inserts there, so build
+  it first, by hand, outside a transaction, by this name. The migration's `IF NOT EXISTS` then keeps it:
+  `CREATE INDEX CONCURRENTLY merchant_payout_by_merchant ON merchant.merchant_payout (merchant_id, created_at, id);`. A failed
+  build leaves an `INVALID` index: drop it and build again. **The plan's shape**, recorded by app's `MerchantListsApiDatabaseTest`
+  with sequential scans disabled in a transaction it rolls back (2026-11-20): `Limit -> Index Scan Backward using
+  merchant_payout_by_merchant`, the merchant - and on a continued page the keyset row `ROW(created_at, id) < ROW(...)` - the
+  index condition, no `Sort`. A plan measured on a large table, as `-020`'s and `-022`'s were, is owed. The merchants' list
+  reads `merchant.merchant` whole and sorts it: a table that grows one onboarding at a time. The transactions' page reads the
+  window's statement of the merchant's payables (`StatementDerivation`, `V038`'s checkpoint and `journal_line_by_account`) and
+  orders it in memory - the merchant statement's own read and bound. They stay on the application's pool, never a replica
+  (ADR-0129).
 
 ### 11.49 The connection budget at ten replicas, the autoscaler's metric on `kind`, and a pooler refused (`P16-TSK-009`, ADR-0134)
 

@@ -5435,6 +5435,18 @@ class OwnershipIsScopedTest {
                                         + " (INV-MER-01). FOR UPDATE is the serialization"
                                         + " point, never the ownership check.")),
                     Map.entry(
+                            "com.finapp.merchant.JdbcMerchantCollections.payouts",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-033. One merchant's payouts, a keyset page with merchant_id = ? in the"
+                                        + " statement. The merchant comes from the URL of GET /v1/operator/merchants/"
+                                        + "{merchantId}/payouts and names a COUNTERPARTY, not the caller -"
+                                        + " JdbcMerchantStore.read's reasoning: no ownership predicate to check, and"
+                                        + " @RequiresPermission(MERCHANT_ADMINISTER) at the boundary stands in for it,"
+                                        + " asserted with nothing served or recorded by MerchantListsApiDatabaseTest's"
+                                        + " wrong-population refusal. The merchant's own payouts over its key are"
+                                        + " JdbcMerchantPayoutStore.find's, OWNER_SCOPED - a different door.")),
+                    Map.entry(
                             "com.finapp.merchant.JdbcMerchantStore.read",
                             new Entry(
                                     Scope.ADMINISTERED,

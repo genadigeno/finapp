@@ -169,6 +169,18 @@ public class MerchantPayoutOperations {
     /** The row's frozen facts and the status to report — the judged one for an initiation. */
     private PayoutView render(
             Connection unitOfWork, MerchantPayout payout, MerchantPayoutStatus status) {
+        return render(destinations, unitOfWork, payout, status);
+    }
+
+    /**
+     * One payout as its merchant reads it - the operator's collection's rendering too (`P17-TSK-033`), so the two never
+     * describe one payout two ways.
+     */
+    static PayoutView render(
+            PayoutDestinationStore<Connection> destinations,
+            Connection unitOfWork,
+            MerchantPayout payout,
+            MerchantPayoutStatus status) {
         String suffix =
                 destinations.find(unitOfWork, payout.merchantId(), payout.destinationId())
                         .map(PayoutDestination::displaySuffix)

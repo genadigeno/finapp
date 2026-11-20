@@ -554,6 +554,9 @@ record nothing.
 | `merchant.BnplEnablementWithdrawn` | **Yes** | An operator withdrew a merchant's BNPL enablement - terminal; financed purchases are untouched; the reason is required. |
 | `merchant.BnplEnablementApprovalRefused` | No | The proposer of a merchant's BNPL enablement tried to approve it and was refused (INV-AUD-04); recorded FAILED in a transaction of its own. |
 | `merchant.BnplFeeScheduleAssigned` | **Yes** | An operator assigned a merchant's BNPL product to a fee schedule whose versions return their fee on refund; the record names the merchant, the product and both schedules; the reason is required. |
+| `merchant.PayoutsListed` | No | A holder of `MERCHANT_ADMINISTER` was served a page of one merchant's payouts (`P17-TSK-033`; `GET /v1/operator/merchants/{merchantId}/payouts`): a counterparty's money read across tenants by permission, recorded in the read's own transaction so no page is served unrecorded. Target the merchant; the summary whether the page continued a walk, how many it served and whether more remain - never an amount. |
+| `merchant.PayoutRead` | No | A holder of `MERCHANT_ADMINISTER` was served one of a merchant's payouts (`P17-TSK-033`; `GET /v1/operator/merchants/{merchantId}/payouts/{payoutId}`), recorded in the read's own transaction; another merchant's, an unknown or a malformed payout records nothing. Target the payout; the summary its merchant and status - never an amount. |
+| `merchant.TransactionsListed` | No | A holder of `MERCHANT_ADMINISTER` was served a page of one merchant's transactions - the movements on its payable (`P17-TSK-033`; `GET /v1/operator/merchants/{merchantId}/transactions`), recorded in the read's own transaction. Target the merchant; the summary the window, whether the page continued a walk, how many it served and whether more remain - never an amount. The merchant's own statement over its key stays unrecorded. |
 
 The three pricing actions arrive with `P6-TSK-004`, and their reason split is the
 `MerchantApiKeyIssued`/`Revoked` split restated: **creating a named schedule needs no reason**
@@ -578,7 +581,11 @@ its payout destinations and API keys, its fee schedule. Each serves what the ope
 where the column is partial (a destination's suffix, never its reference), and a denied permission is the interceptor's own
 record, `identity.AuthorizationDenied`. `P17-TSK-114` kept the rule for the approver's read of an open destination change
 (`GET /v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}`, `PAYOUT_DESTINATION_APPROVE`), and for the
-proposer and issuer it names on those views - "audited as the merchant reads are" (`BACKLOG.md`).
+proposer and issuer it names on those views - "audited as the merchant reads are" (`BACKLOG.md`). `P17-TSK-033` kept it
+for the merchants' list, which serves what one merchant's read serves. **A merchant's money is another matter**: its payouts
+and its transactions, read by an operator across tenants by permission, are each recorded in the read's own transaction -
+every page `merchant.PayoutsListed` or `merchant.TransactionsListed`, every payout `merchant.PayoutRead` - while the merchant's
+own reads of the same money over its key stay unrecorded.
 
 **One of the three payout actions requires a reason, and it is the operator's**
 (`P6-TSK-012`, ADR-0057). A merchant paying out its own payable with its own key is doing the

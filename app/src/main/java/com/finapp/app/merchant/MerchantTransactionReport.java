@@ -9,6 +9,7 @@ import com.finapp.ledger.JournalEntryId;
 import com.finapp.ledger.JournalEntryType;
 import com.finapp.ledger.StatementDerivation;
 import com.finapp.merchant.AuthenticatedMerchant;
+import com.finapp.merchant.MerchantId;
 import com.finapp.merchant.MerchantPayable;
 import com.finapp.payments.PaymentAttempt;
 import com.finapp.payments.PaymentAttemptId;
@@ -17,6 +18,7 @@ import com.finapp.payments.PaymentIntentId;
 import com.finapp.payments.Refund;
 import com.finapp.payments.RefundId;
 import com.finapp.payments.RefundStore;
+import com.finapp.sharedkernel.money.CurrencyCode;
 import com.finapp.sharedkernel.money.Money;
 import java.sql.Connection;
 import java.time.LocalDate;
@@ -141,6 +143,29 @@ public final class MerchantTransactionReport {
     /** One currency's movements, between an opening and a closing they reconcile to. */
     public record Section(Money opening, List<Movement> movements, Money closing) {}
 
+    /**
+     * Where a page of the operator's movement list resumes (`P17-TSK-033`): after the movement of {@code entry} on the payable
+     * in {@code currency}, posted on {@code postingDate}.
+     */
+    public record MovementCursor(LocalDate postingDate, UUID entry, CurrencyCode currency) {
+        public MovementCursor {
+            Objects.requireNonNull(postingDate, "postingDate must not be null");
+            Objects.requireNonNull(entry, "entry must not be null");
+            Objects.requireNonNull(currency, "currency must not be null");
+        }
+    }
+
+    /** One movement, and the currency of the merchant's payable it moved (`P17-TSK-033`). */
+    public record PlacedMovement(CurrencyCode currency, Movement movement) {}
+
+    /** One entry's lines on one of the merchant's payables: a movement before it is read for what it was. */
+    record EntryLines(
+            CurrencyCode currency,
+            JournalEntryId entry,
+            LocalDate postingDate,
+            List<StatementDerivation.StatementLine> lines,
+            Money zeroShape) {}
+
     @NonNull private final StatementDerivation<Connection> statements;
     @NonNull private final PaymentAttemptStore<Connection> attempts;
     @NonNull private final RefundStore<Connection> refunds;
@@ -187,6 +212,80 @@ public final class MerchantTransactionReport {
                         statements.statementsFor(uow, tenant, from, to, MerchantPayable.NAMESPACES).stream()
                                 .map(statement -> section(uow, tenant, statement))
                                 .toList());
+    }
+
+    /**
+     * The operator's page of {@code merchant}'s movements posted in {@code [from, to]} (`P17-TSK-033`, gap G-52): at most
+     * {@code limit} after {@code after}, in the list's declared order - posting date descending, then the journal entry
+     * descending, then the payable's currency ascending - each read for what it was exactly as {@link #report} reads it, and
+     * only the page's own entries are. In the caller's unit of work, so its record commits beside the read.
+     *
+     * <p><strong>A list, not a statement.</strong> No opening and no closing, and no page claims to sum to anything: the
+     * period-as-the-page reasoning above is the statement's, whose pages must reconcile inside one snapshot. A page is exact
+     * for what was committed when it was read; a movement posted later inside a range a walk already served is in no later
+     * page of that walk, and a fresh walk shows it. The window bounds the read: the caller holds it to
+     * {@link #MAX_PERIOD_DAYS}.
+     */
+    public List<PlacedMovement> page(
+            Connection uow,
+            MerchantId merchant,
+            LocalDate from,
+            LocalDate to,
+            Optional<MovementCursor> after,
+            int limit) {
+        Objects.requireNonNull(merchant, "merchant must not be null");
+        Objects.requireNonNull(after, "after must not be null");
+        UUID tenant = merchant.value();
+        return pageOf(entries(statements.statementsFor(uow, tenant, from, to, MerchantPayable.NAMESPACES)), after, limit)
+                .stream()
+                .map(group -> new PlacedMovement(
+                        group.currency(), movement(uow, tenant, group.lines(), group.zeroShape())))
+                .toList();
+    }
+
+    /** Each statement's lines, grouped by journal entry - one movement per entry per payable, as a section groups them. */
+    static List<EntryLines> entries(List<StatementDerivation.AccountStatement> statements) {
+        List<EntryLines> entries = new ArrayList<>();
+        for (StatementDerivation.AccountStatement statement : statements) {
+            Map<JournalEntryId, List<StatementDerivation.StatementLine>> byEntry = new LinkedHashMap<>();
+            for (StatementDerivation.StatementLine line : statement.lines()) {
+                byEntry.computeIfAbsent(line.entry(), entry -> new ArrayList<>()).add(line);
+            }
+            byEntry.forEach((entry, lines) -> entries.add(new EntryLines(
+                    statement.opening().currency(), entry, lines.get(0).postingDate(), List.copyOf(lines),
+                    statement.opening())));
+        }
+        return entries;
+    }
+
+    /**
+     * The page of {@code entries} after {@code after}, at most {@code limit}, in the declared total order. An entry is compared
+     * by its id's canonical text - the database's own order for a {@code uuid} - so the order the cursor names is the order a
+     * client walks.
+     */
+    static List<EntryLines> pageOf(List<EntryLines> entries, Optional<MovementCursor> after, int limit) {
+        return entries.stream()
+                .filter(group -> after.map(cursor -> compare(group.postingDate(), group.entry().value(),
+                                group.currency(), cursor.postingDate(), cursor.entry(), cursor.currency()) > 0)
+                        .orElse(true))
+                .sorted((one, other) -> compare(one.postingDate(), one.entry().value(), one.currency(),
+                        other.postingDate(), other.entry().value(), other.currency()))
+                .limit(limit)
+                .toList();
+    }
+
+    /** Negative when the first movement comes first: posting date descending, entry descending, currency ascending. */
+    static int compare(
+            LocalDate date, UUID entry, CurrencyCode currency, LocalDate otherDate, UUID otherEntry, CurrencyCode otherCurrency) {
+        int byDate = otherDate.compareTo(date);
+        if (byDate != 0) {
+            return byDate;
+        }
+        int byEntry = otherEntry.toString().compareTo(entry.toString());
+        if (byEntry != 0) {
+            return byEntry;
+        }
+        return currency.code().compareTo(otherCurrency.code());
     }
 
     private Section section(

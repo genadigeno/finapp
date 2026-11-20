@@ -24,7 +24,8 @@ import java.util.UUID;
  */
 public final class JdbcMerchantStore implements MerchantStore<Connection> {
 
-    private static final String COLUMNS =
+    /** The row's columns, in {@link #map}'s order - package-visible for {@link JdbcMerchantCollections} (`P17-TSK-033`). */
+    static final String COLUMNS =
             "id, party_ref, legal_name, display_name, settlement_currency, status,"
                     + " created_at, status_changed_at";
 
@@ -131,20 +132,24 @@ public final class JdbcMerchantStore implements MerchantStore<Connection> {
                 if (!row.next()) {
                     return Optional.empty();
                 }
-                return Optional.of(
-                        Merchant.rehydrate(
-                                MerchantId.of(row.getObject(1, UUID.class)),
-                                row.getObject(2, UUID.class),
-                                row.getString(3),
-                                row.getString(4),
-                                CurrencyCode.of(row.getString(5)),
-                                MerchantStatus.valueOf(row.getString(6)),
-                                row.getTimestamp(7).toInstant(),
-                                row.getTimestamp(8).toInstant()));
+                return Optional.of(map(row));
             }
         } catch (SQLException failure) {
             throw new MerchantStorageException(
                     DatabaseFailure.describe("reading a merchant", failure));
         }
+    }
+
+    /** One {@link #COLUMNS} row - the by-id read's and the operator's merchants page's one mapping (`P17-TSK-033`). */
+    static Merchant map(ResultSet row) throws SQLException {
+        return Merchant.rehydrate(
+                MerchantId.of(row.getObject(1, UUID.class)),
+                row.getObject(2, UUID.class),
+                row.getString(3),
+                row.getString(4),
+                CurrencyCode.of(row.getString(5)),
+                MerchantStatus.valueOf(row.getString(6)),
+                row.getTimestamp(7).toInstant(),
+                row.getTimestamp(8).toInstant());
     }
 }

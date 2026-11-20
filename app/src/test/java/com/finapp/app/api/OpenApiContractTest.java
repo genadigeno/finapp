@@ -838,6 +838,10 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/merchant/payouts",
                         ApiVersion.CURRENT_PREFIX + "/merchant/payouts/{payoutId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/merchants/{merchantId}/payouts",
+                        // P17-TSK-033: one of a merchant's payouts and its transactions, read by an operator
+                        // (MERCHANT_ADMINISTER); the list beside them shares the onboarding's and the payout's paths.
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{merchantId}/payouts/{payoutId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{merchantId}/transactions",
                         // P7-TSK-003: the routing surface (ADR-0060) - the keyed immutable
                         // version, the reasoned availability fact, the audited explanation
                         // read, all behind PAYMENT_ROUTING_ADMINISTER. No PUT and no DELETE

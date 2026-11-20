@@ -115,6 +115,11 @@ class RoutePermissionRegisterTest {
                     // Merchant onboarding and administration (Phase 6)
                     entry("POST /v1/operator/merchants", PermissionName.MERCHANT_ONBOARD),
                     entry("GET /v1/operator/merchants/{id}", PermissionName.MERCHANT_ADMINISTER),
+                    // P17-TSK-033: the merchant collections - the merchants, a merchant's payouts and one, its transactions.
+                    entry("GET /v1/operator/merchants", PermissionName.MERCHANT_ADMINISTER),
+                    entry("GET /v1/operator/merchants/{merchantId}/payouts", PermissionName.MERCHANT_ADMINISTER),
+                    entry("GET /v1/operator/merchants/{merchantId}/payouts/{payoutId}", PermissionName.MERCHANT_ADMINISTER),
+                    entry("GET /v1/operator/merchants/{merchantId}/transactions", PermissionName.MERCHANT_ADMINISTER),
                     entry("POST /v1/operator/merchants/{id}/suspension", PermissionName.MERCHANT_ADMINISTER),
                     entry("POST /v1/operator/merchants/{id}/reinstatement", PermissionName.MERCHANT_ADMINISTER),
                     entry("POST /v1/operator/merchants/{id}/closure", PermissionName.MERCHANT_ADMINISTER),
