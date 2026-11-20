@@ -295,10 +295,18 @@ class MerchantEndpointDatabaseTest {
         try {
             for (int i = 0; i < racers; i++) {
                 String door = i % 2 == 0 ? "/approval" : "/rejection";
+                String racerKey = someKey();
                 results.add(pool.submit(() -> {
                     start.await();
-                    return post("/v1/operator/merchant-closures/" + raced + door, "{\"reason\":\"the race\"}",
-                            controller, someKey());
+                    HttpResponse<String> answer = post("/v1/operator/merchant-closures/" + raced + door,
+                            "{\"reason\":\"the race\"}", controller, racerKey);
+                    // A shed request (503 api.Overloaded) did nothing: retried under the same key (P17-TSK-028's discipline).
+                    for (int attempt = 0; attempt < 50 && answer.statusCode() == 503; attempt++) {
+                        Thread.sleep(100L + java.util.concurrent.ThreadLocalRandom.current().nextInt(200));
+                        answer = post("/v1/operator/merchant-closures/" + raced + door, "{\"reason\":\"the race\"}",
+                                controller, racerKey);
+                    }
+                    return answer;
                 }));
             }
             start.countDown();

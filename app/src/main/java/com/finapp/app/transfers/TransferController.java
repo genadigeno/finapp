@@ -91,7 +91,7 @@ public class TransferController {
     @RequiresIdempotencyKey
     @RecordsRefusals
     @ResponseStatus(HttpStatus.CREATED)
-    public TransferReversalDesk.ReversalReceipt proposeTransferReversal(
+    public TransferReversalDesk.TransferReversalReceipt proposeTransferReversal(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id,
             @Valid @RequestBody TransferReversalRequest body) {

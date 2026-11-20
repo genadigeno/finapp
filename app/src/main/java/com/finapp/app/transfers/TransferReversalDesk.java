@@ -54,10 +54,10 @@ public final class TransferReversalDesk {
     @NonNull private final TransferMetrics metrics;
 
     /** A reversal proposal's receipt: identifiers, its status and the transfer's status after the act. */
-    public record ReversalReceipt(String proposalId, String transferId, String status, String transferStatus) {}
+    public record TransferReversalReceipt(String proposalId, String transferId, String status, String transferStatus) {}
 
     /** Proposes the transfer's reversal. */
-    public ReversalReceipt propose(String idempotencyKey, String rawTransferId, String reason) {
+    public TransferReversalReceipt propose(String idempotencyKey, String rawTransferId, String reason) {
         TransferId transferId = uuid(rawTransferId).map(TransferId::of).orElseThrow(TransferReversalDesk::notFound);
         Actor actor = SecurityContext.require();
         IdempotencyKey key = new IdempotencyKey(SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
@@ -69,7 +69,7 @@ public final class TransferReversalDesk {
     }
 
     /** Approves or rejects the proposal; an approval reverses the transfer. */
-    public ReversalReceipt decide(String idempotencyKey, String rawProposalId, ReversalProposalStatus outcome, String reason) {
+    public TransferReversalReceipt decide(String idempotencyKey, String rawProposalId, ReversalProposalStatus outcome, String reason) {
         TransferReversalProposalId id = uuid(rawProposalId).map(TransferReversalProposalId::of)
                 .orElseThrow(TransferReversalDesk::notFound);
         Actor actor = SecurityContext.require();
@@ -88,14 +88,14 @@ public final class TransferReversalDesk {
         return decided.receipt();
     }
 
-    private record Keyed(ReversalReceipt receipt, boolean replayed) {}
+    private record Keyed(TransferReversalReceipt receipt, boolean replayed) {}
 
-    private Keyed keyed(IdempotencyKey key, RequestFingerprint fingerprint, Function<Connection, ReversalReceipt> act) {
+    private Keyed keyed(IdempotencyKey key, RequestFingerprint fingerprint, Function<Connection, TransferReversalReceipt> act) {
         IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> transferTransactions.execute(status -> {
             Connection unitOfWork = DataSourceUtils.getConnection(dataSource);
             try {
                 return executor.execute(unitOfWork, key, fingerprint, uow -> {
-                    ReversalReceipt receipt = act.apply(uow);
+                    TransferReversalReceipt receipt = act.apply(uow);
                     String stored = String.join("|", receipt.proposalId(), receipt.transferId(), receipt.status(),
                             receipt.transferStatus());
                     return CommandResult.succeeded(StoredResponse.of(stored.getBytes(StandardCharsets.UTF_8), "text/plain"));
@@ -106,11 +106,11 @@ public final class TransferReversalDesk {
         }));
         String[] stored = new String(outcome.body().orElseThrow(
                 () -> new IllegalStateException("a reversal act stores its receipt")), StandardCharsets.UTF_8).split("\\|", -1);
-        return new Keyed(new ReversalReceipt(stored[0], stored[1], stored[2], stored[3]), outcome.replayed());
+        return new Keyed(new TransferReversalReceipt(stored[0], stored[1], stored[2], stored[3]), outcome.replayed());
     }
 
-    private static ReversalReceipt receipt(TransferReversalProposal proposal, String transferStatus) {
-        return new ReversalReceipt(proposal.id().value().toString(), proposal.transferId().value().toString(),
+    private static TransferReversalReceipt receipt(TransferReversalProposal proposal, String transferStatus) {
+        return new TransferReversalReceipt(proposal.id().value().toString(), proposal.transferId().value().toString(),
                 proposal.status().name(), transferStatus);
     }
 

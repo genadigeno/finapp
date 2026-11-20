@@ -380,6 +380,11 @@ class PaymentRefundEndpointDatabaseTest {
         assertThat(post("/v1/operator/refund-proposals/" + proposal + "/approval", "{\"reason\":\"mine\"}",
                 operator.token(), true).statusCode()).as("the proposer's population holds no approval").isEqualTo(403);
 
+        // The approval's refund is a second provider refund: its reference is its own (refund.provider_reference is UNIQUE).
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.REFUNDS_PATH,
+                200,
+                "{\"status\":\"approved\",\"reference\":\"psp_ep-rfd-" + suffix() + "\"}");
         String approvalKey = someKey();
         HttpResponse<String> approved = keyedPost("/v1/operator/refund-proposals/" + proposal + "/approval",
                 "{\"reason\":\"agreed: the complaint is upheld\"}", controller.token(), approvalKey);

@@ -333,9 +333,11 @@ class TransferReversalDatabaseTest {
             List<Future<HttpResponse<String>>> proposals = new ArrayList<>();
             for (int i = 0; i < racers; i++) {
                 String reason = "concurrent reversal " + i;
+                String racerKey = someKey();
                 proposals.add(pool.submit(() -> {
                     start.await();
-                    return reverse(operator, transferId, reasonBody(reason));
+                    return postRetryingShed("/v1/transfers/" + transferId + "/reversal", operator, reasonBody(reason),
+                            racerKey);
                 }));
             }
             start.countDown();
@@ -356,11 +358,14 @@ class TransferReversalDatabaseTest {
             List<Future<HttpResponse<String>>> decisions = new ArrayList<>();
             for (int i = 0; i < racers; i++) {
                 boolean approving = i % 2 == 0;
+                String racerKey = someKey();
                 decisions.add(pool.submit(() -> {
                     decide.await();
                     return approving
-                            ? approve(controller, open.get(0), reasonBody("approved in the race"))
-                            : reject(controller, open.get(0), reasonBody("rejected in the race"));
+                            ? postRetryingShed("/v1/operator/transfer-reversals/" + open.get(0) + "/approval", controller,
+                                    reasonBody("approved in the race"), racerKey)
+                            : postRetryingShed("/v1/operator/transfer-reversals/" + open.get(0) + "/rejection", controller,
+                                    reasonBody("rejected in the race"), racerKey);
                 }));
             }
             decide.countDown();
@@ -971,6 +976,20 @@ class TransferReversalDatabaseTest {
 
     private HttpResponse<String> keyedPost(String path, String token, String body) throws Exception {
         return keyedPost(path, token, body, someKey());
+    }
+
+    /**
+     * {@link #keyedPost}, retried with the same key while the platform sheds it ({@code 503 api.Overloaded}: "nothing was
+     * done; retry the same request") - ten racers on one test machine meet the admission limit, and a shed request is no
+     * outcome (`P17-TSK-028`'s discipline).
+     */
+    private HttpResponse<String> postRetryingShed(String path, String token, String body, String key) throws Exception {
+        HttpResponse<String> answer = keyedPost(path, token, body, key);
+        for (int attempt = 0; attempt < 50 && answer.statusCode() == 503; attempt++) {
+            Thread.sleep(100L + java.util.concurrent.ThreadLocalRandom.current().nextInt(200));
+            answer = keyedPost(path, token, body, key);
+        }
+        return answer;
     }
 
     private HttpResponse<String> keyedPost(String path, String token, String body, String key) throws Exception {

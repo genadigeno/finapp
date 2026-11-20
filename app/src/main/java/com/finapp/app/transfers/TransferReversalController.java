@@ -37,7 +37,7 @@ public class TransferReversalController {
     @PostMapping(path = "/{id}/approval", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.TRANSFER_REVERSE_APPROVE)
     @RequiresIdempotencyKey
-    public TransferReversalDesk.ReversalReceipt approveTransferReversal(
+    public TransferReversalDesk.TransferReversalReceipt approveTransferReversal(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id,
             @Valid @RequestBody TransferReversalDecisionRequest body) {
@@ -49,7 +49,7 @@ public class TransferReversalController {
     @PostMapping(path = "/{id}/rejection", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.TRANSFER_REVERSE_APPROVE)
     @RequiresIdempotencyKey
-    public TransferReversalDesk.ReversalReceipt rejectTransferReversal(
+    public TransferReversalDesk.TransferReversalReceipt rejectTransferReversal(
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable("id") String id,
             @Valid @RequestBody TransferReversalDecisionRequest body) {

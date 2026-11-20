@@ -40,7 +40,7 @@ public final class JdbcPayoutProposalStore implements PayoutProposalStore<Connec
             insert.setString(7, proposed.proposalReason());
             insert.setString(8, proposed.proposedBy());
             insert.setString(9, proposed.proposedByType());
-            insert.setTimestamp(11, Timestamp.from(proposed.proposedAt()));
+            insert.setTimestamp(10, Timestamp.from(proposed.proposedAt()));
             insert.setString(11, proposed.proposalCorrelationId());
             insert.executeUpdate();
         } catch (SQLException failure) {
