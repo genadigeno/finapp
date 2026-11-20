@@ -26,7 +26,7 @@ import javax.net.ssl.TrustManagerFactory;
 
 /**
  * TEST-ONLY. The HTTP half of the Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112,
- * P17-TSK-113, P17-TSK-115, P17-TSK-117, P17-TSK-119): every
+ * P17-TSK-113, P17-TSK-115, P17-TSK-117, P17-TSK-119, P17-TSK-121): every
  * effect the platform has a door for, through that door - registration, a second factor, a step-up, a role grant, a risk policy
  * proposed and activated, a case opened and taken; and the books' finance acts - a GL mapping version, a manual adjustment, a month's
  * nil reports, a month locked and closed by four eyes, a prior-period adjustment, a regulatory obligation and its validated return. And
@@ -34,7 +34,8 @@ import javax.net.ssl.TrustManagerFactory;
  * And the credit desks' - the reference scorecard approved, a credit policy, lending terms and BNPL terms proposed and decided by four
  * eyes, and a customer's stepped-up credit request (P17-TSK-117). And the FX controller's - a pricing policy and a corridor policy
  * proposed and decided by four eyes, a pair and a corridor disabled and their enabling proposed, and a customer's conversion
- * (P17-TSK-119). And a customer's consent to KYC processing, which every case's customer has given (P17-TSK-113). A single source
+ * (P17-TSK-119). And a customer's consent to KYC processing, which every case's customer has given (P17-TSK-113). And a customer's
+ * history - that consent granted, withdrawn and granted again, a wallet, and transfers judged by the transfer door (P17-TSK-121). A single source
  * file run by {@code infra/scripts/e2e-seed.sh}
  * ({@code java --source 21}), never compiled into anything and named by no module's main source set (E2eSeedStaysTestOnlyTest).
  *
@@ -117,6 +118,10 @@ public final class Seed {
             case "decide-enable" -> seed.decideEnable(rest[0], rest[1], rest[2], rest[3]);
             case "fx-trade" -> seed.fxTrade(one(rest));
             case "kyc-consent" -> seed.kycConsent(one(rest));
+            case "consent-history" -> seed.consentHistory(one(rest));
+            case "wallet" -> seed.wallet(one(rest));
+            case "account" -> seed.account(one(rest));
+            case "transfer" -> seed.transfer(rest[0], rest[1], rest[2]);
             default -> throw new IllegalArgumentException("unknown command " + args[3]);
         }
     }
@@ -1031,6 +1036,66 @@ public final class Seed {
             throw new IllegalStateException("the consent door answered another purpose: " + granted.body());
         }
         System.out.println("CONSENTED=KYC_PROCESSING");
+    }
+
+    /**
+     * A customer's consent history through the consent doors (P17-TSK-121): KYC processing granted, withdrawn, and granted again -
+     * three immutable facts, never an update (ADR-0037), the basis granted at the end. The console reads them back, newest first,
+     * through the operator's consent-history read. Prints the history as the doors made it.
+     */
+    private void consentHistory(String who) throws Exception {
+        String session = signIn(publicBase, who);
+        String grant = "{\"purpose\":\"KYC_PROCESSING\",\"textVersion\":1}";
+        expect("KYC consent of " + who, post(publicBase, "/v1/me/consents", grant, session, null), 201);
+        expect("KYC consent withdrawn by " + who, call("DELETE", publicBase + "/v1/me/consents/KYC_PROCESSING", null,
+                Map.of("Authorization", "Bearer " + session)), 204);
+        Answer again = expect("KYC consent of " + who + " again", post(publicBase, "/v1/me/consents", grant, session, null), 201);
+        if (!"KYC_PROCESSING".equals(field(again.body(), "purpose"))) {
+            throw new IllegalStateException("the second grant answered a basis for '" + field(again.body(), "purpose") + "'");
+        }
+        System.out.println("CONSENT_HISTORY=GRANTED,WITHDRAWN,GRANTED");
+    }
+
+    /**
+     * The customer's EUR wallet, opened through the accounts door under a fresh key (P17-TSK-121) - its one account, which only an
+     * ACTIVE customer opens. Prints the account's id.
+     */
+    private void wallet(String who) throws Exception {
+        String session = signIn(publicBase, who);
+        String account = field(expect("wallet of " + who, post(publicBase, "/v1/me/accounts",
+                "{\"productType\":\"WALLET\",\"currency\":\"EUR\"}", session, key()), 201).body(), "id");
+        System.out.println("ACCOUNT_ID=" + account);
+    }
+
+    /** The customer's one account, read through the accounts door (P17-TSK-121) - the wallet its top-up opened. Prints its id. */
+    private void account(String who) throws Exception {
+        String session = signIn(publicBase, who);
+        String account = field(expect("accounts of " + who, get(publicBase, "/v1/me/accounts", session), 200).body(), "id");
+        if (account == null) {
+            throw new IllegalStateException(who + " holds no account");
+        }
+        System.out.println("ACCOUNT_ID=" + account);
+    }
+
+    /**
+     * A transfer of {@code amount} EUR from the customer's own account - its one account, the wallet the seed opened for it - to the
+     * account {@code destination} names, through the transfer door under a fresh key (P17-TSK-121). The door answers 201 for every
+     * judgement and the body names it: COMPLETED with its journal entry, or FAILED with its reason. Prints the transfer's id, status
+     * and failure reason (NONE when it has none); the shell judges them.
+     */
+    private void transfer(String who, String destination, String amount) throws Exception {
+        String session = signIn(publicBase, who);
+        String source = field(expect("accounts of " + who, get(publicBase, "/v1/me/accounts", session), 200).body(), "id");
+        if (source == null) {
+            throw new IllegalStateException(who + " holds no account to transfer from");
+        }
+        Answer made = expect("transfer of " + amount + " EUR by " + who, post(publicBase, "/v1/transfers",
+                "{\"sourceAccountId\":\"" + source + "\",\"destinationAccountId\":\"" + destination + "\",\"amount\":\"" + amount
+                        + "\",\"currency\":\"EUR\"}", session, key()), 201);
+        String reason = field(made.body(), "failureReason");
+        System.out.println("TRANSFER_ID=" + field(made.body(), "id"));
+        System.out.println("TRANSFER_STATUS=" + field(made.body(), "status"));
+        System.out.println("TRANSFER_FAILURE=" + (reason == null ? "NONE" : reason));
     }
 
     private static String letters(int count) {
