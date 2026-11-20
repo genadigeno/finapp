@@ -116,6 +116,13 @@ public enum CrossborderAuditAction implements AuditableAction {
             "crossborder.PaymentTraceRead",
             "An investigator read a cross-border payment's identifier chain - quote, payment, outbound credit, entries,"
                     + " expectations, settlement lines and covers (FX_INVESTIGATE); every serving is recorded.",
+            false),
+
+    /** An investigator was served a page of the cross-border payments (`P17-TSK-037`, FX_INVESTIGATE) - every page recorded. */
+    CROSS_BORDER_PAYMENTS_LISTED(
+            "crossborder.CrossBorderPaymentsListed",
+            "An investigator was served a page of the cross-border payments in a window - customers' payments abroad"
+                    + " (FX_INVESTIGATE); every page is recorded, in the read's transaction.",
             false);
 
     private final String code;

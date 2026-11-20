@@ -18216,6 +18216,57 @@
         ],
         "type": "object"
       },
+      "CorridorAvailabilityItem": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "changedAt": {
+            "type": "string"
+          },
+          "changedBy": {
+            "type": "string"
+          },
+          "corridor": {
+            "type": "string"
+          },
+          "deliveryEstimateHours": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "maximumAmount": {
+            "type": "string"
+          },
+          "maximumCurrency": {
+            "type": "string"
+          },
+          "rails": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CorridorAvailabilityList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CorridorAvailabilityItem"
+            },
+            "type": "array"
+          },
+          "policyVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "CorridorAvailabilityReceipt": {
         "properties": {
           "corridor": {
@@ -18280,6 +18331,52 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CorridorEnableRequestItem": {
+        "properties": {
+          "corridor": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CorridorEnableRequestPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CorridorEnableRequestItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -19474,6 +19571,64 @@
             "type": "string"
           },
           "totalDebit": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CrossBorderPaymentItem": {
+        "properties": {
+          "beneficiaryId": {
+            "type": "string"
+          },
+          "corridor": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "deliveredAmount": {
+            "type": "string"
+          },
+          "destinationCurrency": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "feeAmount": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ownerPartyId": {
+            "type": "string"
+          },
+          "sentAmount": {
+            "type": "string"
+          },
+          "sourceCurrency": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "totalDebitAmount": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CrossBorderPaymentPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CrossBorderPaymentItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
             "type": "string"
           }
         },
@@ -21376,6 +21531,37 @@
         },
         "type": "object"
       },
+      "FxAvailabilityItem": {
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "changedAt": {
+            "type": "string"
+          },
+          "changedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FxAvailabilityList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FxAvailabilityItem"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "FxDecisionRequest": {
         "properties": {
           "reason": {
@@ -21387,6 +21573,55 @@
         "required": [
           "reason"
         ],
+        "type": "object"
+      },
+      "FxEnableRequestItem": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decidedBy": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FxEnableRequestPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FxEnableRequestItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "FxPositionReport": {
@@ -21450,6 +21685,47 @@
         },
         "type": "object"
       },
+      "FxRateList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FxRateView"
+            },
+            "type": "array"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FxRateView": {
+        "properties": {
+          "ageSeconds": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "base": {
+            "type": "string"
+          },
+          "observedAt": {
+            "type": "string"
+          },
+          "pair": {
+            "type": "string"
+          },
+          "quote": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "string"
+          },
+          "receivedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "FxRevenueReport": {
         "properties": {
           "month": {
@@ -21473,6 +21749,67 @@
           },
           "truncated": {
             "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "FxTradeItem": {
+        "properties": {
+          "bookedAt": {
+            "type": "string"
+          },
+          "bookedOn": {
+            "type": "string"
+          },
+          "destinationAmount": {
+            "type": "string"
+          },
+          "destinationCurrency": {
+            "type": "string"
+          },
+          "executedRate": {
+            "type": "string"
+          },
+          "fixedSide": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ownerPartyId": {
+            "type": "string"
+          },
+          "pair": {
+            "type": "string"
+          },
+          "providerCode": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "sourceAmount": {
+            "type": "string"
+          },
+          "sourceCurrency": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FxTradePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FxTradeItem"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -42126,6 +42463,49 @@
         }
       }
     },
+    "/v1/operator/cross-border/corridor-enable-requests": {
+      "get": {
+        "operationId": "listCorridorEnableRequests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorridorEnableRequestPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/cross-border/corridor-enable-requests/{rid}/approval": {
       "post": {
         "operationId": "approveCorridorEnableRequest",
@@ -42326,6 +42706,23 @@
         }
       }
     },
+    "/v1/operator/cross-border/corridors": {
+      "get": {
+        "operationId": "listOperatorCorridors",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorridorAvailabilityList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/cross-border/corridors/{corridor}/availability": {
       "post": {
         "operationId": "setCorridorAvailability",
@@ -42363,6 +42760,73 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CorridorAvailabilityReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/cross-border/payments": {
+      "get": {
+        "operationId": "listOperatorCrossBorderPayments",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "corridor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossBorderPaymentPage"
                 }
               }
             },
@@ -43018,6 +43482,49 @@
         }
       }
     },
+    "/v1/operator/fx/enable-requests": {
+      "get": {
+        "operationId": "listFxEnableRequests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxEnableRequestPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/fx/enable-requests/{rid}/approval": {
       "post": {
         "operationId": "approveFxEnableRequest",
@@ -43084,6 +43591,23 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/EnableReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/fx/pairs": {
+      "get": {
+        "operationId": "listFxPairs",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxAvailabilityList"
                 }
               }
             },
@@ -43263,6 +43787,23 @@
         }
       }
     },
+    "/v1/operator/fx/providers": {
+      "get": {
+        "operationId": "listFxProviders",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxAvailabilityList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/fx/providers/{code}/availability": {
       "post": {
         "operationId": "setFxProviderAvailability",
@@ -43300,6 +43841,90 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AvailabilityReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/fx/rates": {
+      "get": {
+        "operationId": "listFxReferenceRates",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxRateList"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/fx/trades": {
+      "get": {
+        "operationId": "listFxTrades",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pair",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxTradePage"
                 }
               }
             },

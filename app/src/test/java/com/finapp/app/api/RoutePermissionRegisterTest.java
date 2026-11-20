@@ -268,6 +268,13 @@ class RoutePermissionRegisterTest {
                     // P9-TSK-013: the FX investigator's read of a trade's provenance - held by the
                     // reconciliation operator, never by whoever sets prices; audited at every serving.
                     entry("GET /v1/operator/fx/trades/{id}/provenance", PermissionName.FX_INVESTIGATE),
+                    // P17-TSK-037: the FX operator's reads - the reference rates and the trades an investigator's, the
+                    // availability and the enable requests the controller's who decides them.
+                    entry("GET /v1/operator/fx/rates", PermissionName.FX_INVESTIGATE),
+                    entry("GET /v1/operator/fx/trades", PermissionName.FX_INVESTIGATE),
+                    entry("GET /v1/operator/fx/pairs", PermissionName.FX_ADMINISTER),
+                    entry("GET /v1/operator/fx/providers", PermissionName.FX_ADMINISTER),
+                    entry("GET /v1/operator/fx/enable-requests", PermissionName.FX_ADMINISTER),
                     // P9-TSK-015: the corridor doors - the corridor policy under four-eyes, the corridor
                     // kill switch one person to stop and two to restart; held by FX_CONTROLLER beside the
                     // pricing policy (ADR-0080 section 4).
@@ -280,6 +287,11 @@ class RoutePermissionRegisterTest {
                             PermissionName.CROSSBORDER_ADMINISTER),
                     entry("POST /v1/operator/cross-border/corridor-enable-requests/{rid}/rejection",
                             PermissionName.CROSSBORDER_ADMINISTER),
+                    // P17-TSK-037: the cross-border operator's reads - the corridors and their enable requests the
+                    // controller's, the payments an investigator's as a payment's trace is.
+                    entry("GET /v1/operator/cross-border/corridors", PermissionName.CROSSBORDER_ADMINISTER),
+                    entry("GET /v1/operator/cross-border/corridor-enable-requests", PermissionName.CROSSBORDER_ADMINISTER),
+                    entry("GET /v1/operator/cross-border/payments", PermissionName.FX_INVESTIGATE),
                     // P9-TSK-016: the counterparty reviewer's door - a person releases or blocks a
                     // screening in review; held by KYC_REVIEWER beside KYC_REVIEW (ADR-0081 point 4).
                     entry("POST /v1/operator/kyc/counterparty-screenings/{id}/decision",

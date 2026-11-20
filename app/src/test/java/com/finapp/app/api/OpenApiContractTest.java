@@ -982,6 +982,15 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-enable-requests/{rid}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-enable-requests/{rid}/rejection",
                         ApiVersion.CURRENT_PREFIX + "/me/cross-border/corridors",
+                        // P17-TSK-037: the FX and cross-border operator reads.
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/rates",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/pairs",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/providers",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/enable-requests",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fx/trades",
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridors",
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-enable-requests",
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/payments",
                         // P9-TSK-016: the counterparty reviewer's door (COUNTERPARTY_SCREENING_REVIEW).
                         ApiVersion.CURRENT_PREFIX + "/operator/kyc/counterparty-screenings/{id}/decision",
                         // P10-TSK-011: the scorecard doors (CREDIT_POLICY_ADMINISTER, keyed).
