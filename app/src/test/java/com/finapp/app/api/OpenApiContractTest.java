@@ -1081,6 +1081,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/identities/{id}/sessions/{session}",
                         // X-TSK-019: an operator's own identity, roles, permissions and session (any live role).
                         ApiVersion.CURRENT_PREFIX + "/operator/me",
+                        // P17-TSK-029: the reviewers' queues - the open KYC cases, a customer's latest case and the
+                        // counterparty screenings awaiting a person - recorded reads on a second factor.
+                        ApiVersion.CURRENT_PREFIX + "/operator/kyc/cases",
+                        ApiVersion.CURRENT_PREFIX + "/operator/customers/{id}/kyc-case",
+                        ApiVersion.CURRENT_PREFIX + "/operator/kyc/counterparty-screenings",
                         // P1-TSK-030. Declared by the plan for the whole phase and owned by no
                         // task until the review found it.
                         ApiVersion.CURRENT_PREFIX + "/me",

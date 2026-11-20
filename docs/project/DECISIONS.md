@@ -354,7 +354,9 @@ authorities for *"is this party verified?"* would be the shared-mutable-ownershi
 `CLAUDE.md` forbids, on the field every later financial phase gates on. The mapping lives in
 `app` because `kyc` cannot see `party`: the projection is precisely the cross-context fact an
 orchestration exists to carry, and the module boundary is what keeps anything else from
-computing it. &rarr;
+computing it. *(Amended at `P17-TSK-029`, 2026-11-20: one reviewer decides every outcome - the owner's
+"Single reviewer" - and the decision and a review task's resolution require an `Idempotency-Key`, a retry replaying
+the act.)* &rarr;
 [ADR-0035](../adr/ADR-0035-kyc-owns-the-verification-decision.md)
 
 **A provider verdict is evidence, never the decision** (`INV-KYC-01`). Providers time out,

@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.web.method.ControllerAdviceBean;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 /**
@@ -24,7 +25,11 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  * {@link RecordedReadsTest} holds its behaviour - and this guard holds that it is on the application's answer path, so the
  * refusal is real and not a class nobody registered. <strong>At review</strong> the handlers under {@link RecordedReads#PERMISSIONS}
  * are exactly {@link #REGISTER}'s, each beside the record it writes, so a new read reaches a reviewer with the action its database
- * test proves. Empty at `P17-TSK-025`, which serves no route: the guard holds from the first one (`P17-TSK-026`).
+ * test proves. Empty at `P17-TSK-025`, which serves no route: the guard holds from the first one.
+ *
+ * <p><strong>The mark, and the rule that does not depend on it</strong> (`P17-TSK-029`). A read of customers under a permission
+ * that also guards acts - the KYC reviewer's - is held by its {@link RecordedRead} mark instead, and is named here too. Since a
+ * mark can be forgotten, every operator {@code GET} whose path names a customer must be held, whatever its permission.
  */
 @Tag("slice")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
@@ -33,7 +38,11 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 class EveryCustomerReadIsRecordedTest {
 
     /** {@code Controller#method} → the {@code <module>.<Thing>Read} it records. */
-    static final Map<String, String> REGISTER = Map.of();
+    static final Map<String, String> REGISTER = Map.of(
+            // P17-TSK-029: the KYC reviewer's reads, under KYC_REVIEW and COUNTERPARTY_SCREENING_REVIEW, held by their mark.
+            "KycQueueController#listKycReviewQueue", "kyc.ReviewQueueRead",
+            "KycQueueController#readCustomerLatestKycCase", "kyc.CaseRead",
+            "KycQueueController#listCounterpartyScreeningBacklog", "kyc.ScreeningBacklogRead");
 
     @Autowired private ApplicationContext context;
 
@@ -68,10 +77,28 @@ class EveryCustomerReadIsRecordedTest {
             }
         });
         assertThat(served.keySet())
-                .as("a handler under CUSTOMER_READ, ACCOUNT_READ, TRANSFER_READ or PAYMENT_READ is named here with its record")
+                .as("a handler under CUSTOMER_READ, ACCOUNT_READ, TRANSFER_READ or PAYMENT_READ, or marked @RecordedRead, is named"
+                        + " here with its record")
                 .isEqualTo(new TreeSet<>(REGISTER.keySet()));
         Set<String> actions = REGISTER.values().stream().collect(Collectors.toSet());
         assertThat(actions).as("each a module's declared code: <module>.<Thing>Read, or a list's or a lookup's name")
                 .allMatch(code -> code.matches("[a-z]+\\.[A-Z][A-Za-z]+"));
+    }
+
+    @Test
+    @DisplayName("every operator GET naming a customer is held, whatever its permission: a forgotten mark fails here (P17-TSK-029)")
+    void everyOperatorReadOfACustomerIsHeld() {
+        Map<String, Boolean> customerReads = new TreeMap<>();
+        mappings.getHandlerMethods().forEach((info, method) -> {
+            boolean get = info.getMethodsCondition().getMethods().contains(RequestMethod.GET);
+            boolean namesACustomer = info.getPatternValues().stream().anyMatch(path -> path.contains("/operator/customers/"));
+            if (get && namesACustomer && method.getBeanType().getName().startsWith("com.finapp.")) {
+                customerReads.put(info.getPatternValues() + " " + method.getBeanType().getSimpleName() + "#"
+                        + method.getMethod().getName(), RecordedReads.recordsEveryRead(method));
+            }
+        });
+        assertThat(customerReads).as("the reads of a customer this application serves").isNotEmpty();
+        assertThat(customerReads).as("each held by its permission or its mark").allSatisfy((read, held) ->
+                assertThat(held).as(read).isTrue());
     }
 }

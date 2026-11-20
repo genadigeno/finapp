@@ -12,7 +12,11 @@ import com.finapp.kyc.ReviewTask;
 import com.finapp.kyc.ReviewTaskId;
 import com.finapp.kyc.VerificationCheck;
 import com.finapp.platform.api.ApiException;
+import com.finapp.platform.api.IdempotencyKeyHeader;
 import com.finapp.platform.api.PlatformErrorCode;
+import com.finapp.platform.api.RequiresIdempotencyKey;
+import com.finapp.platform.idempotency.IdempotentExecutor;
+import com.finapp.platform.security.SecurityContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.time.Instant;
@@ -26,6 +30,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -57,6 +62,15 @@ import org.springframework.web.bind.annotation.RestController;
  * declares no content endpoint for reviewers, and none is invented here (the `P1-TSK-028`
  * don't-invent-surfaces rule) — {@code DocumentAccess} keeps its audited path with no HTTP
  * caller, recorded as the remainder it is.
+ *
+ * <h2>Both acts keyed, one reviewer each (`P17-TSK-029`)</h2>
+ *
+ * <p>The decision and the resolution require an {@code Idempotency-Key}: a retry after a lost
+ * answer replays the act it already made rather than meeting its own conditional as a
+ * {@code 409}, and the same key under another request is {@code 409 api.Conflict}
+ * ({@link KeyedReviewAct}). One reviewer decides every outcome, a rejection and an approval
+ * over an adverse provider verdict included - the owner's ruling, "Single reviewer"
+ * (ADR-0035's amendment).
  */
 @RestController
 @RequestMapping(path = "/kyc/cases", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -65,6 +79,7 @@ public class ReviewController {
 
     @NonNull private final ReviewService reviews;
     @NonNull private final DecisionRecording decisions;
+    @NonNull private final IdempotentExecutor idempotentExecutor;
 
     /** The reviewer's view of one case. Reading it is on the record ({@code kyc.CaseRead}). */
     @GetMapping("/{id}")
@@ -88,14 +103,20 @@ public class ReviewController {
     @PostMapping("/{id}/reviews/{taskId}/resolution")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(PermissionName.KYC_REVIEW)
+    @RequiresIdempotencyKey
     public void resolve(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable String id,
             @PathVariable String taskId,
             @Valid @RequestBody ResolutionRequest body,
             HttpServletRequest request) {
 
+        KycCaseId caseId = caseId(id);
+        ReviewTaskId task = taskId(taskId);
         ReviewService.Resolution outcome =
-                reviews.resolve(caseId(id), taskId(taskId), reviewer(request), body.reason());
+                reviews.resolve(caseId, task, reviewer(request), body.reason(),
+                        KeyedReviewAct.resolution(idempotentExecutor, idempotencyKey,
+                                SecurityContext.require(), caseId, task, body.reason()));
 
         switch (outcome) {
             case RESOLVED -> {
@@ -122,22 +143,29 @@ public class ReviewController {
      * Records the one decision this case will ever get (`P2-TSK-013`, {@code INV-KYC-02}).
      *
      * <p>The two 409 details are named for what is checked, not the commonest cause (the
-     * {@code NOT_ACTIVE} lesson): a terminal case is <em>already decided</em> — a retry after a
-     * lost response lands here, honestly — while a case still in checks or review is <em>not
-     * ready</em>, and those call for different reviewer behaviour (stop, versus wait).
+     * {@code NOT_ACTIVE} lesson): a terminal case is <em>already decided</em> — another
+     * reviewer's decision, or this reviewer's own under another key — while a case still in
+     * checks or review is <em>not ready</em>, and those call for different reviewer behaviour
+     * (stop, versus wait). A retry under the same key replays this door's first {@code 204}
+     * (`P17-TSK-029`, {@link KeyedReviewAct}); until then it landed here.
      */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping("/{id}/decision")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @RequiresPermission(PermissionName.KYC_REVIEW)
+    @RequiresIdempotencyKey
     public void decide(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
             @PathVariable String id,
             @Valid @RequestBody DecisionRequest body,
             HttpServletRequest request) {
 
+        KycCaseId caseId = caseId(id);
         DecisionRecording.Recording outcome =
                 decisions.byReviewer(
-                        caseId(id), reviewer(request), body.outcome(), body.reason());
+                        caseId, reviewer(request), body.outcome(), body.reason(),
+                        KeyedReviewAct.decision(idempotentExecutor, idempotencyKey,
+                                SecurityContext.require(), caseId, body.outcome(), body.reason()));
 
         switch (outcome) {
             case RECORDED -> {

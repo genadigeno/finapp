@@ -82,8 +82,14 @@ public final class RecordedReads {
         }
     }
 
-    /** Whether {@code handler}'s every answer must be recorded: it declares one of {@link #PERMISSIONS}. */
+    /**
+     * Whether {@code handler}'s every answer must be recorded: it declares one of {@link #PERMISSIONS}, or it is marked
+     * {@link RecordedRead} - a read of customers under a permission that also guards acts (`P17-TSK-029`).
+     */
     public static boolean recordsEveryRead(HandlerMethod handler) {
+        if (handler.hasMethodAnnotation(RecordedRead.class)) {
+            return true;
+        }
         RequiresPermission declared = handler.getMethodAnnotation(RequiresPermission.class);
         if (declared == null) {
             declared = handler.getBeanType().getAnnotation(RequiresPermission.class);

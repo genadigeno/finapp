@@ -3,6 +3,7 @@ package com.finapp.app.kyc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.finapp.app.surface.RequestSurfaces;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
@@ -241,6 +242,104 @@ class DecisionDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+    // The key (P17-TSK-029: INV-IDEM-01, INV-IDEM-03)
+
+    @Test
+    @DisplayName("a retry under the same key replays the decision's 204; another request under it is api.Conflict; another"
+            + " reviewer's same key is their own, judged against the decided case")
+    void aRetryUnderTheKeyReplaysTheDecision() throws Exception {
+        Fixture fixture = givenACaseAwaitingDecision();
+        IdentityId reviewer = givenAReviewer();
+        String session = givenASessionFor(reviewer);
+        String key = UUID.randomUUID().toString();
+
+        assertThat(post(decisionOf(fixture.caseId()), session, REJECTION, key).statusCode()).isEqualTo(204);
+        HttpResponse<String> replay = post(decisionOf(fixture.caseId()), session, REJECTION, key);
+        assertThat(replay.statusCode())
+                .as("the first outcome, not the 409 of the conditional it already won: %s", replay.body())
+                .isEqualTo(204);
+        HttpResponse<String> other = post(decisionOf(fixture.caseId()), session, APPROVAL, key);
+        assertThat(other.statusCode()).as(other.body()).isEqualTo(409);
+        assertThat(other.body()).as("never the first response to another request (INV-IDEM-03)").contains("api.Conflict");
+        HttpResponse<String> theirs =
+                post(decisionOf(fixture.caseId()), givenASessionFor(givenAReviewer()), REJECTION, key);
+        assertThat(theirs.statusCode()).as(theirs.body()).isEqualTo(409);
+        assertThat(theirs.body()).as("their own scope: judged, and the case is decided").contains("already decided");
+
+        DecisionRow decision = decisionRowOf(fixture.caseId());
+        assertThat(decision.decidedBy()).isEqualTo(reviewer.value());
+        assertThat(decision.outcome()).isEqualTo("REJECTED");
+        assertThat(auditCountOf("kyc.DecisionRecorded", fixture.caseId().value().toString()))
+                .as("one decision, one record, however often it was asked")
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("ten requests under one key, at once: one decision and one record; every answer the 204 or the key's"
+            + " in-progress refusal")
+    void tenRequestsUnderOneKeyAreOneDecision() throws Exception {
+        Fixture fixture = givenACaseAwaitingDecision();
+        String session = givenASessionFor(givenAReviewer());
+        String key = UUID.randomUUID().toString();
+
+        List<Callable<HttpResponse<String>>> racers = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            racers.add(() -> post(decisionOf(fixture.caseId()), session, REJECTION, key));
+        }
+        ExecutorService pool = Executors.newFixedThreadPool(10);
+        List<HttpResponse<String>> answers = new ArrayList<>();
+        try {
+            for (Future<HttpResponse<String>> answer : pool.invokeAll(racers)) {
+                answers.add(answer.get());
+            }
+        } finally {
+            pool.shutdown();
+        }
+
+        assertThat(answers).allSatisfy(answer -> assertThat(answer.statusCode() == 204
+                        || (answer.statusCode() == 409 && answer.body().contains("api.IdempotencyInProgress")))
+                .as("%s %s", answer.statusCode(), answer.body()).isTrue());
+        assertThat(answers).anySatisfy(answer -> assertThat(answer.statusCode()).isEqualTo(204));
+        assertThat(post(decisionOf(fixture.caseId()), session, REJECTION, key).statusCode())
+                .as("a later retry replays").isEqualTo(204);
+        assertThat(caseStatusOf(fixture.caseId())).isEqualTo("REJECTED");
+        assertThat(auditCountOf("kyc.DecisionRecorded", fixture.caseId().value().toString())).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a decision without a key is refused 422 api.IdempotencyKeyRequired before the door is entered, writing"
+            + " nothing")
+    void aDecisionWithoutAKeyIsRefused() throws Exception {
+        Fixture fixture = givenACaseAwaitingDecision();
+
+        HttpResponse<String> refused =
+                post(decisionOf(fixture.caseId()), givenASessionFor(givenAReviewer()), REJECTION, null);
+
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(422);
+        assertThat(refused.body()).contains("api.IdempotencyKeyRequired");
+        assertThat(caseStatusOf(fixture.caseId())).isEqualTo("READY_FOR_DECISION");
+        assertThat(decisionRowOf(fixture.caseId())).isNull();
+    }
+
+    @Test
+    @DisplayName("a refusal spends no key: a case not ready is decided under the same key once it is")
+    void aRefusalSpendsNoKey() throws Exception {
+        Fixture fixture = givenACaseInReview();
+        String session = givenASessionFor(givenAReviewer());
+        String key = UUID.randomUUID().toString();
+
+        HttpResponse<String> early = post(decisionOf(fixture.caseId()), session, REJECTION, key);
+        assertThat(early.statusCode()).as(early.body()).isEqualTo(409);
+        assertThat(early.body()).contains("not ready");
+
+        readyForDecision(fixture);
+        assertThat(post(decisionOf(fixture.caseId()), session, REJECTION, key).statusCode())
+                .as("the refusal changed nothing and stored nothing: the same key is judged again")
+                .isEqualTo(204);
+        assertThat(caseStatusOf(fixture.caseId())).isEqualTo("REJECTED");
+    }
+
+    // -----------------------------------------------------------------
     // The refusals
 
     @Test
@@ -466,6 +565,12 @@ class DecisionDatabaseTest {
     /** A case whose one HIT was reviewed and resolved: durably {@code READY_FOR_DECISION}. */
     private Fixture givenACaseAwaitingDecision() throws SQLException {
         Fixture inReview = givenACaseInReview();
+        readyForDecision(inReview);
+        return inReview;
+    }
+
+    /** Resolves a case's open tasks and moves it from {@code IN_REVIEW} to {@code READY_FOR_DECISION}. */
+    private void readyForDecision(Fixture inReview) throws SQLException {
         try (Connection app = DatabaseRoles.application()) {
             app.setAutoCommit(false);
             for (UUID taskId : openTaskIdsOf(app, inReview.caseId())) {
@@ -485,7 +590,6 @@ class DecisionDatabaseTest {
                     Instant.now(CLOCK));
             app.commit();
         }
-        return inReview;
     }
 
     /** A case with one HIT check and its open task, in {@code IN_REVIEW}. */
@@ -615,7 +719,13 @@ class DecisionDatabaseTest {
         return "/kyc/cases/" + caseId.value() + "/decision";
     }
 
+    /** A new request: since `P17-TSK-029` the decision and the resolution are keyed, so each call carries a fresh key. */
     private HttpResponse<String> post(String path, String token, String body) throws Exception {
+        return post(path, token, body, UUID.randomUUID().toString());
+    }
+
+    private HttpResponse<String> post(String path, String token, String body, String idempotencyKey)
+            throws Exception {
         HttpRequest.Builder request =
                 HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/v1" + path))
                         .header("Content-Type", "application/json")
@@ -623,6 +733,12 @@ class DecisionDatabaseTest {
         if (token != null) {
             request.header("Authorization", "Bearer " + token);
         }
+        if (idempotencyKey != null) {
+            request.header("Idempotency-Key", idempotencyKey);
+        }
+        // Both doors are on the operator surface, and the operator edge marks every request it forwards (P15-TSK-042):
+        // marked as deployed, the doors are never shed (ADR-0137), so ten racers race each other, not five permits.
+        request.header(RequestSurfaces.HEADER, "operator");
         return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 

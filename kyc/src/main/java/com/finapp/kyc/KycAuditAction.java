@@ -154,7 +154,27 @@ public enum KycAuditAction implements AuditableAction {
             "kyc.CounterpartyScreeningDecided",
             "kyc decided a counterparty screening - automatically from the provider's verdict and the"
                     + " payee check, or a reviewer's release or block - naming its basis and policy version.",
-            true);
+            true),
+
+    /**
+     * A reviewer was served a page of the KYC review queue (`P17-TSK-029`, gap G-60; {@code GET /v1/operator/kyc/cases} under
+     * {@code KYC_REVIEW}, on a {@code MULTI_FACTOR} session): once per page, never per row - the status filter, whether it
+     * followed a cursor and how many cases it served. Written by app's {@code RecordedReads} in the read's own transaction.
+     */
+    REVIEW_QUEUE_READ(
+            "kyc.ReviewQueueRead",
+            "A reviewer was served a page of the open KYC cases; the status filter and a count recorded.",
+            false),
+
+    /**
+     * A reviewer was served a page of the counterparty screenings awaiting a person (`P17-TSK-029`, gap G-65;
+     * {@code GET /v1/operator/kyc/counterparty-screenings} under {@code COUNTERPARTY_SCREENING_REVIEW}, on a
+     * {@code MULTI_FACTOR} session): once per page - whether it followed a cursor and how many it served, never a subject.
+     */
+    SCREENING_BACKLOG_READ(
+            "kyc.ScreeningBacklogRead",
+            "A reviewer was served a page of the counterparty screenings awaiting review; a count recorded, never a subject.",
+            false);
 
     private final String code;
     private final String description;

@@ -3,6 +3,7 @@ package com.finapp.app.kyc;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
+import com.finapp.app.surface.RequestSurfaces;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
@@ -143,6 +144,41 @@ class ReviewDatabaseTest {
         assertThat(post(resolutionOf(fixture.caseId(), fixture.tasks().get(1)), session, REASON)
                         .statusCode())
                 .isEqualTo(204);
+        assertThat(caseStatusOf(fixture.caseId())).isEqualTo("READY_FOR_DECISION");
+    }
+
+    @Test
+    @DisplayName("the resolution under its key (P17-TSK-029): a retry replays the 204 and the case's exit; another request under"
+            + " it is api.Conflict; none is refused 422; a refusal - another case's task - spends no key")
+    void theResolutionIsKeyed() throws Exception {
+        Fixture fixture = givenACaseInReview(1);
+        IdentityId reviewer = givenAReviewer();
+        String session = givenASessionFor(reviewer);
+        ReviewTaskId task = fixture.tasks().get(0);
+        String key = UUID.randomUUID().toString();
+
+        HttpResponse<String> unkeyed = post(resolutionOf(fixture.caseId(), task), session, REASON, null);
+        assertThat(unkeyed.statusCode()).as(unkeyed.body()).isEqualTo(422);
+        assertThat(unkeyed.body()).contains("api.IdempotencyKeyRequired");
+        assertThat(taskRow(task).status()).as("refused before the door: nothing written").isEqualTo("OPEN");
+
+        Fixture another = givenACaseInReview(1);
+        assertThat(post(resolutionOf(another.caseId(), task), session, REASON, key).statusCode())
+                .as("another case's task: not found, and nothing stored under the key")
+                .isEqualTo(404);
+
+        assertThat(post(resolutionOf(fixture.caseId(), task), session, REASON, key).statusCode()).isEqualTo(204);
+        HttpResponse<String> replay = post(resolutionOf(fixture.caseId(), task), session, REASON, key);
+        assertThat(replay.statusCode())
+                .as("the first outcome, not the 409 of the conditional it already won: %s", replay.body())
+                .isEqualTo(204);
+        HttpResponse<String> other =
+                post(resolutionOf(fixture.caseId(), task), session, "{\"reason\":\"confirmed hit, escalating\"}", key);
+        assertThat(other.statusCode()).as(other.body()).isEqualTo(409);
+        assertThat(other.body()).contains("api.Conflict");
+
+        assertThat(taskRow(task).resolvedBy()).isEqualTo(reviewer.value());
+        assertThat(auditCountOf("kyc.ReviewResolved", task.value().toString())).isEqualTo(1);
         assertThat(caseStatusOf(fixture.caseId())).isEqualTo("READY_FOR_DECISION");
     }
 
@@ -612,7 +648,13 @@ class ReviewDatabaseTest {
         return "/kyc/cases/" + caseId.value() + "/reviews/" + taskId.value() + "/resolution";
     }
 
+    /** A new request: since `P17-TSK-029` the decision and the resolution are keyed, so each call carries a fresh key. */
     private HttpResponse<String> post(String path, String token, String body) throws Exception {
+        return post(path, token, body, UUID.randomUUID().toString());
+    }
+
+    private HttpResponse<String> post(String path, String token, String body, String idempotencyKey)
+            throws Exception {
         HttpRequest.Builder request =
                 HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/v1" + path))
                         .header("Content-Type", "application/json")
@@ -620,6 +662,12 @@ class ReviewDatabaseTest {
         if (token != null) {
             request.header("Authorization", "Bearer " + token);
         }
+        if (idempotencyKey != null) {
+            request.header("Idempotency-Key", idempotencyKey);
+        }
+        // Both doors are on the operator surface, and the operator edge marks every request it forwards (P15-TSK-042):
+        // marked as deployed, the doors are never shed (ADR-0137), so ten racers race each other, not five permits.
+        request.header(RequestSurfaces.HEADER, "operator");
         return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
     }
 

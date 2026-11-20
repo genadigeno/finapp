@@ -273,6 +273,11 @@ class RoutePermissionRegisterTest {
                     // screening in review; held by KYC_REVIEWER beside KYC_REVIEW (ADR-0081 point 4).
                     entry("POST /v1/operator/kyc/counterparty-screenings/{id}/decision",
                             PermissionName.COUNTERPARTY_SCREENING_REVIEW),
+                    // P17-TSK-029: the reviewers' queues - the open KYC cases, a customer's latest case, and the
+                    // counterparty screenings awaiting a person - each a recorded read on a MULTI_FACTOR session.
+                    entry("GET /v1/operator/kyc/cases", PermissionName.KYC_REVIEW),
+                    entry("GET /v1/operator/customers/{id}/kyc-case", PermissionName.KYC_REVIEW),
+                    entry("GET /v1/operator/kyc/counterparty-screenings", PermissionName.COUNTERPARTY_SCREENING_REVIEW),
                     // P10-TSK-011: the scorecard doors - model versions under four eyes, held by
                     // CREDIT_POLICY_OFFICER (ADR-0086 section 3); every act keyed.
                     entry("POST /v1/operator/credit/scorecards", PermissionName.CREDIT_POLICY_ADMINISTER),
@@ -754,6 +759,11 @@ class RoutePermissionRegisterTest {
             "GET /v1/operator/identities",
             "GET /v1/operator/identities/{id}",
             "POST /v1/operator/identities/lookup",
+            // P17-TSK-029: the customers under review, a customer's latest case, the screenings awaiting a person - a map of
+            // customers and counterparties, not on a password.
+            "GET /v1/operator/kyc/cases",
+            "GET /v1/operator/customers/{id}/kyc-case",
+            "GET /v1/operator/kyc/counterparty-screenings",
             // P17-TSK-015: whose sessions are live, and ending them - an incident's acts, not a stolen password's.
             "GET /v1/operator/identities/{id}/sessions",
             "DELETE /v1/operator/identities/{id}/sessions",

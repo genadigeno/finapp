@@ -121,3 +121,24 @@ a rival:
 
 `INV-LIFE-04`, `INV-KYC-02` and `INV-KYC-04` carry the amendment; a changed circumstance of the *person* still opens a
 new case.
+
+## Amendment — one reviewer decides, and the decision and the resolution are keyed (`P17-TSK-029`, 2026-11-20)
+
+*The owner's ruling, asked at `P17-TSK-029`'s design (gap G-61, finapp-admin-panel D-8): **"Single reviewer"**.*
+The question was whether a rejection, or an approval over an adverse provider verdict (a `HIT` or an indeterminate
+answer a person resolved), needs a second person. It does not: one `KYC_REVIEW` holder decides every outcome, and the
+decision door grows no proposal and no approval. The record is unchanged - `kyc.DecisionRecorded` names the one person
+who decided, the reason and the case's pinned policy version (`INV-KYC-02`) - and segregation stays where it already
+is: the reviewer is not the customer, and every review task the decision rests on was resolved, reasoned, before it
+(`INV-KYC-04`). The alternatives were four-eyes on a rejection, or on an approval over an adverse verdict; either would
+have added a `PROPOSED` decision state and an approval door.
+
+What the task did add is the act's control over retries. `POST /v1/kyc/cases/{id}/decision` and
+`POST /v1/kyc/cases/{id}/reviews/{taskId}/resolution` require an `Idempotency-Key` (ADR-0004), at once - a request
+without one is `422 api.IdempotencyKeyRequired`, the console's keyed dialogs shipping with it. The key is scoped to the
+act and the reviewer (`X-TSK-003`) and fingerprinted by the case, the outcome or the task, and the reason's digest. The
+claim, the act and its stored outcome commit together; a retry after a lost answer replays the act's `204` where it met
+its own conditional as a `409` before, and another request under the key is `409 api.Conflict` (`INV-IDEM-01`, `-03`). A
+refusal - already decided, not ready, not found - changed nothing and stores nothing: its claim rolls back with it, so a
+case not ready at the first attempt is decided under the same key once it is. The conditional move stays the arbiter
+between reviewers: of two deciding at once, one records and the other is told `409`.
