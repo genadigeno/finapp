@@ -1,7 +1,6 @@
 package com.finapp.app.risk;
 
 import com.finapp.app.api.PendingDecisions.PendingDecisionPage;
-import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
@@ -28,7 +27,6 @@ public class RiskPendingDecisionController {
     /** The alert suppressions awaiting approval, oldest first. */
     @GetMapping("/risk/suppressions")
     @RequiresPermission(PermissionName.RISK_CASE_APPROVE)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingRiskSuppressions(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,
@@ -39,7 +37,6 @@ public class RiskPendingDecisionController {
     /** The case dispositions awaiting a second person, oldest first; each names its case. */
     @GetMapping("/risk/dispositions")
     @RequiresPermission(PermissionName.RISK_CASE_APPROVE)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingRiskDispositions(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,
@@ -50,7 +47,6 @@ public class RiskPendingDecisionController {
     /** The case risk actions awaiting approval, oldest first; each names its case. */
     @GetMapping("/risk/actions")
     @RequiresPermission(PermissionName.RISK_CASE_APPROVE)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingRiskActions(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,
@@ -61,7 +57,6 @@ public class RiskPendingDecisionController {
     /** The decision overrides awaiting a decision, oldest first; each names its assessment. */
     @GetMapping("/risk/overrides")
     @RequiresPermission(PermissionName.RISK_OVERRIDE)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingRiskOverrides(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,
@@ -72,7 +67,6 @@ public class RiskPendingDecisionController {
     /** The regulatory reports in draft awaiting approval, oldest first; each names its case. */
     @GetMapping("/risk/reports")
     @RequiresPermission(PermissionName.AML_REPORT_APPROVE)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingRiskReports(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,
@@ -83,7 +77,6 @@ public class RiskPendingDecisionController {
     /** The policy versions awaiting activation, oldest first; each names its operation. */
     @GetMapping("/risk/policy-versions")
     @RequiresPermission(PermissionName.RISK_POLICY_ADMINISTER)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingRiskPolicyVersions(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,
@@ -94,7 +87,6 @@ public class RiskPendingDecisionController {
     /** The screening list versions recorded and awaiting activation, oldest first; each names its list. */
     @GetMapping("/risk/screening-list-versions")
     @RequiresPermission(PermissionName.RISK_POLICY_ADMINISTER)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingRiskScreeningListVersions(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,

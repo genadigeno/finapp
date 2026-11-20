@@ -12,6 +12,7 @@ import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.risk.RiskAuditAction;
 import com.finapp.risk.RiskCollections;
+import com.finapp.risk.RiskSpans;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import com.finapp.sharedkernel.id.IdGenerator;
 import java.sql.Connection;
@@ -52,6 +53,7 @@ public final class RiskPendingDecisionDesk {
     @NonNull private final AuditWriter<Connection> audit;
     @NonNull private final IdGenerator ids;
     @NonNull private final Clock clock;
+    @NonNull private final RiskFlowScope flow;
 
     /** The alert suppressions awaiting approval; each is the alert's, its subject the alert. */
     public PendingDecisionPage suppressions(String status, String cursor, String limit) {
@@ -106,7 +108,7 @@ public final class RiskPendingDecisionDesk {
                 .map(position -> new RiskCollections.Cursor(position.proposedAt(), position.id()));
         Actor actor = recorded ? SecurityContext.require() : null;
         CorrelationId correlation = recorded ? correlation() : null;
-        return transactions.inTransaction(uow -> {
+        return flow.door(RiskSpans.QUEUE, () -> transactions.inTransaction(uow -> {
             List<PendingDecision> items = read.read(uow, after, size + 1).stream()
                     .map(row -> PendingDecisions.of(row.id(), kind, row.proposedBy(), row.proposedAt(),
                             row.reason().orElse(null), row.subject()))
@@ -121,7 +123,7 @@ public final class RiskPendingDecisionDesk {
                                 + ", more=" + (page.nextCursor() != null))));
             }
             return page;
-        });
+        }));
     }
 
     private static CorrelationId correlation() {

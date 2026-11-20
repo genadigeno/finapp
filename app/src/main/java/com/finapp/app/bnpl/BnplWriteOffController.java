@@ -59,9 +59,8 @@ public class BnplWriteOffController {
 
     /**
      * The write-offs awaiting a decision, oldest first - so one that can no longer post can be found - in the one pending-decision
-     * shape (`P17-TSK-040`), under the approve door's permission and assurance. Audited.
+     * shape (`P17-TSK-040`), under the approve door's permission. Audited.
      */
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @GetMapping("/write-offs")
     @RequiresPermission(PermissionName.BNPL_WRITE_OFF_APPROVE)
     public PendingDecisions.PendingDecisionPage listPendingBnplWriteOffs(

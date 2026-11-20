@@ -2,7 +2,6 @@ package com.finapp.app.merchant;
 
 import com.finapp.app.api.PendingDecisions.PendingDecisionPage;
 import com.finapp.app.session.RecordsRefusals;
-import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
@@ -29,7 +28,6 @@ public class MerchantPendingDecisionController {
     /** The payout destination changes awaiting a decision, oldest first; each names its merchant. */
     @GetMapping("/merchant/payout-destinations")
     @RequiresPermission(PermissionName.PAYOUT_DESTINATION_APPROVE)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingPayoutDestinations(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,
@@ -40,7 +38,6 @@ public class MerchantPendingDecisionController {
     /** The operator payouts above the four-eyes threshold awaiting a decision, oldest first. */
     @GetMapping("/merchant/payout-proposals")
     @RequiresPermission(PermissionName.MERCHANT_PAYOUT_APPROVE)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingPayoutProposals(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,
@@ -51,7 +48,6 @@ public class MerchantPendingDecisionController {
     /** The merchant closures awaiting a decision, oldest first. */
     @GetMapping("/merchant/closures")
     @RequiresPermission(PermissionName.MERCHANT_CLOSE_APPROVE)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingMerchantClosures(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,
@@ -62,7 +58,6 @@ public class MerchantPendingDecisionController {
     /** The BNPL fee assignment proposals awaiting a decision, oldest first; each names its merchant. */
     @GetMapping("/bnpl/fee-assignments")
     @RequiresPermission(PermissionName.FEE_SCHEDULE_APPROVE)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingBnplFeeAssignments(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,
@@ -73,7 +68,6 @@ public class MerchantPendingDecisionController {
     /** The merchant BNPL enablements awaiting a decision, oldest first; each names its merchant, which its doors take in their path. */
     @GetMapping("/merchant/bnpl-enablements")
     @RequiresPermission(PermissionName.MERCHANT_ADMINISTER)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingMerchantBnplEnablements(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,

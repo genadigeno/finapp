@@ -64,11 +64,10 @@ public class RegulatorySubmissionController {
 
     /**
      * What this controller can decide: those validated, never their own - the one pending-decision shape (`P17-TSK-040`), oldest
-     * validation first, {@code status} {@code VALIDATED} or absent, on a MULTI_FACTOR session as the approval door. Audited.
+     * validation first, {@code status} {@code VALIDATED} or absent. A read, so a password session (the owner's D-6). Audited.
      */
     @GetMapping("/awaiting-approval")
     @RequiresPermission(PermissionName.REGULATORY_REPORT_APPROVE)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisions.PendingDecisionPage listRegulatorySubmissionsAwaitingApproval(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,

@@ -1,7 +1,6 @@
 package com.finapp.app.lending;
 
 import com.finapp.app.api.PendingDecisions;
-import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
@@ -72,10 +71,9 @@ public class LendingListController {
 
     /**
      * The waivers, amendments and repayment reversals awaiting a decision, oldest first ({@code status} {@code PROPOSED} or
-     * absent): the approver's queue in the one pending-decision shape (`P17-TSK-040`), under the approve doors' permission and
-     * assurance; recorded {@code lending.ServicingRequestsRead}.
+     * absent): the approver's queue in the one pending-decision shape (`P17-TSK-040`), under the approve doors' permission;
+     * recorded {@code lending.ServicingRequestsRead}.
      */
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @GetMapping("/loans/servicing-requests")
     @RequiresPermission(PermissionName.LOAN_SERVICE_APPROVE)
     public PendingDecisions.PendingDecisionPage listLoanServicingRequests(
@@ -101,9 +99,8 @@ public class LendingListController {
 
     /**
      * The loan terms versions awaiting a decision, oldest first, in the one pending-decision shape (`P17-TSK-040`), under the
-     * approve door's permission and assurance. Unrecorded, as the terms versions are.
+     * approve door's permission. Unrecorded, as the terms versions are.
      */
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @GetMapping("/pending-decisions/lending/terms-versions")
     @RequiresPermission(PermissionName.LENDING_ADMINISTER)
     public PendingDecisions.PendingDecisionPage listPendingLoanTermsVersions(
@@ -115,9 +112,8 @@ public class LendingListController {
 
     /**
      * The lending capital contributions awaiting a decision, oldest first, in the one pending-decision shape (`P17-TSK-040`),
-     * under the approve door's permission and assurance. Unrecorded, as one contribution's read is.
+     * under the approve door's permission. Unrecorded, as one contribution's read is.
      */
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @GetMapping("/pending-decisions/lending/capital-contributions")
     @RequiresPermission(PermissionName.LENDING_CAPITAL_ADMINISTER)
     public PendingDecisions.PendingDecisionPage listPendingCapitalContributions(

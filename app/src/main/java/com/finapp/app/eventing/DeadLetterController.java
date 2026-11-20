@@ -61,12 +61,11 @@ public class DeadLetterController {
     /**
      * The discards waiting for a second person, in the one pending-decision shape (`P17-TSK-040`, converted in place from
      * `P17-TSK-042`'s {@code DiscardPage}): {@code status} {@code PROPOSED} or unnamed, oldest proposal first, the discard's id
-     * breaking the tie - each with its proposer and its reason's summary, which the second person reads. On a {@code MULTI_FACTOR}
-     * session, as the approval door is. Audited.
+     * breaking the tie - each with its proposer and its reason's summary, which the second person reads. A read, so on a
+     * password session (the owner's D-6). Audited.
      */
     @GetMapping("/discards")
     @RequiresPermission(PermissionName.EVENT_OPERATE)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisions.PendingDecisionPage readStandingDiscards(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,

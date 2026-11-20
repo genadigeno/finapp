@@ -1,7 +1,6 @@
 package com.finapp.app.reconciliation;
 
 import com.finapp.app.api.PendingDecisions;
-import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
@@ -18,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
  * the break resolutions and batch repudiations awaiting a second person, and the rule set versions awaiting a second controller,
  * each a section 7 collection of {@link PendingDecisions.PendingDecision}s - oldest first, {@code limit} 50 unless named, 200 at
  * most, the opaque {@code cursor} of the page before, {@code status} {@code PROPOSED} or absent. Each under the permission its
- * approval door decides under, on a {@code MULTI_FACTOR} session as that door is; each decision still taken at its own door, where
+ * approval door decides under, on a password session as every read (the owner's D-6); each decision still taken at its own door, where
  * a proposal decided between the list and the click answers {@code 409}.
  */
 @RestController
@@ -32,7 +31,6 @@ public class ReconciliationPendingDecisionController {
     /** The resolutions awaiting a second person, under {@code RECONCILIATION_RESOLVE}. */
     @GetMapping("/reconciliation/resolutions")
     @RequiresPermission(PermissionName.RECONCILIATION_RESOLVE)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisions.PendingDecisionPage listReconciliationResolutionDecisions(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,
@@ -43,7 +41,6 @@ public class ReconciliationPendingDecisionController {
     /** The rule set versions awaiting a second controller, under {@code RECONCILIATION_ADMINISTER}. */
     @GetMapping("/reconciliation/rule-sets")
     @RequiresPermission(PermissionName.RECONCILIATION_ADMINISTER)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisions.PendingDecisionPage listReconciliationRuleSetDecisions(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,

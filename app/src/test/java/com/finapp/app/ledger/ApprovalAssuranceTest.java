@@ -106,7 +106,7 @@ class ApprovalAssuranceTest {
      */
     @Test
     @DisplayName("at MULTI_FACTOR without the role the approval is refused as ever, so the step-up widened nobody; a password session is refused 403 identity.AssuranceRequired at the proposal and"
-            + " the rejection since the owner's D-6 (P17-TSK-102) and let through at MULTI_FACTOR, and still reaches the reads - all but the pending-decision queue, stepped up as its door since P17-TSK-040")
+            + " the rejection since the owner's D-6 (P17-TSK-102) and let through at MULTI_FACTOR, and still reaches the reads")
     void theRoleStandsAndOnlyTheReadsTakeAPassword() throws Exception {
         for (Door door : doors()) {
             assertThatThrownBy(() -> SteppedUpDoor.knock(door.approval(), AssuranceLevel.MULTI_FACTOR, Set.of())).as(door.approval().getName()).isInstanceOfSatisfying(ApiException.class,
@@ -124,11 +124,7 @@ class ApprovalAssuranceTest {
         assertThatThrownBy(() -> SteppedUpDoor.knock(rejection, AssuranceLevel.PASSWORD, controller)).as(rejection.getName()).isInstanceOfSatisfying(ApiException.class,
                 refused -> assertThat(refused.errorCode()).isEqualTo(IdentityErrorCode.ASSURANCE_REQUIRED));
         assertThat(SteppedUpDoor.knock(rejection, AssuranceLevel.MULTI_FACTOR, controller)).as(rejection.getName()).isTrue();
-        Method queue = priorPeriod("listPendingPriorPeriodAdjustments");
-        assertThatThrownBy(() -> SteppedUpDoor.knock(queue, AssuranceLevel.PASSWORD, controller)).as("the pending-decision queue steps up as its door (P17-TSK-040)")
-                .isInstanceOfSatisfying(ApiException.class, refused -> assertThat(refused.errorCode()).isEqualTo(IdentityErrorCode.ASSURANCE_REQUIRED));
-        assertThat(SteppedUpDoor.knock(queue, AssuranceLevel.MULTI_FACTOR, controller)).as("the queue, stepped up").isTrue();
-        for (String read : List.of("readPriorPeriodAdjustment")) {
+        for (String read : List.of("listPendingPriorPeriodAdjustments", "readPriorPeriodAdjustment")) {
             assertThat(SteppedUpDoor.knock(priorPeriod(read), AssuranceLevel.PASSWORD, controller)).as(read).isTrue();
         }
     }

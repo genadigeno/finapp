@@ -1,7 +1,6 @@
 package com.finapp.app.bnpl;
 
 import com.finapp.app.api.PendingDecisions;
-import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
@@ -64,10 +63,9 @@ public class BnplListController {
 
     /**
      * The waivers and repayment reversals awaiting a decision, oldest first ({@code status} {@code PROPOSED} or absent): the
-     * approver's queue in the one pending-decision shape (`P17-TSK-040`), under the approve doors' permission and assurance;
+     * approver's queue in the one pending-decision shape (`P17-TSK-040`), under the approve doors' permission;
      * recorded {@code bnpl.ServicingRequestsRead}.
      */
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @GetMapping("/bnpl-agreements/servicing-requests")
     @RequiresPermission(PermissionName.BNPL_SERVICE_APPROVE)
     public PendingDecisions.PendingDecisionPage listBnplServicingRequests(
@@ -79,9 +77,8 @@ public class BnplListController {
 
     /**
      * The BNPL terms versions awaiting a decision, oldest first, in the one pending-decision shape (`P17-TSK-040`), under the
-     * approve door's permission and assurance. Unrecorded, as the terms reads are.
+     * approve door's permission. Unrecorded, as the terms reads are.
      */
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @GetMapping("/pending-decisions/bnpl/terms-versions")
     @RequiresPermission(PermissionName.BNPL_ADMINISTER)
     public PendingDecisions.PendingDecisionPage listPendingBnplTermsVersions(
@@ -93,10 +90,9 @@ public class BnplListController {
 
     /**
      * The operator BNPL refunds proposed above the four-eyes threshold and awaiting a decision, oldest first, in the one
-     * pending-decision shape (`P17-TSK-040`), under the approve door's permission and assurance; recorded
+     * pending-decision shape (`P17-TSK-040`), under the approve door's permission; recorded
      * {@code bnpl.RefundsRead}.
      */
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @GetMapping("/pending-decisions/bnpl/refund-proposals")
     @RequiresPermission(PermissionName.PAYMENT_REFUND_APPROVE)
     public PendingDecisions.PendingDecisionPage listPendingBnplRefundProposals(
@@ -108,10 +104,9 @@ public class BnplListController {
 
     /**
      * The BNPL disputes whose resolution awaits a second operator's approval, oldest first, in the one pending-decision shape
-     * (`P17-TSK-040`; until then no list said which), under the approve door's permission and assurance; recorded
+     * (`P17-TSK-040`; until then no list said which), under the approve door's permission; recorded
      * {@code bnpl.DisputeQueueRead}.
      */
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @GetMapping("/pending-decisions/bnpl/dispute-resolutions")
     @RequiresPermission(PermissionName.BNPL_DISPUTE_RESOLVE)
     public PendingDecisions.PendingDecisionPage listPendingBnplDisputeResolutions(

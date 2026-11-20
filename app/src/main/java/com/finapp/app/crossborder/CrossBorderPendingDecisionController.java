@@ -2,7 +2,6 @@ package com.finapp.app.crossborder;
 
 import com.finapp.app.api.PendingDecisions.PendingDecisionPage;
 import com.finapp.app.session.RecordsRefusals;
-import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
@@ -30,7 +29,6 @@ public class CrossBorderPendingDecisionController {
     /** The corridor enable requests awaiting a decision, oldest first. */
     @GetMapping("/crossborder/corridor-enable-requests")
     @RequiresPermission(PermissionName.CROSSBORDER_ADMINISTER)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingCorridorEnableRequests(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,
@@ -41,7 +39,6 @@ public class CrossBorderPendingDecisionController {
     /** The corridor policy versions awaiting a decision, oldest first. */
     @GetMapping("/crossborder/corridor-policies")
     @RequiresPermission(PermissionName.CROSSBORDER_ADMINISTER)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingCorridorPolicies(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,

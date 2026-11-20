@@ -53,7 +53,8 @@ public class RiskCollectionBeans {
             RiskTransactions riskTransactions,
             AuditWriter<Connection> auditWriter,
             IdGenerator idGenerator,
-            Clock clock) {
-        return new RiskPendingDecisionDesk(riskCollections, riskTransactions, auditWriter, idGenerator, clock);
+            Clock clock,
+            RiskFlowScope riskFlowScope) {
+        return new RiskPendingDecisionDesk(riskCollections, riskTransactions, auditWriter, idGenerator, clock, riskFlowScope);
     }
 }

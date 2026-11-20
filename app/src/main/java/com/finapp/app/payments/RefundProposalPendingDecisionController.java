@@ -2,7 +2,6 @@ package com.finapp.app.payments;
 
 import com.finapp.app.api.PendingDecisions.PendingDecisionPage;
 import com.finapp.app.session.RecordsRefusals;
-import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.identity.AssuranceLevel;
 import com.finapp.identity.PermissionName;
@@ -29,7 +28,6 @@ public class RefundProposalPendingDecisionController {
     /** The queue, oldest first; each item's subject is what the proposal acts on. */
     @GetMapping("/payments/refund-proposals")
     @RequiresPermission(PermissionName.PAYMENT_REFUND_APPROVE)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisionPage listPendingRefundProposals(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,

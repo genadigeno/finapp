@@ -58,7 +58,7 @@ public final class JdbcDeadLetterStore implements DeadLetterStore {
     private static final String STANDING_ROWS =
             "SELECT discard_id, subject_kind, subject_id, status, proposed_by, proposed_at, proposal_reason FROM " + DISCARDS
                     + " WHERE status = 'PROPOSED'";
-    private static final String STANDING_ORDER = " ORDER BY proposed_at ASC, discard_id ASC LIMIT ?";
+    private static final String STANDING_ORDER = " ORDER BY proposed_at, discard_id LIMIT ?";
 
     static final String STANDING_SQL = STANDING_ROWS + STANDING_ORDER;
     static final String STANDING_AFTER_SQL = STANDING_ROWS + " AND (proposed_at, discard_id) > (?, ?)" + STANDING_ORDER;

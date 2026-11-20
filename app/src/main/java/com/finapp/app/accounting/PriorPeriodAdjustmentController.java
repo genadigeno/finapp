@@ -55,11 +55,10 @@ public class PriorPeriodAdjustmentController {
 
     /**
      * The oldest prior-period adjustments standing, so one that can no longer post can be found - the one pending-decision shape
-     * (`P17-TSK-040`), {@code status} {@code PROPOSED} or absent, on a MULTI_FACTOR session as the approval door. Audited.
+     * (`P17-TSK-040`), {@code status} {@code PROPOSED} or absent. A read, so a password session (the owner's D-6). Audited.
      */
     @GetMapping("/prior-period-adjustments")
     @RequiresPermission(PermissionName.ACCOUNTING_ADJUST_APPROVE)
-    @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     public PendingDecisions.PendingDecisionPage listPendingPriorPeriodAdjustments(
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "cursor", required = false) String cursor,
