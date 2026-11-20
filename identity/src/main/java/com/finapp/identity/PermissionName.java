@@ -148,6 +148,40 @@ public enum PermissionName {
     ACCOUNT_RESTRICT_APPROVE,
 
     /**
+     * Approves or rejects another holder's transfer reversal proposal (`P17-TSK-031`, ADR-0154; finapp-admin-panel ADR-C135
+     * decision 3, "always four-eyes"): {@code POST /v1/operator/transfer-reversals/{id}/approval} and {@code /rejection}, on
+     * a {@code MULTI_FACTOR} session, keyed; never the proposer's own. The approval reverses the transfer. The proposal is
+     * {@link #TRANSFER_REVERSE}'s. On {@code FINANCIAL_CONTROLLER}.
+     */
+    TRANSFER_REVERSE_APPROVE,
+
+    /**
+     * Approves or rejects another holder's refund proposal - a refund whose cumulative amount on its payment is above the
+     * versioned per-currency threshold (`P17-TSK-031`, ADR-0154; ADR-C135 decision 3); below it {@link #PAYMENT_REFUND} refunds
+     * as before. On {@code FINANCIAL_CONTROLLER}.
+     */
+    PAYMENT_REFUND_APPROVE,
+
+    /**
+     * Approves or rejects another holder's operator merchant payout proposal - a payout above the versioned per-currency
+     * threshold (`P17-TSK-031`, ADR-0154); below it {@link #MERCHANT_PAYOUT} pays out as before. On {@code FINANCIAL_CONTROLLER}.
+     */
+    MERCHANT_PAYOUT_APPROVE,
+
+    /**
+     * Approves or rejects another holder's fee-schedule version or merchant fee assignment proposal (`P17-TSK-031`, ADR-0154;
+     * ADR-0125 decision 4: financial configuration by four eyes). The proposals are {@link #FEE_ADMINISTER}'s. On
+     * {@code FINANCIAL_CONTROLLER}.
+     */
+    FEE_SCHEDULE_APPROVE,
+
+    /**
+     * Approves or rejects another holder's merchant closure proposal (`P17-TSK-031`, ADR-0154; ADR-C135 decision 3: closure is
+     * terminal, so four eyes). The proposal is {@link #MERCHANT_ADMINISTER}'s. On {@code FINANCIAL_CONTROLLER}.
+     */
+    MERCHANT_CLOSE_APPROVE,
+
+    /**
      * Review KYC/KYB cases: read a case with its evidence, resolve screening hits, record
      * decisions (`P2-TSK-004`).
      *

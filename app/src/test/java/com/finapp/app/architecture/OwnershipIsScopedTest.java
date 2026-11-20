@@ -2454,6 +2454,23 @@ class OwnershipIsScopedTest {
                                         + " MULTI_FACTOR session, keyed, four eyes (V003's CHECK), every act audited; or risk's"
                                         + " case approval, itself four eyes. A customer's own acts stay lockOwnedBy.")),
                     Map.entry(
+                            "com.finapp.transfers.JdbcTransferReversalProposalStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-031. A reversal proposal by its id alone, FOR UPDATE - the deciders' lock: the"
+                                        + " id comes from the URL of POST /v1/operator/transfer-reversals/{id}/approval or"
+                                        + " /rejection, another person's proposal by design. Standing in:"
+                                        + " TRANSFER_REVERSE_APPROVE on a MULTI_FACTOR session, keyed, the proposer refused by"
+                                        + " the domain and V005's CHECK, every decision audited.")),
+                    Map.entry(
+                            "com.finapp.transfers.JdbcTransferReversalProposalStore.findOpenFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-031. A transfer's open reversal proposal, read under the transfer's FOR UPDATE"
+                                        + " the proposer holds (TransferStore.lockById's provenance - the URL of"
+                                        + " POST /v1/transfers/{id}/reversal under TRANSFER_REVERSE), so one open proposal per"
+                                        + " transfer is judged before the partial unique index has to refuse it.")),
+                    Map.entry(
                             "com.finapp.accounts.JdbcAccountRestrictionStore.lock",
                             new Entry(
                                     Scope.ADMINISTERED,

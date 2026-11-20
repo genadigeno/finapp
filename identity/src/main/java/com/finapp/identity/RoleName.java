@@ -375,7 +375,15 @@ public enum RoleName {
             PermissionName.ACCOUNTING_MAPPING_APPROVE,
             PermissionName.ACCOUNTING_CLOSE_APPROVE,
             PermissionName.ACCOUNTING_ADJUST_APPROVE,
-            PermissionName.REGULATORY_REPORT_APPROVE)),
+            PermissionName.REGULATORY_REPORT_APPROVE,
+            // P17-TSK-031 (ADR-0154; ADR-C135 decision 3): the second person of the operator's money acts - a reversal, a
+            // refund and a payout above the threshold, a fee schedule's version and assignment, a merchant's closure. Their
+            // proposers are LEDGER_OPERATOR and MERCHANT_ADMINISTRATOR, other populations.
+            PermissionName.TRANSFER_REVERSE_APPROVE,
+            PermissionName.PAYMENT_REFUND_APPROVE,
+            PermissionName.MERCHANT_PAYOUT_APPROVE,
+            PermissionName.FEE_SCHEDULE_APPROVE,
+            PermissionName.MERCHANT_CLOSE_APPROVE)),
 
     /**
      * Prepares and submits regulatory submissions (`P14-TSK-001`, ADR-0118, owner decisions C4, C12): holds

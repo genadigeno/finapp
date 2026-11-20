@@ -19,12 +19,10 @@ import com.finapp.transfers.Beneficiary;
 import com.finapp.transfers.BeneficiaryId;
 import com.finapp.transfers.BeneficiaryStore;
 import com.finapp.transfers.FailureReason;
-import com.finapp.transfers.IllegalTransferTransitionException;
 import com.finapp.transfers.Transfer;
 import com.finapp.transfers.TransferCommand;
 import com.finapp.transfers.TransferExecution;
 import com.finapp.transfers.TransferId;
-import com.finapp.transfers.TransferReversal;
 import com.finapp.transfers.TransferResult;
 import com.finapp.transfers.TransferStatus;
 import com.finapp.transfers.TransferStore;
@@ -100,7 +98,6 @@ public final class TransferService {
 
     private final TransferDoorStepUp stepUp;
     private final TransferExecution execution;
-    private final TransferReversal reversal;
     private final TransferStore<Connection> transfers;
     private final BeneficiaryStore<Connection> beneficiaries;
     private final IdentityStore<Connection> identities;
@@ -113,7 +110,6 @@ public final class TransferService {
     public TransferService(
             TransferDoorStepUp stepUp,
             TransferExecution execution,
-            TransferReversal reversal,
             TransferStore<Connection> transfers,
             BeneficiaryStore<Connection> beneficiaries,
             IdentityStore<Connection> identities,
@@ -124,7 +120,6 @@ public final class TransferService {
             Clock clock) {
         this.stepUp = Objects.requireNonNull(stepUp, "stepUp must not be null");
         this.execution = Objects.requireNonNull(execution, "execution must not be null");
-        this.reversal = Objects.requireNonNull(reversal, "reversal must not be null");
         this.transfers = Objects.requireNonNull(transfers, "transfers must not be null");
         this.beneficiaries =
                 Objects.requireNonNull(beneficiaries, "beneficiaries must not be null");
@@ -362,51 +357,6 @@ public final class TransferService {
                                                         .map(TransferService::currentView)
                                                         .toList())
                                 .orElse(List.of()));
-    }
-
-    /**
-     * Reverses the transfer as the acting operator (`P4-TSK-009`) — the operator surface on a
-     * customer slice, deliberately distinct in shape: no session-derived customer chain,
-     * because the subject is <em>somebody else's</em> transfer named from the URL, and the
-     * standing checks are {@code @RequiresPermission(TRANSFER_REVERSE)} at the boundary plus
-     * the actor {@code SecurityContext} carries into the command and its audit record
-     * (the {@code ADMINISTERED} class, `P1-TSK-028`).
-     *
-     * <p>The machine's refusal — {@code FAILED}, already-{@code REVERSED}, or the loser of a
-     * concurrent race — maps to the one {@code 409 transfers.NotReversible}, with nothing
-     * written (the thrown refusal rolls the transaction back, and it is thrown before any
-     * ledger work anyway). An unknown identifier answers empty for the controller's one 404.
-     */
-    public Optional<TransferView> reverse(TransferId transfer, String reason) {
-        Objects.requireNonNull(transfer, "transfer must not be null");
-        Objects.requireNonNull(reason, "reason must not be null");
-        try {
-            Optional<TransferView> reversed =
-                    inOneTransaction(
-                            unitOfWork -> {
-                                try {
-                                    return reversal
-                                            .reverse(unitOfWork, transfer, reason)
-                                            .map(TransferService::currentView);
-                                } catch (IllegalTransferTransitionException refused) {
-                                    throw new ApiException(
-                                            TransfersErrorCode.NOT_REVERSIBLE,
-                                            "A reversal was refused by the transfer's state ("
-                                                    + refused.from() + ")",
-                                            "the transfer is " + refused.from()
-                                                    + " and only a COMPLETED transfer can be"
-                                                    + " reversed.");
-                                }
-                            });
-            // Post-commit and only for the acting call (P3-TSK-020): the machine's losers land
-            // in the catch as refusals, and the unknown identifier's empty is no command at
-            // all - nothing was refused of a real transfer, so nothing counts.
-            reversed.ifPresent(view -> metrics.reversed());
-            return reversed;
-        } catch (ApiException refusal) {
-            countIfRefusal(refusal);
-            throw refusal;
-        }
     }
 
     /**

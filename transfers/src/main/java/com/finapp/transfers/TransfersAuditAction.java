@@ -82,6 +82,22 @@ public enum TransfersAuditAction implements AuditableAction {
             true),
 
     /**
+     * A holder of {@code TRANSFER_REVERSE} proposed a completed transfer's reversal (`P17-TSK-031`, ADR-0154): nothing moved
+     * yet; a holder of {@code TRANSFER_REVERSE_APPROVE} who did not propose it decides. The approval's record is
+     * {@link #TRANSFER_REVERSED}, written by the reversal itself under the approver.
+     */
+    REVERSAL_PROPOSED(
+            "transfers.ReversalProposed",
+            "A completed transfer's reversal was proposed with a reason; nothing moved until a second person approves.",
+            true),
+
+    /** A holder of {@code TRANSFER_REVERSE_APPROVE} rejected a reversal it did not propose (`P17-TSK-031`); nothing moved. */
+    REVERSAL_REJECTED(
+            "transfers.ReversalRejected",
+            "A proposed transfer reversal was rejected by a second person, with a reason; nothing moved.",
+            true),
+
+    /**
      * A holder of {@code TRANSFER_READ} was served a page of a customer's transfers (`P17-TSK-027`, gap G-35;
      * {@code GET /v1/operator/transfers}, on a {@code MULTI_FACTOR} session; ADR-C132 decision 5): once per page, the customer
      * the target, the window, the status filter, whether it followed a cursor and how many it served the summary - never an
