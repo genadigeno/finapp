@@ -1,861 +1,546 @@
 # finapp
 
-An enterprise fintech reference platform: double-entry ledger, payments, settlement and
-reconciliation, built as a modular monolith with financial correctness enforced mechanically
-rather than by convention.
+**An enterprise fintech reference platform, built to show how serious financial infrastructure is engineered.**
+It covers digital banking, payments, merchants, settlement and reconciliation, FX and cross-border, credit, lending,
+buy-now-pay-later, risk and AML, and accounting, all built on one double-entry ledger. It is a Java 21 / Spring Boot
+modular monolith on PostgreSQL, designed to run as many concurrent instances, with its financial rules enforced
+by the build rather than by convention.
 
-**Phase 0 delivered no business capability, and that was deliberate** — money representation,
-idempotency, outbox, audit and correlation cannot be retrofitted once financial history exists.
-Seven phases on, money exists and moves: a double-entry ledger, balances explainable from the
-postings, holds, customer-visible internal transfers, payments through a third party that can
-fail in every way a third party can, merchants who sell through the platform and are paid out,
-and three payment rails the domain tells apart by what each declares — cards, instant credit
-transfers and the platform's own wallets — with disputes and chargebacks posted exactly once. Where the project stands is summarised
-immediately below, and described canonically in
-[`docs/project/CURRENT_STATE.md`](docs/project/CURRENT_STATE.md).
+This README has two parts:
+
+- **[Part 1 - For technical readers](#part-1---for-technical-readers)**: architecture, stack, modules, status, how to
+  build, test, run and ship it, and where the detailed documents are.
+- **[Part 2 - For non-technical readers](#part-2---for-non-technical-readers)**: what finapp is, what it can do, why it
+  is built the way it is, and where it stands, in plain language.
+
+The canonical, always-current record of where the project is lives in
+[`docs/project/CURRENT_STATE.md`](docs/project/CURRENT_STATE.md). Every number in this README was counted from the
+repository on 2026-11-21. Other documents cite this README by its older section labels (§3, §5e, §5f, §5g, §6, §7a,
+§7b). Those labels are kept on the subsections that replaced them.
 
 ---
 
-## Where the project is
+# Part 1 - For technical readers
 
-**Phases 0 through 7 are `COMPLETE`.** Phase 7 — Cards, Wallets, A2A and Instant Payments —
-closed on 2026-09-28, ruled by its exit review
-([`docs/project/reviews/PHASE_7_REVIEW.md`](docs/project/reviews/PHASE_7_REVIEW.md)), which found
-and fixed a withdrawal posting to a clearing position it named, a capability descriptor stored as
-one integer while every resolver read the running build, bank details printable by three port
-records and nineteen gate claims with partial tests — and broke every fix on purpose to prove its
-test. **The Phase 7 → 8 transition** (2026-09-28,
-[`docs/project/reviews/PHASE_7_TO_8_TRANSITION.md`](docs/project/reviews/PHASE_7_TO_8_TRANSITION.md))
-then confirmed Phase 7 only after repairing what the review had missed — a withdrawal's own
-confirmation parked as inbound value, an inquiry sweep crediting an amount the scheme never
-executed, and twelve important defects besides — broke every repair on purpose, and ran the
-fleet-wide battery before and after. **Phase 8 — Settlement and Reconciliation — is `READY`**;
-its first task, `P8-TSK-001`, is next.
-
-Every number below is counted from this repository rather than recalled: items from
-[`docs/project/BACKLOG.md`](docs/project/BACKLOG.md), decisions from [`docs/adr/`](docs/adr/README.md),
-properties from [`docs/domain/FINANCIAL_INVARIANTS.md`](docs/domain/FINANCIAL_INVARIANTS.md),
-the surface from [`docs/api/openapi.json`](docs/api/openapi.json).
-[`docs/project/CURRENT_STATE.md`](docs/project/CURRENT_STATE.md) is the canonical, always-current
-description of where the project is; this section is the summary of it.
-
-```
-Programme    ████████░░░░░░░░░   8 of 17 phases complete
-Backlog      ████████████████░░  219 of 250 elaborated items complete — 27 Phase 8, 4 cross-cutting open
-Phase 6      ██████████████████  18 of 18 items, 7 of 7 milestones closed
-Phase 7      ██████████████████  18 of 18 items, 8 of 8 milestones closed
-Phase 8      ░░░░░░░░░░░░░░░░░░  0 of 27 items — READY, first task P8-TSK-001
-```
+## 1.1 At a glance
 
 | | |
 |---|---|
-| 🔨 **Current work** | Phase 8 — Settlement and Reconciliation — is `READY` behind the Phase 7 → 8 transition. Next: **`P8-TSK-001`**, the `settlement` and `reconciliation` modules and schemas |
-| 💰 **Business capability** | Money exists and moves: accounts, a double-entry ledger, explainable balances, holds, internal transfers, payments and refunds through an unreliable provider, merchants who sell through checkout and are paid out under the bound, and three rails — cards that authorize, void, clear and are charged back; instant credit transfers final on acceptance, for pay-ins, withdrawals and returns; and wallet payments on the platform's own books |
-| 📐 **Decisions** | 72 ADRs — 61 `Accepted`; 11 `Proposed`: ADR-0055 (Lombok, cross-cutting, its acceptance the owner's) and the ten Phase 8 ADRs, ADR-0064…0073 (ADR-0063 reserved by an unmerged branch) |
-| 🔒 **Invariants** | 110 catalogued; each in scope for a completed phase has a test *demonstrated to fail* when the invariant is broken |
-| 🗄️ **Schema** | 97 forward-only migrations across 12 schema-owning modules |
-| 🌐 **API** | 92 published paths, 107 operations, compared byte for byte against the running application on every build |
-| 🧾 **Audit and errors** | 95 auditable actions, 86 error codes, both reconciled with the code by the build |
-| 🧩 **Code** | 14 Gradle modules; 908 production, 427 test and 7 test-fixture source files |
-| 📦 **History** | 319 commits, 2026-08-31 to 2026-09-28 |
+| 🏗️ **Shape** | One deployable modular monolith, `finapp-app`, run as **N ≥ 3 replicas**; a migration Job, `finapp-migrator`; and a static Operator Console, `finapp-console`, on the operator edge |
+| 🧩 **Modules** | **25 Gradle modules**: 22 domain or platform modules, the pure `creditmath`, the `migrator` and the `app` |
+| 🗄️ **Schema** | **388 forward-only Flyway migrations** across **21 schema-owning modules**, one PostgreSQL schema per module |
+| 🌐 **API** | **521 published paths, 567 operations** (419 of them on the operator surface), 878 schemas, in [`docs/api/openapi.json`](docs/api/openapi.json), generated from the running application and compared byte for byte on every build |
+| 📐 **Decisions** | **149 ADRs** in [`docs/adr/`](docs/adr/README.md): 147 `Accepted`, 2 `Proposed` |
+| 🔒 **Invariants** | **171 financial and platform invariants** (`INV-*`) in [`docs/domain/FINANCIAL_INVARIANTS.md`](docs/domain/FINANCIAL_INVARIANTS.md) |
+| 🧾 **Audit and errors** | **468 auditable actions** ([`AUDITABLE_ACTIONS.md`](docs/architecture/AUDITABLE_ACTIONS.md)) and **398 error codes** ([`ERROR_CONTRACT.md`](docs/architecture/ERROR_CONTRACT.md)), both reconciled with the code by guard tests |
+| 💻 **Code** | 3,129 production Java files (~445k lines), 1,956 test files and 50 test fixtures; 12,471 test methods |
+| 📦 **History** | 2,312 commits, 2026-08-31 to 2026-11-21 |
 
-*(This section read "Phase 5 … `IN_PROGRESS`, 5 of 21 items" from 2026-09-20 until the Phase 6
-review's completion gate, `P6-DOC-001` — frozen through the rest of Phase 5, its review, the
-Phase 5 → 6 transition and the whole of Phase 6, the stale-second-copy class. Every number above
-was recounted from the repository at that gate, and again at the Phase 6 → 7 transition. It then
-read "Phase 7 is `READY` … 0 of 18 items" through the whole of Phase 7 — frozen at the transition,
-the same class again — until the Phase 7 review, `P7-DOC-001`, recounted every number here, and
-the Phase 7 → 8 transition recounted them again.)*
+## 1.2 Where the project is
 
----
+**Phases 0 to 16 are `COMPLETE`. Phase 17, the Operator Console, is in progress: 48 of 51 items done.**
 
-### Roadmap
+```
+Programme   ████████████████░  17 of 18 phases complete (0-16)
+Phase 17    ████████████████░  48 of 51 items - the pending-decision lists, the end-to-end battery and the exit review open
+```
 
-Seventeen phases. The sequence and the reasoning behind its order live in
-[`docs/product/ROADMAP.md`](docs/product/ROADMAP.md); the per-phase engineering plan — objective,
-contexts, deliverables, exit criteria, risks and explicit out-of-scope — lives in
-[`docs/project/DELIVERY_PLAN.md`](docs/project/DELIVERY_PLAN.md). The gate model and the status
-vocabulary are [`docs/project/PHASE_GATES.md`](docs/project/PHASE_GATES.md).
-
-| # | Phase | Status | Primary outcome |
-|---|-------|--------|-----------------|
-| 0 | Domain and Architecture Foundation | COMPLETE 2026-09-04 | Buildable, boundary-enforced modular monolith; financial and platform kernel |
-| 1 | Identity and Customer Foundation | COMPLETE 2026-09-09 | Party/Customer/Identity, authentication, sessions, authorization, audit |
-| 2 | KYC/KYB and Consent | COMPLETE 2026-09-13 | Verification lifecycle, screening adapters, append-only consent history |
-| 3 | Accounts and Financial Ledger | COMPLETE 2026-09-17 | Chart of accounts, double-entry ledger, balances, holds, reversals |
-| 4 | Internal Transfers | COMPLETE 2026-09-19 | The first end-to-end money movement on the ledger |
-| 5 | Payment Infrastructure | COMPLETE 2026-09-21 | Payment intent/attempt, provider adapters, auth/capture, refunds, webhooks |
-| 6 | Checkout and Merchant Platform | COMPLETE 2026-09-24 | Merchants, checkout sessions, fees, merchant payouts |
-| 7 | Cards, Wallets, A2A and Instant Payments | COMPLETE 2026-09-28 | Multi-rail abstraction, disputes and chargebacks |
-| 8 | Settlement and Reconciliation | READY | Settlement ingestion, matching, breaks, suspense, investigation |
-| 9 | FX and Cross-Border Payments | PLANNED | Quotes, rate locks, multi-currency conversion, cross-border workflow |
-| 10 | Credit Decisioning | PLANNED | Credit profile, bureau adapters, versioned policy, explainable decisions |
-| 11 | Lending | PLANNED | Applications, offers, disbursement, schedules, repayment, delinquency |
-| 12 | BNPL | PLANNED | Merchant-financed instalments, merchant settlement, refund interaction |
-| 13 | Risk, Fraud and AML | PLANNED | Signals, rules, decisions, cases, ongoing monitoring |
-| 14 | Accounting and Financial Reporting | PLANNED | GL mapping, trial balance, period close, reporting abstraction |
-| 15 | Production Hardening | PLANNED | Security hardening, SLOs, runbooks, operational readiness |
-| 16 | Scale, Resilience and Disaster Recovery | PLANNED | Load characterisation, degradation modes, backup/restore, DR |
-
-**A phase is not complete because its tasks are.** It is complete when a *review* says so, against
-the twelve universal exit criteria plus the phase's own. Phase 0's first review and Phase 1's both
-**failed** their gate and returned the phase to `IN_PROGRESS` — which is the model working rather
-than a setback. Phase 3 was the first phase whose financial supplement F1–F8 was binding.
-
----
-
-### Completed phases
-
-| Phase | Items | What it delivered |
-|-------|-------|-------------------|
-| 0 — Foundation | 63 of 63 | A boundary-enforced modular monolith with the financial and platform kernel and **zero business capability**, deliberately: money representation, idempotency, outbox, audit and correlation cannot be retrofitted once financial history exists |
-| 1 — Identity | 35 of 35 | A Party can exist, become a Customer, hold an Identity, prove it over HTTP, hold a session with a recorded assurance level, and have every privileged action authorised and audited — with **no money anywhere in it, by design** |
-| 2 — KYC/KYB and Consent | 23 of 23 | A Party verified to the standard a regulator requires, with the evidence retained verbatim, the decision defensible and reproducible, and an append-only consent history with an enforcement gate |
-| 3 — Ledger | 25 of 25 | **Money exists**: balanced immutable postings, a balance explainable three independent ways, holds, reversals and four-eyes adjustments that correct mistakes without one committed byte changing, and a trial balance continuously asserted zero per currency |
-| 4 — Internal Transfers | 14 of 14 | **Money moves between customers**: an explicit lifecycle whose every state is earned by a producer, idempotency at the financial boundary proven under concurrent submission, conservation under ten instances moving money **both ways**, a privileged reasoned reversal that corrects by referencing rather than editing, and the limit and risk seams as contracts Phase 13 can honour |
-| 5 — Payment Infrastructure | 21 of 21 | **Money enters and leaves through a party that can fail in every way a third party can**: intents and attempts, dispatch before the call, an honest `UNKNOWN`, a leaderless reconciliation sweeper, bounded refunds that hold the funds they return, authenticated deduplicated webhooks — and the ledger's first touch at capture |
-| 6 — Checkout and Merchant Platform | 18 of 18 | **A merchant the platform does not own can sell through it and be paid**: onboarding behind KYB, immutable versioned fee schedules pinned at the offer, the fee taken in the capture's one entry, refunds funded by the net, payouts under the bound to a destination no one person can change, and tenancy in every statement |
-
-Each phase's review record is in [`docs/project/reviews/`](docs/project/reviews/), alongside the
-transition audit that opened the phase after it.
-
----
-
-### ✅ Phase 4 — Internal Transfers
-
-The first customer-visible money movement, and deliberately the **easy half** of moving money: both
-legs internal, one database, one transaction, no third party. Its job is to prove the lifecycle,
-idempotency, conservation-under-contention and reversal disciplines on the rail the platform
-controls entirely — so that Phase 5, where an unreliable provider decides outcomes and `UNKNOWN`
-becomes a modelled state, changes one variable at a time rather than four.
-
-Planned in [`docs/project/PHASE_4_PLAN.md`](docs/project/PHASE_4_PLAN.md). Entry gate passed
-2026-09-17, all twelve criteria
-([`PHASE_3_TO_4_TRANSITION.md`](docs/project/reviews/PHASE_3_TO_4_TRANSITION.md)); closed
-2026-09-19 by the exit review
-([`PHASE_4_REVIEW.md`](docs/project/reviews/PHASE_4_REVIEW.md)) — 8 areas, 12 universal
-criteria, F1–F8 and 16 phase-specific criteria, with **the review's own verdict flipping the
-status** and the post-flip battery green.
-
-**Milestones**
-
-| | Milestone | Progress | Note |
+| # | Phase | Status | What it delivered |
 |---|---|---|---|
-| ✅ | M4.1 — Foundations | `██████████` 2/2 | The `transfers` module, its privilege floor, and the build-graph edges that make the phase's top risk structurally unreachable |
-| ✅ | M4.2 — The movement exists | `██████████` 3/3 | Ten instances draining one account accept exactly the affordable transfers, total value conserved to the minor unit, counted in the tables |
-| ✅ | M4.3 — Beneficiaries | `██████████` 2/2 | The saved destination, created under a conditional second factor, listed and removed |
-| ✅ | M4.4 — Over HTTP | `██████████` 1/1 | `POST /v1/transfers` answering the judgement in the body — a `FAILED` outcome is a `201` that says so, never an HTTP error |
-| ✅ | M4.5 — Reversal | `██████████` 1/1 | The privileged, reasoned correction: the original entry byte-identical, both balances restored exactly, the loser of the race refused with nothing posted |
-| ✅ | M4.6 — The seams | `██████████` 1/1 | Limits and risk as compiler-required, verdict-returning, in-lock contracts — Phase 13 inherits atomicity and changes no contract |
-| ✅ | M4.7 — Observability and demonstration | `██████████` 3/3 | The meters, the dashboard row, conservation under sustained bidirectional contention — which found and fixed a real deadlock — and the register rows, whose audit found the caller had no concurrent-duplicate test and performed it |
-| ✅ | M4.8 — The gate | `██████████` 1/1 | The exit review, whose verdict flipped the status — and the flip surfaced nothing, because `P4-TST-002` and `P4-TSK-011` had each pre-paid their half |
+| 0 | Domain and Architecture Foundation | ✅ 2026-09-04 | The boundary-enforced modular monolith; money, idempotency, outbox, audit and correlation before any business capability |
+| 1 | Identity and Customer Foundation | ✅ 2026-09-09 | Party, customer and identity; authentication, server-side sessions, MFA, authorisation, audit |
+| 2 | KYC/KYB and Consent | ✅ 2026-09-13 | The verification lifecycle, screening adapters, evidence kept verbatim, an append-only consent history |
+| 3 | Accounts and Financial Ledger | ✅ 2026-09-17 | Chart of accounts, double-entry journal, explainable balances, holds, reversals, four-eyes adjustments |
+| 4 | Internal Transfers | ✅ 2026-09-19 | The first end-to-end money movement, conserved under ten concurrent instances |
+| 5 | Payment Infrastructure | ✅ 2026-09-21 | Payment intents and attempts, provider adapters, an honest `UNKNOWN`, refunds, authenticated webhooks |
+| 6 | Checkout and Merchant Platform | ✅ 2026-09-24 | Merchant onboarding behind KYB, checkout, versioned fee schedules, merchant payouts, tenancy |
+| 7 | Cards, Wallets, A2A and Instant Payments | ✅ 2026-09-28 | Three rails behind one abstraction; disputes and chargebacks posted exactly once |
+| 8 | Settlement and Reconciliation | ✅ 2026-10-01 | Settlement ingestion, matching, breaks, suspense and investigation |
+| 9 | FX and Cross-Border Payments | ✅ 2026-10-07 | Quotes, rate locks, conversion, FX cover, corridors and the cross-border workflow |
+| 10 | Credit Decisioning | ✅ 2026-10-09 | Credit profiles, bureau adapters, versioned policy and scorecards, explainable decisions |
+| 11 | Lending | ✅ 2026-10-16 | Applications, offers, disbursement, schedules, accrual, repayment, credit lines, delinquency, lending capital |
+| 12 | Buy Now, Pay Later | ✅ 2026-10-22 | Pay-in-N at checkout, merchants paid upfront net of fee, refunds latest-instalment-first, the three-way proof |
+| 13 | Risk, Fraud and AML | ✅ 2026-10-27 | Signals, rules, decisions, cases and ongoing monitoring |
+| 14 | Accounting and Financial Reporting | ✅ 2026-11-07 | The GL as a versioned mapping over the journal, periods with a posting cutoff, a four-eyes close, reports |
+| 15 | Production Hardening | ✅ 2026-11-12 | Two reproducible, signed images; Kubernetes manifests; a segmented edge; Terraform verified with mock providers; SLOs and runbooks |
+| 16 | Scale, Resilience and Disaster Recovery | ✅ 2026-11-17 | Load characterisation (k6, Toxiproxy), degradation modes, backup and restore, the DR stance |
+| 17 | Operator Console | 🟡 in progress | The operator endpoints, edge and admission behind the console in the `finapp-admin-panel` repository |
 
-**What the review found**
+**A phase is complete when a review says so, not when its tasks are.** Each phase closes on an exit review against
+twelve universal criteria, the financial supplement F1-F8 and its own criteria, and a transition audit opens the next.
+Several reviews failed their gate and sent the phase back. The review records are in
+[`docs/project/reviews/`](docs/project/reviews/).
 
-| | Finding | Outcome |
-|---|---|---|
-| 🧠 | The component register had **no `transfers.beneficiary` row** — and §3 is an *enforced exemption set*, not a description | The register-decay class's **fifth** occurrence and the first *inside* a phase rather than at a boundary; row landed with its provenance |
-| 🧠 | `P4-TSK-008`'s backlog block recorded *Completion notes* where every sibling records *Gate evidence*, with its mutation sweep only in `CURRENT_STATE.md` | Restated in the backlog, which is the record |
-| ✅ | The ADR index needed **no** repair — the second-copy decay found by hand at three consecutive gates | `P4-TSK-002`'s build guard reconciled both copies when this gate accepted ADR-0043/0044 |
-| ⚠️ | Criterion 7 asks for the full suite; the standing instruction skips `build databaseTest kafkaTest` | **Met with the deviation recorded**: hermetic fleet-wide (1157, 0 failures), database and kafka per task, **no fleet-wide count claimed** |
+**What is owed, stated rather than hidden:**
 
----
+- **Never deployed.** Nothing has run in a real environment. The images, manifests and Terraform are built and checked
+  in CI and rehearsed on `kind`; there is no cloud account, and provider connectivity is simulated.
+- **Phase 17's verification is partial, by the owner's choice.** Its later tasks were verified on the unit and slice
+  tiers only, and the last four merged (`P17-TSK-123`...`-126`) on no tests at all. The database, architecture and
+  end-to-end tiers are recorded as owed, as are five known-red unit cases from `P17-TSK-124`.
+- Open items, debt and postponed issues are in `CURRENT_STATE.md` and
+  [`docs/project/POSTPONED_ISSUES.md`](docs/project/POSTPONED_ISSUES.md).
 
-### Verification state
+## 1.3 Architecture
 
-The standing instruction through Phases 4–6 was that the full battery is **skipped** per task;
-every task was verified by targeted tiers and recorded in those words, each exit review assessed
-criterion 7 on that evidence with the deviation stated rather than waived, and each phase's
-transition runs the battery fleet-wide.
+### The shape
 
-| | |
+A **modular monolith** (ADR-0001): one deployable whose modules are bounded contexts with their own PostgreSQL schemas,
+published ports and enforced boundaries. It is one *deployable*, never one *process*. It always runs as N concurrent
+replicas, and **no correctness rests on a single JVM, a local lock, local memory or a single scheduler** (ADR-0014,
+[`DISTRIBUTED_EXECUTION.md`](docs/architecture/DISTRIBUTED_EXECUTION.md)). Authoritative state lives in the database,
+time-based coordination uses the database's clock, and schedules are leaderless (`FOR UPDATE SKIP LOCKED`).
+
+```
+             public edge                               operator edge (TLS, separate ingress)
+                  |                                         |                 |
+                  v                                         v                 v
+   +-------------------------------------------+    /v1/operator/**     /console/**
+   |  finapp-app  x N replicas                 |<------------+        finapp-console
+   |  (HTTP + every leaderless schedule and    |                      (static SPA, no state)
+   |   consumer, in every replica)             |
+   +---------------------+---------------------+
+                         |
+          +--------------+---------------+
+          v                              v
+     PostgreSQL                        Kafka
+  (the financial truth:            (integration transport,
+   one schema per module)           never the accounting truth)
+          ^
+          |
+   finapp-migrator  (a Job per release, before the rollout)
+```
+
+### Modules
+
+| Module | Owns | Main / test files | Migrations |
+|---|---|---|---|
+| `sharedkernel` | `Money` (integer minor units, explicit currency and scale), identifiers, correlation value types; no Spring | 25 / 14 | - |
+| `platform` | Idempotency, the transactional outbox and inbox, audit, correlation, authentication and authorisation interceptors, the error contract | 119 / 80 | 17 |
+| `party` | Parties and customers | 18 / 4 | 6 |
+| `identity` | Identities, credentials (Argon2), server-side sessions, MFA, roles and permissions, segregation of duties | 87 / 27 | 30 |
+| `kyc` | KYC/KYB cases, documents and evidence, screening, the review queue | 83 / 32 | 16 |
+| `consent` | Versioned consent texts and the append-only consent history | 13 / 3 | 3 |
+| `ledger` | Ledger accounts, the double-entry journal, balances, holds, reversals, adjustments | 113 / 41 | 39 |
+| `accounts` | Customer accounts and wallets, restrictions | 29 / 5 | 3 |
+| `transfers` | Internal transfers, beneficiaries, reversals | 40 / 8 | 5 |
+| `paymentmethods` | Tokenised instruments: the PCI boundary | 17 / 7 | 3 |
+| `payments` | Payment intents and attempts, provider adapters, rails, refunds, voids, webhooks, disputes | 222 / 45 | 42 |
+| `checkout` | Checkout sessions and orders | 21 / 5 | 5 |
+| `merchant` | Merchants, scoped API keys, fee schedules, payables and payouts | 140 / 36 | 22 |
+| `settlement` | External settlement evidence and its recognition | 61 / 43 | 22 |
+| `reconciliation` | Matching, breaks, suspense and investigation | 129 / 63 | 27 |
+| `fx` | Rates, quotes, rate locks, trades, pricing policy, cover | 81 / 25 | 14 |
+| `crossborder` | Corridors and cross-border payments | 47 / 10 | 8 |
+| `credit` | Credit profiles, bureau adapters, policy and scorecard versions, decisions, review cases | 122 / 43 | 26 |
+| `lending` | Loan applications, offers, disbursement, schedules, accrual, repayment, delinquency, capital | 184 / 59 | 36 |
+| `creditmath` | The pure, deterministic credit arithmetic that lending and BNPL share | 24 / 11 | - |
+| `bnpl` | Pay-in-N agreements, merchant financing, instalments, refunds, disputes | 164 / 92 | 23 |
+| `risk` | Signals, rules, decisions, cases, AML monitoring | 246 / 117 | 22 |
+| `accounting` | GL mapping, accounting periods, the close, statements and regulatory reports | 182 / 73 | 19 |
+| `migrator` | The Flyway runner shipped as the `finapp-migrator` image | 12 / 10 | - |
+| `app` | The Spring Boot application: HTTP doors, wiring, the API contract and the architecture rules | 950 / 1,103 | - |
+
+Which module owns what, and why, is in [`MODULE_ARCHITECTURE.md`](docs/architecture/MODULE_ARCHITECTURE.md) and
+[`BOUNDED_CONTEXTS.md`](docs/architecture/BOUNDED_CONTEXTS.md). The build fails on a dependency that crosses a boundary
+it may not cross.
+
+### Stack
+
+| Area | In use |
 |---|---|
-| Full battery | **Fleet-wide and current (2026-09-24, the Phase 6 → 7 transition), twice**: before its repairs, on untouched `82b2179`, **1550 hermetic / 1027 database / 14 kafka tests, 0 failures**; after them, from clean, **1558 / 1051 / 14, 0 failures**. Green before repair: the transition's audit found two critical defects in code every test passed over, which is why a phase is not complete because its tests are. *(This row read the Phase 4 → 5 transition's 1157 / 729 / 14 until then.)* |
-| CI | Four gates on every push to `master`: build and tests, migrations against a real PostgreSQL, secret scan over full history, dependency scan of a CycloneDX SBOM (see section 6) |
+| Language and build | Java 21 (pinned toolchain), Gradle wrapper with dependency locking and SHA-256 verification, Lombok under a restricted `lombok.config` |
+| Application | Spring Boot 4.1 (web, actuator, JDBC). **No Spring Security** (the platform's own interceptors over server-side sessions and scoped merchant keys); `spring-security-crypto` for Argon2 only. **No ORM**: explicit JDBC (ADR-0033) |
+| Data | PostgreSQL 18 through explicit JDBC; Flyway 13 per-module migrations, expand-only; four database roles, least privilege |
+| Messaging | Kafka 4.3 (KRaft) behind the transactional outbox and an inbox; **never** the accounting truth |
+| Not used by the application | Redis (local compose only), object storage (evidence lives in PostgreSQL, ADR-0036) |
+| Observability | OpenTelemetry over OTLP to one collector; Prometheus, Alertmanager, Grafana; Tempo and Loki as reference backends; ECS JSON logs |
+| Testing | JUnit 6, AssertJ, Testcontainers, WireMock, ArchUnit; k6 and Toxiproxy for load and faults |
+| Delivery | Distroless non-root images built twice and compared, SBOMs, signing and admission, Kubernetes manifests, Argo CD promotion by digest, Terraform with mock providers |
+| API | REST under `/v1`, OpenAPI generated from the running app; signed, idempotent webhooks |
 
----
+### Two surfaces, two edges
 
-## 1. Prerequisites
+- **The public surface** serves customers (`/v1/me/**`, transfers, payments, KYC and so on) and merchants (scoped API
+  keys).
+- **The operator surface**, `/v1/operator/**` and the other operator acts, serves staff through a separate operator edge.
+  Every operator act requires a `MULTI_FACTOR` session. Money acts are four eyes: one person proposes, a different
+  person approves. Personal-data reads are recorded. Lists are keyset-paged collections (`{items, nextCursor}`).
+- The edge's allow-lists (`deploy/edge/base/*-routes.yaml`) are **generated** from the permission register and the
+  handler mapping, never kept by hand.
+
+### The Operator Console and the customer application
+
+- **`finapp-admin-panel`** is the Operator Console, a React/TypeScript single-page
+  application. It is a client of the operator surface and nothing more: no backend-for-frontend, no authority in the
+  browser, served same-origin from `/console/**` on the operator edge. It pins this repository's contract by commit.
+- **finapp-front-end** is the customer-facing web application, designed in its own repository and planned as Phase 18.
+
+## 1.4 The engineering rules that make it financial infrastructure
+
+The binding rules are in [`CLAUDE.md`](CLAUDE.md) and the invariant catalogue. In short:
+
+1. **No floating point for money, ever.** `Money` is an integer of minor units with an explicit currency and scale. An
+   architecture rule fails the build on a `double` or `float` near money.
+2. **Every journal entry balances.** Total debits equal total credits per currency, and the trial balance is
+   continuously asserted at zero.
+3. **History is immutable.** Corrections are reversals, adjustments or compensating entries. The application's database
+   role *lacks* the privilege to update or delete the journal, so the rule holds even against a bug.
+4. **A balance is explainable** from the postings that make it: economic event, domain operation, financial
+   transaction, journal entry, debit and credit lines, balance, settlement, reconciliation.
+5. **Every money-moving operation has an explicit state machine**, and an outcome nobody knows yet is a modelled
+   `UNKNOWN`, never a guess.
+6. **Critical commands are idempotent.** An `Idempotency-Key` per principal, persisted at the financial boundary: a retry
+   replays the stored answer, and the same key carrying a different request is refused.
+7. **Duplicates are expected.** Events, webhooks and requests arrive twice, late or out of order, and must be harmless.
+8. **Kafka, caches and projections are not truth.** The outbox publishes what PostgreSQL committed.
+9. **Reconciliation is a first-class capability.** External evidence is kept, matched, and every break investigated.
+10. **Everything privileged is audited** with actor, time, operation, target, reason, correlation and outcome.
+11. **Correct under ten instances.** Every critical path is argued, and where possible tested, under concurrent replicas.
+
+**How the rules are held:** architecture tests (module boundaries, money types, schema ownership), guard tests that
+reconcile the code with its registers (audit actions, error codes, permissions, routes, ownership, threat model,
+configuration), a generated and diffed API contract, and **mutation demonstrations**: a protecting test is shown to
+fail when its invariant is deliberately broken, and the result recorded in
+[`docs/project/MUTATION_TESTING.md`](docs/project/MUTATION_TESTING.md). The demonstrations recent Phase 17 tasks still
+owe are recorded as owed there and in `CURRENT_STATE.md`.
+
+## 1.5 Repository layout
+
+```
+app/, ledger/, payments/, ...   the Gradle modules (section 1.3)
+build-logic/                    convention plugins (an included build)
+docs/adr/                       architecture decision records
+docs/api/                       the generated OpenAPI contract
+docs/architecture/              architecture, security, data, operations, runbook, threat model
+docs/domain/                    invariants and glossary
+docs/product/                   vision, capability map, roadmap
+docs/project/                   current state, backlog, phase plans, reviews, history, proposals
+deploy/                         Kubernetes manifests, overlays and the edge's route lists
+infra/                          compose config, Grafana and Prometheus, Terraform, scripts, scanner pins
+compose.yaml                    the local stack
+```
+
+## 1.6 Getting started
+
+### Prerequisites
 
 | You need | Why | Check with |
 |---|---|---|
 | **Git** | Clone the repository | `git --version` |
-| **Docker** with Compose v2 | PostgreSQL and Kafka run in containers, and a Redis no code uses yet | `docker compose version` |
+| **Docker** with Compose v2 | PostgreSQL, Kafka and the observability stack locally; Testcontainers for the database tier | `docker compose version` |
 | A **JDK**, any recent version | Only to start Gradle | `java -version` |
 
-**You do not need to install Java 21, Gradle, PostgreSQL, Kafka or Redis.**
+You do **not** need to install Java 21, Gradle, PostgreSQL or Kafka. The wrapper is checksum-verified, and Gradle
+provisions the pinned Java 21 toolchain whatever `JAVA_HOME` points at. `./gradlew toolchainInfo` reports both. In
+IntelliJ IDEA, enable annotation processing for Lombok (ADR-0055).
 
-- Gradle is provided by the wrapper (`./gradlew`) and verified by SHA-256 on first use.
-- Java 21 is the pinned toolchain. If your machine does not have it, Gradle downloads a
-  matching JDK — the build does not use whatever `JAVA_HOME` happens to point at, so the
-  bytecode is identical everywhere.
-- The infrastructure versions are pinned in `compose.yaml` and asserted against the version
-  catalog on every build.
-
-Report the Gradle version and the JVM Gradle itself is running on:
-
-```bash
-./gradlew toolchainInfo
-```
-
-**In an IDE**, Lombok generates constructors and loggers at compile time (ADR-0055). IntelliJ
-IDEA bundles Lombok support: enable annotation processing (*Settings → Build → Compiler →
-Annotation Processors*), or delegate builds to Gradle. The Gradle build needs nothing extra.
-
-Note that the launcher JVM is *not* the compile toolchain. The build targets Java 21 whatever
-JVM launched it; what proves that is `BuildToolchainTest`, which asserts the emitted bytecode
-version and runs as part of `./gradlew build`.
-
----
-
-## 2. Build and test
-
-From a fresh clone, this is the whole thing:
+### Build and test
 
 ```bash
 ./gradlew build
 ```
 
-That compiles every module, runs the full test suite, and runs the architecture rules that
-fail the build on a boundary or floating-point-money violation.
-
-**It needs no infrastructure and no network services.** The suite is hermetic by design: no
-test starts a container, and no test skips itself when something is missing. Tests that
-genuinely require a database live in a separate task you can see did not run — see §4.
-
-### Test tiers
-
-A test's **tier** is what it needs in order to run, and each tier is its own task. The tiers are
-declared once, in `finapp.java-conventions.gradle.kts`, and `TestTaxonomyTest` fails the build
-when they, `TestTier`, the tag on a test class, and what CI invokes stop agreeing.
+`build` compiles every module and runs every **hermetic** test (unit, architecture and slice), green with nothing
+running. Tests that need real infrastructure are separate tasks, so an absent database is a task you can *see* did not
+run, never a test that silently skipped.
 
 | Task | Runs tests that need |
 |---|---|
-| `./gradlew unitTest` | nothing beyond the JVM |
+| `./gradlew unitTest` | nothing beyond the JVM (the fast inner loop) |
 | `./gradlew architectureTest` | the compiled classes of every module |
 | `./gradlew sliceTest` | a Spring application context |
-| `./gradlew databaseTest` | a real PostgreSQL — see §4 |
+| `./gradlew databaseTest` | a real PostgreSQL, started by Testcontainers (Docker only) |
+| `./gradlew ownContainerDatabaseTest` | suites that need a PostgreSQL of their own |
+| `./gradlew kafkaTest` | a real Kafka broker and the database |
 
-`build` runs the first three. `unitTest` is the fast inner loop: seconds rather than a minute,
-because it starts no Spring context.
+Narrow runs: `./gradlew :ledger:unitTest`, or
+`./gradlew :app:architectureTest --tests '*ModuleBoundaryRulesTest*'`. Conventions are in
+[`docs/project/TESTING.md`](docs/project/TESTING.md).
 
-The full conventions — which tier a concern belongs to, naming, tagging, and the shared harnesses
-— are in [`docs/project/TESTING.md`](docs/project/TESTING.md).
-
-Useful narrower commands:
-
-```bash
-./gradlew :sharedkernel:unitTest
-```
-
-```bash
-./gradlew :app:architectureTest --tests '*ModuleBoundaryRulesTest*'
-```
-
----
-
-## 3. Start local infrastructure
+### The local stack (§3)
 
 ```bash
 docker compose up -d --wait
 ```
 
-`--wait` blocks until every container reports **healthy**, not merely started. Without it the
-next command can fail against a database that is still initialising.
+`--wait` returns only when every container is healthy. Everything binds to `127.0.0.1`.
 
-| Service | Host address | Role |
+| Service | Address | Role |
 |---|---|---|
-| PostgreSQL 18.6 | `localhost:5432` | Transactional source of truth — the ledger lives here |
-| Kafka 4.3.1 (KRaft) | `localhost:29092` | Event transport. **Never** the accounting source of truth |
-| Redis 8.10.1 | `localhost:6379` | Local only: no code uses it and none is deployed. **Never** financial truth |
+| PostgreSQL 18.6 | `localhost:5432` | The transactional source of truth |
+| Kafka 4.3.1 (KRaft) | `localhost:29092` | Event transport |
+| Redis 8.10.1 | `localhost:6379` | Local only; no code uses it |
+| Prometheus, Alertmanager, Grafana | Grafana at <http://localhost:3000/d/finapp-platform> | Metrics, alerts, the dashboard (provisioned from `infra/`) |
+| OpenTelemetry Collector, Tempo, Loki | local | Traces and logs |
 
-**Tests no longer need this stack.** Since `P0-TSK-035`, `./gradlew databaseTest` starts its own
-PostgreSQL container, applies `infra/postgres/initdb/00-roles.sql` and the real migrations, and
-throws it away afterwards — so a test run needs Docker and nothing else. Compose is still what
-`bootRun` and the Flyway build tasks connect to, and it is still useful when you want a database
-that outlives the run: set `FINAPP_DB_URL` and `:platform:databaseTest`'s harness steps aside.
-The other modules' database tiers, `:app:databaseTest` among them, start their own container
-whatever it is set to — only the platform module's build passes the URL through.
+The local credentials are deliberately throwaway (`finapp` / `local-development-only-not-a-secret`), and the application
+**refuses to start** if that default is aimed at anything but loopback (ADR-0020).
 
-Everything binds to `127.0.0.1`, never `0.0.0.0`, so the stack is not reachable from the
-network. Default credentials are `finapp` / `local-development-only-not-a-secret` against
-database `finapp`, overridable via `FINAPP_DB_USER`, `FINAPP_DB_PASSWORD` and `FINAPP_DB_NAME`.
-They are throwaway local values, deliberately named so they cannot be mistaken for a secret.
-
-That name is not what protects you, though. The application **refuses to start** if that default
-is aimed at a database which is not on loopback, because the one documented way around
-externalised configuration is forgetting to set the variable
-([`SECRET_MANAGEMENT.md`](docs/architecture/SECRET_MANAGEMENT.md), ADR-0020).
-
-Check state at any time:
-
-```bash
-docker compose ps
-```
-
-### Database roles
-
-PostgreSQL is provisioned with four roles, not one:
+**Database roles.** PostgreSQL is provisioned with four roles by `infra/postgres/initdb/00-roles.sql`, which runs on the
+volume's first initialisation:
 
 | Role | Used by | Holds |
 |---|---|---|
-| `finapp` | The container's own bootstrap | Cluster superuser. Nothing in this project connects as it except one test fixture |
-| `finapp_migrator` | Flyway | Owns the `platform` schema. DDL only, **not** a superuser |
-| `finapp_app` | The application | Per-table DML, granted by the migration that creates each table. No DDL |
-| `finapp_reporting` | Report generation's own pool (`P15-TSK-021`) | `SELECT` on the tables a report run reads, granted by the migrations of the modules that own them. Nothing else |
+| `finapp` | The container's bootstrap | Superuser; nothing connects as it but one test fixture |
+| `finapp_migrator` | Flyway | DDL, not a superuser |
+| `finapp_app` | The application | Per-table DML, granted by each migration; no DDL |
+| `finapp_reporting` | Report generation's own pool | `SELECT` on what reports read |
 
-The split is not cosmetic. `INV-LED-03`, `INV-HIST-01` and `INV-HIST-03` are enforced by the
-application role **lacking** a privilege, and a superuser ignores every permission check — so
-running as one would make those invariants untestable rather than merely unenforced.
-
-`finapp_migrator`, `finapp_app` and `finapp_reporting` are created by
-`infra/postgres/initdb/00-roles.sql`, which the container runs on **first initialisation only**.
-Roles are cluster objects and so cannot live in a Flyway migration; see the script's header.
-
-**If your volume predates this file**, the script never ran. Either reset:
-
-```bash
-docker compose down -v && docker compose up -d --wait
-```
-
-or apply it once by hand — `MSYS_NO_PATHCONV=1` is required in Git Bash, which otherwise
-rewrites the container path:
+The split is part of the design: several invariants are enforced by the application role *lacking* a privilege. If your
+volume predates a role, re-apply the idempotent script, or reset with `docker compose down -v && docker compose up -d
+--wait`. In Git Bash, prefix with `MSYS_NO_PATHCONV=1`:
 
 ```bash
 MSYS_NO_PATHCONV=1 docker compose exec -T postgres psql -U finapp -d finapp -f /docker-entrypoint-initdb.d/00-roles.sql
 ```
 
-Without the roles, `./gradlew :platform:flywayMigrate` fails with
-`FATAL: password authentication failed for user "finapp_migrator"`.
+### Migrations
 
-**If your volume predates `finapp_reporting`** (added 2026-11-08, `P15-TSK-021`), apply the same script
-once more - it is idempotent and creates only what is missing - before migrating: the accounting,
-ledger, reconciliation and lending migrations grant to that role, and fail with
-`role "finapp_reporting" does not exist` without it.
-
----
-
-## 4. Database migrations and database tests
-
-Migrations never run as a side effect of application startup (ADR-0011). Applying them is an
-explicit act:
+Migrations never run at application start-up (ADR-0011). Apply them explicitly:
 
 ```bash
-./gradlew :platform:flywayMigrate
+./gradlew flywayMigrate
 ```
 
-Inspect what has been applied:
+`flywayInfo` shows what is applied, and `flywayValidate` catches an edited migration. Migrations are expand-only. A
+deployed environment runs the `finapp-migrator` image as a Job instead
+([`DATA_MIGRATIONS.md`](docs/architecture/DATA_MIGRATIONS.md)).
 
-```bash
-./gradlew :platform:flywayInfo
-```
+### Running the application
 
-Assert that the applied migrations still match the repository — this is what catches an
-edited migration file:
+With the stack up and migrations applied, run the Spring Boot application from the `app` module (`./gradlew :app:bootRun`),
+or run the image as section 1.8 describes. It connects as `finapp_app` (`FINAPP_DB_URL`, `FINAPP_DB_APP_USER`,
+`FINAPP_DB_APP_PASSWORD`). There are no Spring profiles: environments differ by values only, and every property is in
+[`CONFIGURATION_REGISTER.md`](docs/architecture/CONFIGURATION_REGISTER.md).
 
-```bash
-./gradlew :platform:flywayValidate
-```
+- **API port 8080.** Every route is under `/v1`.
+- **Management port 8081**, loopback only: `/actuator/health/liveness`, `/actuator/health/readiness` (503 while
+  PostgreSQL is unreachable; liveness deliberately ignores the database), `/actuator/info` and `/actuator/prometheus`.
+  Health answers carry a status and nothing else.
 
-Tests that need a live PostgreSQL are a **separate tier**, not tests that skip themselves:
+### The first administrator (§5e)
 
-```bash
-./gradlew databaseTest
-```
-
-A test that quietly skips when the database is absent reports success, and a suite that
-reports success for work it did not do is worse than one that fails. With this split,
-`./gradlew build` stays green with nothing running, and an absent database means a task you
-can see did not run.
-
----
-
-## 5. Infrastructure lifecycle
-
-```bash
-docker compose stop
-```
-
-Stops the containers and keeps everything.
-
-```bash
-docker compose down
-```
-
-Removes the containers. **Data survives** — the volumes are named, not anonymous.
-
-```bash
-docker compose down -v
-```
-
-Removes the containers **and discards all data**. This is the deliberate reset. You need it
-after changing Kafka's `CLUSTER_ID`, and when moving to a new PostgreSQL major version without
-running `pg_upgrade` — a data directory is formatted for the major version that created it.
-
----
-
-## 5a. The API contract
-
-The public HTTP contract is [`docs/api/openapi.json`](docs/api/openapi.json). It is **generated
-from the running application** during `:app:test` and compared byte for byte against that committed
-file, so the build fails on any change to the contract - including one nobody meant to make.
-
-Every route is served under `/v1` (ADR-0015). Controllers do not declare the prefix; the
-application applies it.
-
-When you change the contract on purpose, the failing test prints each difference labelled
-`BREAKING` or `COMPATIBLE`, and tells you what to do. Accepting a compatible change is a copy:
-
-```bash
-cp app/build/openapi/openapi.json docs/api/openapi.json
-```
-
-If any difference is labelled `BREAKING`, do not copy it. A breaking change is not published under
-an existing version - either withdraw it or open the next one.
-
-No OpenAPI machinery is deployed. springdoc is a test-scope dependency, and the running
-application serves no `/v3/api-docs`.
-
----
-
-## 5c. API conventions
-
-[`docs/architecture/API_CONVENTIONS.md`](docs/architecture/API_CONVENTIONS.md) is what a client
-author reads: versioning, errors, correlation, request limits, idempotency, pagination and
-deprecation, in one place.
-
-Every section is labelled **Implemented** or **Decided, not yet implemented**, because Phase 0
-publishes no business endpoint and two of the conventions - idempotency and pagination - are
-settled decisions waiting for their first endpoint. `ApiConventionsAreAccurateTest` fails the build
-if a stated value stops matching the code, or if a section is added without a label.
-
----
-
-## 5b. Health, readiness and build info
-
-Three endpoints, deliberately unversioned (ADR-0016), served on the **management port, 8081**,
-bound to loopback (`P15-TSK-008`). The API port, 8080, answers `404` for every `/actuator` path:
-
-```bash
-curl -s -o /dev/null -w '%{http_code}
-' http://127.0.0.1:8081/actuator/health/readiness
-```
-
-`FINAPP_MANAGEMENT_ADDRESS` moves the management port off loopback; only the Kubernetes overlays set
-it, to the pod's address. Do not set it to `0.0.0.0` on a developer's machine: the endpoints are
-unauthenticated.
-
-| Endpoint | Answers | Depends on |
-|---|---|---|
-| `/actuator/health/liveness` | Should this process be killed and restarted? | Nothing external |
-| `/actuator/health/readiness` | Should traffic be routed here? | PostgreSQL |
-| `/actuator/info` | Which build is running? | Nothing |
-
-**Readiness returns 503 when PostgreSQL is unreachable**, and the application still starts and
-still serves those endpoints - so a stopped database gives you an instance that says NOT_READY
-rather than a crash-looping one that says nothing.
-
-**Liveness ignores the database on purpose.** If it did not, a thirty-second failover would
-restart every instance at once and leave them reconnecting in a herd to a database already in
-trouble.
-
-Health responses carry a status and nothing else - no dependency name, no URL, no exception. That
-is a security decision, not an oversight; see `docs/architecture/SECURITY_ARCHITECTURE.md`.
-
-Database settings come from `FINAPP_DB_URL` and the application role's own
-`FINAPP_DB_APP_USER` and `FINAPP_DB_APP_PASSWORD` - the application connects as `finapp_app`,
-never as the superuser `compose.yaml`'s `FINAPP_DB_USER` names. Report generation reads through
-its own one-connection pool as `finapp_reporting` (`FINAPP_DB_REPORTING_USER`,
-`FINAPP_DB_REPORTING_PASSWORD`, `FINAPP_DB_REPORTING_POOL_SIZE`), counted in the connection budget
-and never on the readiness path.
-
----
-
-## 5d. Metrics and the dashboard
-
-The application publishes Prometheus metrics at `/actuator/prometheus` on the management port, 8081. Names follow
-`finapp.<module>.<noun>` and the build fails if one does not (ADR-0018).
-
-To see the dashboard:
-
-```bash
-docker compose up -d prometheus grafana
-```
-
-Then run the application and open <http://localhost:3000/d/finapp-platform>. Grafana is
-provisioned from `infra/grafana/` - the datasource and the dashboard are files in git, not state
-in a volume, so `allowUiUpdates` is off: edit the JSON, not the UI.
-
-Prometheus scrapes the application on the **host**, not in a container, because that is where a
-developer runs it: `host.docker.internal:8081`, which Docker Desktop forwards to the host's loopback.
-On a Linux Docker engine `host.docker.internal` is the bridge's address and a loopback listener does
-not answer it: start the application with `FINAPP_MANAGEMENT_ADDRESS` set to that bridge address
-(`infra/prometheus/prometheus.yml` says how to find it). That case is not measured here.
-
-**A metric never carries a correlation identifier, an account, or anything else a request can
-influence.** That is both a cardinality rule and a security rule - a tag value from a request
-multiplies one series into thousands and puts it in a system with months of retention. Correlation
-belongs on a trace and in a log.
-
-**An unreadable metric reports absent, not zero.** Stop PostgreSQL and `finapp_outbox_pending`
-becomes `NaN` rather than `0`, so an alert written on the value still fires.
-
----
-
-## 5e. The first administrator
-
-`POST /v1/identities/{id}/roles` requires the `ROLE_ASSIGN` permission, which only the
-`ADMINISTRATOR` role grants — so **the first administrator cannot be created through the API**. That
-circularity is deliberate rather than an oversight, and the two alternatives were both rejected:
-
-- **A bootstrap endpoint** would be a privileged surface with no authorisation in front of it, which
-  is the thing the rest of this module exists to prevent.
-- **Seeding a row in a migration** would put an administrator into *every* environment, including
-  production, permanently, with credentials nobody chose.
-
-So the first grant is made out of band by an operator with database access, against an identity that
-has already registered normally **and enrolled a second factor** (`POST /v1/me/mfa`, then
-`POST /v1/me/mfa/confirmation`, on its own session - since `P15-TSK-032` every identity administration door
-needs a `MULTI_FACTOR` session, and the door that grants `ADMINISTRATOR` refuses a holder with no factor; an
-administrator written in here without one reaches no administrative door until they enrol, and the access
-review's check names them). Then sign in on the operator host and step up (`POST /v1/authentications/mfa`):
+The first administrator cannot be created through the API (`ROLE_ASSIGN` is the administrator's own). That is
+deliberate: neither a bootstrap endpoint nor a seeded row in every environment. Register an identity normally, enrol a
+second factor (`POST /v1/me/mfa`, then `/v1/me/mfa/confirmation`), then grant the role out of band:
 
 ```bash
 docker compose exec postgres psql -U finapp_migrator -d finapp -c "INSERT INTO identity.role_assignment (id, identity_id, role_name, assigned_by, assigned_at) SELECT gen_random_uuid(), i.id, 'ADMINISTRATOR', i.id, now() FROM identity.identity i WHERE i.login_identifier = 'REPLACE_ME'"
 ```
 
-**The consequence is recorded rather than hidden: that first assignment has no actor in the audit
-trail**, because no authenticated actor performed it — `assigned_by` names the subject itself, which
-is the one self-grant the platform contains and the reason `IdentityAdministration` refuses every
-later one. Every subsequent assignment names two parties. An administrator's revocation
-(`DELETE /v1/identities/{id}/roles/{role}`) and suspension (`POST /v1/identities/{id}/suspension`) refuse to
-take the last active identity holding `ADMINISTRATOR` (`identity.LastRoleGranter`), so administrators acting
-alone, or two of them at once, never leave the platform with no administrator. **Risk's automated suspension is
-not bound by that** - a compromised last administrator must stay suspendable - and takes none of the rule's
-locks, so it can leave none: by suspending the last one, or by suspending one of the last two while an
-administrator suspends or revokes the other (each commits before seeing the other). The way back is the same
-either way. First, risk's own `REINSTATE_IDENTITY`, which lifts a suspension risk made inside the platform: a
-risk case opened and the action proposed, then approved by a second analyst on a stepped-up session. Failing
-that - or for a suspension an administrator made, which risk does not lift - this out-of-band step: a role
-inserted for an active identity, or the suspended one restored in full, `UPDATE identity.identity SET status =
-'ACTIVE', suspension_cause = NULL, status_changed_at = now() WHERE id = ...` (identity `V024` refuses an
-active row that keeps its cause). Its sessions stay ended; the person signs in again.
+That one grant has no other actor in the audit trail, which is recorded rather than hidden. Every later grant names two
+parties, and an administrator's revocation or suspension refuses to take the last administrator. The same out-of-band
+write is the last-resort way back if risk's automated suspension ever leaves none (`OPERATIONS_RUNBOOK.md` §11.12). It
+is a privileged-access event in its own right.
 
-An operator doing this is a privileged-access event in its own right, and Phase 15 owns the controls
-for that (`CURRENT_STATE.md` §Known Architectural Debt).
+## 1.7 The API contract
 
----
+[`docs/api/openapi.json`](docs/api/openapi.json) is generated from the running application by `OpenApiContractTest` and
+compared, difference by difference, with the committed file. Each difference is labelled `BREAKING` or `COMPATIBLE`, and
+a breaking change is never published under `/v1` (ADR-0015). The edge's route lists are generated the same way by
+`EdgeAllowListTest`. To accept an intended, compatible change:
 
-## 5f. Building the image
+```bash
+cp app/build/openapi/openapi.json docs/api/openapi.json
+cp app/build/edge/operator-routes.yaml app/build/edge/public-routes.yaml deploy/edge/base/
+```
 
-The application ships as one container image, `finapp-app` (`P15-TSK-003`, owner decision C4). Build it with the
-script, which is also what CI's `image` job runs:
+Conventions for client authors (errors, correlation, idempotency, pagination, deprecation) are in
+[`API_CONVENTIONS.md`](docs/architecture/API_CONVENTIONS.md). Events are described in
+[`EVENT_ARCHITECTURE.md`](docs/architecture/EVENT_ARCHITECTURE.md): each carries an event id, type, aggregate id,
+versions, timestamp, producer, correlation and causation.
+
+## 1.8 Images, CI and delivery
+
+### Building the images (§5f, §5g)
 
 ```bash
 ./infra/scripts/image-build.sh
 ```
 
-It takes several minutes, because it builds everything **twice**, from source each time: the boot jar with every
-task re-run and the image with no cache, then both again. Neither build trusts what an earlier one left in `build/`,
-so a stale output cannot make the two agree or differ. It refuses the image unless:
+It builds `finapp-app` twice from source and refuses the image unless both builds are byte-identical. It also checks
+that the image runs as `65532:65532` with no shell and no `HEALTHCHECK`, that it is exactly the pinned distroless base
+plus the boot jar, and that it fits its 300 MiB budget. It tags the image `finapp-app:<commit>` and pushes nothing.
 
-| Assertion | Read from |
-|---|---|
-| Both base images are pinned by digest | the `Dockerfile`'s `FROM` lines (`check-pinned-images.sh --offline`) |
-| The two builds are the same bytes: the jar's sha256, the image id and every layer digest | the jar, `docker image inspect` |
-| It runs as UID/GID `65532:65532`, with no `HEALTHCHECK` and no environment of its own | the built image's configuration |
-| It carries `org.opencontainers.image.revision`, `.source` and `.version` | the built image's labels |
-| Outside `/app` it is exactly the pinned distroless base; `/app` is exactly the boot jar's entries; no shell or package manager anywhere; `java` the only program on the `PATH` | `docker export` of the image and of the base, and the jar |
-| It is within its size budget, **300 MiB** of flattened filesystem (260.3 MiB measured on 2026-11-08: the base 184.7 MiB, the jar 75.6 MiB) | `docker export` |
+- `./infra/scripts/image-readiness.sh` runs the image against the local stack (`docker compose up -d postgres kafka
+  --wait` and `./gradlew flywayMigrate` first), read-only and with every capability dropped.
+- `./infra/scripts/image-scan.sh` scans every `finapp-*` image and writes one CycloneDX SBOM each.
+- The migrator image has `./infra/scripts/migrator-image-build.sh` and `./infra/scripts/migrator-verify.sh`. The verify
+  script compares the image's schema with `flywayMigrate`'s on throwaway databases and races ten concurrent runs.
+- **Updating a base image**: the two `FROM` lines are pinned `tag@sha256:digest`. Re-resolve a digest with
+  `docker buildx imagetools inspect <image>:<tag>`.
 
-It leaves the image tagged `finapp-app:<commit>` (`<commit>-dirty` when your tree has uncommitted changes) and prints
-that name last. It pushes nothing.
+### What CI checks (§6)
 
-**Running it** against the local stack, the way CI does:
-
-```bash
-docker compose up -d postgres kafka --wait
-./gradlew flywayMigrate
-./infra/scripts/image-readiness.sh
-```
-
-The container shares the host's network (`--network host`), so the application's loopback-only defaults hold exactly
-as they do on your machine: the local database credential and plaintext Kafka are refused anywhere but loopback. It
-runs with a read-only root filesystem, `/tmp` in memory and every capability dropped, and the script waits for
-`/actuator/health/readiness` to answer `UP` on the management port, 8081 (`P15-TSK-008`; loopback, which the host network
-shares), then checks the running process is UID 65532. The script never starts or stops compose, so it
-cannot tear down your own stack; if your PostgreSQL is published on another loopback port, export `FINAPP_DB_URL` and it
-is passed through.
-
-**What is in the image, and why.** A JDK builder stage only runs the Spring Boot jar's own extractor; the jar is built
-by Gradle outside the image, so no build tool and no source enter any stage, and the build context is the boot jar alone
-(`.dockerignore` is an allow-list). The runtime is distroless Java 21 `nonroot`: no shell, no package manager. The jar's
-four layers are copied least-changing first (dependencies, loader, snapshot dependencies, application), so a code change
-ships one layer. The JVM sizes its heap from the container's limit (`-XX:MaxRAMPercentage=75.0`) and exits on an
-out-of-memory error rather than limping on; further flags go in `JDK_JAVA_OPTIONS`. There is no `HEALTHCHECK`:
-Kubernetes probes the actuator, and the image has no shell to run one. The only configuration inside is
-`application.yaml`'s defaults, which refuse to start against anything off loopback.
-
-**Updating a base.** The two `FROM` lines are the bases' only pins, `tag@sha256:digest`. Dependabot proposes the next
-tag and digest weekly; `check-pinned-images.sh` reports a moved tag or a newer release (§7b). Re-resolve a digest with
-`docker buildx imagetools inspect <image>:<tag>`.
-
-**Scanning it**, as CI's `image` job does, once the image is built:
-
-```bash
-./infra/scripts/image-scan.sh
-```
-
-The migrator image is scanned the same way by its own job, `./infra/scripts/image-scan.sh --only finapp-migrator` (§5g).
-
-It scans every image tagged `finapp-*:<commit>` for vulnerabilities, secrets and misconfiguration, HIGH and CRITICAL
-failing; writes one CycloneDX SBOM per image to `build/image-sboms/`, and refuses one that does not list the image's
-packages and every third-party jar in it; then it builds five planted images and requires each to be refused by name.
-`OPERATIONS_RUNBOOK.md` §11.9 says what to do with a red run. The static analysis is the same shape:
-`./infra/scripts/sast.sh` runs Semgrep with no network over the rules vendored in `infra/semgrep/rules`.
-
-## 5g. Building and checking the migrator image
-
-The migrations ship as a second image, `finapp-migrator` (`P15-TSK-004`): a stage of the same `Dockerfile`, on the same base,
-holding a small program over Flyway and every module's scripts. It is what a deployed environment runs in place of
-`./gradlew flywayMigrate`, as a Job per release. The Job's contract and the one-time role bootstrap are in
-[`DATA_MIGRATIONS.md`](docs/architecture/DATA_MIGRATIONS.md) §2.1 and §2.2. Build and check it with the scripts CI's
-`migrator-image` job runs:
-
-```bash
-./infra/scripts/migrator-image-build.sh   # twice from source, compared, and asserted as 5f's is
-./infra/scripts/migrator-verify.sh        # against a throwaway PostgreSQL of its own, on a random port
-```
-
-The build refuses the image unless two builds are the same bytes, it runs as `65532:65532` with no `HEALTHCHECK`, `CMD` or
-environment of its own, and outside `/migrator` it is exactly the pinned base, with every migration byte-identical to the
-repository's and only jars besides. Its size budget is **230 MiB** of flattened filesystem (190.9 MiB measured on 2026-11-08: the
-base 184.7 MiB, the libraries and scripts the rest).
-
-The verification leaves your compose stack alone and generates its own throwaway credentials. It runs the one-time bootstrap;
-applies `./gradlew flywayMigrate` to one empty database and the image to another, and refuses any difference in the schema history
-or the `pg_dump --schema-only`; runs the image again (no change); runs copies at once (`MIGRATOR_VERIFY_RACERS`, default 10),
-each migration applied once; holds a table and watches the run give up in its bound; and checks the refusals. Exit `0`, `1` or
-`2`, as `image-build.sh`.
-
-## 6. What CI checks
-
-Independent jobs, so a failure names its own gate
-([`.github/workflows/ci.yml`](.github/workflows/ci.yml)). *(This read "Four independent jobs" until
-`P15-TSK-013` added `iac` and `P15-TSK-003` added `image`.)*
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs independent jobs, so a failure names its own gate:
 
 | Job | Gate |
 |---|---|
-| `build` | Compilation, tests, module boundary rules, infrastructure version drift, wrapper checksum |
-| `migrations` | Migrations apply to an empty database, re-apply idempotently, still match the repository, and monetary values round-trip through real columns |
-| `secret-scan` | No secret anywhere in git history — not just at the tip |
-| | *and in `build`:* no credential literal in any committed configuration file |
-| `dependency-scan` | No HIGH or CRITICAL known vulnerability in the resolved dependency set |
-| `iac` | The Terraform passes `fmt`, `tflint`, `trivy config`, `validate` and `terraform test` with mock providers, and each check refuses a planted defect; no credential, no backend. Run it yourself: `./infra/scripts/terraform-check.sh` (`OPERATIONS_RUNBOOK.md` §11.13) |
-| `manifests` | Every overlay under `deploy/` renders, passes `kubeconform -strict` against pinned schemas and every policy, and each policy refuses a planted violation; no credential, no cluster. Run it yourself: `./infra/scripts/manifest-check.sh` (`OPERATIONS_RUNBOOK.md` §11.14). Then `./infra/scripts/edge-check.sh` (§11.26): the edge's manifests and policies, and the committed route lists through the real pinned proxy |
-| `image` | The application image built twice and identical, non-root, the base plus the jar and nothing else, within budget, scanned (no HIGH or CRITICAL finding beyond those carried with a reason and an expiry), one SBOM per image, and ready against compose's PostgreSQL and Kafka (§5f) |
-| `migrator-image` | The migrator image built twice and identical, non-root, the base plus its libraries and the repository's migrations and nothing else, within budget, scanned as the application image is, its own SBOM kept; run against a throwaway PostgreSQL: schema history and schema identical to `flywayMigrate`'s, a second run a no-op, concurrent runs each migration once, a held lock a bounded failure, the role bootstrap (§5g) |
-| `sast` | Semgrep over every module's production source: a statement built from anything but constants, a provider's answer read with no bound, Java security, Spring, secrets; every finding either fixed or in the baseline with a reason (§5f) |
+| `build` | Compilation, hermetic tests, boundary rules, version drift, wrapper checksum, no credential literal in config |
+| `migrations` | Migrations apply to an empty database, re-apply idempotently, still match the repository |
+| `secret-scan` | No secret anywhere in git **history** (`./infra/scripts/secret-scan.sh`) |
+| `dependency-scan` | No HIGH or CRITICAL vulnerability in the resolved dependency set |
+| `sast` | Semgrep over production source, findings fixed or baselined with a reason |
+| `iac` | Terraform `fmt`, `tflint`, `trivy config`, `validate` and `terraform test` with mock providers |
+| `manifests` | Every overlay renders, passes `kubeconform -strict` and every policy; the edge's route lists through the real proxy |
+| `image`, `migrator-image` | The two images: reproducible, non-root, minimal, scanned, ready |
 
-The `migrations` job starts PostgreSQL from this same `compose.yaml`, so CI and your machine
-run the identical pinned image.
+Every gate is a pinned script that also runs on a developer's machine (`infra/scripts/`). Further rehearsals, run on
+demand rather than per push, cover signing and admission, promotion by digest, restore, migration failure, telemetry
+scrubbing and a full `kind` rehearsal (`OPERATIONS_RUNBOOK.md` §11).
 
-The secret scan is one definition, and you can run it:
+### Changing a dependency (§7a)
 
-```bash
-./infra/scripts/secret-scan.sh
-```
-
-CI calls that same script, so the pinned image and the arguments exist in one place rather than
-two that agree today. It scans **history**, not the working tree — a secret committed and later
-removed is still disclosed.
-
-**Two mechanisms, deliberately.** The scanner detects by the *value*'s shape and the build rule by
-the *key*'s name, so they are blind in different directions: gitleaks catches a private key and
-misses `password: hunter2`, which is exactly what a human commits. Do **not** commit a dummy secret
-here to test the scan — history is scanned, so it would stay red for ever. Use a throwaway clone;
-the procedure is in [`SECRET_MANAGEMENT.md`](docs/architecture/SECRET_MANAGEMENT.md) §6.
-
-**The pipeline runs.** A remote was added on 2026-09-04 (`P0-TSK-042`) and the jobs execute on
-every push to `master`. The first run failed, which is the gate working: it found two defects that
-could not be reached from a Windows machine at all — `gradlew` committed without its executable
-bit, and verification metadata that was complete only for a *warm* dependency cache. Both are
-fixed and described in §7a.
-
----
-
-## 7a. Changing a dependency
-
-Every artefact the build resolves is checksum-verified and version-locked
-(`gradle/verification-metadata.xml` and a `gradle.lockfile` per project). Both are enforced, so
-changing a dependency is three steps rather than two:
+Every artefact is checksum-verified and version-locked (`gradle/verification-metadata.xml` and a `gradle.lockfile` per
+project, ADR-0025). Change the version in `gradle/libs.versions.toml`, then regenerate **both records in one
+invocation**, because each control blocks the other's regeneration. Do it **on a cold cache**: a warm
+`GRADLE_USER_HOME` records less than a fresh machine needs, which is how CI's first run once failed.
 
 ```bash
-# 1. Change the version in gradle/libs.versions.toml - the single source.
-# 2. Regenerate BOTH records in ONE invocation.
-./gradlew --write-locks --write-verification-metadata sha256 build databaseTest
+GRADLE_USER_HOME=$(mktemp -d) ./gradlew --write-locks --write-verification-metadata sha256 build databaseTest
 ```
 
-**One invocation, both flags** - this was two separate commands until `P0-TSK-035` added a
-dependency and found that neither order works. The lock refuses a version it does not know, so
-metadata generation cannot resolve; verification refuses an artefact it has no checksum for, so
-lock generation cannot resolve. Each control blocks the other's regeneration. Passing both flags
-together is the only sequence that succeeds.
+- `build-logic` is a separate included build, locked separately: `cd build-logic && ../gradlew --write-locks build`.
+- **Read both diffs.** The lockfile names every version that moved, and the metadata names every artefact now trusted.
+- Removing a dependency leaves its entries behind, because Gradle never prunes. Delete them by hand in the same change.
+- The checksums are trust-on-first-use. Treat a verification failure as a compromise until the artefact is checked
+  against its publisher's own checksum.
 
-**`build-logic` is a separate included build and is regenerated separately.** A root
-`--write-locks` does not touch it - verified - so a change to the Kotlin DSL or toolchain
-dependencies needs:
+### Keeping the pins fresh (§7b)
 
-```bash
-cd build-logic && ../gradlew --write-locks build
-```
+Everything is pinned, so everything can rot (ADR-0026). Dependabot proposes the GitHub Actions, libraries, the two base
+images and the Terraform providers weekly. A library PR fails its build until the §7a regeneration is run.
+`./infra/scripts/check-pinned-images.sh` checks the scanner and tool images (`infra/scanner-pins.sh`) and the base
+images. It tells a moved tag, which needs explaining before any update, from a newer release, which is ordinary rot.
+`verifyInfrastructureVersions` fails the build when `compose.yaml` drifts from the version catalog.
 
-Its artefacts are covered by the root verification metadata either way, because dependency
-verification is Gradle-wide and reaches included builds; only the version lock is separate.
+## 1.9 Troubleshooting
 
-Then **read the diff**. That is the step that does the work:
+- **`PKIX path building failed`**: something is re-signing HTTPS (a corporate proxy, or antivirus HTTPS scanning). On
+  Windows, add `org.gradle.jvmargs=-Djavax.net.ssl.trustStoreType=Windows-ROOT -Xmx2g -XX:MaxMetaspaceSize=512m` to
+  `~/.gradle/gradle.properties` (outside the repository), and export
+  `GRADLE_OPTS="-Djavax.net.ssl.trustStoreType=Windows-ROOT"` for the first wrapper download.
+- **`clean` cannot delete a directory** (Windows): an orphaned Gradle daemon holds a jar. Stop *your own* daemons; on a
+  machine shared with other builds, kill only the orphan's PID rather than every daemon.
+- **`docker compose exec` rewrites paths** (Git Bash): prefix with `MSYS_NO_PATHCONV=1`, or use PowerShell.
+- **`password authentication failed for user "finapp_migrator"`** or `role "finapp_reporting" does not exist`: the role
+  script never ran on your volume (section 1.6).
 
-- the lockfile diff names every version that moved, including transitives a BOM bumped for you;
-- the metadata diff names every artefact whose bytes are now trusted.
-
-A change you cannot explain in those two diffs is the signal this exists for.
-
-**Both task lists matter.** `build databaseTest` is what covers every configuration; a narrower run
-adds only what it resolved. That is safe — regeneration merges, and existing entries survive,
-which is verified — but it will not *record* anything the narrow run did not touch, so a later full
-build fails with a missing-checksum error rather than a wrong one.
-
-**And so does a cold cache — this is the part that was missing.** Regenerating over a warm
-`GRADLE_USER_HOME` records *less* than a cold one needs, because Gradle does not re-read metadata
-descriptors it has already parsed. The first CI run failed on exactly that: `kotlinx-coroutines-bom
-:1.8.0.pom`, absent from a file generated on this machine over months of warm builds. Regenerating
-against an empty `GRADLE_USER_HOME` added **10 components and 23 artefacts**, every one of them a
-parent POM or a BOM `.module` — descriptors, never a jar. The file had been complete for this
-machine and incomplete for every other, CI and a new developer alike.
-
-If a regeneration is going to be trusted, do it cold:
-
-```bash
-GRADLE_USER_HOME=$(mktemp -d) ./gradlew --write-locks --write-verification-metadata sha256   build databaseTest
-```
-
-On a machine behind TLS interception, that temporary home needs the truststore setting from
-`CURRENT_STATE.md` §Local Environment Prerequisites — it is outside the repository by design, so a
-fresh home does not inherit it.
-
-**Removing a dependency leaves its entries behind.** Gradle merges and never prunes, so a superseded
-version stays trusted. Delete those entries by hand in the same change; the lockfile is what shows
-you which ones.
-
-**What this does and does not protect.** The checksums are trust-on-first-use: they record what was
-downloaded when they were written, so they catch a substitution *afterwards* and cannot catch a
-first download that was already compromised. The lockfile catches an accidental version drift, not
-an attacker — anyone who can edit it can edit the version catalog beside it. See
-[ADR-0025](docs/adr/ADR-0025-dependency-verification-and-locking.md).
-
-**If verification fails**, the report at `build/reports/dependency-verification/` names the artefact
-and the expected checksum. Treat a mismatch as a compromise until proven otherwise: check the
-artefact against the publisher's own published checksum, never against the one the build just
-downloaded.
-
-## 7b. Keeping the pins fresh
-
-Everything here is pinned, which means everything here can rot. Three mechanisms, because no one
-of them reaches all of it (ADR-0026):
-
-| Pinned thing | Where | Update path |
-|---|---|---|
-| Four GitHub Actions (commit SHA) | `.github/workflows/ci.yml` | Dependabot, weekly - a pull request |
-| Library versions | `gradle/libs.versions.toml` | Dependabot, weekly - the PR **will fail its build** until you run §7a's regeneration |
-| Scanner and tool images (digest): gitleaks, Trivy, since `P15-TSK-013` Terraform and tflint, since `P15-TSK-006` Semgrep, and since `P15-TSK-009` Kustomize, kubeconform and conftest | `infra/scanner-pins.sh` | `infra/scripts/check-pinned-images.sh`, weekly in CI |
-| Two base images of the application and migrator images (tag and digest) | the `Dockerfile`'s two pinned `FROM` lines | Dependabot, weekly - a pull request; and `check-pinned-images.sh`, weekly in CI, which also refuses an unpinned base on every build of the image (§5f) |
-| Terraform provider versions and their lock files | `infra/terraform/environments/*/versions.tf`, `.terraform.lock.hcl` | Dependabot (`terraform`), weekly - a PR moving one root and not the other fails `TerraformIsPinnedAndCheckedTest` until both agree; `OPERATIONS_RUNBOOK.md` §11.13 |
-| Infrastructure images | `compose.yaml` + the catalog | `verifyInfrastructureVersions` fails the build on drift |
-| Gradle distribution | `gradle-wrapper.properties` | Manual, with the checksum from `services.gradle.org` |
-
-Check the scanner and base pins yourself at any time:
-
-```bash
-./infra/scripts/check-pinned-images.sh
-```
-
-It distinguishes two findings, and the distinction matters:
-
-- **the tag moved** - the digest no longer matches the version it claims. The pin held. Find out
-  why the tag changed *before* updating it;
-- **a newer release exists** - ordinary rot. For distroless's `nonroot`, a floating tag rebuilt on purpose, a new
-  digest behind it is reported as this, a newer build, never as a moved tag.
-
-`--offline` reads only the `Dockerfile`'s pins and refuses one that is not `repository:tag@sha256:digest`; the image
-build runs it first.
-
-To update a scanner: bump `VERSION` in `infra/scanner-pins.sh`, re-resolve the digest with
-`docker buildx imagetools inspect <repository>:<version>`, and re-run the check.
-
-**Why the scanner pins are not Dependabot's job.** They live in a shell-sourced file it does not
-read, and they stay there deliberately: every scanner and tool is invoked through `infra/scripts/`,
-which CI calls, so a developer and CI run the identical image. *(This read "both scanners" until
-`P15-TSK-013` added Terraform and tflint.)* Moving a digest into the workflow so a bot
-could see it would put the same fact in two places.
-
----
-
-## 7. Troubleshooting
-
-**`PKIX path building failed` / `unable to find valid certification path`**
-
-Something is intercepting HTTPS and re-signing it — corporate proxy, or antivirus with HTTPS
-scanning (AVG and Kaspersky both do this). Your OS trusts that CA; the JDK's own trust store
-does not, which is why `curl` and the browser work while Gradle does not.
-
-On Windows, add this to `~/.gradle/gradle.properties` — **outside the repository**, because it
-is a property of your machine, not of this project:
-
-```properties
-org.gradle.jvmargs=-Djavax.net.ssl.trustStoreType=Windows-ROOT -Xmx2g -XX:MaxMetaspaceSize=512m
-```
-
-Bootstrapping the Gradle distribution runs in a separate JVM that reads `GRADLE_OPTS`, so on a
-machine with no Gradle distribution cached yet, also export:
-
-```bash
-export GRADLE_OPTS="-Djavax.net.ssl.trustStoreType=Windows-ROOT"
-```
-
-Alternatively, import the intercepting CA into the JDK's `cacerts`, or turn off HTTPS scanning.
-
-**`clean` fails with "Unable to delete directory"** (Windows)
-
-An orphaned Gradle daemon is holding module jars open. `./gradlew --stop` handles the usual
-case. A daemon whose `GRADLE_USER_HOME` has been deleted survives that and must be killed by
-PID:
-
-```powershell
-Get-CimInstance Win32_Process -Filter "Name='java.exe'" | Where-Object { $_.CommandLine -match 'GradleDaemon' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
-```
-
-**`docker compose exec` rewrites absolute paths** (Git Bash on Windows)
-
-MSYS rewrites container paths, so `/opt/kafka/bin/...` becomes `C:/Program Files/Git/opt/...`.
-Prefix the command with `MSYS_NO_PATHCONV=1`, or use PowerShell. This affects interactive use
-only — health checks run inside the container and are unaffected.
-
-**`databaseTest` fails to connect**
-
-The database is not up, or is still initialising. `docker compose up -d --wait` returns only
-when it is healthy; `docker compose ps` shows the current state.
-
----
-
-## 8. Where to read next
+## 1.10 Where to read next
 
 | Question | Document |
 |---|---|
-| What is built right now? | [`docs/project/CURRENT_STATE.md`](docs/project/CURRENT_STATE.md) |
-| What are the rules for changing this codebase? | [`CLAUDE.md`](CLAUDE.md) |
+| Where is the project right now? | [`docs/project/CURRENT_STATE.md`](docs/project/CURRENT_STATE.md) |
+| What are the rules for changing this codebase? | [`CLAUDE.md`](CLAUDE.md), [`docs/project/EXECUTION_PROTOCOL.md`](docs/project/EXECUTION_PROTOCOL.md) |
+| When is work done? | [`docs/project/DEFINITION_OF_DONE.md`](docs/project/DEFINITION_OF_DONE.md) |
 | What must never be violated? | [`docs/domain/FINANCIAL_INVARIANTS.md`](docs/domain/FINANCIAL_INVARIANTS.md) |
-| How are modules bounded and enforced? | [`docs/architecture/MODULE_ARCHITECTURE.md`](docs/architecture/MODULE_ARCHITECTURE.md) |
-| Why was something decided this way? | [`docs/adr/`](docs/adr/README.md) |
-| Where does the whole programme go? | [`docs/product/ROADMAP.md`](docs/product/ROADMAP.md) |
-| What is the plan? | [`docs/project/DELIVERY_PLAN.md`](docs/project/DELIVERY_PLAN.md), [`docs/project/BACKLOG.md`](docs/project/BACKLOG.md) |
-| When is work actually done? | [`docs/project/DEFINITION_OF_DONE.md`](docs/project/DEFINITION_OF_DONE.md) |
+| What does a term mean? | [`docs/domain/GLOSSARY.md`](docs/domain/GLOSSARY.md) |
+| Why was something decided this way? | [`docs/adr/`](docs/adr/README.md), [`docs/project/DECISIONS.md`](docs/project/DECISIONS.md) |
+| How is it secured, and against what? | [`SECURITY_ARCHITECTURE.md`](docs/architecture/SECURITY_ARCHITECTURE.md), [`THREAT_MODEL.md`](docs/architecture/THREAT_MODEL.md) |
+| How is it run and recovered? | [`OPERATIONS_RUNBOOK.md`](docs/architecture/OPERATIONS_RUNBOOK.md), [`SLOS.md`](docs/architecture/SLOS.md), [`PRODUCTION_READINESS.md`](docs/architecture/PRODUCTION_READINESS.md) |
+| What is planned? | [`docs/product/ROADMAP.md`](docs/product/ROADMAP.md), [`docs/project/BACKLOG.md`](docs/project/BACKLOG.md) |
+| What was proposed but not approved? | [`docs/project/proposals/`](docs/project/proposals/README.md) |
+
+---
+
+# Part 2 - For non-technical readers
+
+## 2.1 What finapp is
+
+finapp is **the engine room of a digital financial company**, built as a reference: what a bank, a payments company or
+a lender runs behind its app. Customers hold money, send it, pay with it and borrow it. Merchants sell through it and
+get paid. The company's own staff check, approve and correct what happens, and the finance team closes the books
+every month.
+
+It is built to show *how* such a system should be engineered when real money is at stake. It is not tied to one
+country's rules: country-specific requirements plug in at clearly marked boundaries.
+
+## 2.2 What it can do today
+
+**For customers**
+- Open an account, prove who they are (identity verification, "KYC") and give or withdraw consent.
+- Hold money in wallets, in several currencies, and see balances that can always be explained line by line.
+- Send money to other customers, pay by card, by instant bank transfer or from the wallet, and move money in and out of
+  the platform.
+- Exchange currencies at a quoted, locked rate, and send money abroad.
+- Apply for credit and loans, get a decision that can be explained, and repay on a schedule.
+- Buy now and pay later in instalments at a merchant's checkout.
+
+**For merchants**
+- Join after a business check ("KYB"), take payments through checkout, issue refunds, handle disputes and chargebacks,
+  and receive payouts net of agreed, versioned fees.
+
+**For the company's staff (the Operator Console)**
+- Look up customers, merchants, accounts, payments and loans; review identity checks; investigate fraud and
+  money-laundering alerts.
+- Approve or reject sensitive actions. **Every action that moves money needs two different people**: one proposes,
+  another approves.
+- Read only what their role allows. Every look at personal data is recorded.
+
+**For the finance team**
+- Match the company's records against what banks and card networks report (reconciliation), and investigate every
+  difference.
+- Keep a general ledger, close each month with a second person's approval, and produce financial and regulatory
+  reports.
+
+## 2.3 Why it is built this way
+
+In most software, a small bug is an inconvenience. In financial software it can create or lose money that does not
+exist, so finapp is built around a few promises:
+
+- **Money is never created or lost by accident.** Every movement is recorded twice, as a debit and a credit, which
+  must always balance, like a traditional accountant's double-entry book.
+- **Nothing is ever erased.** A mistake is corrected by a new, visible correcting entry, never by changing history.
+  Anyone can see what happened and when.
+- **Pressing "pay" twice pays once.** Networks fail and people retry, and the system recognises a repeated request and
+  never acts twice.
+- **When a partner's answer is unknown, the system says "unknown".** It never guesses that a payment went through or
+  failed. It finds out, and reconciles.
+- **Everything important leaves a trail**: who did it, when, to what, why, and what happened.
+- **It keeps working at scale.** It is designed to run on many machines at once without two of them doing the same
+  thing twice or stepping on each other.
+
+These promises are written down as more than 170 rules. Automated checks fail the build when one is broken, and the
+checks are themselves tested by deliberately breaking a rule to prove the check catches it. The few recent checks not yet
+tested this way are recorded as owed.
+
+## 2.4 How the work is run
+
+The project is delivered in **phases**, each with a written plan, tasks, and a clear definition of "done". A phase is
+not finished when its tasks are. It is finished when a formal review says so, and several reviews have sent a phase
+back for more work. Every significant decision is recorded with its reasons (149 so far). Every task goes through
+three steps: design first, then build, then a completion check that looks for gaps.
+
+The project owner is building finapp deliberately to develop deep expertise in financial systems and system design. The
+documentation is a large part of the result: why each part exists, and what would go wrong without it.
+
+## 2.5 Where it stands
+
+- **17 of 18 phases are complete**: the foundations, identity, verification, the ledger, transfers, payments, merchants,
+  cards and instant payments, settlement, FX and cross-border, credit, lending, buy-now-pay-later, risk and anti-money-
+  laundering, accounting, production readiness, and scale and disaster recovery.
+- **Phase 17, the Operator Console** (the staff application), is nearly done: 48 of 51 items.
+- **Next**: a customer-facing web application, planned in its own project.
+
+**What it is not, yet:**
+- It has **never run in a real environment** and moves no real money. Its connections to banks, card networks and
+  credit bureaus are simulated.
+- It is **not licensed or certified** for any country. The core is deliberately jurisdiction-neutral.
+- Some recent work was merged with lighter testing, at the owner's choice to finish faster. The remaining tests are
+  recorded as owed, not forgotten.
+
+## 2.6 A few terms
+
+| Term | Meaning |
+|---|---|
+| **Ledger** | The book where every movement of money is recorded. The final word on who owns what |
+| **Double entry** | Every movement recorded as a debit in one place and a credit in another, always in balance |
+| **KYC / KYB** | "Know your customer / business": checking who a person or company really is |
+| **AML** | Anti-money-laundering: spotting and stopping suspicious flows of money |
+| **Reconciliation** | Comparing the company's records with its partners' records, and explaining every difference |
+| **Settlement** | When money between companies actually changes hands, often days after a payment |
+| **Four eyes** | A rule that two different people must agree before a sensitive action happens |
+| **BNPL** | Buy now, pay later: paying for a purchase in instalments |
+| **FX** | Foreign exchange: converting one currency into another |
+| **Idempotency** | The property that doing the same request twice has the effect of doing it once |
