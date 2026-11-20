@@ -158,3 +158,55 @@ options" - each *(ruling)* below is this task's recommendation. Decisions 1-7 ar
     absent or not a media type's shape and for every row before V027. Read through a **column grant**, not a new
     `SECURITY DEFINER` function - it is metadata, never the content, and `MigrationLint` refuses replacing a released body.
 
+
+## Amendment — fee-schedule versions and merchant fee assignment by four eyes (`P17-TSK-123`, 2026-11-20)
+
+Decision 8's split, built. Taken under the owner's standing ruling of 2026-11-20, verbatim: "if you rise questions, my
+answer is your recommended options" - each *(ruling)* below is this task's recommendation, the alternative named.
+Decisions 1-7 and 9-13 are unchanged; these extend them.
+
+14. **A fee schedule version is a keyed proposal** (finapp-admin-panel ADR-C135 decision 3, ADR-0125 decision 4). `POST
+    /v1/operator/fee-schedules/{id}/versions` (`FEE_ADMINISTER`) now requires an `Idempotency-Key` *(decision 7's precedent,
+    replaced in place)* and answers `201` with a proposal receipt `{proposalId, feeScheduleId, status, feeScheduleVersionId}`,
+    `PROPOSED` - judged first by `FeeSchedules.judgeVersion`, the version's own rules on an unlocked read (the schedule, the
+    fixed part's currency, a named start not past: `INV-MER-03`), so what would be refused is refused at once.
+    `merchant.fee_schedule_version_proposal` (merchant V022) holds the terms as V004's version row would, `effective_from`
+    `NULL` for "when it is approved"; **one open proposal per schedule** *(ruling: decision 1's "one open per subject";
+    alternative: several open per schedule, each racing the mint at approval)*, the partial unique index the arbiter. The
+    approval (`POST /v1/operator/fee-schedule-version-proposals/{id}/approval`, `FEE_SCHEDULE_APPROVE`) locks the proposal,
+    performs `FeeSchedules.addVersion` unchanged under the approver - the number minted by V004's unique index, the start
+    judged again - and decides the proposal in the same transaction, **naming the version it minted** (a `CHECK`: approved
+    exactly when named), so a price is explained as proposal → approval → version → pin. A start named and passed before the
+    approval is refused there (`422 merchant.FeeScheduleNotForward`), nothing minted, the proposal left open for a rejection
+    (decision 6: no expiry).
+
+15. **A merchant's fee assignment is a keyed proposal**, the BNPL door's shape (decision 10). `PUT
+    /v1/operator/merchants/{merchantId}/fee-schedule` keyed: `PROPOSED`, or `ASSIGNED` with nothing proposed when the pointer
+    is there already (`FeeSchedules.wouldAssign`, `assign`'s rules on an unlocked read); `merchant.fee_assignment_proposal`,
+    one open per merchant. The approval (`POST /v1/operator/fee-assignment-proposals/{id}/approval`) locks the proposal and
+    performs `FeeSchedules.assign` unchanged under the approver - the merchant `FOR UPDATE`, the pointer and its event - with
+    the proposer's reason, in the decision's transaction. The view gains `status` and `proposalId` (additive); the `GET`
+    answers `ASSIGNED`.
+
+16. **A schedule's creation stays one person's, keyed** (ADR-C135 decision 2): a named container carries no price, so no
+    four eyes; `POST /v1/operator/fee-schedules` requires an `Idempotency-Key` and a retry answers the schedule created first.
+    `FeeSchedules`' "no idempotency key" reasoning held while a duplicate version priced identically; a duplicate proposal
+    is a second row a second person would decide, so it no longer holds.
+
+17. **The approver's queues and read, under `FEE_SCHEDULE_APPROVE`**, in `P17-TSK-040`'s one pending-decision shape
+    (finapp-admin-panel ADR-C133 decision 3; `PendingDecisions`): one queue per kind, `GET
+    /v1/operator/pending-decisions/merchant.fee-schedule-versions` and `.../merchant.fee-assignments` - `PROPOSED` or no
+    status, items `{id, kind: merchant.FeeScheduleVersion | merchant.FeeAssignment, proposedBy, proposedAt, reasonSummary,
+    subjectId}`, proposed at ascending, id ascending, on the approve door's factor. *(Read "one queue of every kind, the BNPL
+    fee assignments included, with `subjectKind` and `proposedByCaller`, at `GET /v1/operator/fee-schedule-proposals`" until
+    `-040` fixed the shape, the same day: the BNPL fee assignments' queue is `-116`'s kind, `-040`'s to route.)* `GET
+    /v1/operator/fee-schedule-proposals/{id}` serves one proposal of any kind - the BNPL fee assignments too - with its terms,
+    the schedule it names and every version of it, and an assignment's current pointer *(ruling: the approver holds no
+    `FEE_ADMINISTER` and four eyes that cannot see the price decide nothing - decision 11's reasoning; alternative: grant the
+    controller `FEE_ADMINISTER`, breaking the partition `RoleNameTest` pins)*. Both configuration: unrecorded, as the fee
+    reads beside them are.
+
+18. **The fixtures take the two-person path**: every suite that priced a merchant over HTTP now proposes as a
+    `MERCHANT_ADMINISTRATOR` and approves as a `FINANCIAL_CONTROLLER` (`FeePricing`), the kind rehearsal's onboarding too.
+    Domain-level fixtures calling `FeeSchedules` directly are unchanged: the four eyes are the operator surface's, as
+    decision 1's are.

@@ -114,6 +114,8 @@ final class StormTraffic {
     }
 
     private final int port;
+    /** The FINANCIAL_CONTROLLER who approves the merchants' fee proposals (`P17-TSK-123`), made at the first merchant. */
+    private Staff feeController;
     private final SimulatedProvider provider;
     private final Authorization authorization;
     private final MerchantPayouts payouts;
@@ -314,25 +316,20 @@ final class StormTraffic {
                         administrator.token(), someKey());
         assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
         String merchantId = field(created.body(), "merchantId");
-        String schedule =
-                field(post("/v1/operator/fee-schedules",
-                                        "{\"name\":\"Storm " + UUID.randomUUID()
-                                                + "\",\"currency\":\"" + currency.code()
-                                                + "\"}",
-                                        administrator.token(), null)
-                                .body(),
-                        "feeScheduleId");
-        HttpResponse<String> version =
-                post("/v1/operator/fee-schedules/" + schedule + "/versions",
-                        "{\"rate\":0.029,\"fixedAmountMinor\":30,\"roundingPolicy\":\"HALF_EVEN\","
-                                + "\"refundFeePolicy\":\"RETAINED\",\"reason\":\"storm pricing\"}",
-                        administrator.token(), null);
-        assertThat(version.statusCode()).as(version.body()).isEqualTo(201);
-        HttpResponse<String> priced =
-                send("PUT", "/v1/operator/merchants/" + merchantId + "/fee-schedule",
-                        "{\"feeScheduleId\":\"" + schedule + "\",\"reason\":\"standard terms\"}",
-                        administrator.token(), null);
-        assertThat(priced.statusCode()).as(priced.body()).isEqualTo(200);
+        // P17-TSK-123: priced by the two-person path - the administrator proposes, the traffic's FINANCIAL_CONTROLLER
+        // approves.
+        if (feeController == null) {
+            feeController = staff(RoleName.FINANCIAL_CONTROLLER);
+        }
+        new com.finapp.app.merchant.FeePricing(
+                        (method, path, body, bearer, key) -> {
+                            HttpResponse<String> answer = send(method, path, body, bearer, key);
+                            return new com.finapp.app.merchant.FeePricing.Reply(answer.statusCode(), answer.body());
+                        },
+                        administrator.token(),
+                        feeController.token())
+                .priced(merchantId, currency.code(), com.finapp.app.merchant.FeePricing.versionBody(
+                        "0.029", 30, "HALF_EVEN", "RETAINED", null, "storm pricing"));
         HttpResponse<String> issued =
                 post("/v1/operator/merchants/" + merchantId + "/api-keys", null,
                         administrator.token(), someKey());

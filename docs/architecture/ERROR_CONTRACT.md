@@ -531,6 +531,9 @@ folds into `api.NotFound` exactly as above; the operator learns nothing a custom
 | `merchant.BnplFeeProposalAlreadyOpen` | 409 | The merchant's BNPL product already has an open fee assignment proposal; decide it first. |
 | `merchant.BnplFeeProposalAlreadyDecided` | 409 | The BNPL fee assignment proposal is already decided. |
 | `merchant.BnplFeeProposalSelfDecision` | 409 | A BNPL fee assignment proposal is decided by a person who did not propose it. |
+| `merchant.FeeProposalAlreadyOpen` | 409 | The fee schedule or merchant already has an open fee proposal; decide it first. (`P17-TSK-123`: one open version proposal per schedule, one open assignment proposal per merchant.) |
+| `merchant.FeeProposalAlreadyDecided` | 409 | The fee proposal is already decided. (`P17-TSK-123`) |
+| `merchant.FeeProposalSelfDecision` | 409 | A fee proposal is decided by a person who did not propose it. (`P17-TSK-123`, `INV-AUD-04`) |
 
 `merchant.FeeScheduleNotForward` is `INV-MER-03`'s refusal, and it is the one an operator
 actually meets: *"make this effective from the first of the month"* is a natural thing to type

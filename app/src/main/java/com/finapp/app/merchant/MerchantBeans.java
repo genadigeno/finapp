@@ -190,13 +190,35 @@ public class MerchantBeans {
                 clock);
     }
 
+    /**
+     * A fee schedule version and a merchant's fee assignment by four eyes (`P17-TSK-123`, ADR-0154's shape): the proposal
+     * machine over the existing {@code FeeSchedules} effects.
+     */
+    @Bean
+    com.finapp.merchant.FeeScheduleProposals feeScheduleProposals(
+            com.finapp.merchant.FeeSchedules feeSchedules,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new com.finapp.merchant.FeeScheduleProposals(
+                new com.finapp.merchant.JdbcFeeProposalStore(), feeSchedules, auditWriter, ids, clock);
+    }
+
     @Bean
     FeeScheduleOperations feeScheduleOperations(
             com.finapp.merchant.FeeSchedules feeSchedules,
             PlatformTransactionManager transactionManager,
-            DataSource dataSource) {
+            DataSource dataSource,
+            IdempotentExecutor idempotentExecutor,
+            com.finapp.merchant.FeeScheduleProposals feeScheduleProposals,
+            com.finapp.merchant.BnplPricing bnplPricing) {
         return new FeeScheduleOperations(
-                feeSchedules, new TransactionTemplate(transactionManager), dataSource);
+                feeSchedules,
+                new TransactionTemplate(transactionManager),
+                dataSource,
+                idempotentExecutor,
+                feeScheduleProposals,
+                bnplPricing);
     }
 
     /**

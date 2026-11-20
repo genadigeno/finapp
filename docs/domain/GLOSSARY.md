@@ -599,9 +599,13 @@ business, outside the platform's books).
 **Is:** versioned pricing configuration — rate, fixed part, rounding mode, refund-fee
 policy — immutable from creation (no `UPDATE` grant, and a trigger refuses every change: merchant
 `V004`); change creates a new version effective forward. *(This read "immutable once effective"
-until the Phase 6 review, `P6-DOC-001`.)*
+until the Phase 6 review, `P6-DOC-001`.)* A version, and which schedule prices a merchant, are
+proposed by one person and decided by another (`P17-TSK-123`, ADR-0154's second amendment): a
+**fee proposal** (`merchant.fee_schedule_version_proposal`, `merchant.fee_assignment_proposal`,
+merchant `V022`) is `PROPOSED → APPROVED | REJECTED`, and only its approval mints the version or
+moves the pointer.
 **Not:** a fee assessment, which is the historical fact pinned to the version that priced
-it (`INV-MER-03`).
+it (`INV-MER-03`); and a fee proposal is not a version - nothing prices from it.
 **Owned by:** `merchant`
 
 ### Merchant Payable

@@ -387,8 +387,11 @@ final class RestoreRehearsalProducts {
                 "Restore Rehearsal Trading", "EUR"), key())).merchantId();
         FeeScheduleOperations fees = context.getBean(FeeScheduleOperations.class);
         String card = schedule(fees, "card", "0.029", 30L, "RETAINED");
-        as(PROPOSER, () -> fees.assign(merchantId, new AssignFeeScheduleRequest(UUID.fromString(card),
-                "the restore rehearsal's standard terms")));
+        // P17-TSK-123: the card fee assignment is four eyes - proposed, then approved by the other person.
+        FeeScheduleOperations.MerchantFeeScheduleView proposedPricing = as(PROPOSER, () -> fees.proposeAssignment(key(),
+                merchantId, new AssignFeeScheduleRequest(UUID.fromString(card), "the restore rehearsal's standard terms")));
+        as(APPROVER, () -> fees.approveAssignment(key(), proposedPricing.proposalId(),
+                "the restore rehearsal's review of the standard terms"));
         MerchantApiKeyOperations.IssuedKeyView issued = as(PROPOSER, () -> context.getBean(MerchantApiKeyOperations.class)
                 .issue(merchantId, key()));
         // As MerchantKeyAuthenticationInterceptor verifies a presented key: the live row by its public id, the secret against it.
@@ -413,12 +416,15 @@ final class RestoreRehearsalProducts {
         return new Merchant(authenticated, new Actor(merchantId, ActorType.MERCHANT));
     }
 
-    /** A fee schedule in EUR with one version: its id. */
+    /** A fee schedule in EUR with one version, proposed by one person and approved by the other (`P17-TSK-123`): its id. */
     private static String schedule(FeeScheduleOperations fees, String kind, String rate, long fixedMinor, String refundFeePolicy) {
-        String id = as(PROPOSER, () -> fees.create(new CreateFeeScheduleRequest("restore rehearsal " + kind + " "
+        String id = as(PROPOSER, () -> fees.create(key(), new CreateFeeScheduleRequest("restore rehearsal " + kind + " "
                 + UUID.randomUUID().toString().substring(0, 8), "EUR"))).feeScheduleId();
-        as(PROPOSER, () -> fees.addVersion(id, new CreateFeeScheduleVersionRequest(new BigDecimal(rate), fixedMinor, "HALF_EVEN",
-                refundFeePolicy, null, "the restore rehearsal's " + kind + " pricing")));
+        FeeScheduleOperations.FeeScheduleVersionProposalReceipt proposed = as(PROPOSER, () -> fees.proposeVersion(key(), id,
+                new CreateFeeScheduleVersionRequest(new BigDecimal(rate), fixedMinor, "HALF_EVEN", refundFeePolicy, null,
+                        "the restore rehearsal's " + kind + " pricing")));
+        as(APPROVER, () -> fees.approveVersion(key(), proposed.proposalId(), "the restore rehearsal's review of the "
+                + kind + " pricing"));
         return id;
     }
 

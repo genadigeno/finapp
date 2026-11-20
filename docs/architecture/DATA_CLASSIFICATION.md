@@ -700,6 +700,21 @@ an approver's console disables a proposer's own approval in advance; never a rea
 (credit V027) is `INTERNAL`: the provider's own name for the bytes, metadata - the content stays `RESTRICTED`, reachable
 only through `credit.read_evidence` with a reason.
 
+### The fee schedule's proposals — *added by `P17-TSK-123`*
+
+**Two more acts on ADR-0154's pattern** (merchant V022): `merchant.fee_schedule_version_proposal` and
+`merchant.fee_assignment_proposal` take `P17-TSK-031`'s table above column for column - the subject's id `fee_schedule_id`
+or `merchant_id`, `INTERNAL`; the proposal and decision reasons `RESTRICTED-PII` (a person's prose about commercial terms,
+screened for instrument shapes). A version proposal's terms - `rate`, the fixed part's three money columns,
+`rounding_policy`, `refund_fee_policy`, `effective_from` - are `INTERNAL`, as `fee_schedule_version`'s are: the platform's
+own price, not a fact about anybody; `fee_schedule_version_id`, the version an approval minted, `INTERNAL`.
+
+**Served to staff** (`P17-TSK-123`): each kind's queue (`GET /v1/operator/pending-decisions/merchant.fee-schedule-versions`
+and `.../merchant.fee-assignments`, `FEE_SCHEDULE_APPROVE`) serves each open proposal's proposer (the raw actor id) and the
+proposer's reason cut to 120 characters (`reasonSummary`) to the holders of the permission that decides it - the servicing
+queues' precedent - and one proposal's read (`GET /v1/operator/fee-schedule-proposals/{id}`) serves its terms, its decider
+and the schedule it names; never a decision's reason.
+
 ### `transfers.beneficiary` — *added by `P4-TSK-006`*
 
 **A person's saved address book.** The row is a convenience, never a trust decision — and its

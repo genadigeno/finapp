@@ -13,9 +13,10 @@ import java.util.UUID;
 /** {@link BnplFeeAssignmentProposalStore} over {@code merchant.bnpl_fee_assignment_proposal} (`P17-TSK-116`, V021). */
 public final class JdbcBnplFeeAssignmentProposalStore implements BnplFeeAssignmentProposalStore<Connection> {
 
-    private static final String TABLE = "merchant.bnpl_fee_assignment_proposal";
+    static final String TABLE = "merchant.bnpl_fee_assignment_proposal";
 
-    private static final String COLUMNS = "id, merchant_id, product, fee_schedule_id, proposal_reason, proposed_by,"
+    /** Read by {@link JdbcFeeProposalStore} too: the approver's queue and read hold this table's open rows (`P17-TSK-123`). */
+    static final String COLUMNS = "id, merchant_id, product, fee_schedule_id, proposal_reason, proposed_by,"
             + " proposed_by_type, proposed_at, proposal_correlation_id, status, decided_by, decided_by_type, decided_at,"
             + " decision_reason, decision_correlation_id";
 
@@ -88,7 +89,7 @@ public final class JdbcBnplFeeAssignmentProposalStore implements BnplFeeAssignme
         }
     }
 
-    private static BnplFeeAssignmentProposal rehydrate(ResultSet row) throws SQLException {
+    static BnplFeeAssignmentProposal rehydrate(ResultSet row) throws SQLException {
         BnplFeeAssignmentProposal.Status status = BnplFeeAssignmentProposal.Status.valueOf(row.getString("status"));
         Optional<BnplFeeAssignmentProposal.Decision> decision = status == BnplFeeAssignmentProposal.Status.PROPOSED
                 ? Optional.empty()

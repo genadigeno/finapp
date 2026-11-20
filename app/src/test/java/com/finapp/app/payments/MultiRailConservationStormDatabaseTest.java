@@ -283,6 +283,8 @@ class MultiRailConservationStormDatabaseTest {
     private static SimulatedProvider provider;
 
     @LocalServerPort private int port;
+    /** The FINANCIAL_CONTROLLER who approves the world's fee proposals (`P17-TSK-123`). */
+    private String feeController;
     @Autowired private Authorization authorization;
     @Autowired private com.finapp.app.reconciliation.PositionProof positionProof;
     @Autowired private com.finapp.settlement.SettlementSources settlementSources;
@@ -2515,27 +2517,13 @@ class MultiRailConservationStormDatabaseTest {
                         administrator, someKey());
         assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
         String merchantId = field(created.body(), "merchantId");
-        String schedule =
-                field(post("/v1/operator/fee-schedules",
-                                        "{\"name\":\"Storm " + UUID.randomUUID()
-                                                + "\",\"currency\":\"EUR\"}",
-                                        administrator, null)
-                                .body(),
-                        "feeScheduleId");
-        assertThat(post("/v1/operator/fee-schedules/" + schedule + "/versions",
-                                "{\"rate\":0.029,\"fixedAmountMinor\":30,"
-                                        + "\"roundingPolicy\":\"HALF_EVEN\","
-                                        + "\"refundFeePolicy\":\"" + policy + "\","
-                                        + "\"reason\":\"storm pricing\"}",
-                                administrator, null)
-                        .statusCode())
-                .isEqualTo(201);
-        assertThat(put("/v1/operator/merchants/" + merchantId + "/fee-schedule",
-                                "{\"feeScheduleId\":\"" + schedule
-                                        + "\",\"reason\":\"standard terms\"}",
-                                administrator)
-                        .statusCode())
-                .isEqualTo(200);
+        // P17-TSK-123: priced by the two-person path - this administrator proposes, a FINANCIAL_CONTROLLER approves.
+        if (feeController == null) {
+            feeController = operatorSession(RoleName.FINANCIAL_CONTROLLER);
+        }
+        new com.finapp.app.merchant.FeePricing(com.finapp.app.merchant.FeePricing.overHttp(port), administrator,
+                feeController).priced(merchantId, "EUR", com.finapp.app.merchant.FeePricing.versionBody(
+                        "0.029", 30, "HALF_EVEN", policy, null, "storm pricing"));
         HttpResponse<String> issued =
                 post("/v1/operator/merchants/" + merchantId + "/api-keys", null, administrator,
                         someKey());

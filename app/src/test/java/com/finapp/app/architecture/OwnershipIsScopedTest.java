@@ -2530,6 +2530,38 @@ class OwnershipIsScopedTest {
                                         + " PAYMENT_REFUND and its factor - so one open proposal per purchase is judged before the"
                                         + " partial unique index has to refuse it.")),
                     Map.entry(
+                            "com.finapp.merchant.JdbcFeeProposalStore.lockVersion",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-123. A fee schedule version proposal by its id alone, FOR UPDATE - the deciders'"
+                                        + " lock: the id from the URL of POST /v1/operator/fee-schedule-version-proposals/{id}"
+                                        + "/approval or /rejection, another person's proposal by design. Standing in:"
+                                        + " FEE_SCHEDULE_APPROVE on a MULTI_FACTOR session, keyed, four eyes by the domain and"
+                                        + " merchant V022's CHECK.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcFeeProposalStore.lockAssignment",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-123. A merchant fee assignment proposal by its id alone, FOR UPDATE - the"
+                                        + " deciders' lock: the id from the URL of POST /v1/operator/fee-assignment-proposals/{id}"
+                                        + "/approval or /rejection, another person's proposal by design. Standing in:"
+                                        + " FEE_SCHEDULE_APPROVE on a MULTI_FACTOR session, keyed, four eyes by the domain and"
+                                        + " merchant V022's CHECK.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcFeeProposalStore.find",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-123. A fee proposal of any kind by its id alone - the approver's read of what to"
+                                        + " decide: the id from the URL of GET /v1/operator/fee-schedule-proposals/{id}, another"
+                                        + " person's proposal by design, the platform's own pricing. Standing in:"
+                                        + " FEE_SCHEDULE_APPROVE; the read changes nothing.")),
+                    Map.entry(
+                            "com.finapp.merchant.JdbcFeeProposalStore.one",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-123. find's one-row helper: each of the three proposal tables by the id find"
+                                        + " was given - find's classification, one hop down.")),
+                    Map.entry(
                             "com.finapp.merchant.JdbcBnplFeeAssignmentProposalStore.lock",
                             new Entry(
                                     Scope.ADMINISTERED,

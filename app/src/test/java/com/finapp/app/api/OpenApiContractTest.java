@@ -1155,6 +1155,15 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-refund-proposals/{id}/rejection",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-fee-schedule-proposals/{id}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-fee-schedule-proposals/{id}/rejection",
+                        // P17-TSK-123: a fee schedule version and a merchant's fee assignment decided by four eyes, and
+                        // each kind's queue (P17-TSK-040's shape) and one proposal's read (FEE_SCHEDULE_APPROVE).
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-schedule-version-proposals/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-schedule-version-proposals/{id}/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-assignment-proposals/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-assignment-proposals/{id}/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/pending-decisions/merchant.fee-schedule-versions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/pending-decisions/merchant.fee-assignments",
+                        ApiVersion.CURRENT_PREFIX + "/operator/fee-schedule-proposals/{id}",
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/terms/{versionId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/lending/capital-contributions/{contributionId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}",

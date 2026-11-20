@@ -59,6 +59,10 @@ import org.springframework.boot.test.web.server.LocalServerPort;
  *   <li>the split conserves (the property itself is hermetic — this is the stored half);
  *   <li>mutation of a frozen version is refused <strong>at the database</strong>.
  * </ol>
+ *
+ * <p>Since `P17-TSK-123` every version and every assignment here takes the two-person path (`FeePricing`): an
+ * administrator proposes, a {@code FINANCIAL_CONTROLLER} approves. The four eyes themselves are
+ * {@code FeeScheduleFourEyesDatabaseTest}'s.
  */
 @Tag("database")
 @SuppressWarnings("try") // Scopes are used for their close side effect (the established idiom).
@@ -82,6 +86,7 @@ class FeeScheduleDatabaseTest {
     }
 
     @LocalServerPort private int port;
+    private String controller;
     @Autowired private Authorization authorization;
     @Autowired private FeeSchedules feeSchedules;
 
@@ -272,11 +277,18 @@ class FeeScheduleDatabaseTest {
                         versionBody("0.029", 30L, "HALF_EVEN", "RETAINED",
                                 now().minus(Duration.ofDays(30))),
                         admin,
-                        null);
+                        someKey());
 
         assertThat(refused.statusCode()).isEqualTo(422);
         assertThat(refused.body()).contains("merchant.FeeScheduleNotForward");
         assertThat(countVersions(schedule)).as("the refusal wrote nothing").isEqualTo(before);
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM merchant.fee_schedule_version_proposal WHERE"
+                                        + " fee_schedule_id = ?",
+                                UUID.fromString(schedule)))
+                .as("refused at the proposal: nothing for a second person to decide")
+                .isEqualTo(0);
     }
 
     @Test
@@ -312,15 +324,20 @@ class FeeScheduleDatabaseTest {
     // ----------------------------------------------------------------- concurrency
 
     @Test
-    @DisplayName("TEN INSTANCES adding a version to one schedule mint ten DISTINCT numbers -"
+    @DisplayName("TEN INSTANCES minting a version of one schedule mint ten DISTINCT numbers -"
             + " the unique index is the arbiter and the queue; there is no lock to take")
     void tenConcurrentVersionsMintTenNumbers() throws Exception {
+        // P17-TSK-123: an approval is the one door that mints, and one version proposal is open per schedule, so ten
+        // approvals cannot race on one schedule over HTTP. The arbiter still stands behind the effect every approval
+        // performs (FeeSchedules.addVersion, unchanged) - raced here at the effect itself, ten committed transactions.
         String admin = administrator();
         String schedule = createSchedule(admin, "Contended " + suffix());
+        com.finapp.merchant.FeeScheduleId scheduleId =
+                com.finapp.merchant.FeeScheduleId.of(UUID.fromString(schedule));
         int racers = 10;
 
         CountDownLatch start = new CountDownLatch(1);
-        List<Future<HttpResponse<String>>> results = new ArrayList<>();
+        List<Future<Integer>> results = new ArrayList<>();
         ExecutorService pool = Executors.newFixedThreadPool(racers);
         try {
             for (int i = 0; i < racers; i++) {
@@ -328,17 +345,21 @@ class FeeScheduleDatabaseTest {
                         pool.submit(
                                 () -> {
                                     start.await();
-                                    return post(
-                                            "/v1/operator/fee-schedules/" + schedule + "/versions",
-                                            versionBody("0.029", 30L, "HALF_EVEN", "RETAINED",
-                                                    now().plus(Duration.ofDays(1))),
-                                            admin,
-                                            null);
+                                    return inCommittedTransaction(
+                                            u -> feeSchedules.addVersion(u, scheduleId,
+                                                    new FeeSchedules.NewVersion(
+                                                            com.finapp.merchant.FeeRate.of(
+                                                                    new java.math.BigDecimal("0.029")),
+                                                            Money.ofMinorUnits(30L, EUR),
+                                                            com.finapp.sharedkernel.money.RoundingPolicy.HALF_EVEN,
+                                                            com.finapp.merchant.RefundFeePolicy.RETAINED,
+                                                            java.util.Optional.of(now().plus(Duration.ofDays(1))),
+                                                            "contended minting")).version());
                                 }));
             }
             start.countDown();
-            for (Future<HttpResponse<String>> result : results) {
-                assertThat(result.get(60, TimeUnit.SECONDS).statusCode()).isEqualTo(201);
+            for (Future<Integer> result : results) {
+                assertThat(result.get(60, TimeUnit.SECONDS)).isBetween(1, racers);
             }
         } finally {
             pool.shutdownNow();
@@ -352,15 +373,25 @@ class FeeScheduleDatabaseTest {
     }
 
     @Test
-    @DisplayName("assignment CONVERGES: the repeat writes no second history row and no second"
-            + " audit record")
+    @DisplayName("assignment CONVERGES: the repeat proposes nothing and writes no second history row"
+            + " and no second audit record")
     void repeatedAssignmentConverges() throws Exception {
         String admin = administrator();
         String merchant = onboarded(admin);
         String schedule = createSchedule(admin, "Converging " + suffix());
 
-        assertThat(assign(admin, merchant, schedule, "initial terms").statusCode()).isEqualTo(200);
-        assertThat(assign(admin, merchant, schedule, "same again").statusCode()).isEqualTo(200);
+        assign(admin, merchant, schedule, "initial terms");
+        FeePricing.Reply again = fees(admin).proposeAssignment(merchant, schedule, "same again");
+        assertThat(again.status()).as(again.body()).isEqualTo(200);
+        assertThat(FeePricing.field(again.body(), "status")).isEqualTo("ASSIGNED");
+        assertThat(again.body()).as("nothing proposed").contains("\"proposalId\":null");
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM merchant.fee_assignment_proposal WHERE"
+                                        + " merchant_id = ?",
+                                UUID.fromString(merchant)))
+                .as("the first assignment's proposal alone")
+                .isEqualTo(1);
 
         assertThat(
                         count(
@@ -379,41 +410,58 @@ class FeeScheduleDatabaseTest {
     }
 
     @Test
-    @DisplayName("TEN INSTANCES assigning one schedule to one merchant make ONE act - one"
-            + " history row, one audit record, one live pointer, and ten 200s")
+    @DisplayName("TEN INSTANCES proposing one schedule for one merchant make ONE proposal and,"
+            + " approved, ONE act - one history row, one audit record, one live pointer")
     void tenConcurrentAssignmentsMakeOneAct() throws Exception {
         // P6-DOC-001: the phase review found this convergence proven one retry at a time (the
-        // test above), so the merchant row's FOR UPDATE - what makes nine racers re-read the
-        // pointer the first one wrote and converge on it, instead of each recording an act or
-        // the primary key refusing nine first-assignments - had no race test.
+        // test above). Since P17-TSK-123 the door proposes: ten racers judge the empty pointer
+        // and insert, and V022's one-open index admits one - the rest wait on it and are
+        // refused 409, never a second proposal a second person would have to decide.
         String admin = administrator();
         String merchant = onboarded(admin);
         String schedule = createSchedule(admin, "Contended assignment " + suffix());
+        FeePricing fees = fees(admin);
         int racers = 10;
 
         CountDownLatch start = new CountDownLatch(1);
-        List<Future<HttpResponse<String>>> results = new ArrayList<>();
+        List<Future<FeePricing.Reply>> results = new ArrayList<>();
         ExecutorService pool = Executors.newFixedThreadPool(racers);
+        String proposal = null;
         try {
             for (int i = 0; i < racers; i++) {
                 results.add(
                         pool.submit(
                                 () -> {
                                     start.await();
-                                    return assign(admin, merchant, schedule, "standard terms");
+                                    // The door sheds a burst (ADR-0137) having done nothing: a shed racer asks again.
+                                    FeePricing.Reply reply = fees.proposeAssignment(merchant, schedule, "standard terms");
+                                    for (int attempt = 0; attempt < 20 && reply.status() == 503; attempt++) {
+                                        Thread.sleep(200);
+                                        reply = fees.proposeAssignment(merchant, schedule, "standard terms");
+                                    }
+                                    return reply;
                                 }));
             }
             start.countDown();
-            for (Future<HttpResponse<String>> result : results) {
-                HttpResponse<String> answered = result.get(60, TimeUnit.SECONDS);
-                // A racer that finds the pointer already naming this schedule has nothing to do,
-                // and says so with the same 200 (FeeSchedules.assign's convergence).
-                assertThat(answered.statusCode()).as(answered.body()).isEqualTo(200);
-                assertThat(field(answered.body(), "feeScheduleId")).isEqualTo(schedule);
+            int proposed = 0;
+            for (Future<FeePricing.Reply> result : results) {
+                FeePricing.Reply answered = result.get(60, TimeUnit.SECONDS);
+                if (answered.status() == 200) {
+                    proposed++;
+                    assertThat(FeePricing.field(answered.body(), "status")).isEqualTo("PROPOSED");
+                    proposal = FeePricing.field(answered.body(), "proposalId");
+                } else {
+                    assertThat(answered.status()).as(answered.body()).isEqualTo(409);
+                    assertThat(answered.body()).contains("merchant.FeeProposalAlreadyOpen");
+                }
             }
+            assertThat(proposed).as("one proposal, however many instances asked at once").isEqualTo(1);
         } finally {
             pool.shutdownNow();
         }
+        HttpResponse<String> approved = post("/v1/operator/fee-assignment-proposals/" + proposal + "/approval",
+                "{\"reason\":\"reviewed\"}", controller(), someKey());
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
 
         assertThat(
                         count(
@@ -450,7 +498,7 @@ class FeeScheduleDatabaseTest {
 
         assign(admin, merchant, first, "initial terms");
         String reason = "negotiated volume tier " + suffix();
-        assertThat(assign(admin, merchant, second, reason).statusCode()).isEqualTo(200);
+        assign(admin, merchant, second, reason);
 
         try (Connection app = DatabaseRoles.application();
                 PreparedStatement read =
@@ -486,9 +534,16 @@ class FeeScheduleDatabaseTest {
         String merchant = onboarded(admin); // settles in EUR
         String usd = createSchedule(admin, "Dollars " + suffix(), "USD");
 
-        HttpResponse<String> refused = assign(admin, merchant, usd, "should not work");
-        assertThat(refused.statusCode()).isEqualTo(422);
+        FeePricing.Reply refused = fees(admin).proposeAssignment(merchant, usd, "should not work");
+        assertThat(refused.status()).isEqualTo(422);
         assertThat(refused.body()).contains("merchant.FeeCurrencyMismatch");
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM merchant.fee_assignment_proposal WHERE"
+                                        + " merchant_id = ?",
+                                UUID.fromString(merchant)))
+                .as("refused at the proposal: nothing for a second person to decide")
+                .isEqualTo(0);
         assertThat(
                         count(
                                 "SELECT count(*) FROM merchant.merchant_fee_schedule WHERE"
@@ -506,7 +561,7 @@ class FeeScheduleDatabaseTest {
         String plain = tokenFrom(authenticate(registered()).body());
         assertThat(
                         post("/v1/operator/fee-schedules", scheduleBody("Sneaky " + suffix(),
-                                "EUR"), plain, null)
+                                "EUR"), plain, someKey())
                                 .statusCode())
                 .isEqualTo(403);
 
@@ -516,7 +571,7 @@ class FeeScheduleDatabaseTest {
         String ledgerOperator = sessionWith(RoleName.LEDGER_OPERATOR);
         assertThat(
                         post("/v1/operator/fee-schedules", scheduleBody("Also sneaky " + suffix(),
-                                "EUR"), ledgerOperator, null)
+                                "EUR"), ledgerOperator, someKey())
                                 .statusCode())
                 .isEqualTo(403);
 
@@ -548,7 +603,7 @@ class FeeScheduleDatabaseTest {
                         "/v1/operator/fee-schedules/" + schedule + "/versions",
                         versionBody("0.029", 30L, "HALF_DOWN", "RETAINED", null),
                         admin,
-                        null);
+                        someKey());
         assertThat(refused.statusCode()).isEqualTo(422);
         assertThat(countVersions(schedule)).isEqualTo(before);
     }
@@ -563,7 +618,7 @@ class FeeScheduleDatabaseTest {
                         "/v1/operator/fee-schedules/" + schedule + "/versions",
                         versionBody("1.0", 30L, "HALF_EVEN", "RETAINED", null),
                         admin,
-                        null);
+                        someKey());
         assertThat(refused.statusCode()).isEqualTo(422);
         assertThat(countVersions(schedule)).isZero();
     }
@@ -629,19 +684,22 @@ class FeeScheduleDatabaseTest {
     }
 
     @Test
-    @DisplayName("version creation is audited with its terms and the operator's reason")
+    @DisplayName("version creation is audited with its terms and the operator's reason - the"
+            + " proposal by its proposer, the version by its approver, the proposer's reason on both")
     void versionCreationIsAudited() throws Exception {
         String admin = administrator();
         String schedule = createSchedule(admin, "Audited " + suffix());
         String reason = "annual repricing " + suffix();
-        HttpResponse<String> created =
-                post(
-                        "/v1/operator/fee-schedules/" + schedule + "/versions",
-                        versionBody("0.029", 30L, "HALF_EVEN", "RETAINED", null, reason),
-                        admin,
-                        null);
-        assertThat(created.statusCode()).isEqualTo(201);
-        String version = field(created.body(), "feeScheduleVersionId");
+        String version =
+                fees(admin).version(schedule, versionBody("0.029", 30L, "HALF_EVEN", "RETAINED", null, reason));
+        assertThat(
+                        count(
+                                "SELECT count(*) FROM platform.audit_record WHERE operation ="
+                                        + " 'merchant.FeeScheduleVersionProposed' AND target_id = ?"
+                                        + " AND reason = ? AND change_summary LIKE '%rate=0.029%'",
+                                schedule,
+                                reason))
+                .isEqualTo(1);
 
         try (Connection app = DatabaseRoles.application();
                 PreparedStatement read =
@@ -697,6 +755,20 @@ class FeeScheduleDatabaseTest {
 
     // ----------------------------------------------------------------- fixtures
 
+    /** {@code work} in one committed transaction of its own, as the system - an instance's transaction. */
+    private <R> R inCommittedTransaction(java.util.function.Function<Connection, R> work) throws Exception {
+        try (CorrelationContext.Scope flow =
+                        CorrelationContext.enter(
+                                Correlation.startingWith(CorrelationId.generate(IDS)));
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                Connection app = DatabaseRoles.application()) {
+            app.setAutoCommit(false);
+            R result = work.apply(app);
+            app.commit();
+            return result;
+        }
+    }
+
     private <R> R inTransaction(java.util.function.Function<Connection, R> work) throws Exception {
         try (CorrelationContext.Scope flow =
                         CorrelationContext.enter(
@@ -713,9 +785,22 @@ class FeeScheduleDatabaseTest {
 
     private String createSchedule(String admin, String name, String currency) throws Exception {
         HttpResponse<String> created =
-                post("/v1/operator/fee-schedules", scheduleBody(name, currency), admin, null);
+                post("/v1/operator/fee-schedules", scheduleBody(name, currency), admin, someKey());
         assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
         return field(created.body(), "feeScheduleId");
+    }
+
+    /** The two-person path (`P17-TSK-123`): {@code admin} proposes, this test's controller approves. */
+    private FeePricing fees(String admin) throws Exception {
+        return new FeePricing(FeePricing.overHttp(port), admin, controller());
+    }
+
+    /** One FINANCIAL_CONTROLLER per test: the second person of every fee approval here. */
+    private String controller() throws Exception {
+        if (controller == null) {
+            controller = sessionWith(RoleName.FINANCIAL_CONTROLLER);
+        }
+        return controller;
     }
 
     private String addVersion(
@@ -727,22 +812,13 @@ class FeeScheduleDatabaseTest {
             String refundFee,
             Instant effectiveFrom)
             throws Exception {
-        HttpResponse<String> created =
-                post(
-                        "/v1/operator/fee-schedules/" + schedule + "/versions",
-                        versionBody(rate, fixed, rounding, refundFee, effectiveFrom),
-                        admin,
-                        null);
-        assertThat(created.statusCode()).as(created.body()).isEqualTo(201);
-        return field(created.body(), "feeScheduleVersionId");
+        return fees(admin).version(schedule, versionBody(rate, fixed, rounding, refundFee, effectiveFrom));
     }
 
-    private HttpResponse<String> assign(
+    /** {@code merchant} pointed at {@code schedule} by the two-person path. */
+    private void assign(
             String admin, String merchant, String schedule, String reason) throws Exception {
-        return put(
-                "/v1/operator/merchants/" + merchant + "/fee-schedule",
-                "{\"feeScheduleId\":\"" + schedule + "\",\"reason\":\"" + reason + "\"}",
-                admin);
+        fees(admin).assign(merchant, schedule, reason);
     }
 
     private static String scheduleBody(String name, String currency) {

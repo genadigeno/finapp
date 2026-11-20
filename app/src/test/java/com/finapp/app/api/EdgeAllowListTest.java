@@ -326,7 +326,15 @@ class EdgeAllowListTest {
     @DisplayName("a template the rule language cannot state is refused: a literal that is not plain, a segment that is only partly a variable")
     void aSegmentTheRuleCannotStateIsRefused() {
         assertThat(EdgeRoutes.regex("/v1/things/{id}/state")).isEqualTo("^/v1/things/" + EdgeRoutes.VARIABLE + "/state$");
-        for (String template : List.of("/v1/things/{id}-x", "/v1/things/x{id}", "/v1/things.json/{id}", "/v1/Things/{id}", "/v1/things/{id}{other}")) {
+        // P17-TSK-123: a dotted literal of plain parts (P17-TSK-040's /pending-decisions/<module>.<kind>) is stated exactly - its
+        // dot escaped, never "any character" - so `merchantXfee` cannot ride on it. Read "/v1/things.json/{id}" among the refused
+        // until then.
+        assertThat(EdgeRoutes.regex("/v1/queues/merchant.fee-assignments/{id}"))
+                .isEqualTo("^/v1/queues/merchant\\.fee-assignments/" + EdgeRoutes.VARIABLE + "$");
+        assertThat(Pattern.compile(EdgeRoutes.regex("/v1/queues/merchant.fee-assignments/{id}"))
+                .matcher("/v1/queues/merchantXfee-assignments/1").matches()).isFalse();
+        for (String template : List.of("/v1/things/{id}-x", "/v1/things/x{id}", "/v1/things_json/{id}", "/v1/things./{id}",
+                "/v1/.things/{id}", "/v1/things..json/{id}", "/v1/Things/{id}", "/v1/things/{id}{other}")) {
             assertThatThrownBy(() -> EdgeRoutes.regex(template)).as(template).isInstanceOf(IllegalArgumentException.class);
         }
     }

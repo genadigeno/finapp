@@ -109,20 +109,13 @@ final class BnplApplicationClient {
 
     // ------------------------------------------------------------------ the world
 
-    /** A trading merchant priced for cards, with an API key - checkout's own doors. */
+    /**
+     * A trading merchant priced for cards by the two-person path (`P17-TSK-123`), with an API key - checkout's own doors.
+     */
     Merchant tradingMerchant(Authorization authorization) throws Exception {
         String operator = operatorSession(authorization, RoleName.MERCHANT_ADMINISTRATOR);
         String merchantId = onboard(operator);
-        String schedule = field(post("/v1/operator/fee-schedules",
-                "{\"name\":\"Std " + UUID.randomUUID() + "\",\"currency\":\"EUR\"}", operator, null).body(),
-                "feeScheduleId");
-        assertThat(post("/v1/operator/fee-schedules/" + schedule + "/versions",
-                "{\"rate\":0.029,\"fixedAmountMinor\":30,\"roundingPolicy\":\"HALF_EVEN\","
-                        + "\"refundFeePolicy\":\"RETAINED\",\"reason\":\"initial pricing\"}", operator, null)
-                .statusCode()).isEqualTo(201);
-        assertThat(put("/v1/operator/merchants/" + merchantId + "/fee-schedule",
-                "{\"feeScheduleId\":\"" + schedule + "\",\"reason\":\"standard terms\"}", operator).statusCode())
-                .isEqualTo(200);
+        fees(authorization, operator).priced(merchantId);
         HttpResponse<String> issued = post("/v1/operator/merchants/" + merchantId + "/api-keys", null, operator,
                 key());
         assertThat(issued.statusCode()).isEqualTo(201);
@@ -236,6 +229,15 @@ final class BnplApplicationClient {
                 issuer, key());
         assertThat(issued.statusCode()).as(issued.body()).isEqualTo(201);
         return field(issued.body(), "keyId") + "." + field(issued.body(), "secret");
+    }
+
+    /**
+     * The two-person path that prices a merchant over HTTP (`P17-TSK-123`): {@code administrator} proposes, a fresh
+     * {@code FINANCIAL_CONTROLLER} approves.
+     */
+    com.finapp.app.merchant.FeePricing fees(Authorization authorization, String administrator) throws Exception {
+        return new com.finapp.app.merchant.FeePricing(com.finapp.app.merchant.FeePricing.overHttp(port), administrator,
+                operatorSession(authorization, RoleName.FINANCIAL_CONTROLLER));
     }
 
     /**

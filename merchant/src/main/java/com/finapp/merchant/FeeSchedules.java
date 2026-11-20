@@ -43,6 +43,12 @@ import lombok.RequiredArgsConstructor;
  * to be revisited.</strong> It is recorded here so that the revisiting is a decision rather
  * than a discovery.
  *
+ * <p><strong>Revisited by `P17-TSK-123`</strong> (ADR-0154's second amendment): the operator's doors
+ * are keyed now, because a version and an assignment are four-eyes <em>proposals</em> there
+ * ({@link FeeScheduleProposals}) and a duplicated proposal is a second row a second person would
+ * have to decide. These commands are the effects the approvals perform, unchanged and unkeyed:
+ * the key is the door's, in the act's transaction.
+ *
  * <h2>The one contended thing, and why it has no lock</h2>
  *
  * <p>Minting a version number. Ten instances creating a version of one schedule must produce
@@ -208,26 +214,7 @@ public final class FeeSchedules {
                 merchants
                         .findByIdForUpdate(unitOfWork, merchantId)
                         .orElseThrow(UnknownMerchantException::new);
-        FeeSchedule schedule =
-                schedules
-                        .findSchedule(unitOfWork, scheduleId)
-                        .orElseThrow(UnknownFeeScheduleException::new);
-
-        // A schedule prices in one currency, and a merchant settles in one. Refused by name
-        // here; the composite foreign key holds the version half of the same rule at V004.
-        if (!schedule.currency().equals(merchant.settlementCurrency())) {
-            throw new FeeCurrencyMismatchException(
-                    schedule.currency(), merchant.settlementCurrency());
-        }
-
-        // A CLOSED merchant is deliberately NOT refused, and the asymmetry with key issuance
-        // is reasoned rather than accidental: a credential is a door, so issuing one into an
-        // ended relationship is a security fact (MerchantErrorCode.NOT_KEYABLE). A schedule
-        // assignment opens nothing - no session can be created for a merchant that is not
-        // ACTIVE, so nothing will ever price against it. Refusing would invent a rule with no
-        // safety content.
-
-        Optional<FeeScheduleId> previous = schedules.findAssignment(unitOfWork, merchantId);
+        Optional<FeeScheduleId> previous = judgedAssignment(unitOfWork, merchant, scheduleId);
         if (previous.filter(scheduleId::equals).isPresent()) {
             // The retry's convergence: the state this command produces, already produced, is
             // this command done (the administrative-move idiom).
@@ -254,6 +241,81 @@ public final class FeeSchedules {
                                         + ", from=" + previous.map(Object::toString).orElse("none")
                                         + ", to=" + scheduleId)));
         return scheduleId;
+    }
+
+    /**
+     * Whether {@link #assign} would move the merchant's pointer to {@code scheduleId} (`P17-TSK-123`): its rules, in its
+     * order, on an <strong>unlocked</strong> read - the four-eyes door's judgement before it proposes, so what would be
+     * refused is refused at once and a pointer already there converges with nothing proposed. Writes nothing; the approval
+     * performs {@link #assign} itself, every rule judged again under the merchant's {@code FOR UPDATE}.
+     *
+     * @return false when the merchant is already on the schedule
+     * @throws UnknownMerchantException if no merchant answers to the identifier
+     * @throws UnknownFeeScheduleException if no schedule does
+     * @throws FeeCurrencyMismatchException if the schedule does not price the merchant's settlement currency
+     */
+    public boolean wouldAssign(Connection unitOfWork, MerchantId merchantId, FeeScheduleId scheduleId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(scheduleId, "scheduleId must not be null");
+        Merchant merchant =
+                merchants.findById(unitOfWork, merchantId).orElseThrow(UnknownMerchantException::new);
+        return judgedAssignment(unitOfWork, merchant, scheduleId).filter(scheduleId::equals).isEmpty();
+    }
+
+    /** {@link #assign}'s rules, in its order: the merchant's current pointer when they hold. */
+    private Optional<FeeScheduleId> judgedAssignment(
+            Connection unitOfWork, Merchant merchant, FeeScheduleId scheduleId) {
+        FeeSchedule schedule =
+                schedules
+                        .findSchedule(unitOfWork, scheduleId)
+                        .orElseThrow(UnknownFeeScheduleException::new);
+
+        // A schedule prices in one currency, and a merchant settles in one. Refused by name
+        // here; the composite foreign key holds the version half of the same rule at V004.
+        if (!schedule.currency().equals(merchant.settlementCurrency())) {
+            throw new FeeCurrencyMismatchException(
+                    schedule.currency(), merchant.settlementCurrency());
+        }
+
+        // A CLOSED merchant is deliberately NOT refused, and the asymmetry with key issuance
+        // is reasoned rather than accidental: a credential is a door, so issuing one into an
+        // ended relationship is a security fact (MerchantErrorCode.NOT_KEYABLE). A schedule
+        // assignment opens nothing - no session can be created for a merchant that is not
+        // ACTIVE, so nothing will ever price against it. Refusing would invent a rule with no
+        // safety content.
+
+        return schedules.findAssignment(unitOfWork, merchant.id());
+    }
+
+    /**
+     * Judges {@code request} as {@link #addVersion} would mint it now (`P17-TSK-123`) - the schedule found, the fixed part in
+     * its currency, a named start not in the past ({@code INV-MER-03}) - writing nothing: the four-eyes door's judgement
+     * before it proposes. The approval performs {@link #addVersion} itself and judges every rule again then.
+     *
+     * @throws UnknownFeeScheduleException if no schedule answers to the identifier
+     * @throws BackdatedFeeScheduleVersionException if it would take effect in the past
+     * @throws FeeCurrencyMismatchException if the fixed part is not in the schedule's currency
+     */
+    public void judgeVersion(Connection unitOfWork, FeeScheduleId scheduleId, NewVersion request) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(request, "request must not be null");
+        Objects.requireNonNull(request.reason(), "reason must not be null");
+        FeeSchedule schedule =
+                schedules
+                        .findSchedule(unitOfWork, scheduleId)
+                        .orElseThrow(UnknownFeeScheduleException::new);
+        // The value object's own refusals, with a placeholder number: the number is the approval's to mint.
+        FeeScheduleVersion.create(
+                ids,
+                schedule,
+                FeeScheduleVersion.FIRST_VERSION,
+                request.rate(),
+                request.fixed(),
+                request.roundingPolicy(),
+                request.refundFeePolicy(),
+                request.effectiveFrom(),
+                SecurityContext.require().id(),
+                clock);
     }
 
     /**

@@ -408,6 +408,8 @@ final class RiskStormWorld {
     record Operator(RoleName role, String token, String passwordToken, UUID party, UUID identity, String login) {}
 
     private final Door door;
+    /** The FINANCIAL_CONTROLLER who approves the merchants' fee proposals (`P17-TSK-123`), made at the first merchant. */
+    private Operator feeController;
     private final Authorization authorization;
     private final PostingService postings;
     private final SimulatedProvider provider;
@@ -600,15 +602,15 @@ final class RiskStormWorld {
                 Audience.OPERATOR);
         assertThat(created.status()).as(created.body()).isEqualTo(201);
         String merchantId = created.field("merchantId");
-        String schedule = door.post("/v1/operator/fee-schedules", "{\"name\":\"Std " + UUID.randomUUID()
-                + "\",\"currency\":\"EUR\"}", administrator.token(), null, Audience.OPERATOR).field("feeScheduleId");
-        Answer priced = door.post("/v1/operator/fee-schedules/" + schedule + "/versions", "{\"rate\":0.029,"
-                + "\"fixedAmountMinor\":30,\"roundingPolicy\":\"HALF_EVEN\",\"refundFeePolicy\":\"RETAINED\","
-                + "\"reason\":\"initial pricing\"}", administrator.token(), null, Audience.OPERATOR);
-        assertThat(priced.status()).as(priced.body()).isEqualTo(201);
-        Answer assigned = door.put("/v1/operator/merchants/" + merchantId + "/fee-schedule", "{\"feeScheduleId\":\""
-                + schedule + "\",\"reason\":\"standard terms\"}", administrator.token(), Audience.OPERATOR);
-        assertThat(assigned.status()).as(assigned.body()).isEqualTo(200);
+        // P17-TSK-123: priced by the two-person path - the administrator proposes, the world's FINANCIAL_CONTROLLER
+        // approves.
+        if (feeController == null) {
+            feeController = operator(RoleName.FINANCIAL_CONTROLLER);
+        }
+        new com.finapp.app.merchant.FeePricing((method, path, body, bearer, key) -> {
+            Answer answer = door.send(method, path, body, bearer, key, Audience.OPERATOR);
+            return new com.finapp.app.merchant.FeePricing.Reply(answer.status(), answer.body());
+        }, administrator.token(), feeController.token()).priced(merchantId);
         Answer issued = door.post("/v1/operator/merchants/" + merchantId + "/api-keys", null, administrator.token(),
                 key(), Audience.OPERATOR);
         assertThat(issued.status()).as(issued.body()).isEqualTo(201);
