@@ -69,8 +69,14 @@ public interface PricingPolicyStore {
             String reason,
             Instant at);
 
-    /** Versions newest first, at most {@code limit}, each with its pairs. */
-    List<VersionView> versions(Connection unitOfWork, int limit);
+    /**
+     * Versions newest first - below {@code beforeVersion} when one is named, the keyset a page resumes from
+     * (`P17-TSK-118`) - at most {@code limit} (1..{@value #PAGE_READ_BOUND}), each with its pairs.
+     */
+    List<VersionView> versions(Connection unitOfWork, Optional<Integer> beforeVersion, int limit);
+
+    /** The most versions one read returns: a page of 100 and the one that says another page follows. */
+    int PAGE_READ_BOUND = 101;
 
     /** The {@code ACTIVE} version with its pairs, if one exists - read, not locked (`P9-TSK-008`). */
     Optional<VersionView> active(Connection unitOfWork);

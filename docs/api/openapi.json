@@ -18269,6 +18269,35 @@
         },
         "type": "object"
       },
+      "CorridorEnableRequestView": {
+        "properties": {
+          "corridor": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CorridorPolicyList": {
         "properties": {
           "truncated": {
@@ -18334,6 +18363,9 @@
             "type": "string"
           },
           "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
             "type": "string"
           },
           "status": {
@@ -19947,6 +19979,38 @@
         },
         "type": "object"
       },
+      "EnableRequestView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "EntryAmountView": {
         "properties": {
           "amount": {
@@ -21379,6 +21443,41 @@
           },
           "truncated": {
             "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "FxTradeReversalView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reversalEntryId": {
+            "type": "string"
+          },
+          "reversalId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "trade": {
+            "$ref": "#/components/schemas/ReversedTradeView"
+          },
+          "tradeId": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -25931,16 +26030,16 @@
         },
         "type": "object"
       },
-      "PolicyList": {
+      "PolicyPage": {
         "properties": {
-          "truncated": {
-            "type": "boolean"
-          },
-          "versions": {
+          "items": {
             "items": {
               "$ref": "#/components/schemas/PolicyView"
             },
             "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -26056,6 +26155,9 @@
             "type": "array"
           },
           "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
             "type": "string"
           },
           "status": {
@@ -28917,6 +29019,35 @@
             "type": "string"
           },
           "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ReversedTradeView": {
+        "properties": {
+          "bookedAt": {
+            "type": "string"
+          },
+          "customerDestination": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "customerSource": {
+            "$ref": "#/components/schemas/AmountView"
+          },
+          "fixedSide": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tradeId": {
             "type": "string"
           }
         },
@@ -41816,6 +41947,33 @@
         }
       }
     },
+    "/v1/operator/cross-border/corridor-enable-requests/{rid}": {
+      "get": {
+        "operationId": "readCorridorEnableRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CorridorEnableRequestView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/cross-border/corridor-enable-requests/{rid}/approval": {
       "post": {
         "operationId": "approveCorridorEnableRequest",
@@ -42751,6 +42909,33 @@
         }
       }
     },
+    "/v1/operator/fx/enable-requests/{rid}": {
+      "get": {
+        "operationId": "readFxEnableRequest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnableRequestView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/fx/enable-requests/{rid}/approval": {
       "post": {
         "operationId": "approveFxEnableRequest",
@@ -42873,12 +43058,30 @@
     "/v1/operator/fx/pricing-policies": {
       "get": {
         "operationId": "listFxPricingPolicies",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PolicyList"
+                  "$ref": "#/components/schemas/PolicyPage"
                 }
               }
             },
@@ -43109,6 +43312,41 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/fx/trades/{id}/reversal/{rid}": {
+      "get": {
+        "operationId": "readFxTradeReversal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FxTradeReversalView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }

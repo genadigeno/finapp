@@ -20,6 +20,20 @@ public interface CorridorAvailabilityStore {
             String proposedBy,
             Optional<String> decidedBy) {}
 
+    /**
+     * A corridor enable request as its approver reads it (`P17-TSK-118`): the corridor, the position, who proposed it
+     * and why, and - once decided - when and why. Never who decided it.
+     */
+    record RequestView(
+            UUID id,
+            CorridorKey corridor,
+            EnableRequestStatus status,
+            String proposedBy,
+            Instant proposedAt,
+            String reason,
+            Optional<Instant> decidedAt,
+            Optional<String> decisionReason) {}
+
     /** An enable request's position. */
     enum EnableRequestStatus {
         PROPOSED,
@@ -52,6 +66,9 @@ public interface CorridorAvailabilityStore {
      *     (the caller's transaction is then aborted)
      */
     void insertRequest(Connection unitOfWork, UUID id, CorridorKey corridor, String proposedBy, String reason, Instant at);
+    /** The request as its approver reads it - no lock (`P17-TSK-118`). */
+    Optional<RequestView> request(Connection unitOfWork, UUID id);
+
 
     /** The request, {@code FOR UPDATE}. */
     Optional<RequestRow> lockRequest(Connection unitOfWork, UUID id);

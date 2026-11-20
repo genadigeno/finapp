@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.sql.Types;
 import java.util.Objects;
 import java.util.Optional;
@@ -37,6 +38,36 @@ public final class JdbcTradeReversalStore implements TradeReversalStore {
     @Override
     public Optional<Row> find(Connection unitOfWork, UUID id) {
         return one(unitOfWork, "SELECT " + COLUMNS + " FROM fx.trade_reversal WHERE id = ?", id, "reading a trade reversal");
+    }
+
+    @Override
+    public Optional<Detail> detail(Connection unitOfWork, UUID id) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(id, "id must not be null");
+        try (PreparedStatement select = unitOfWork.prepareStatement("SELECT " + COLUMNS
+                + ", proposed_at, proposed_reason, decided_at, decided_reason FROM fx.trade_reversal WHERE id = ?")) {
+            select.setObject(1, id);
+            try (ResultSet row = select.executeQuery()) {
+                if (!row.next()) {
+                    return Optional.empty();
+                }
+                Timestamp decidedAt = row.getTimestamp("decided_at");
+                return Optional.of(new Detail(
+                        new Row(
+                                row.getObject("id", UUID.class),
+                                FxTradeId.of(row.getObject("trade_id", UUID.class)),
+                                row.getString("status"),
+                                row.getString("proposed_by"),
+                                Optional.ofNullable(row.getString("decided_by")),
+                                Optional.ofNullable(row.getObject("reversal_entry_id", UUID.class))),
+                        row.getTimestamp("proposed_at").toInstant(),
+                        row.getString("proposed_reason"),
+                        Optional.ofNullable(decidedAt).map(Timestamp::toInstant),
+                        Optional.ofNullable(row.getString("decided_reason"))));
+            }
+        } catch (SQLException failure) {
+            throw new FxStorageException(DatabaseFailure.describe("reading a trade reversal's detail", failure));
+        }
     }
 
     @Override

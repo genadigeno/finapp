@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -44,11 +45,16 @@ public class FxAdministrationController {
 
     @NonNull private final FxAdministrationDesk desk;
 
-    /** The versions, newest first - each with its pairs. */
+    /**
+     * The versions, newest first - each with its pairs and its proposer. A §7 collection (`P17-TSK-118`): version
+     * descending; {@code limit} 50 by default, 100 at most, refused above; {@code nextCursor} absent on the last page.
+     */
     @GetMapping("/pricing-policies")
     @RequiresPermission(PermissionName.FX_ADMINISTER)
-    public FxAdministrationDesk.PolicyList listFxPricingPolicies() {
-        return desk.policies();
+    public FxAdministrationDesk.PolicyPage listFxPricingPolicies(
+            @RequestParam(name = "cursor", required = false) String cursor,
+            @RequestParam(name = "limit", required = false) String limit) {
+        return desk.policies(cursor, limit);
     }
 
     /** Proposes a whole new version - keyed per principal; frozen from here. */
@@ -106,6 +112,13 @@ public class FxAdministrationController {
             @PathVariable("code") String code,
             @Valid @RequestBody AvailabilityRequest body) {
         return desk.providerAvailability(idempotencyKey, code, body);
+    }
+
+    /** One enable request - what its approver decides, and who proposed it (`P17-TSK-118`). */
+    @GetMapping("/enable-requests/{rid}")
+    @RequiresPermission(PermissionName.FX_ADMINISTER)
+    public FxAdministrationDesk.EnableRequestView readFxEnableRequest(@PathVariable("rid") String requestId) {
+        return desk.enableRequest(requestId);
     }
 
     /** Approves an enable request - a different person's act; appends the enabling fact. */

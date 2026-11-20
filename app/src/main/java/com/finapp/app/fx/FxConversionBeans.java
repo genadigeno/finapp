@@ -111,8 +111,12 @@ public class FxConversionBeans {
             com.finapp.fx.TradeReversals tradeReversals,
             IdempotentExecutor idempotentExecutor,
             TransactionRunner fxTransactionRunner,
-            FxQuoteMetrics fxQuoteMetrics) {
-        return new FxTradeReversalDesk(tradeReversals, idempotentExecutor, fxTransactionRunner, fxQuoteMetrics);
+            FxQuoteMetrics fxQuoteMetrics,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator idGenerator,
+            Clock clock) {
+        return new FxTradeReversalDesk(tradeReversals, idempotentExecutor, fxTransactionRunner, fxQuoteMetrics, auditWriter,
+                idGenerator, clock);
     }
 
     /** Phase 9's reports and the payment trace (`P9-TSK-027`): one snapshot each, audited. */

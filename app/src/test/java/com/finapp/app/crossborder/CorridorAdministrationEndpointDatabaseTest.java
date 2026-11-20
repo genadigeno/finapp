@@ -40,6 +40,8 @@ import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * The corridor doors over HTTP (`P9-TSK-015`, ADR-0080 section 4, {@code INV-AUD-04}): v1 per O7 proposed
@@ -99,6 +101,17 @@ class CorridorAdministrationEndpointDatabaseTest {
         HttpResponse<String> listed = get(POLICIES, second);
         assertThat(listed.statusCode()).isEqualTo(200);
         assertThat(listed.body()).contains(id).contains("\"maximum\":\"1500000\"").contains("\"maximum\":\"4000.000\"");
+        // P17-TSK-118: each version names its proposer, never its decider.
+        JsonNode version = null;
+        for (JsonNode listedVersion : new ObjectMapper().readTree(listed.body()).get("versions")) {
+            if (listedVersion.get("id").asString().equals(id)) {
+                version = listedVersion;
+            }
+        }
+        assertThat(version).as("v1 is listed").isNotNull();
+        assertThat(version.get("proposedBy").asString())
+                .isEqualTo(column("SELECT proposed_by FROM crossborder.corridor_policy_version WHERE id = ?", id));
+        assertThat(version.has("decidedBy")).as("never who decided").isFalse();
         try (Connection app = DatabaseRoles.application();
                 PreparedStatement read = app.prepareStatement(
                         "SELECT source_currency || '-' || destination_currency || '-' || destination_country || ':'"
@@ -150,6 +163,17 @@ class CorridorAdministrationEndpointDatabaseTest {
         assertThat(field(proposed.body(), "outcome")).isEqualTo("ENABLE_PROPOSED");
         String request = field(proposed.body(), "requestId");
         assertThat(get(DISCOVERY, customer).body()).as("a proposal enables nothing").doesNotContain("GBP-USD-US");
+        // P17-TSK-118: the approver reads what they approve, and whose it is, before deciding it.
+        HttpResponse<String> read = get(enableRequest(request), second);
+        assertThat(read.statusCode()).as(read.body()).isEqualTo(200);
+        JsonNode pending = new ObjectMapper().readTree(read.body());
+        assertThat(pending.get("requestId").asString()).isEqualTo(request);
+        assertThat(pending.get("corridor").asString()).isEqualTo("GBP-USD-US");
+        assertThat(pending.get("status").asString()).isEqualTo("PROPOSED");
+        assertThat(pending.get("reason").asString()).isEqualTo("recovered");
+        assertThat(pending.get("proposedBy").asString())
+                .isEqualTo(column("SELECT proposed_by FROM crossborder.corridor_enable_request WHERE id = ?", request));
+        assertThat(pending.get("decidedAt").isNull()).isTrue();
         HttpResponse<String> self = post(enableApproval(request), decision("mine"), first, null);
         assertThat(self.statusCode()).isEqualTo(409);
         assertThat(self.body()).contains("crossborder.SelfApprovalRefused");
@@ -157,6 +181,12 @@ class CorridorAdministrationEndpointDatabaseTest {
         assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
         assertThat(field(approved.body(), "status")).isEqualTo("APPROVED");
         assertThat(get(DISCOVERY, customer).body()).contains("GBP-USD-US");
+        JsonNode decided = new ObjectMapper().readTree(get(enableRequest(request), first).body());
+        assertThat(decided.get("status").asString()).isEqualTo("APPROVED");
+        assertThat(decided.get("decisionReason").asString()).isEqualTo("verified");
+        assertThat(decided.has("decidedBy")).as("never who decided").isFalse();
+        assertThat(get(enableRequest(UUID.randomUUID().toString()), first).statusCode()).as("unknown").isEqualTo(404);
+        assertThat(get(enableRequest("not-an-id"), first).statusCode()).as("malformed").isEqualTo(404);
 
         HttpResponse<String> again = post(path, availability(true, "once more"), first, someKey());
         assertThat(again.statusCode()).isEqualTo(409);
@@ -219,12 +249,14 @@ class CorridorAdministrationEndpointDatabaseTest {
         long facts = availabilityFacts();
         for (String bearer : new String[] {other, customer}) {
             assertThat(get(POLICIES, bearer).statusCode()).isEqualTo(403);
+            assertThat(get(enableRequest(id), bearer).statusCode()).as("P17-TSK-118's read").isEqualTo(403);
             for (String[] route : posts) {
                 assertThat(post(route[0], route[1], bearer, someKey()).statusCode()).as("403 at %s", route[0])
                         .isEqualTo(403);
             }
         }
         assertThat(get(POLICIES, null).statusCode()).isEqualTo(401);
+        assertThat(get(enableRequest(id), null).statusCode()).isEqualTo(401);
         for (String[] route : posts) {
             assertThat(post(route[0], route[1], null, someKey()).statusCode()).as("401 at %s", route[0]).isEqualTo(401);
         }
@@ -232,6 +264,20 @@ class CorridorAdministrationEndpointDatabaseTest {
     }
 
     // -----------------------------------------------------------------
+
+    private static String enableRequest(String id) {
+        return "/v1/operator/cross-border/corridor-enable-requests/" + id;
+    }
+
+    private static String column(String sql, String id) throws Exception {
+        try (Connection app = DatabaseRoles.application(); PreparedStatement select = app.prepareStatement(sql)) {
+            select.setObject(1, UUID.fromString(id));
+            try (ResultSet row = select.executeQuery()) {
+                assertThat(row.next()).as(sql).isTrue();
+                return row.getString(1);
+            }
+        }
+    }
 
     private static boolean activeExists() throws Exception {
         try (Connection app = DatabaseRoles.application();

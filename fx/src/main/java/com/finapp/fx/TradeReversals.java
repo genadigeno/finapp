@@ -72,6 +72,12 @@ public final class TradeReversals {
     public record Decided(UUID reversalId, FxTradeId tradeId, String status, Optional<UUID> reversalEntryId,
             CoverUnwinds.Effect cover, String pair) {}
 
+    /**
+     * A reversal as its approver reads it (`P17-TSK-118`): its detail and the trade it would reverse - so the approver
+     * sees what the mirror takes back before approving it.
+     */
+    public record Read(TradeReversalStore.Detail reversal, TradeStore.TradeRow trade) {}
+
     /** No trade (or reversal) has this identifier. Nothing written. */
     public static final class NotFound extends RuntimeException {
         @java.io.Serial private static final long serialVersionUID = 1L;
@@ -247,6 +253,20 @@ public final class TradeReversals {
                 "trade=" + reversal.tradeId().value());
         return new Decided(reversalId, reversal.tradeId(), "REJECTED", Optional.empty(), CoverUnwinds.Effect.NONE,
                 trades.find(unitOfWork, reversal.tradeId()).map(TradeReversals::pairOf).orElse(""));
+    }
+
+    /**
+     * Reversal {@code reversalId} OF trade {@code tradeId}, with that trade - read, never locked (`P17-TSK-118`). A
+     * reversal of ANOTHER trade is {@link NotFound}, as the decision doors answer it: the route names both, and both
+     * must agree.
+     */
+    public Read read(Connection unitOfWork, FxTradeId tradeId, UUID reversalId) {
+        TradeReversalStore.Detail detail = reversals.detail(unitOfWork, reversalId)
+                .filter(found -> found.row().tradeId().equals(tradeId))
+                .orElseThrow(() -> new NotFound("no such trade reversal"));
+        TradeStore.TradeRow trade = trades.find(unitOfWork, tradeId)
+                .orElseThrow(() -> new IllegalStateException("a reversal's trade always exists"));
+        return new Read(detail, trade);
     }
 
     /** The trade's pair as the meters spell it ({@code "EUR-USD"}). */

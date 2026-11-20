@@ -312,6 +312,14 @@ collections, one per queue. `OperatorListsAreCollectionsTest` holds the operator
 application serves: no `GET` there answers a bare array, a top-level `truncated` or takes `after` unless its register names the
 route with its reason - a list bounded by what it is (a closed vocabulary, one subject's children, one period's report), or one
 this section has not reached yet, named there so it is owed - and the table above lists exactly the routes answering a page.
+| `GET /v1/operator/fx/pricing-policies` (`P17-TSK-118`) | `FX_ADMINISTER` | version descending | 50 / 100 | None. Each version with its pairs and its proposer; the maximum is the capped list's old bound, so no page reads more than it did. Retrofitted in place from `{ versions, truncated }` (ADR-C133 decision 2), whose flag was never set |
+
+All are keyset reads. `app`'s `OperatorCollection` is the one implementation of the request rules: the limit is refused above
+its maximum rather than reduced, and the cursor names its collection, so one collection's cursor is refused by another. Every
+refusal is `422 api.ValidationFailed`. A page record carries `nextCursor` only when there is a next page. Older operator lists
+were built before this section was implemented: some take `after`/`limit`, and some are capped with `truncated`. They are
+retrofitted by `P17-TSK-042` (ADR-C133 decision 2), and until then they are what their own entries say. The FX pricing policy
+list was retrofitted first, by `P17-TSK-118`: its old shape replaced in place, the operator surface being internal.
 
 **Cursor-based, never offset.** `?limit=&cursor=`. The reason is correctness before performance:
 an offset re-reads a moving set, so when rows are inserted or removed between page 1 and page 2, a
