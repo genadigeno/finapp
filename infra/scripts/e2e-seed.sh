@@ -1,6 +1,6 @@
 #!/bin/sh
-# TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112, P17-TSK-115;
-# finapp-admin-panel docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4, B5.5, B7.4).
+# TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112, P17-TSK-115,
+# P17-TSK-117; finapp-admin-panel docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4, B5.5, B7.4, B8.6).
 #
 #   infra/scripts/e2e-seed.sh <scenario>...
 #
@@ -65,6 +65,36 @@
 #                     merchant, so an operator answers it - the console's LEDGER_OPERATOR uploads evidence and represents it, or
 #                     accepts it -> DISPUTE_ID, DISPUTE_PAYMENT_ID
 #
+# The credit scenarios (P17-TSK-117) - each proposal by the seed's own officer, never by the console's people, so the console's
+# officer approves it; on both stacks:
+#   review-case       a fresh customer's 5,000.00 EUR PERSONAL_LOAN request, REFERred under the seed's policy: its review case OPEN,
+#                     for the console's underwriter to take and decide - DECLINED, the one decision a stack without a credit bureau
+#                     admits -> REVIEW_CASE_ID, REVIEW_CASE_REQUEST_ID
+#   proposed-credit-policy  a PERSONAL_LOAN credit policy version PROPOSED - the seed's own content: a different officer, the
+#                     console's, approves it -> CREDIT_POLICY_VERSION_ID, CREDIT_POLICY_PROPOSER_ID
+#   proposed-lending-terms  PERSONAL_LOAN lending terms PROPOSED: the console's LENDING_OFFICER approves them
+#                     -> LENDING_TERMS_VERSION_ID, LENDING_TERMS_PROPOSER_ID
+#   proposed-bnpl-terms  BNPL_PAY_IN_4 terms PROPOSED: the console's BNPL_OFFICER approves them -> BNPL_TERMS_VERSION_ID,
+#                     BNPL_TERMS_PROPOSER_ID
+#   credit            each of the four once
+#
+# THE CREDIT SCENARIOS CHANGE THE STACK'S PERSONAL_LOAN POLICY, AND HOLD ONE VERSION PER PRODUCT PENDING. No test stack has a credit
+# bureau or a financial-data provider - the platform refuses either's URL until it holds what a pull needs (unresolved questions
+# #13 and #14) - so a request is scored on absent data. The first credit scenario of a run therefore approves the platform's own
+# reference scorecard if none is ACTIVE (its migration proposed it), and two of the seed's officers propose and approve a
+# PERSONAL_LOAN policy that reads no source and REFERs every request to an underwriter (Seed.java's referringPolicy). A product holds
+# one PROPOSED version at a time, so before proposing, the seed withdraws through the rejection door the version an earlier run or
+# the platform's migration left pending; two runs at once on one stack would withdraw each other's - run them one after another,
+# as the console's harness does.
+#
+# NOT SEEDED: A LOAN, A BNPL AGREEMENT, AND WHAT HANGS ON THEM. No running finapp can approve credit: every policy bounds exposure by a
+# rule that reads the bureau's total balance, so without a bureau an automatic approval falls back to REFER or DECLINE, and a
+# person's approval is refused (credit.ExposureUnassessable). No loan offer, loan or BNPL agreement can exist, and so neither a
+# loan's posted repayment and proposed waiver, nor an agreement's proposed write-off, nor a BNPL dispute awaiting resolution. A
+# waiver and a write-off would also need time to pass (a billed instalment, a default); and planting the chain would write loans,
+# schedules and postings no financial event made. They wait for a bureau (#13); until then the console tests those acts against its
+# own stubs (P17-TSK-117's record).
+#
 # THE DISPUTE NEEDS THE CARD PSP, AND ONLY KIND HAS ONE. A local stack configures no card or tokenisation provider, so no card payment
 # exists there; open-dispute is refused on compose. On kind the rehearsal's simulator is the card PSP. A dispute is the network's word
 # alone: the seed hands the simulator the PSP's statement of a chargeback on the top-up's capture (kubectl exec, its pod's
@@ -123,7 +153,7 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 SEED="$ROOT/infra/scripts/e2e-seed"
 TARGET=${E2E_SEED_TARGET:-compose}
-SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy, all, closable-period, prior-period-adjustment, proposed-mapping, draft-submission, accounting-break, finance, onboardable-organisation, active-merchant, proposed-destination, merchants or open-dispute"
+SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy, all, closable-period, prior-period-adjustment, proposed-mapping, draft-submission, accounting-break, finance, onboardable-organisation, active-merchant, proposed-destination, merchants, open-dispute, review-case, proposed-credit-policy, proposed-lending-terms, proposed-bnpl-terms or credit"
 
 say() { printf '%s\n' "e2e-seed: $*" >&2; }
 refuse() { printf '%s\n' "e2e-seed: refused: $*" >&2; exit 2; }
@@ -144,6 +174,7 @@ for scenario in "$@"; do
         closable-period|prior-period-adjustment|proposed-mapping|draft-submission|accounting-break|finance) HTTP=yes ;;
         onboardable-organisation) ;;
         active-merchant|proposed-destination|merchants) HTTP=yes ;;
+        review-case|proposed-credit-policy|proposed-lending-terms|proposed-bnpl-terms|credit) HTTP=yes ;;
         open-dispute)
             HTTP=yes
             [ "$TARGET" = kind ] || refuse "open-dispute needs a card PSP, and only kind has one (its simulator): a local stack configures no card provider, so no card payment exists to dispute"
@@ -671,6 +702,111 @@ seed_open_dispute() {
     printf 'DISPUTE_PAYMENT_ID=%s\n' "$intent"
 }
 
+# ---------------------------------------------------------------------------------------------------
+# The credit desks' rows (P17-TSK-117).
+
+# The platform's reference scorecard, RETAIL_SCORECARD v1, as credit's migration V006 proposed it.
+REFERENCE_SCORECARD=0190a1b2-5c0e-7000-8000-00000000c001
+
+# pending <table> <product>: the product's one PROPOSED version, or nothing. Both arguments are this script's own literals.
+pending() {
+    found=$(psql_seed -c "SELECT id FROM $1 WHERE product = '$2' AND status = 'PROPOSED'" | tr -d '[:space:]')
+    [ -z "$found" ] || uuid_like "$found" || { say "a pending $2 version came out '$found'"; exit 1; }
+    printf '%s\n' "$found"
+}
+
+# withdraw <who> <kind> <table> <product>: the product's version left PROPOSED, rejected through the door by the seed's officer.
+withdraw() {
+    left=$(pending "$3" "$4")
+    [ -z "$left" ] || { seed_http decide-version "$1" "$2" "$left" rejection >/dev/null; say "withdrew $4's pending $2 version $left"; }
+}
+
+# The run's credit desks: two credit policy officers - the seed's PERSONAL_LOAN policy proposed by one and approved by the other (four
+# eyes) - the first of whom approves the reference scorecard when no scorecard is ACTIVE.
+CREDIT_READY=no
+credit_desks() {
+    [ "$CREDIT_READY" = no ] || return 0
+    administrator
+    officer=$(operator creditofficer)
+    CREDIT_OFFICER_ID=${officer%% *}
+    approver=$(operator creditapprover)
+    CREDIT_APPROVER_ID=${approver%% *}
+    seed_http grant admin CREDIT_POLICY_OFFICER "$CREDIT_OFFICER_ID" "$CREDIT_APPROVER_ID" >/dev/null
+    scored=$(psql_seed -c "SELECT count(*) FROM credit.scorecard_model_version WHERE family = 'RETAIL_SCORECARD' AND status = 'ACTIVE'" | tr -d '[:space:]')
+    if [ "$scored" = 0 ]; then
+        seed_http approve-scorecard creditofficer "$REFERENCE_SCORECARD" >/dev/null
+        say "approved the platform's reference scorecard $REFERENCE_SCORECARD"
+    fi
+    withdraw creditofficer credit-policy credit.credit_policy_version PERSONAL_LOAN
+    proposed=$(value VERSION_ID "$(seed_http propose-version creditofficer credit-policy seed)")
+    uuid_like "$proposed" || { say "the seed's credit policy proposal printed '$proposed'"; exit 1; }
+    seed_http decide-version creditapprover credit-policy "$proposed" approval >/dev/null
+    say "the run's credit desks: officers $CREDIT_OFFICER_ID and $CREDIT_APPROVER_ID; PERSONAL_LOAN version $proposed ACTIVE, REFERring every request"
+    CREDIT_READY=yes
+}
+
+seed_review_case() {
+    credit_desks
+    borrower_login=$(value LOGIN "$(seed_http register borrower)")
+    borrower=$(identity_of "$borrower_login")
+    uuid_like "$borrower" || { say "the borrower's id came out '$borrower'"; exit 1; }
+    verdict=$(plant customer-verdict.sql -v identity="$borrower" | tr -d '[:space:]')
+    uuid_like "$verdict" || { say "the borrower's verdict printed '$verdict'"; exit 1; }
+    request=$(value CREDIT_REQUEST_ID "$(seed_http credit-request borrower)")
+    uuid_like "$request" || { say "the credit request printed '$request'"; exit 1; }
+    opened=
+    tries=0
+    while [ "$tries" -lt 60 ]; do
+        opened=$(psql_seed -c "SELECT id FROM credit.underwriting_case WHERE decision_request_id = '$request' AND status = 'OPEN'" | tr -d '[:space:]')
+        uuid_like "$opened" && break
+        tries=$((tries + 1))
+        sleep 2
+    done
+    uuid_like "$opened" || { say "no OPEN review case for credit request $request: is the platform's credit progress sweep running?"; exit 1; }
+    say "review case $opened OPEN on credit request $request (PERSONAL_LOAN, 5,000.00 EUR, REFERred): an underwriter takes it and declines it"
+    printf 'REVIEW_CASE_ID=%s\n' "$opened"
+    printf 'REVIEW_CASE_REQUEST_ID=%s\n' "$request"
+}
+
+seed_proposed_credit_policy() {
+    credit_desks
+    pending_policy=$(value VERSION_ID "$(seed_http propose-version creditofficer credit-policy proposal)")
+    uuid_like "$pending_policy" || { say "the credit policy proposal printed '$pending_policy'"; exit 1; }
+    say "PERSONAL_LOAN policy version $pending_policy PROPOSED by officer $CREDIT_OFFICER_ID: an officer other than its proposer approves it"
+    printf 'CREDIT_POLICY_VERSION_ID=%s\n' "$pending_policy"
+    printf 'CREDIT_POLICY_PROPOSER_ID=%s\n' "$CREDIT_OFFICER_ID"
+}
+
+# terms_officer <who> <role>: a fresh officer of the seed's holding <role>, granted by the run's administrator (made first, outside
+# this command substitution, whose variables the caller never sees). Prints its id.
+terms_officer() {
+    made=$(operator "$1")
+    seed_http grant admin "$2" "${made%% *}" >/dev/null
+    printf '%s\n' "${made%% *}"
+}
+
+seed_proposed_lending_terms() {
+    administrator
+    lender=$(terms_officer lendingofficer LENDING_OFFICER)
+    withdraw lendingofficer lending-terms lending.loan_terms_version PERSONAL_LOAN
+    pending_terms=$(value VERSION_ID "$(seed_http propose-version lendingofficer lending-terms proposal)")
+    uuid_like "$pending_terms" || { say "the lending terms proposal printed '$pending_terms'"; exit 1; }
+    say "PERSONAL_LOAN terms $pending_terms PROPOSED by lending officer $lender: a lending officer other than its proposer approves them"
+    printf 'LENDING_TERMS_VERSION_ID=%s\n' "$pending_terms"
+    printf 'LENDING_TERMS_PROPOSER_ID=%s\n' "$lender"
+}
+
+seed_proposed_bnpl_terms() {
+    administrator
+    bnpl=$(terms_officer bnplofficer BNPL_OFFICER)
+    withdraw bnplofficer bnpl-terms bnpl.bnpl_terms_version BNPL_PAY_IN_4
+    pending_terms=$(value VERSION_ID "$(seed_http propose-version bnplofficer bnpl-terms proposal)")
+    uuid_like "$pending_terms" || { say "the BNPL terms proposal printed '$pending_terms'"; exit 1; }
+    say "BNPL_PAY_IN_4 terms $pending_terms PROPOSED by BNPL officer $bnpl: a BNPL officer other than its proposer approves them"
+    printf 'BNPL_TERMS_VERSION_ID=%s\n' "$pending_terms"
+    printf 'BNPL_TERMS_PROPOSER_ID=%s\n' "$bnpl"
+}
+
 for scenario in "$@"; do
     case "$scenario" in
         abandoned-event) seed_abandoned_event ;;
@@ -694,6 +830,11 @@ for scenario in "$@"; do
         proposed-destination) seed_proposed_destination ;;
         merchants) seed_onboardable_organisation; seed_active_merchant; seed_proposed_destination ;;
         open-dispute) seed_open_dispute ;;
+        review-case) seed_review_case ;;
+        proposed-credit-policy) seed_proposed_credit_policy ;;
+        proposed-lending-terms) seed_proposed_lending_terms ;;
+        proposed-bnpl-terms) seed_proposed_bnpl_terms ;;
+        credit) seed_review_case; seed_proposed_credit_policy; seed_proposed_lending_terms; seed_proposed_bnpl_terms ;;
         all) seed_abandoned_event; seed_parked_record; seed_parsed_file; seed_fee_break; seed_factorless_holding; seed_sod_conflict
              seed_open_alert; seed_investigated_case; seed_overridable_assessment; seed_proposed_policy ;;
     esac

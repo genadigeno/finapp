@@ -26,11 +26,13 @@ import javax.net.ssl.TrustManagerFactory;
 
 /**
  * TEST-ONLY. The HTTP half of the Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112,
- * P17-TSK-115): every
+ * P17-TSK-115, P17-TSK-117): every
  * effect the platform has a door for, through that door - registration, a second factor, a step-up, a role grant, a risk policy
  * proposed and activated, a case opened and taken; and the books' finance acts - a GL mapping version, a manual adjustment, a month's
  * nil reports, a month locked and closed by four eyes, a prior-period adjustment, a regulatory obligation and its validated return. And
- * the merchant desks' - a merchant onboarded and keyed, a card top-up, and the card PSP's own word that it is disputed (P17-TSK-115). A single source file run by {@code infra/scripts/e2e-seed.sh}
+ * the merchant desks' - a merchant onboarded and keyed, a card top-up, and the card PSP's own word that it is disputed (P17-TSK-115).
+ * And the credit desks' - the reference scorecard approved, a credit policy, lending terms and BNPL terms proposed and decided by four
+ * eyes, and a customer's stepped-up credit request (P17-TSK-117). A single source file run by {@code infra/scripts/e2e-seed.sh}
  * ({@code java --source 21}), never compiled into anything and named by no module's main source set (E2eSeedStaysTestOnlyTest).
  *
  * <p>It has no route to the database and must not have one. What only the database can answer - a test identity's id, which no API
@@ -103,6 +105,10 @@ public final class Seed {
             case "top-up" -> seed.topUp(one(rest));
             case "dispute-statement" -> seed.disputeStatement(rest[0], rest[1], rest[2]);
             case "dispute-hint" -> seed.disputeHint(rest[0], rest[1]);
+            case "approve-scorecard" -> seed.approveScorecard(rest[0], rest[1]);
+            case "propose-version" -> seed.proposeVersion(rest[0], rest[1], rest[2]);
+            case "decide-version" -> seed.decideVersion(rest[0], rest[1], rest[2], rest[3]);
+            case "credit-request" -> seed.creditRequest(one(rest));
             default -> throw new IllegalArgumentException("unknown command " + args[3]);
         }
     }
@@ -675,6 +681,144 @@ public final class Seed {
                 Map.of("X-Provider-Timestamp", timestamp, "X-Provider-Signature", signature)), 204);
     }
 
+    // ---------------------------------------------------------------------------------------------- credit, through its doors (P17-TSK-117)
+
+    /** The amount a seeded customer asks for: inside PERSONAL_LOAN's bounds, below its four-eyes threshold. */
+    static final String CREDIT_AMOUNT = "5000.00";
+
+    /**
+     * The seed's PERSONAL_LOAN policy (P17-TSK-117). It reads no source: no test stack has a bureau or a financial-data provider -
+     * CreditBeans refuses either's URL until the platform holds what a pull needs (unresolved questions #13 and #14) - so every
+     * bureau attribute is ABSENT, and its first rule REFERs every request to an underwriter with the code of absent data,
+     * CRD-SOURCE-UNAVAILABLE. Its exposure rule, which every policy must have (credit.PolicyIncomplete otherwise), reads the bureau's
+     * balance and so is never assessed, which leaves the REFER standing. Under it an underwriter can only decline: a person's
+     * approval needs the exposure too (credit.ExposureUnassessable). The decline is the console's act on the seeded case.
+     */
+    static String referringPolicy(String reason) {
+        return "{\"product\":\"PERSONAL_LOAN\",\"currency\":\"EUR\",\"assessmentRateBps\":950,\"minimumDisposableMinor\":10000,"
+                + "\"minimumPaymentRatioBps\":300,\"maximumExposureMinor\":4000000,\"sources\":[],\"unavailableFallback\":\"REFER\","
+                + "\"autoApprovalCeilingMinor\":1000000,\"rules\":["
+                + "{\"ruleCode\":\"NO_BUREAU_REFER\",\"subjectKind\":\"ATTRIBUTE\",\"subject\":\"BUREAU_EXTERNAL_SCORE\","
+                + "\"operator\":\"IS_ABSENT\",\"effect\":\"REFER\",\"reasonCode\":\"CRD-SOURCE-UNAVAILABLE\"},"
+                + "{\"ruleCode\":\"EXPOSURE_LIMIT\",\"subjectKind\":\"FIGURE\",\"subject\":\"EXPOSURE_HEADROOM\",\"operator\":\"LT\","
+                + "\"moneyOperandMinor\":0,\"effect\":\"DECLINE\",\"reasonCode\":\"CRD-EXPOSURE-LIMIT\"}],"
+                + "\"reason\":\"" + reason + "\"}";
+    }
+
+    /** The seed's PERSONAL_LOAN terms: a fixed 9.90% plan, its late fee and its servicing - lending's own test terms' figures. */
+    static String lendingTerms(String reason) {
+        return "{\"product\":\"PERSONAL_LOAN\",\"currency\":\"EUR\",\"nominalAnnualRate\":\"0.0990\",\"rateType\":\"FIXED\","
+                + "\"originationFeeMinor\":0,\"originationFeeTreatment\":\"DEDUCTED\",\"lateFeeMinor\":1500,\"lateFeeDay\":5,"
+                + "\"lateFeeCapMinor\":6000,\"graceDays\":3,\"delinquencyBounds\":[1,30,60,90],\"defaultThresholdDays\":90,"
+                + "\"allocationSequence\":\"OLDEST_DUE_FIRST\",\"allocationOrder\":[\"FEES\",\"INTEREST\",\"PRINCIPAL\"],"
+                + "\"autoCollection\":true,\"partialCollection\":true,\"instalmentRounding\":\"UP\",\"interestRounding\":\"HALF_EVEN\","
+                + "\"dayCount\":\"ACT_365F\",\"servicingZone\":\"UTC\",\"allowedDays\":[1,15,28],\"offerValidityDays\":14,"
+                + "\"payoffHorizonDays\":30,\"accrualEngineVersion\":1,\"allocationEngineVersion\":1,"
+                + "\"overpaymentTreatment\":\"HOLD_AS_CREDIT\",\"minFirstPeriodDays\":15,\"disbursementDeadlineHours\":24,"
+                + "\"scheduleEngineVersion\":1,\"agreementTemplateId\":\"PERSONAL_LOAN_AGREEMENT\",\"agreementTemplateVersion\":1,"
+                + "\"reason\":\"" + reason + "\"}";
+    }
+
+    /** The seed's BNPL_PAY_IN_4 terms: four interest-free fortnightly instalments - BNPL's own test terms' figures. */
+    static String bnplTerms(String reason) {
+        return "{\"product\":\"BNPL_PAY_IN_4\",\"currency\":\"EUR\",\"lateFeeMinor\":500,\"lateFeeDay\":5,\"lateFeeCapMinor\":1500,"
+                + "\"graceDays\":3,\"delinquencyBounds\":[1,30,60,90],\"defaultThresholdDays\":90,"
+                + "\"allocationSequence\":\"OLDEST_DUE_FIRST\",\"allocationOrder\":[\"FEES\",\"INTEREST\",\"PRINCIPAL\"],"
+                + "\"overpaymentTreatment\":\"HOLD_AS_CREDIT\",\"autoCollection\":true,\"partialCollection\":true,"
+                + "\"collectionRetryDays\":1,\"servicingZone\":\"UTC\",\"offerValidityMinutes\":30,\"disputeResponseDays\":14,"
+                + "\"disputeFourEyesThresholdMinor\":25000,\"payoffHorizonDays\":30,\"allocationEngine\":\"ALLOCATION_ENGINE_V1\","
+                + "\"refundAllocationEngine\":\"REFUND_ALLOCATION_ENGINE_V1\",\"nominalAnnualRate\":\"0\",\"frequency\":\"BIWEEKLY\","
+                + "\"instalmentRounding\":\"DOWN\",\"instalmentCount\":4,\"intervalDays\":14,"
+                + "\"scheduleEngine\":\"BNPL_SCHEDULE_ENGINE_V1\",\"agreementTemplateId\":\"BNPL_PAY_IN_4_AGREEMENT\","
+                + "\"agreementTemplateVersion\":1,\"reason\":\"" + reason + "\"}";
+    }
+
+    /** Where a kind of version is proposed, and decided under its id. */
+    static String versionsPath(String kind) {
+        return switch (kind) {
+            case "credit-policy" -> "/v1/operator/credit/policies";
+            case "lending-terms" -> "/v1/operator/lending/terms";
+            case "bnpl-terms" -> "/v1/operator/bnpl/terms";
+            default -> throw new IllegalArgumentException("a version is credit-policy, lending-terms or bnpl-terms, not " + kind);
+        };
+    }
+
+    /**
+     * The reference scorecard {@code versionId} approved by {@code who} (a CREDIT_POLICY_OFFICER): the platform's own RETAIL_SCORECARD
+     * v1, proposed by its migration, so the approver is never its proposer. A request is scored only under an ACTIVE scorecard.
+     */
+    private void approveScorecard(String who, String versionId) throws Exception {
+        String session = elevated(who);
+        Answer approved = expect("scorecard approval by " + who, post(operatorBase, "/v1/operator/credit/scorecards/" + versionId
+                + "/approval", "{\"reason\":\"e2e seed: the platform's reference scorecard, so a request can be scored\"}", session,
+                key()), 200);
+        if (!"ACTIVE".equals(field(approved.body(), "status"))) {
+            throw new IllegalStateException("the scorecard's approval did not answer ACTIVE: " + approved.body());
+        }
+    }
+
+    /**
+     * A {@code kind} version - the seed's own content - proposed by {@code who}, {@code PROPOSED}: the seed's to activate
+     * ({@code seed}) or the console's ({@code proposal}). Prints its VERSION_ID.
+     */
+    private void proposeVersion(String who, String kind, String purpose) throws Exception {
+        String reason = switch (purpose) {
+            case "seed" -> "e2e seed: the version the seeded review case is judged under";
+            case "proposal" -> "e2e seed: a proposal the console's second officer approves";
+            default -> throw new IllegalArgumentException("propose-version seed or proposal, not " + purpose);
+        };
+        String body = switch (kind) {
+            case "credit-policy" -> referringPolicy(reason);
+            case "lending-terms" -> lendingTerms(reason);
+            case "bnpl-terms" -> bnplTerms(reason);
+            default -> throw new IllegalArgumentException("a version is credit-policy, lending-terms or bnpl-terms, not " + kind);
+        };
+        String session = elevated(who);
+        Answer proposed = expect(kind + " proposal by " + who, post(operatorBase, versionsPath(kind), body, session, key()), 201);
+        String id = field(proposed.body(), "id");
+        if (id == null || !"PROPOSED".equals(field(proposed.body(), "status"))) {
+            throw new IllegalStateException("the " + kind + " proposal did not answer a PROPOSED version: " + proposed.body());
+        }
+        System.out.println("VERSION_ID=" + id);
+    }
+
+    /**
+     * {@code versionId} decided by {@code who}: {@code approval} - a second officer, never its proposer (four eyes) - or
+     * {@code rejection}, which anyone holding the desk's permission may make, the seed's withdrawal of a version left pending.
+     */
+    private void decideVersion(String who, String kind, String versionId, String decision) throws Exception {
+        String expected = switch (decision) {
+            case "approval" -> "ACTIVE";
+            case "rejection" -> "REJECTED";
+            default -> throw new IllegalArgumentException("decide-version approval or rejection, not " + decision);
+        };
+        String reason = "approval".equals(decision) ? "e2e seed: the seed's version, reviewed by a second officer"
+                : "e2e seed: a pending version withdrawn, so the run's own may be proposed (one PROPOSED per product)";
+        String session = elevated(who);
+        Answer decided = expect(kind + " " + decision + " by " + who, post(operatorBase, versionsPath(kind) + "/" + versionId + "/"
+                + decision, "{\"reason\":\"" + reason + "\"}", session, key()), 200);
+        if (!expected.equals(field(decided.body(), "status"))) {
+            throw new IllegalStateException("the " + decision + " did not answer " + expected + ": " + decided.body());
+        }
+    }
+
+    /**
+     * A credit request for PERSONAL_LOAN by {@code who}, a customer the shell made ACTIVE: submitted on a stepped-up session on the
+     * public host, as applying for credit always is (a MULTI_FACTOR act), and keyed. The platform's own progress sweep evaluates it
+     * under the seed's policy and opens its review case. Prints its CREDIT_REQUEST_ID.
+     */
+    private void creditRequest(String who) throws Exception {
+        String session = elevatedOn(publicBase, who);
+        Answer submitted = expect("credit request of " + who, post(publicBase, "/v1/me/credit/decision-requests",
+                "{\"product\":\"PERSONAL_LOAN\",\"amount\":\"" + CREDIT_AMOUNT + "\",\"currency\":\"EUR\",\"termMonths\":24}", session,
+                key()), 202);
+        String id = field(submitted.body(), "requestId");
+        if (id == null) {
+            throw new IllegalStateException("the credit request answered no requestId: " + submitted.body());
+        }
+        System.out.println("CREDIT_REQUEST_ID=" + id);
+    }
+
     private static String letters(int count) {
         StringBuilder out = new StringBuilder(count);
         java.security.SecureRandom random = new java.security.SecureRandom();
@@ -702,14 +846,19 @@ public final class Seed {
 
     /** A fresh stepped-up operator session. A code is consumed once per step, so a new step-up waits for a step the last did not use. */
     private String elevated(String who) throws Exception {
-        String session = signIn(operatorBase, who);
+        return elevatedOn(operatorBase, who);
+    }
+
+    /** A fresh stepped-up session on {@code base}: the operator host's, or the public host's for a customer's act (P17-TSK-117). */
+    private String elevatedOn(String base, String who) throws Exception {
+        String session = signIn(base, who);
         long last = Long.parseLong(people.getProperty(who + ".step", "0"));
         long step = currentStep();
         while (step <= last) {
             Thread.sleep(1000);
             step = currentStep();
         }
-        Answer stepped = expect("step-up of " + who, post(operatorBase, "/v1/authentications/mfa",
+        Answer stepped = expect("step-up of " + who, post(base, "/v1/authentications/mfa",
                 "{\"code\":\"" + totp(people.getProperty(who + ".totp"), step) + "\"}", session, null), 200);
         people.setProperty(who + ".step", Long.toString(step));
         save();
