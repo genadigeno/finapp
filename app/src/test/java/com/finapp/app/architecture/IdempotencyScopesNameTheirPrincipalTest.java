@@ -92,6 +92,8 @@ class IdempotencyScopesNameTheirPrincipalTest {
                     "the identity door's application of a risk action, keyed by the action")),
             Map.entry("MerchantRiskActions.java: SCOPE", new Recorded(Basis.SYSTEM,
                     "the merchant door's application of a risk action, keyed by the action")),
+            Map.entry("AccountRiskActions.java: SCOPE", new Recorded(Basis.SYSTEM,
+                    "the account door's application of a risk action, keyed by the action (P17-TSK-028)")),
             Map.entry("RegistrationService.java: SCOPE", new Recorded(Basis.NO_PRINCIPAL_YET,
                     "registration creates the principal; the login identifier's unique index stands behind the claim")),
             Map.entry("IdempotencyKey.java: scope", new Recorded(Basis.TRANSITION,

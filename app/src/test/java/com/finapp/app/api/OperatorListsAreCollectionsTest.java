@@ -91,8 +91,6 @@ class OperatorListsAreCollectionsTest {
 
     /** Routes on the operator surface answering a top-level {@code truncated}, each with why it may. */
     static final Map<String, String> TRUNCATED = new TreeMap<>(Map.ofEntries(
-            entry("GET /v1/operator/fx/pricing-policies",
-                    "owed to P17-TSK-118, which pages it on its own branch: delete this entry when it merges"),
             entry("GET /v1/operator/cross-border/corridor-policies",
                     "capped at 100 with truncated always false (found by P17-TSK-118's session) - not in P17-TSK-042's scope - the section 7 retrofit's second batch, proposed at its gate"),
             entry("GET /v1/operator/access-review/sod-conflicts",

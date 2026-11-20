@@ -51,11 +51,16 @@ class NoProcessLocalConsentStateTest {
             List.of("com.finapp.consent.ConsentRecord", "com.finapp.consent.ConsentText");
 
     /**
-     * Empty, and staying empty is the healthy state: nothing in production legitimately
-     * retains a consent fact today. The first entry must arrive with its claim written down,
-     * the session rule's regime.
+     * Each entry arrives with its claim written down, the session rule's regime.
+     *
+     * <ul>
+     *   <li>{@code ConsentStore.HistoryEntry.record} ({@code P17-TSK-026}): one row of a page the
+     *       store just read, a fact paired with its {@code seq} for the operator's history read and
+     *       built anew on every read. A value, not a cache: nothing keeps an instance of it past the
+     *       response, and nothing decides a basis for processing from it.
+     * </ul>
      */
-    private static final Set<String> PERMITTED = Set.of();
+    private static final Set<String> PERMITTED = Set.of("com.finapp.consent.ConsentStore$HistoryEntry.record");
 
     @Test
     @DisplayName("no field anywhere in production code retains consent state")

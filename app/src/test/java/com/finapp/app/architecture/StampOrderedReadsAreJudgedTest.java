@@ -157,6 +157,10 @@ class StampOrderedReadsAreJudgedTest {
                 "check_order (kyc V012), a sequence drawn at the insert; a successor's insert starts after its predecessor's (the run reads the predecessor terminal first, the one-in-flight index refuses any overlap); the stamps rank only rows from before V012, which have no order and sit below every row that does");
         read("kyc.JdbcCounterpartyScreeningStore|MIN_MAX|min(decided_at)", 1, Judgement.DISPLAYS,
                 GAUGE);
+        // P17-TSK-026: the operator lookup's customer for a party - the one live relationship first (the one-live index admits
+        // one), then the newest closed opening, the UUIDv7 id breaking a tie: shown to the operator, nothing branches on it.
+        read("party.JdbcPartyStore|SINGLE_ROW|(status in ()), opened_at desc, id desc", 1, Judgement.DISPLAYS,
+                "an operator's read of a party's customer: at most one is live (the one-live index), and that one ranks first by status, not by a stamp; among closed ones the newest opening is shown and no code branches on which");
         read("lending.JdbcLoanApplicationStore|MIN_MAX|min(submitted_at)", 1, Judgement.ELSEWHERE,
                 LENDING);
         read("lending.JdbcLoanDisbursementStore|MIN_MAX|min(created_at)", 1, Judgement.ELSEWHERE,

@@ -193,7 +193,10 @@ class StoredBoundsAreTheDatabasesTest {
                         // own stored stamp; the dispute queue's deadline bound, an instant a dispute operator named, and its
                         // cursor - history and the network's stated deadlines read, never a deadline judged on an instance's clock.
                         "JdbcPaymentCollections#created_at",
-                        "JdbcPaymentCollections#respond_by")) {
+                        "JdbcPaymentCollections#respond_by",
+                        // P17-TSK-027: a customer's transfer list - the window an operator named and its keyset cursor, a row's
+                        // own stored stamp - history read, never a deadline judged on an instance's clock.
+                        "JdbcTransferStore#initiated_at")) {
             census.put(asked, Kind.ASKED_ABOUT);
         }
         for (String databases :
