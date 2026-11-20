@@ -1444,6 +1444,11 @@ class MerchantCaptureDatabaseTest {
     private PaymentParticipants<Connection> creditingInstead(
             LedgerAccountId creditAccount, UUID customer) {
         return new PaymentParticipants<>() {
+
+            @Override
+            public void requireOutflowAdmitted(Connection unitOfWork, UUID callerPartyId) {
+                // P17-TSK-028: this fake's wallets are never suspended.
+            }
             @Override
             public Optional<Wallet> walletOwnedBy(
                     Connection uow, UUID callerPartyId, CurrencyCode currency) {

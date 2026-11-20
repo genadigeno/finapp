@@ -60,7 +60,9 @@ public final class JdbcTransferParticipants implements TransferParticipants<Conn
                 .filter(customer -> customer.status() == CustomerStatus.ACTIVE)
                 .flatMap(
                         customer ->
-                                products.findOwnedBy(
+                                // P17-TSK-028 (ADR-0153 decision 3): FOR SHARE, so a suspension - the same row FOR
+                                // UPDATE - and this transfer serialise: wholly before it, or SOURCE_NOT_POSTABLE after.
+                                products.lockOwnedForShare(
                                         unitOfWork,
                                         CustomerAccountId.of(sourceProductRef),
                                         customer.id().value()))

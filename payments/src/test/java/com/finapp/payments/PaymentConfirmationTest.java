@@ -551,6 +551,11 @@ class PaymentConfirmationTest {
     }
 
     private final class FakeParticipants implements PaymentParticipants<Connection> {
+
+        @Override
+        public void requireOutflowAdmitted(Connection unitOfWork, UUID callerPartyId) {
+            // P17-TSK-028: this fake's wallets are never suspended.
+        }
         boolean instrumentPresent = true;
 
         @Override

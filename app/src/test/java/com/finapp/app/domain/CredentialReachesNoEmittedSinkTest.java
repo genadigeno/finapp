@@ -214,6 +214,10 @@ class CredentialReachesNoEmittedSinkTest {
                         // P17-TSK-026: the customer lookup. A kind and an identifier - a login identifier among them, a person's
                         // handle and never a credential - in the body so that it is in no URL (ADR-C132 decision 4); nothing else.
                         "CustomerLookupRequest",
+                        // P17-TSK-028: an agreement's restriction - a reason code and a person's reason; the decision, a
+                        // reason. Prose about a customer's account, never a credential; each toString counts it, never prints it.
+                        "RestrictionProposalRequest",
+                        "RestrictionDecisionRequest",
                         // P17-TSK-015: ending another identity's session. A reason, and nothing else.
                         "SessionRevocationRequest",
                         // P17-TSK-111: a ledger adjustment's rejection with a reason. A reason, and nothing else.

@@ -1116,6 +1116,11 @@ class PaymentAuthorizationDatabaseTest {
 
     /** Wallet and instrument as fixtures; the real chain is `P5-TSK-011`'s subject. */
     private final class FakeParticipants implements PaymentParticipants<Connection> {
+
+        @Override
+        public void requireOutflowAdmitted(Connection unitOfWork, UUID callerPartyId) {
+            // P17-TSK-028: this fake's wallets are never suspended.
+        }
         final UUID customerId = UUID.randomUUID();
         final UUID instrumentId = UUID.randomUUID();
         final LedgerAccountId wallet = LedgerAccountId.next(IDS);

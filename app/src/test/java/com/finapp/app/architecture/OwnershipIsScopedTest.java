@@ -2444,6 +2444,32 @@ class OwnershipIsScopedTest {
                                         + " Standing in: TRANSFER_READ on a MULTI_FACTOR session, the customer's existence"
                                         + " checked first, every page recorded (transfers.TransfersListed).")),
                     Map.entry(
+                            "com.finapp.accounts.JdbcCustomerAccountStore.lockById",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-028. One agreement by its id alone, FOR UPDATE - the restriction's lock: the"
+                                        + " agreement comes from the URL of POST /v1/operator/accounts/{id}/suspension or"
+                                        + " /reinstatement, a restriction's own row, or risk's approved action - somebody else"
+                                        + " by design. Standing in: ACCOUNT_RESTRICT or ACCOUNT_RESTRICT_APPROVE on a"
+                                        + " MULTI_FACTOR session, keyed, four eyes (V003's CHECK), every act audited; or risk's"
+                                        + " case approval, itself four eyes. A customer's own acts stay lockOwnedBy.")),
+                    Map.entry(
+                            "com.finapp.accounts.JdbcAccountRestrictionStore.lock",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-028. A restriction by its id alone, FOR UPDATE - the deciders' lock: the id"
+                                        + " comes from the URL of POST /v1/operator/account-restrictions/{id}/approval or"
+                                        + " /rejection, another person's proposal by design. Standing in:"
+                                        + " ACCOUNT_RESTRICT_APPROVE on a MULTI_FACTOR session, keyed, the proposer refused"
+                                        + " by the domain and V003's CHECK, every decision audited.")),
+                    Map.entry(
+                            "com.finapp.accounts.JdbcAccountRestrictionStore.findOpenFor",
+                            new Entry(
+                                    Scope.ADMINISTERED,
+                                    "P17-TSK-028. An agreement's open proposal, read under the agreement's FOR UPDATE the"
+                                        + " proposer holds (lockById's provenance and standing-in), so one open proposal"
+                                        + " per agreement is judged before the partial unique index has to refuse it.")),
+                    Map.entry(
                             "com.finapp.accounts.JdbcCustomerAccountStore.customerOf",
                             new Entry(
                                     Scope.SYSTEM_JOIN,

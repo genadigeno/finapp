@@ -82,6 +82,15 @@ public interface PaymentParticipants<T> {
      */
     Optional<Wallet> payerWalletOwnedBy(T unitOfWork, UUID callerPartyId, CurrencyCode currency);
 
+    /**
+     * Refuses a new outflow from the payer's own wallet while its agreement is suspended (`P17-TSK-028`, ADR-0153
+     * decisions 2 and 3): the agreement read {@code FOR SHARE} in the caller's transaction, held to commit, so a
+     * suspension racing the payment serialises with it. Called by a withdrawal's resolution and a wallet payment's
+     * confirmation <strong>before any ledger row is locked</strong>; never by a credit. Throws the platform's refusal; a
+     * party with no live agreement is left to the flow's own refusal.
+     */
+    void requireOutflowAdmitted(T unitOfWork, UUID callerPartyId);
+
     /** The wallet's owner, account and currency — what the intent records and judges. */
     record Wallet(UUID customerId, LedgerAccountId account, CurrencyCode currency) {}
 }

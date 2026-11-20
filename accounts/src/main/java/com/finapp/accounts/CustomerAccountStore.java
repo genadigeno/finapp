@@ -125,6 +125,15 @@ public interface CustomerAccountStore<T> {
             T unitOfWork, CustomerAccountId accountId, UUID customerId);
 
     /**
+     * One agreement by its identifier alone, read {@code FOR UPDATE} (`P17-TSK-028`, ADR-0153) - the restriction's
+     * serialization point: an operator's act on somebody else's agreement by design, under {@code ACCOUNT_RESTRICT} or
+     * {@code ACCOUNT_RESTRICT_APPROVE} on a {@code MULTI_FACTOR} session, or risk's action under the platform; never a
+     * customer's, whose acts stay {@link #lockOwnedBy}. The row every new customer-initiated outflow reads
+     * {@link #lockOwnedForShare}, so a suspension and a movement serialise here. Empty for an unknown agreement.
+     */
+    Optional<CustomerAccount> lockById(T unitOfWork, CustomerAccountId accountId);
+
+    /**
      * Moves an agreement {@code from} one status {@code to} another — the conditional whose
      * row count is the outcome, arriving with its first caller exactly as this interface's
      * javadoc deferred it (`P3-TSK-014`'s close). The machine is asked before any SQL

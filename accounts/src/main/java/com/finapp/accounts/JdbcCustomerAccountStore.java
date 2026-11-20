@@ -249,6 +249,25 @@ public final class JdbcCustomerAccountStore implements CustomerAccountStore<Conn
     }
 
     @Override
+    public Optional<CustomerAccount> lockById(Connection unitOfWork, CustomerAccountId accountId) {
+        Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");
+        Objects.requireNonNull(accountId, "accountId must not be null");
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement(
+                        // P17-TSK-028: the restriction's lock, by identifier alone; the permission, the factor and the four
+                        // eyes at app's door (or risk's approved action) stand in for an owner predicate
+                        // (OwnershipIsScopedTest, ADMINISTERED).
+                        "SELECT " + COLUMNS + " FROM " + TABLE + " WHERE id = ? FOR UPDATE")) {
+            read.setObject(1, accountId.value());
+            try (ResultSet row = read.executeQuery()) {
+                return row.next() ? Optional.of(rehydrate(row)) : Optional.empty();
+            }
+        } catch (SQLException failure) {
+            throw new AccountsStorageException(DatabaseFailure.describe("locking an agreement by its id", failure));
+        }
+    }
+
+    @Override
     public Optional<CustomerAccount> lockOwnedForShare(
             Connection unitOfWork, CustomerAccountId accountId, UUID customerId) {
         Objects.requireNonNull(unitOfWork, "unitOfWork must not be null");

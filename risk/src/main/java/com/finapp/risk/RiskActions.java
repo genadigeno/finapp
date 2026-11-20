@@ -437,6 +437,15 @@ public final class RiskActions implements ActionIssuer {
             }
             return subject;
         }
+        if (ActionRules.ACCOUNT_KINDS.contains(kind)) {
+            // P17-TSK-028: a party's case acts on that party's own agreements only - judged through accounts' door.
+            UUID account = asked.orElseThrow(() -> new Cases.CaseRequestInvalid("an account's action names the agreement"
+                    + " it acts on"));
+            if (!dispatch.accountHeldBy(unitOfWork, UUID.fromString(locked.subject().ref()), account)) {
+                throw new ActionNotProposable("the agreement is not one of the case party's own");
+            }
+            return account;
+        }
         UUID movement = asked.orElseThrow(() -> new Cases.CaseRequestInvalid("a held movement's action names the"
                 + " movement it resolves"));
         RiskOperation operation = ActionRules.heldOperation(kind).orElseThrow();

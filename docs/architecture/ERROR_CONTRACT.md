@@ -294,6 +294,12 @@ are a closed enum shared by everyone.
 | `accounts.UnsupportedCurrency` | 422 | The platform does not operate accounts in this currency. |
 | `accounts.AccountNotEmpty` | 409 | The account still holds a non-zero balance; empty it and retry. |
 | `accounts.AccountNotActive` | 409 | The account is not active; a wallet currency cannot be added to it. |
+| `accounts.OutflowSuspended` | 409 | The account is suspended; it cannot send money until it is reinstated. |
+| `accounts.RestrictionNotApplicable` | 409 | The account's status does not admit this restriction. |
+| `accounts.RestrictionAlreadyProposed` | 409 | The account already has an open restriction proposal; decide it first. |
+| `accounts.RestrictionAlreadyDecided` | 409 | The restriction is already decided. |
+| `accounts.RestrictionSelfDecision` | 409 | A restriction is decided by a person who did not propose it. |
+| `accounts.RestrictionReasonInvalid` | 422 | The restriction's reason code or reason is not acceptable. |
 
 **The opening refusal is cause-blind, on purpose** (`P3-TSK-012`/`P3-TSK-013`): no customer
 relationship, a verification still pending and a terminal one are one refusal — the

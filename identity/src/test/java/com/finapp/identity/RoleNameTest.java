@@ -271,15 +271,16 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("RISK_ANALYST grants exactly RISK_INVESTIGATE and RISK_CASE_APPROVE - four-eyes inside the role, nothing"
-            + " of the policy, the override or the filing")
+    @DisplayName("RISK_ANALYST grants exactly RISK_INVESTIGATE, RISK_CASE_APPROVE and ACCOUNT_RESTRICT (P17-TSK-028) -"
+            + " four-eyes inside the role, nothing of the policy, the override or the filing, never a restriction's approval")
     void riskAnalystGrantsExactlyTwo() {
         // The fifteenth population (P13-TSK-001, ADR-0107, ADR-0110): the desk that investigates checks an
         // investigation's conclusion between two holders (the LOAN_SERVICING_AGENT shape) and neither writes the rules
         // that produce the outcomes it investigates nor files with the authority.
         assertThat(RoleName.RISK_ANALYST.permissions())
                 .as("investigating and approving an investigation's conclusion is one population's work")
-                .containsExactlyInAnyOrder(PermissionName.RISK_INVESTIGATE, PermissionName.RISK_CASE_APPROVE)
+                .containsExactlyInAnyOrder(PermissionName.RISK_INVESTIGATE, PermissionName.RISK_CASE_APPROVE,
+                        PermissionName.ACCOUNT_RESTRICT)
                 .doesNotContain(
                         PermissionName.RISK_POLICY_ADMINISTER,
                         PermissionName.RISK_OVERRIDE,
@@ -290,15 +291,16 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("RISK_OFFICER grants exactly RISK_POLICY_ADMINISTER and RISK_OVERRIDE - never the analyst's reads, never"
-            + " credit's policy")
+    @DisplayName("RISK_OFFICER grants exactly RISK_POLICY_ADMINISTER, RISK_OVERRIDE and ACCOUNT_RESTRICT_APPROVE"
+            + " (P17-TSK-028) - never the analyst's reads, never credit's policy, never a restriction's proposal")
     void riskOfficerGrantsExactlyTwo() {
         // The sixteenth population (P13-TSK-001, ADR-0108, ADR-0109): whoever answers for what the engine judges by also
         // answers for the one act that sets a judgement aside; the override door serves the assessment it overrides
         // under RISK_OVERRIDE, so the officer needs no analyst's read.
         assertThat(RoleName.RISK_OFFICER.permissions())
                 .as("the policy and the override are one desk's, and not the investigator's")
-                .containsExactlyInAnyOrder(PermissionName.RISK_POLICY_ADMINISTER, PermissionName.RISK_OVERRIDE)
+                .containsExactlyInAnyOrder(PermissionName.RISK_POLICY_ADMINISTER, PermissionName.RISK_OVERRIDE,
+                        PermissionName.ACCOUNT_RESTRICT_APPROVE)
                 .doesNotContain(
                         PermissionName.RISK_INVESTIGATE,
                         PermissionName.RISK_CASE_APPROVE,

@@ -235,7 +235,8 @@ class ActionDispatchTest {
     }
 
     @Test
-    @DisplayName("a kind with no owning command is never dispatched - refused loudly if ever reached")
+    @DisplayName("a kind with no owning command - or accounts' two on a dispatch with no accounts' door - is never"
+            + " dispatched, refused loudly if ever reached")
     void anUnavailableKindIsNeverDispatched() {
         ActionDispatch dispatch = new ActionDispatch(world.payments, world.payments, world.payments, world.payments);
         for (ActionKind kind : List.of(ActionKind.SUSPEND_ACCOUNT, ActionKind.REINSTATE_ACCOUNT,

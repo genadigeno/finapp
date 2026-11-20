@@ -198,6 +198,9 @@ public final class WithdrawalService {
             Connection unitOfWork, Session current, UUID methodId, CurrencyCode currency) {
         UUID partyId = partyOf(unitOfWork, current);
         requireConditionalAssurance(unitOfWork, current);
+        // P17-TSK-028 (ADR-0153): a withdrawal is a new outflow - refused while the agreement is suspended, under its
+        // share lock, in this dispatch transaction and before the hold touches the wallet's ledger row.
+        participants.requireOutflowAdmitted(unitOfWork, partyId);
         PaymentParticipants.Wallet wallet =
                 participants
                         .walletOwnedBy(unitOfWork, partyId, currency)

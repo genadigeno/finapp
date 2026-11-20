@@ -132,6 +132,22 @@ public enum PermissionName {
     PLATFORM_OVERVIEW_READ,
 
     /**
+     * Proposes a customer agreement's suspension or reinstatement (`P17-TSK-028`, ADR-0153; finapp-admin-panel B6.5):
+     * {@code POST /v1/operator/accounts/{id}/suspension} and {@code /reinstatement}, with a reason code and a reason, on a
+     * {@code MULTI_FACTOR} session, keyed. Moves nothing: a holder of {@link #ACCOUNT_RESTRICT_APPROVE} who did not propose
+     * it decides. On {@code RISK_ANALYST} (the owner's ruling of 2026-11-20).
+     */
+    ACCOUNT_RESTRICT,
+
+    /**
+     * Approves or rejects another holder's account restriction (`P17-TSK-028`, ADR-0153):
+     * {@code POST /v1/operator/account-restrictions/{id}/approval} and {@code /rejection}, on a {@code MULTI_FACTOR} session,
+     * keyed; never the proposer's own ({@code INV-AUD-04}, V003's {@code CHECK}). The approval suspends or reinstates the
+     * agreement. On {@code RISK_OFFICER} - another population than the proposer's.
+     */
+    ACCOUNT_RESTRICT_APPROVE,
+
+    /**
      * Review KYC/KYB cases: read a case with its evidence, resolve screening hits, record
      * decisions (`P2-TSK-004`).
      *

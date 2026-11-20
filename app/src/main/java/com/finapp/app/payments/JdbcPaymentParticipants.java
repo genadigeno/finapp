@@ -50,6 +50,11 @@ public final class JdbcPaymentParticipants implements PaymentParticipants<Connec
     @NonNull private final LedgerAccountStore<Connection> ledgerAccounts;
     @NonNull private final PaymentMethodStore<Connection> instruments;
 
+    @Override
+    public void requireOutflowAdmitted(Connection unitOfWork, UUID callerPartyId) {
+        new com.finapp.app.accounts.OutflowGate(parties, products).requireForParty(unitOfWork, callerPartyId);
+    }
+
     /** The wallet's ledger account, share-locked: postable only while {@code ACTIVE}. */
     @Override
     public boolean creditable(Connection unitOfWork, com.finapp.ledger.LedgerAccountId account) {

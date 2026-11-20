@@ -180,8 +180,8 @@ class RiskVocabulariesTest {
     }
 
     @Test
-    @DisplayName("twelve action kinds, each naming its target and its owning domain; the three with no owning command"
-            + " unavailable (P13-TSK-017: accounts' suspension, crossborder's block); the platform never resets a"
+    @DisplayName("twelve action kinds, each naming its target and its owning domain; the one with no owning command"
+            + " unavailable (crossborder's block; accounts' two since P17-TSK-028); the platform never resets a"
             + " credential")
     void theActionKinds() {
         assertThat(names(ActionKind.values())).containsExactly("SUSPEND_IDENTITY", "REINSTATE_IDENTITY",
@@ -189,8 +189,8 @@ class RiskVocabulariesTest {
                 "RELEASE_HELD_WITHDRAWAL", "DENY_HELD_WITHDRAWAL", "CAPTURE_HELD_PAYMENT", "VOID_HELD_PAYMENT",
                 "RESCREEN_PARTY");
         assertThat(Arrays.stream(ActionKind.values()).filter(kind -> !kind.available()))
-                .as("no owning command: accounts has no suspension, crossborder no block (P13-TSK-017)")
-                .containsExactly(ActionKind.SUSPEND_ACCOUNT, ActionKind.REINSTATE_ACCOUNT, ActionKind.BLOCK_BENEFICIARY);
+                .as("no owning command: crossborder no block (P13-TSK-017); accounts' two since P17-TSK-028")
+                .containsExactly(ActionKind.BLOCK_BENEFICIARY);
         assertThat(ActionKind.CAPTURE_HELD_PAYMENT.domain()).isEqualTo(ActionKind.Domain.PAYMENTS);
         assertThat(ActionKind.VOID_HELD_PAYMENT.domain()).isEqualTo(ActionKind.Domain.PAYMENTS);
         assertThat(ActionKind.SUSPEND_IDENTITY.domain()).isEqualTo(ActionKind.Domain.IDENTITY);

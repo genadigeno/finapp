@@ -1,6 +1,7 @@
 package com.finapp.risk;
 
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * T-act's middle step (`P13-TSK-017`; {@code PHASE_13_PLAN.md} sections 7.1 T-act, 7.2 (R6), 12.8; ADR-0112 decisions
@@ -13,8 +14,8 @@ import java.util.Objects;
  * executes), so the owner's audit names the system and carries the action's code and correlation.
  *
  * <p>Risk writes nothing of the owner's here and never reverses: the answer is the owner's, word for word. A kind with no
- * owning command - accounts' two, crossborder's block, kyc's rescreening - is never born on the machine, and reaching it
- * here is a defect, refused loudly.
+ * owning command - crossborder's block, kyc's rescreening - is never born on the machine, and reaching it
+ * here is a defect, refused loudly. Accounts' two are dispatched since `P17-TSK-028` (ADR-0153).
  */
 public final class ActionDispatch {
 
@@ -22,14 +23,47 @@ public final class ActionDispatch {
     private final MerchantActions merchants;
     private final HeldWithdrawalActions withdrawals;
     private final HeldPaymentActions payments;
+    private final AccountActions accounts;
 
+    /**
+     * Risk <strong>without accounts' door</strong>: the account kinds are refused at proposal (no agreement is held by
+     * anyone here) and refused loudly if ever reached. The platform's wiring is the five-door constructor (`P17-TSK-028`).
+     */
     public ActionDispatch(IdentityActions identities, MerchantActions merchants, HeldWithdrawalActions withdrawals,
             HeldPaymentActions payments) {
+        this(identities, merchants, withdrawals, payments, UNWIRED_ACCOUNTS);
+    }
+
+    public ActionDispatch(IdentityActions identities, MerchantActions merchants, HeldWithdrawalActions withdrawals,
+            HeldPaymentActions payments, AccountActions accounts) {
         this.identities = Objects.requireNonNull(identities, "identities");
         this.merchants = Objects.requireNonNull(merchants, "merchants");
         this.withdrawals = Objects.requireNonNull(withdrawals, "withdrawals");
         this.payments = Objects.requireNonNull(payments, "payments");
+        this.accounts = Objects.requireNonNull(accounts, "accounts");
     }
+
+    /** Whether the agreement is the party's own - the account kinds' proposal read, through accounts' door. */
+    public boolean accountHeldBy(java.sql.Connection unitOfWork, UUID partyId, UUID accountId) {
+        return accounts.heldBy(unitOfWork, partyId, accountId);
+    }
+
+    private static final AccountActions UNWIRED_ACCOUNTS = new AccountActions() {
+        @Override
+        public ActionOutcome suspend(UUID accountId, String idempotencyKey, String reason) {
+            throw new IllegalStateException("accounts' door is not wired to this dispatch");
+        }
+
+        @Override
+        public ActionOutcome reinstate(UUID accountId, String idempotencyKey, String reason) {
+            throw new IllegalStateException("accounts' door is not wired to this dispatch");
+        }
+
+        @Override
+        public boolean heldBy(java.sql.Connection unitOfWork, UUID partyId, UUID accountId) {
+            return false;
+        }
+    };
 
     /**
      * {@code claimed} through its owner's door.
@@ -54,7 +88,9 @@ public final class ActionDispatch {
             case DENY_HELD_WITHDRAWAL -> withdrawals.deny(claimed.target(), key, reason);
             case CAPTURE_HELD_PAYMENT -> payments.capture(claimed.target(), key, reason);
             case VOID_HELD_PAYMENT -> payments.voidHold(claimed.target(), key, reason);
-            case SUSPEND_ACCOUNT, REINSTATE_ACCOUNT, BLOCK_BENEFICIARY, RESCREEN_PARTY ->
+            case SUSPEND_ACCOUNT -> accounts.suspend(claimed.target(), key, reason);
+            case REINSTATE_ACCOUNT -> accounts.reinstate(claimed.target(), key, reason);
+            case BLOCK_BENEFICIARY, RESCREEN_PARTY ->
                     throw new IllegalStateException("no owning command executes " + claimed.kind()
                             + ": it is never proposed or issued");
         };
