@@ -1,6 +1,7 @@
 package com.finapp.app.payments;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.finapp.identity.Authorization;
 import com.finapp.identity.IdentityId;
@@ -340,7 +341,97 @@ class PaymentRefundEndpointDatabaseTest {
     /** An operator's session token and identity, granted through the real service. */
     private record Operator(String token, UUID identity) {}
 
+    @Test
+    @DisplayName("four eyes above the threshold (P17-TSK-031): 600.00 refunds at once; 500.00 more crosses 1,000.00 together and"
+            + " is a keyed proposal, nothing held or sent; the proposer cannot approve; a controller's approval dispatches it,"
+            + " and a lost approval retried under its key replays the one refund (the plan's scenario 4); a decided proposal is"
+            + " decided once; a rejection moves nothing; V043's CHECK refuses the proposer's decision")
+    void aRefundAboveTheThresholdIsFourEyes() throws Exception {
+        String customer = verifiedCustomer(someLogin());
+        String paymentId = succeededPayment(customer, "1500.00");
+        Operator operator = operatorSession();
+        Operator controller = operatorSession(RoleName.FINANCIAL_CONTROLLER);
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.REFUNDS_PATH,
+                200,
+                "{\"status\":\"approved\",\"reference\":\"psp_ep-rfd-" + suffix() + "\"}");
+
+        HttpResponse<String> first = refund(operator.token(), paymentId, "600.00", "EUR", "part one", someKey());
+        assertThat(first.statusCode()).as(first.body()).isEqualTo(201);
+        assertThat(field(first.body(), "status")).isEqualTo("COMPLETED");
+
+        String key = someKey();
+        HttpResponse<String> proposed = refund(operator.token(), paymentId, "500.00", "EUR", "part two", key);
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        assertThat(field(proposed.body(), "status")).as("600 + 500 crosses 1,000.00 together").isEqualTo("PROPOSED");
+        assertThat(refund(operator.token(), paymentId, "500.00", "EUR", "part two", key).body())
+                .as("the door's retry replays the proposal").isEqualTo(proposed.body());
+        assertThat(refundsOf(paymentId)).as("nothing held or sent for a proposal").isEqualTo(1);
+        String proposal = field(proposed.body(), "id");
+
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement forged = app.prepareStatement("UPDATE payments.refund_proposal SET status = 'REJECTED',"
+                        + " decided_by = proposed_by, decided_by_type = 'EMPLOYEE', decided_at = proposed_at + interval '1 second',"
+                        + " decision_reason = 'mine', decision_correlation_id = 'c' WHERE id = ?")) {
+            forged.setObject(1, UUID.fromString(proposal));
+            assertThatThrownBy(forged::executeUpdate).isInstanceOf(java.sql.SQLException.class)
+                    .hasMessageContaining("refund_proposal_four_eyes");
+        }
+        assertThat(post("/v1/operator/refund-proposals/" + proposal + "/approval", "{\"reason\":\"mine\"}",
+                operator.token(), true).statusCode()).as("the proposer's population holds no approval").isEqualTo(403);
+
+        // The approval's refund is a second provider refund: its reference is its own (refund.provider_reference is UNIQUE).
+        provider.succeedsWith(
+                SimulatedCardPspAdapter.REFUNDS_PATH,
+                200,
+                "{\"status\":\"approved\",\"reference\":\"psp_ep-rfd-" + suffix() + "\"}");
+        String approvalKey = someKey();
+        HttpResponse<String> approved = keyedPost("/v1/operator/refund-proposals/" + proposal + "/approval",
+                "{\"reason\":\"agreed: the complaint is upheld\"}", controller.token(), approvalKey);
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        assertThat(field(approved.body(), "status")).isEqualTo("COMPLETED");
+        HttpResponse<String> lost = keyedPost("/v1/operator/refund-proposals/" + proposal + "/approval",
+                "{\"reason\":\"agreed: the complaint is upheld\"}", controller.token(), approvalKey);
+        assertThat(lost.body()).as("scenario 4: the original outcome").isEqualTo(approved.body());
+        assertThat(refundsOf(paymentId)).as("exactly one refund for the approval").isEqualTo(2);
+        HttpResponse<String> again = keyedPost("/v1/operator/refund-proposals/" + proposal + "/approval",
+                "{\"reason\":\"again\"}", controller.token(), someKey());
+        // Judged before the capture bound, which the first approval's 500.00 has left short of another (P17-TSK-031).
+        assertThat(again.statusCode()).as(again.body()).isEqualTo(409);
+        assertThat(again.body()).contains("payments.RefundProposalAlreadyDecided");
+        assertThat(refundsOf(paymentId)).isEqualTo(2);
+
+        String rejectedOne = field(refund(operator.token(), paymentId, "100.00", "EUR", "part three", someKey()).body(), "id");
+        HttpResponse<String> rejected = keyedPost("/v1/operator/refund-proposals/" + rejectedOne + "/rejection",
+                "{\"reason\":\"enough has been returned\"}", controller.token(), someKey());
+        assertThat(field(rejected.body(), "status")).isEqualTo("REJECTED");
+        assertThat(refundsOf(paymentId)).as("a rejection moves nothing").isEqualTo(2);
+    }
+
+    private HttpResponse<String> keyedPost(String path, String body, String token, String key) throws Exception {
+        return send(HttpRequest.newBuilder().uri(URI.create("http://localhost:" + port + path))
+                .header("Content-Type", "application/json").header("Authorization", "Bearer " + token)
+                .header(IdempotencyKeyHeader.NAME, key).POST(HttpRequest.BodyPublishers.ofString(body)).build());
+    }
+
+    /** The payment's refund rows - counted in the table, never inferred from answers. */
+    private static long refundsOf(String paymentId) throws Exception {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read = app.prepareStatement("SELECT count(*) FROM payments.refund r JOIN"
+                        + " payments.payment_attempt a ON a.id = r.attempt_id WHERE a.intent_id = ?")) {
+            read.setObject(1, UUID.fromString(paymentId));
+            try (ResultSet row = read.executeQuery()) {
+                row.next();
+                return row.getLong(1);
+            }
+        }
+    }
+
     private Operator operatorSession() throws Exception {
+        return operatorSession(RoleName.LEDGER_OPERATOR);
+    }
+
+    private Operator operatorSession(RoleName role) throws Exception {
         String login = someLogin();
         assertThat(register(login).statusCode()).isEqualTo(201);
         UUID identity;
@@ -363,7 +454,7 @@ class PaymentRefundEndpointDatabaseTest {
             authorization.assign(
                     app,
                     IdentityId.of(identity),
-                    RoleName.LEDGER_OPERATOR,
+                    role,
                     IdentityId.of(identity),
                     "test fixture");
             app.commit();
@@ -378,6 +469,11 @@ class PaymentRefundEndpointDatabaseTest {
 
     /** The full customer chain over HTTP to a SUCCEEDED payment of 12.00 EUR. */
     private String succeededPayment(String token) throws Exception {
+        return succeededPayment(token, "12.00");
+    }
+
+    /** The full customer chain over HTTP to a SUCCEEDED payment of {@code amount} EUR. */
+    private String succeededPayment(String token, String amount) throws Exception {
         openAccount(token);
         String methodId = attachInstrument(token);
         provider.succeedsWith(
@@ -392,7 +488,7 @@ class PaymentRefundEndpointDatabaseTest {
                 post(
                         "/v1/payments",
                         "{\"paymentMethodId\":\"" + methodId
-                                + "\",\"amount\":\"12.00\",\"currency\":\"EUR\"}",
+                                + "\",\"amount\":\"" + amount + "\",\"currency\":\"EUR\"}",
                         token,
                         true);
         String paymentId = field(created.body(), "id");

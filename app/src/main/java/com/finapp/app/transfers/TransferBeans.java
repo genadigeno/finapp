@@ -15,11 +15,13 @@ import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.outbox.OutboxWriter;
 import com.finapp.sharedkernel.id.IdGenerator;
 import com.finapp.transfers.BeneficiaryStore;
+import com.finapp.transfers.JdbcTransferReversalProposalStore;
 import com.finapp.transfers.JdbcTransferStore;
 import com.finapp.transfers.TransferExecution;
 import com.finapp.transfers.TransferLimitCheck;
 import com.finapp.transfers.TransferParticipants;
 import com.finapp.transfers.TransferReversal;
+import com.finapp.transfers.TransferReversalProposals;
 import com.finapp.transfers.TransferRiskDecision;
 import com.finapp.transfers.TransferStore;
 import java.sql.Connection;
@@ -136,7 +138,6 @@ class TransferBeans {
     TransferService transferService(
             TransferDoorStepUp transferDoorStepUp,
             TransferExecution transferExecution,
-            TransferReversal transferReversal,
             TransferStore<Connection> transferStore,
             BeneficiaryStore<Connection> beneficiaryStore,
             IdentityStore<Connection> identityStore,
@@ -148,7 +149,6 @@ class TransferBeans {
         return new TransferService(
                 transferDoorStepUp,
                 transferExecution,
-                transferReversal,
                 transferStore,
                 beneficiaryStore,
                 identityStore,
@@ -157,5 +157,29 @@ class TransferBeans {
                 dataSource,
                 transferMetrics,
                 clock);
+    }
+
+    /** A transfer's reversal by four eyes (`P17-TSK-031`, ADR-0154): the proposal machine over the existing reversal. */
+    @Bean
+    TransferReversalProposals transferReversalProposals(
+            TransferStore<Connection> transferStore,
+            TransferReversal transferReversal,
+            AuditWriter<Connection> auditWriter,
+            IdGenerator ids,
+            Clock clock) {
+        return new TransferReversalProposals(transferStore, new JdbcTransferReversalProposalStore(), transferReversal,
+                auditWriter, ids, clock);
+    }
+
+    /** The reversal's keyed door, on the transfer transaction (`P17-TSK-031`). */
+    @Bean
+    TransferReversalDesk transferReversalDesk(
+            TransferReversalProposals transferReversalProposals,
+            IdempotentExecutor idempotentExecutor,
+            TransactionTemplate transferTransactions,
+            DataSource dataSource,
+            TransferMetrics transferMetrics) {
+        return new TransferReversalDesk(transferReversalProposals, idempotentExecutor, transferTransactions, dataSource,
+                transferMetrics);
     }
 }

@@ -11,7 +11,6 @@ import com.finapp.ledger.JdbcJournalEntryStore;
 import com.finapp.ledger.JdbcLedgerAccountStore;
 import com.finapp.ledger.PostingObserver;
 import com.finapp.ledger.PostingService;
-import com.finapp.ledger.ReversalService;
 import com.finapp.party.PartyStore;
 import com.finapp.platform.audit.JdbcAuditWriter;
 import com.finapp.platform.idempotency.IdempotencyRecordStore;
@@ -22,7 +21,6 @@ import com.finapp.transfers.JdbcTransferStore;
 import com.finapp.transfers.PermitAllUntilPhase13;
 import com.finapp.transfers.TransferExecution;
 import com.finapp.transfers.TransferParticipants;
-import com.finapp.transfers.TransferReversal;
 import com.finapp.transfers.TransferStore;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -66,11 +64,7 @@ final class TransferDoorComposition {
                         PostingObserver.NONE),
                 transfers, new PermitAllUntilPhase13<>(), new PermitAllUntilPhase13<>(), new JdbcAuditWriter(),
                 new JdbcOutboxWriter(), RiskEvaluationWorld.IDS, clock);
-        TransferReversal reversal = new TransferReversal(transfers, new ReversalService(executor,
-                new JdbcJournalEntryStore(RiskEvaluationWorld.IDS), new JdbcAuditWriter(), new JdbcOutboxWriter(),
-                new JdbcBalanceProjection(), RiskEvaluationWorld.IDS, clock, PostingObserver.NONE),
-                new JdbcAuditWriter(), new JdbcOutboxWriter(), RiskEvaluationWorld.IDS, clock);
-        return new TransferService(stepUp, execution, reversal, transfers, refusing(BeneficiaryStore.class), identities,
+        return new TransferService(stepUp, execution, transfers, refusing(BeneficiaryStore.class), identities,
                 refusing(PartyStore.class), transactions(journal), dataSource(), metrics(), clock);
     }
 

@@ -37,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class OperatorMerchantPayoutController {
 
     @NonNull private final MerchantPayoutOperations payouts;
+    @NonNull private final PayoutDesk desk;
 
     /**
      * Initiates a payout of the merchant's payable, keyed, reasoned. {@code 201} with the honest
@@ -51,6 +52,7 @@ public class OperatorMerchantPayoutController {
             @PathVariable("merchantId") String merchantId,
             @Valid @RequestBody OperatorPayoutRequest body,
             @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey) {
-        return payouts.initiateAsOperator(merchantId, body, idempotencyKey);
+        // P17-TSK-031 (ADR-0154): above the four-eyes threshold the answer is the keyed proposal, status PROPOSED.
+        return desk.initiateAsOperator(merchantId, body, idempotencyKey);
     }
 }

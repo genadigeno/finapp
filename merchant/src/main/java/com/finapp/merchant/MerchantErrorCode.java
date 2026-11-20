@@ -178,6 +178,42 @@ public enum MerchantErrorCode implements ErrorCode {
             "This merchant is still owed money or has a payment in flight, so it cannot be"
                     + " closed."),
 
+    /** A second closure proposal while one is open (`P17-TSK-031`): one open proposal per merchant. */
+    CLOSURE_ALREADY_PROPOSED(
+            "merchant.ClosureAlreadyProposed",
+            409,
+            "The merchant already has an open closure proposal; decide it first."),
+
+    /** A decision on a decided closure proposal (`P17-TSK-031`): decided once. */
+    CLOSURE_ALREADY_DECIDED(
+            "merchant.ClosureAlreadyDecided",
+            409,
+            "The closure proposal is already decided."),
+
+    /** A second payout proposal while one is open for the merchant (`P17-TSK-031`). */
+    PAYOUT_PROPOSAL_ALREADY_OPEN(
+            "merchant.PayoutProposalAlreadyOpen",
+            409,
+            "The merchant already has an open payout proposal; decide it first."),
+
+    /** A decision on a decided payout proposal (`P17-TSK-031`): decided once. */
+    PAYOUT_PROPOSAL_ALREADY_DECIDED(
+            "merchant.PayoutProposalAlreadyDecided",
+            409,
+            "The payout proposal is already decided."),
+
+    /** The proposer deciding their own payout proposal (`P17-TSK-031`, INV-AUD-04). */
+    PAYOUT_PROPOSAL_SELF_DECISION(
+            "merchant.PayoutProposalSelfDecision",
+            409,
+            "A payout proposal is decided by a person who did not propose it."),
+
+    /** The proposer deciding their own closure proposal (`P17-TSK-031`, INV-AUD-04). */
+    CLOSURE_SELF_DECISION(
+            "merchant.ClosureSelfDecision",
+            409,
+            "A closure is decided by a person who did not propose it."),
+
     /** A payout in a currency other than the merchant's settlement currency (one payable). */
     PAYOUT_CURRENCY_MISMATCH(
             "merchant.PayoutCurrencyMismatch",

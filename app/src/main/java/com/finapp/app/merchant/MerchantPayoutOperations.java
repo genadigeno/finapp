@@ -119,7 +119,31 @@ public class MerchantPayoutOperations {
                                 .orElseThrow(MerchantPayoutOperations::notFound));
     }
 
+    /**
+     * A payout proposal's approval (`P17-TSK-031`, ADR-0154): the operator door's command and refusals, with the proposal's
+     * decision as the step inside its dispatch transaction - no threshold judged, this is the second person.
+     */
+    public PayoutView approvePayout(MerchantId merchant, Money amount, String reason, String idempotencyKey,
+            MerchantPayouts.ApprovalStep approval) {
+        return initiate(new MerchantPayouts.InitiateCommand(merchant, amount, idempotencyKey, Optional.of(reason),
+                Optional.empty()), Optional.of(approval));
+    }
+
+    /** The amount and merchant the operator door asks, parsed exactly - what a proposal above the threshold pins. */
+    public Money operatorAmountOf(OperatorPayoutRequest body) {
+        return parsedAmount(body.amount(), body.currency());
+    }
+
+    /** The merchant the operator door names, or the one 404. */
+    public MerchantId operatorMerchantOf(String rawMerchantId) {
+        return merchantOrAbsent(rawMerchantId);
+    }
+
     private PayoutView initiate(MerchantPayouts.InitiateCommand initiate) {
+        return initiate(initiate, Optional.empty());
+    }
+
+    private PayoutView initiate(MerchantPayouts.InitiateCommand initiate, Optional<MerchantPayouts.ApprovalStep> approval) {
         MerchantPayouts payoutCommand = command.getIfAvailable();
         if (payoutCommand == null) {
             throw new ApiException(
@@ -128,7 +152,9 @@ public class MerchantPayoutOperations {
         }
         MerchantPayouts.Initiated initiated;
         try {
-            initiated = payoutCommand.initiate(initiate);
+            initiated = approval.isPresent()
+                    ? payoutCommand.initiate(initiate, approval.get())
+                    : payoutCommand.initiate(initiate);
         } catch (MerchantPayoutUnfundedException unfunded) {
             throw new ApiException(
                     MerchantErrorCode.PAYOUT_UNFUNDED,

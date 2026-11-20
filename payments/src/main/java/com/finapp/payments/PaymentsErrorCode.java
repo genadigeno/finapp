@@ -149,6 +149,24 @@ public enum PaymentsErrorCode implements ErrorCode {
             409,
             "The account cannot fund this refund right now."),
 
+    /** A second refund proposal while one is open on the payment (`P17-TSK-031`). */
+    REFUND_PROPOSAL_ALREADY_OPEN(
+            "payments.RefundProposalAlreadyOpen",
+            409,
+            "The payment already has an open refund proposal; decide it first."),
+
+    /** A decision on a decided refund proposal (`P17-TSK-031`): decided once. */
+    REFUND_PROPOSAL_ALREADY_DECIDED(
+            "payments.RefundProposalAlreadyDecided",
+            409,
+            "The refund proposal is already decided."),
+
+    /** The proposer deciding their own refund proposal (`P17-TSK-031`, INV-AUD-04). */
+    REFUND_PROPOSAL_SELF_DECISION(
+            "payments.RefundProposalSelfDecision",
+            409,
+            "A refund proposal is decided by a person who did not propose it."),
+
     /**
      * No declared rail can carry the payment (`P7-TSK-003`, ADR-0060 §3): every candidate of
      * the matched routing rule was refused — or no rule of the version in force matches the

@@ -129,18 +129,31 @@ class TransferReversalDatabaseTest {
             linesBefore = lineRowsOf(app, entryId);
         }
 
-        String operatorLogin = someLogin();
-        String operator = operator(operatorLogin);
+        // P17-TSK-031 (ADR-0154): always four eyes - the operator proposes, a controller who did not propose approves, and
+        // the approval performs the same reversal, one step later.
+        String operator = operator(someLogin());
+        String controllerLogin = someLogin();
+        String controller = controller(controllerLogin);
         String reason = "the recipient disputed the movement; case CS-4411";
-        HttpResponse<String> reversed = reverse(operator, transferId, reasonBody(reason));
-        assertThat(reversed.statusCode()).isEqualTo(201);
-        assertThat(field(reversed.body(), "status")).isEqualTo("REVERSED");
-        assertThat(field(reversed.body(), "journalEntryId")).isEqualTo(entryId.toString());
-        String reversalEntryId = field(reversed.body(), "reversalEntryId");
+        HttpResponse<String> proposed = reverse(operator, transferId, reasonBody(reason));
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        assertThat(field(proposed.body(), "status")).isEqualTo("PROPOSED");
+        assertThat(field(proposed.body(), "transferStatus")).as("a proposal moves nothing").isEqualTo("COMPLETED");
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(reversalEntriesFor(app, entryId)).as("nothing posted at the proposal").isZero();
+        }
+        String approval = "agreed: the dispute is upheld";
+        HttpResponse<String> reversed = approve(controller, field(proposed.body(), "proposalId"), reasonBody(approval));
+        assertThat(reversed.statusCode()).as(reversed.body()).isEqualTo(200);
+        assertThat(field(reversed.body(), "status")).isEqualTo("APPROVED");
+        assertThat(field(reversed.body(), "transferStatus")).isEqualTo("REVERSED");
+        String view = get("/v1/transfers/" + transferId, sender).body();
+        assertThat(field(view, "journalEntryId")).isEqualTo(entryId.toString());
+        String reversalEntryId = field(view, "reversalEntryId");
         assertThat(reversalEntryId).isNotEqualTo(entryId.toString());
-        assertThat(field(reversed.body(), "reversedAt")).isNotBlank();
+        assertThat(field(view, "reversedAt")).isNotBlank();
         // The operator's identity is the audit trail's fact, never the customer view's.
-        assertThat(reversed.body()).doesNotContain("reversedBy");
+        assertThat(view).doesNotContain("reversedBy");
 
         try (Connection app = DatabaseRoles.application()) {
             // The original, byte-identical after the reversal (INV-REV-01).
@@ -153,8 +166,8 @@ class TransferReversalDatabaseTest {
             // directions (plan section 12), counted in the table.
             assertThat(reversalEntriesFor(app, entryId)).isEqualTo(1);
 
-            // The trail: one record, the operator's identity, the reason verbatim
-            // (requiresReason - the justification enters at the moment it is written).
+            // The trail: one record, the APPROVER's identity - who performed it - and the approval's reason verbatim
+            // (requiresReason - the justification enters at the moment it is written); the proposal is its own record.
             assertThat(reversalAuditCount(app, transferId)).isEqualTo(1);
             try (PreparedStatement read =
                     app.prepareStatement(
@@ -164,8 +177,8 @@ class TransferReversalDatabaseTest {
                 read.setString(1, transferId);
                 try (ResultSet row = read.executeQuery()) {
                     assertThat(row.next()).isTrue();
-                    assertThat(row.getString("actor_id")).isEqualTo(identityIdOf(app, operatorLogin));
-                    assertThat(row.getString("reason")).isEqualTo(reason);
+                    assertThat(row.getString("actor_id")).isEqualTo(identityIdOf(app, controllerLogin));
+                    assertThat(row.getString("reason")).isEqualTo(approval);
                 }
             }
 
@@ -185,8 +198,8 @@ class TransferReversalDatabaseTest {
         assertThat(field(read, "status")).isEqualTo("REVERSED");
         assertThat(field(read, "reversalEntryId")).isEqualTo(reversalEntryId);
 
-        // A second reversal - the retry whose response was lost included - is the one 409:
-        // the machine is the idempotency, and nothing more is written.
+        // A second proposal on the reversed transfer is the one 409 (a lost answer's retry under its own key replays
+        // instead - TransferReversalFourEyesDatabaseTest); nothing more is written.
         HttpResponse<String> again = reverse(operator, transferId, reasonBody("retry"));
         assertThat(again.statusCode()).isEqualTo(409);
         assertThat(again.body()).contains("transfers.NotReversible");
@@ -299,8 +312,8 @@ class TransferReversalDatabaseTest {
     }
 
     @Test
-    @DisplayName("ten concurrent reversals over HTTP produce exactly one reversal entry and"
-            + " one state move, counted in the tables - one 201, nine 409s")
+    @DisplayName("ten concurrent proposals over HTTP leave one open proposal - one 201, nine 409s; then approvals racing"
+            + " rejections decide it once - one 200, the rest 409 - and the tables hold exactly that one outcome")
     void tenConcurrentReversalsProduceOneEntryAndOneMove() throws Exception {
         String sender = verifiedCustomer(someLogin());
         String receiver = verifiedCustomer(someLogin());
@@ -311,44 +324,149 @@ class TransferReversalDatabaseTest {
         String transferId = field(created.body(), "id");
         UUID entryId = UUID.fromString(field(created.body(), "journalEntryId"));
         String operator = operator(someLogin());
+        String controller = controller(someLogin());
 
         int racers = 10;
-        CountDownLatch start = new CountDownLatch(1);
-        List<Future<Integer>> outcomes = new ArrayList<>();
         ExecutorService pool = Executors.newFixedThreadPool(racers);
         try {
+            CountDownLatch start = new CountDownLatch(1);
+            List<Future<HttpResponse<String>>> proposals = new ArrayList<>();
             for (int i = 0; i < racers; i++) {
                 String reason = "concurrent reversal " + i;
-                outcomes.add(
-                        pool.submit(
-                                () -> {
-                                    start.await();
-                                    return reverse(operator, transferId, reasonBody(reason))
-                                            .statusCode();
-                                }));
+                String racerKey = someKey();
+                proposals.add(pool.submit(() -> {
+                    start.await();
+                    return postRetryingShed("/v1/transfers/" + transferId + "/reversal", operator, reasonBody(reason),
+                            racerKey);
+                }));
             }
             start.countDown();
-            int reversedCount = 0;
+            List<String> open = new ArrayList<>();
             int refusedCount = 0;
-            for (Future<Integer> outcome : outcomes) {
-                int status = outcome.get(60, TimeUnit.SECONDS);
-                if (status == 201) {
-                    reversedCount++;
-                } else if (status == 409) {
+            for (Future<HttpResponse<String>> outcome : proposals) {
+                HttpResponse<String> answer = outcome.get(60, TimeUnit.SECONDS);
+                if (answer.statusCode() == 201) {
+                    open.add(field(answer.body(), "proposalId"));
+                } else if (answer.statusCode() == 409) {
                     refusedCount++;
                 }
             }
-            assertThat(reversedCount).as("exactly one racer reverses").isEqualTo(1);
-            assertThat(refusedCount).as("every loser gets the machine's 409").isEqualTo(9);
+            assertThat(open).as("exactly one racer proposes").hasSize(1);
+            assertThat(refusedCount).as("every loser gets the open proposal's 409").isEqualTo(9);
+
+            CountDownLatch decide = new CountDownLatch(1);
+            List<Future<HttpResponse<String>>> decisions = new ArrayList<>();
+            for (int i = 0; i < racers; i++) {
+                boolean approving = i % 2 == 0;
+                String racerKey = someKey();
+                decisions.add(pool.submit(() -> {
+                    decide.await();
+                    return approving
+                            ? postRetryingShed("/v1/operator/transfer-reversals/" + open.get(0) + "/approval", controller,
+                                    reasonBody("approved in the race"), racerKey)
+                            : postRetryingShed("/v1/operator/transfer-reversals/" + open.get(0) + "/rejection", controller,
+                                    reasonBody("rejected in the race"), racerKey);
+                }));
+            }
+            decide.countDown();
+            int won = 0;
+            int lost = 0;
+            boolean approvalWon = false;
+            for (Future<HttpResponse<String>> outcome : decisions) {
+                HttpResponse<String> answer = outcome.get(60, TimeUnit.SECONDS);
+                if (answer.statusCode() == 200) {
+                    won++;
+                    approvalWon = field(answer.body(), "status").equals("APPROVED");
+                } else if (answer.statusCode() == 409) {
+                    lost++;
+                }
+            }
+            assertThat(won).as("exactly one decision").isEqualTo(1);
+            assertThat(lost).as("every other decider meets the decided proposal's 409").isEqualTo(9);
+
+            // Counted in the tables, never inferred from the answers (INV-CON-02's discipline): the one outcome, whole.
+            try (Connection app = DatabaseRoles.application()) {
+                assertThat(reversalEntriesFor(app, entryId)).isEqualTo(approvalWon ? 1 : 0);
+                assertThat(historyRows(app, transferId, "REVERSED")).isEqualTo(approvalWon ? 1 : 0);
+                assertThat(reversalAuditCount(app, transferId)).isEqualTo(approvalWon ? 1 : 0);
+            }
         } finally {
             pool.shutdownNow();
         }
+    }
 
-        // Counted in the tables, never inferred from the answers (INV-CON-02's discipline).
+    @Test
+    @DisplayName("four eyes for every writer (P17-TSK-031): one identity holding both roles is refused approving its own"
+            + " proposal - 409, nothing posted - and V005's CHECK refuses the proposer's decision written by hand")
+    void theProposerNeverDecides() throws Exception {
+        String sender = verifiedCustomer(someLogin());
+        String source = openAccount(sender);
+        fund(source, 10_00);
+        HttpResponse<String> created =
+                transfer(sender, transferBody(source, openAccount(verifiedCustomer(someLogin())), "3.00"), someKey());
+        String transferId = field(created.body(), "id");
+        UUID entryId = UUID.fromString(field(created.body(), "journalEntryId"));
+        String login = someLogin();
+        String both = operator(login);
+        grant(login, RoleName.FINANCIAL_CONTROLLER);
+
+        HttpResponse<String> proposed = reverse(both, transferId, reasonBody("my own proposal"));
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        String proposal = field(proposed.body(), "proposalId");
+        HttpResponse<String> mine = approve(both, proposal, reasonBody("and my own approval"));
+        assertThat(mine.statusCode()).as(mine.body()).isEqualTo(409);
+        assertThat(mine.body()).contains("transfers.ReversalSelfDecision");
         try (Connection app = DatabaseRoles.application()) {
-            assertThat(reversalEntriesFor(app, entryId)).isEqualTo(1);
-            assertThat(historyRows(app, transferId, "REVERSED")).isEqualTo(1);
-            assertThat(reversalAuditCount(app, transferId)).isEqualTo(1);
+            assertThat(reversalEntriesFor(app, entryId)).isZero();
+            try (PreparedStatement forged = app.prepareStatement("UPDATE transfers.transfer_reversal_proposal"
+                    + " SET status = 'APPROVED', decided_by = proposed_by, decided_by_type = 'EMPLOYEE',"
+                    + " decided_at = proposed_at + interval '1 second', decision_reason = 'mine',"
+                    + " decision_correlation_id = 'c' WHERE id = ?")) {
+                forged.setObject(1, UUID.fromString(proposal));
+                assertThatThrownBy(forged::executeUpdate).isInstanceOf(SQLException.class)
+                        .hasMessageContaining("transfer_reversal_proposal_four_eyes");
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("keyed (P17-TSK-031): an approval whose answer was lost, retried under its key, replays the first answer and"
+            + " the reversal posts once; another key meets the decided proposal's 409; a rejection moves nothing")
+    void aLostApprovalReplaysAndARejectionMovesNothing() throws Exception {
+        String sender = verifiedCustomer(someLogin());
+        String source = openAccount(sender);
+        fund(source, 10_00);
+        HttpResponse<String> first =
+                transfer(sender, transferBody(source, openAccount(verifiedCustomer(someLogin())), "1.00"), someKey());
+        HttpResponse<String> second =
+                transfer(sender, transferBody(source, openAccount(verifiedCustomer(someLogin())), "1.00"), someKey());
+        String operator = operator(someLogin());
+        String controller = controller(someLogin());
+
+        String proposal = field(reverse(operator, field(first.body(), "id"), reasonBody("returned in error")).body(),
+                "proposalId");
+        String key = someKey();
+        String path = "/v1/operator/transfer-reversals/" + proposal + "/approval";
+        HttpResponse<String> approved = keyedPost(path, controller, reasonBody("agreed"), key);
+        HttpResponse<String> replayed = keyedPost(path, controller, reasonBody("agreed"), key);
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        assertThat(replayed.statusCode()).isEqualTo(200);
+        assertThat(replayed.body()).isEqualTo(approved.body());
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(reversalEntriesFor(app, UUID.fromString(field(first.body(), "journalEntryId")))).isEqualTo(1);
+        }
+        HttpResponse<String> again = approve(controller, proposal, reasonBody("agreed again"));
+        assertThat(again.statusCode()).isEqualTo(409);
+        assertThat(again.body()).contains("transfers.ReversalAlreadyDecided");
+
+        String other = field(reverse(operator, field(second.body(), "id"), reasonBody("returned in error")).body(),
+                "proposalId");
+        HttpResponse<String> rejected = reject(controller, other, reasonBody("the customer confirmed it"));
+        assertThat(rejected.statusCode()).as(rejected.body()).isEqualTo(200);
+        assertThat(field(rejected.body(), "status")).isEqualTo("REJECTED");
+        assertThat(field(rejected.body(), "transferStatus")).isEqualTo("COMPLETED");
+        try (Connection app = DatabaseRoles.application()) {
+            assertThat(reversalEntriesFor(app, UUID.fromString(field(second.body(), "journalEntryId")))).isZero();
         }
     }
 
@@ -504,6 +622,28 @@ class TransferReversalDatabaseTest {
      * constraint and the per-request resolution are all on the path), and returns its stepped-up token.
      */
     private String operator(String login) throws Exception {
+        return staff(login, RoleName.LEDGER_OPERATOR);
+    }
+
+    /** A {@code FINANCIAL_CONTROLLER}, stepped up: the reversal's second person (P17-TSK-031). */
+    private String controller(String login) throws Exception {
+        return staff(login, RoleName.FINANCIAL_CONTROLLER);
+    }
+
+    /** A second role for an identity already registered (P17-TSK-031: the grants are disjoint, the holders need not be). */
+    private void grant(String login, RoleName role) throws Exception {
+        try (Connection app = DatabaseRoles.application();
+                SecurityContext.Scope actor = SecurityContext.enterSystem();
+                CorrelationContext.Scope flow =
+                        CorrelationContext.enter(Correlation.startingWith(CorrelationId.generate(IDS)))) {
+            app.setAutoCommit(false);
+            IdentityId identity = IdentityId.of(UUID.fromString(identityIdOf(app, login)));
+            authorization.assign(app, identity, role, identity, "test fixture");
+            app.commit();
+        }
+    }
+
+    private String staff(String login, RoleName role) throws Exception {
         assertThat(register(login).statusCode()).isEqualTo(201);
         try (Connection app = DatabaseRoles.application();
                 SecurityContext.Scope actor = SecurityContext.enterSystem();
@@ -512,8 +652,7 @@ class TransferReversalDatabaseTest {
                                 Correlation.startingWith(CorrelationId.generate(IDS)))) {
             app.setAutoCommit(false);
             IdentityId identity = IdentityId.of(UUID.fromString(identityIdOf(app, login)));
-            authorization.assign(app, identity, RoleName.LEDGER_OPERATOR, identity,
-                    "test fixture");
+            authorization.assign(app, identity, role, identity, "test fixture");
             app.commit();
         }
         // The reversal is an operator act, MULTI_FACTOR (P17-TSK-102): the operator steps up.
@@ -819,16 +958,47 @@ class TransferReversalDatabaseTest {
         return "{\"reason\":\"" + reason + "\"}";
     }
 
+    /** Proposes the transfer's reversal (P17-TSK-031): keyed, as every operator money act is. */
     private HttpResponse<String> reverse(String token, String transferId, String body)
             throws Exception {
+        return keyedPost("/v1/transfers/" + transferId + "/reversal", token, body);
+    }
+
+    /** A controller's approval of a reversal proposal (P17-TSK-031): the reversal itself. */
+    private HttpResponse<String> approve(String token, String proposalId, String body) throws Exception {
+        return keyedPost("/v1/operator/transfer-reversals/" + proposalId + "/approval", token, body);
+    }
+
+    /** A controller's rejection of a reversal proposal (P17-TSK-031): nothing moves. */
+    private HttpResponse<String> reject(String token, String proposalId, String body) throws Exception {
+        return keyedPost("/v1/operator/transfer-reversals/" + proposalId + "/rejection", token, body);
+    }
+
+    private HttpResponse<String> keyedPost(String path, String token, String body) throws Exception {
+        return keyedPost(path, token, body, someKey());
+    }
+
+    /**
+     * {@link #keyedPost}, retried with the same key while the platform sheds it ({@code 503 api.Overloaded}: "nothing was
+     * done; retry the same request") - ten racers on one test machine meet the admission limit, and a shed request is no
+     * outcome (`P17-TSK-028`'s discipline).
+     */
+    private HttpResponse<String> postRetryingShed(String path, String token, String body, String key) throws Exception {
+        HttpResponse<String> answer = keyedPost(path, token, body, key);
+        for (int attempt = 0; attempt < 50 && answer.statusCode() == 503; attempt++) {
+            Thread.sleep(100L + java.util.concurrent.ThreadLocalRandom.current().nextInt(200));
+            answer = keyedPost(path, token, body, key);
+        }
+        return answer;
+    }
+
+    private HttpResponse<String> keyedPost(String path, String token, String body, String key) throws Exception {
         HttpRequest request =
                 HttpRequest.newBuilder()
-                        .uri(
-                                URI.create(
-                                        "http://localhost:" + port + "/v1/transfers/"
-                                                + transferId + "/reversal"))
+                        .uri(URI.create("http://localhost:" + port + path))
                         .header("Content-Type", "application/json")
                         .header("Authorization", "Bearer " + token)
+                        .header(IdempotencyKeyHeader.NAME, key)
                         .POST(HttpRequest.BodyPublishers.ofString(body))
                         .build();
         return send(request);

@@ -1,5 +1,17 @@
 package com.finapp.app.merchant;
 
+import java.util.HexFormat;
+import java.util.Base64;
+import java.security.NoSuchAlgorithmException;
+import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
+import com.finapp.platform.security.SecurityContext;
+import com.finapp.platform.security.Actor;
+import com.finapp.platform.idempotency.StoredResponse;
+import com.finapp.platform.idempotency.RequestFingerprint;
+import com.finapp.platform.idempotency.IdempotentExecutor;
+import com.finapp.platform.idempotency.IdempotencyKey;
+import com.finapp.platform.idempotency.CommandResult;
 import com.finapp.merchant.Merchant;
 import com.finapp.merchant.MerchantAdministration;
 import com.finapp.merchant.MerchantId;
@@ -43,6 +55,15 @@ public class MerchantOperations {
     @NonNull private final TransactionTemplate transactions;
     @NonNull private final DataSource dataSource;
 
+    /**
+     * The standing moves' keyed door (`P17-TSK-031`; finapp-admin-panel ADR-C135 decision 2): a suspension or reinstatement
+     * retried after a lost answer replays the first answer instead of converging silently on a state another act may have
+     * changed since.
+     */
+    @NonNull private final IdempotentExecutor executor;
+
+    static final String STANDING_SCOPE = "merchant.standing:";
+
     /** Onboards, or replays the recorded outcome for a retried key ({@code INV-IDEM-01}). */
     public MerchantView onboard(OnboardMerchantRequest body, String idempotencyKey) {
         Objects.requireNonNull(body, "body must not be null");
@@ -76,19 +97,14 @@ public class MerchantOperations {
         }
     }
 
-    /** {@code ACTIVE → SUSPENDED}, reasoned; converges on an already-suspended merchant. */
-    public MerchantView suspend(String rawId, MerchantStandingRequest body) {
-        return move(rawId, body, administration::suspend);
+    /** {@code ACTIVE → SUSPENDED}, reasoned and keyed; converges on an already-suspended merchant. */
+    public MerchantView suspend(String rawId, MerchantStandingRequest body, String idempotencyKey) {
+        return move(rawId, body, idempotencyKey, "SUSPEND", administration::suspend);
     }
 
-    /** {@code SUSPENDED → ACTIVE}, reasoned; converges on an already-active merchant. */
-    public MerchantView reinstate(String rawId, MerchantStandingRequest body) {
-        return move(rawId, body, administration::reinstate);
-    }
-
-    /** {@code ACTIVE → CLOSED}, terminal, reasoned. */
-    public MerchantView close(String rawId, MerchantStandingRequest body) {
-        return move(rawId, body, administration::close);
+    /** {@code SUSPENDED → ACTIVE}, reasoned and keyed; converges on an already-active merchant. */
+    public MerchantView reinstate(String rawId, MerchantStandingRequest body, String idempotencyKey) {
+        return move(rawId, body, idempotencyKey, "REINSTATE", administration::reinstate);
     }
 
     /** The merchant as it stands, or the one 404 for unknown-and-malformed alike. */
@@ -102,13 +118,29 @@ public class MerchantOperations {
                                 .orElseThrow(MerchantOperations::merchantNotFound));
     }
 
-    private MerchantView move(String rawId, MerchantStandingRequest body, Move command) {
+    private MerchantView move(String rawId, MerchantStandingRequest body, String idempotencyKey, String act, Move command) {
         Objects.requireNonNull(body, "body must not be null");
+        Objects.requireNonNull(idempotencyKey, "idempotencyKey must not be null");
         MerchantId id = parsedOrAbsent(rawId);
+        Actor actor = SecurityContext.require();
+        IdempotencyKey key = new IdempotencyKey(STANDING_SCOPE + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
+        RequestFingerprint fingerprint = RequestFingerprint.sha256((act + "|" + id.value() + "|" + digest(body.reason()))
+                .getBytes(StandardCharsets.UTF_8));
         try {
-            return render(
-                    inOneTransaction(
-                            unitOfWork -> command.apply(unitOfWork, id, body.reason())));
+            IdempotentExecutor.ExecutionOutcome outcome = inOneTransaction(unitOfWork -> executor.execute(unitOfWork, key,
+                    fingerprint, uow -> {
+                        Merchant moved = command.apply(uow, id, body.reason());
+                        String stored = String.join("|", moved.id().value().toString(),
+                                Base64.getEncoder().encodeToString(moved.displayName().getBytes(StandardCharsets.UTF_8)),
+                                moved.settlementCurrency().code(), moved.status().name());
+                        return CommandResult.succeeded(StoredResponse.of(stored.getBytes(StandardCharsets.UTF_8),
+                                "text/plain"));
+                    }));
+            String[] stored = new String(outcome.body().orElseThrow(
+                    () -> new IllegalStateException("a standing move stores its answer")), StandardCharsets.UTF_8)
+                    .split("\\|", -1);
+            return new MerchantView(stored[0], new String(Base64.getDecoder().decode(stored[1]), StandardCharsets.UTF_8),
+                    stored[2], stored[3]);
         } catch (UnknownMerchantException unknown) {
             throw merchantNotFound();
         } catch (IllegalMerchantTransitionException refused) {
@@ -116,14 +148,15 @@ public class MerchantOperations {
                     MerchantErrorCode.ILLEGAL_TRANSITION,
                     "A merchant standing move was refused by the machine",
                     "the merchant's current status does not permit this change.");
-        } catch (com.finapp.merchant.MerchantNotSettledException unsettled) {
-            // The Phase 6 -> 7 transition: a close with money owed or in flight would leave a
-            // liability nothing can pay out. Pay it out, or let the payment finish, then close.
-            throw new ApiException(
-                    MerchantErrorCode.NOT_SETTLED,
-                    "A close was refused: the merchant is owed money or has money in flight",
-                    "pay out what this merchant is owed and let payments in flight finish"
-                            + " before closing it.");
+        }
+    }
+
+    private static String digest(String text) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(String.valueOf(text).getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is a required JDK algorithm", impossible);
         }
     }
 

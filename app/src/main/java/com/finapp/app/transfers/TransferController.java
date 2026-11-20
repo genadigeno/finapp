@@ -1,5 +1,6 @@
 package com.finapp.app.transfers;
 
+import com.finapp.app.session.RecordsRefusals;
 import com.finapp.app.session.RequiresAssurance;
 import com.finapp.app.session.RequiresPermission;
 import com.finapp.app.session.RequiresSession;
@@ -56,6 +57,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class TransferController {
 
     @NonNull private final TransferService transfers;
+    @NonNull private final TransferReversalDesk reversals;
 
     /**
      * Executes the caller's transfer, or replays the judgement — {@code 201} for the replay as
@@ -75,27 +77,25 @@ public class TransferController {
     }
 
     /**
-     * Reverses the transfer as the acting operator (`P4-TSK-009`) — the one privileged handler
-     * on this surface: {@code @RequiresPermission(TRANSFER_REVERSE)} beside the class's
-     * {@code @RequiresSession}, both protective, so the interceptor enforces the session AND
-     * the permission (only the {@code @Unauthenticated} contradiction is refused). Answers
-     * {@code 201} with the reversed view; a transfer the machine refuses is the one
-     * {@code 409 transfers.NotReversible}; unknown and malformed are one {@code 404}.
-     *
-     * <p><strong>Deliberately no idempotency key</strong> (the `P3-TSK-021` approval
-     * precedent): {@code COMPLETED -> REVERSED} happens at most once ever, so the machine is
-     * the idempotency ({@code INV-IDEM-01} through state) — a retry after a lost response gets
-     * the 409 naming the state, and the view carries the reversal.
+     * Proposes a completed transfer's reversal (`P17-TSK-031`, ADR-0154; finapp-admin-panel ADR-C135 decision 3: "Transfer
+     * reversal: always four-eyes"). Moves nothing: a holder of {@code TRANSFER_REVERSE_APPROVE} who did not propose it decides
+     * at {@code /v1/operator/transfer-reversals/{id}/approval}, and the approval performs the reversal - the same ledger entry,
+     * one step later. Answers {@code 201} with the proposal; a transfer not {@code COMPLETED} is the one
+     * {@code 409 transfers.NotReversible}, a second open proposal {@code 409 transfers.ReversalAlreadyProposed}; unknown and
+     * malformed are one {@code 404}. <strong>Keyed</strong> since `P17-TSK-031` (ADR-C135 decision 2): a retry after a lost
+     * answer replays the proposal instead of meeting the open one's {@code 409}. Refusals recorded.
      */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/{id}/reversal", consumes = MediaType.APPLICATION_JSON_VALUE)
     @RequiresPermission(PermissionName.TRANSFER_REVERSE)
+    @RequiresIdempotencyKey
+    @RecordsRefusals
     @ResponseStatus(HttpStatus.CREATED)
-    public TransferService.TransferView reverseTransfer(
-            @PathVariable("id") String id, @Valid @RequestBody TransferReversalRequest body) {
-        return transfers
-                .reverse(parsedOrAbsent(id), body.reason())
-                .orElseThrow(TransferController::transferNotFound);
+    public TransferReversalDesk.TransferReversalReceipt proposeTransferReversal(
+            @RequestHeader(IdempotencyKeyHeader.NAME) String idempotencyKey,
+            @PathVariable("id") String id,
+            @Valid @RequestBody TransferReversalRequest body) {
+        return reversals.propose(idempotencyKey, id, body.reason());
     }
 
     /** The caller's transfer — its current state, the reversal included when it exists. */

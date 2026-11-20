@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.EnumSet;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -351,7 +352,8 @@ class RoleNameTest {
     }
 
     @Test
-    @DisplayName("FINANCIAL_CONTROLLER grants exactly the four approves - no propose, no read, no preparation")
+    @DisplayName("FINANCIAL_CONTROLLER grants exactly the four accounting approves and the five money-act approves"
+            + " (P17-TSK-031) - no propose, no read, no preparation")
     void financialControllerGrantsExactlyFour() {
         // The nineteenth population (P14-TSK-001, ADR-0114, ADR-0118): the second person of every accounting act. It
         // reads what it decides under its own approve permission, so it holds no ACCOUNTING_READ.
@@ -361,8 +363,18 @@ class RoleNameTest {
                         PermissionName.ACCOUNTING_MAPPING_APPROVE,
                         PermissionName.ACCOUNTING_CLOSE_APPROVE,
                         PermissionName.ACCOUNTING_ADJUST_APPROVE,
-                        PermissionName.REGULATORY_REPORT_APPROVE)
+                        PermissionName.REGULATORY_REPORT_APPROVE,
+                        PermissionName.TRANSFER_REVERSE_APPROVE,
+                        PermissionName.PAYMENT_REFUND_APPROVE,
+                        PermissionName.MERCHANT_PAYOUT_APPROVE,
+                        PermissionName.FEE_SCHEDULE_APPROVE,
+                        PermissionName.MERCHANT_CLOSE_APPROVE)
                 .doesNotContain(
+                        PermissionName.TRANSFER_REVERSE,
+                        PermissionName.PAYMENT_REFUND,
+                        PermissionName.MERCHANT_PAYOUT,
+                        PermissionName.FEE_ADMINISTER,
+                        PermissionName.MERCHANT_ADMINISTER,
                         PermissionName.ACCOUNTING_READ,
                         PermissionName.ACCOUNTING_MAPPING_PROPOSE,
                         PermissionName.ACCOUNTING_CLOSE_PROPOSE,
@@ -463,6 +475,24 @@ class RoleNameTest {
         // Not vacuous: the mapping, the close, the adjustment, the regulatory return and - P14-TSK-021 - a loan's and a BNPL
         // obligation's write-off are the six pairs today.
         assertThat(pairs).as("the propose/approve pairs the vocabulary names").isEqualTo(6);
+
+        // The pairs named otherwise (P17-TSK-028, P17-TSK-031): the proposal's permission is the act's own historic name,
+        // so the stem rule cannot find them - each is pinned here, the backlog's acceptance for -031.
+        Map<PermissionName, PermissionName> named = Map.of(
+                PermissionName.ACCOUNT_RESTRICT, PermissionName.ACCOUNT_RESTRICT_APPROVE,
+                PermissionName.TRANSFER_REVERSE, PermissionName.TRANSFER_REVERSE_APPROVE,
+                PermissionName.PAYMENT_REFUND, PermissionName.PAYMENT_REFUND_APPROVE,
+                PermissionName.MERCHANT_PAYOUT, PermissionName.MERCHANT_PAYOUT_APPROVE,
+                PermissionName.FEE_ADMINISTER, PermissionName.FEE_SCHEDULE_APPROVE,
+                PermissionName.MERCHANT_ADMINISTER, PermissionName.MERCHANT_CLOSE_APPROVE);
+        named.forEach((proposal, approval) -> {
+            for (RoleName role : RoleName.values()) {
+                assertThat(role.permissions().containsAll(Set.of(proposal, approval)))
+                        .as("%s holds both %s and %s - one person could propose and approve the same act", role,
+                                proposal, approval)
+                        .isFalse();
+            }
+        });
     }
 
     @Test

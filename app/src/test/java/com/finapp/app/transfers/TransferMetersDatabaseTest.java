@@ -204,16 +204,21 @@ class TransferMetersDatabaseTest {
         assertThat(field(created.body(), "status")).isEqualTo("COMPLETED");
         String transferId = field(created.body(), "id");
         String operator = operator(someLogin());
+        String controller = staff(someLogin(), RoleName.FINANCIAL_CONTROLLER);
 
         double reversed = transferCount("reversed");
         double refused = transferCount("refused");
 
-        assertThat(reverse(operator, transferId, reasonBody("operator error, documented"))
-                        .statusCode())
-                .isEqualTo(201);
+        // P17-TSK-031 (ADR-0154): the proposal moves no meter; the approval - the reversal itself - counts once.
+        HttpResponse<String> proposed = reverse(operator, transferId, reasonBody("operator error, documented"));
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        assertThat(transferCount("reversed")).isEqualTo(reversed);
+        assertThat(keyedPost("/v1/operator/transfer-reversals/" + field(proposed.body(), "proposalId") + "/approval",
+                        controller, reasonBody("agreed")).statusCode())
+                .isEqualTo(200);
         assertThat(transferCount("reversed")).isEqualTo(reversed + 1);
 
-        // The second reversal is the machine's 409 (COMPLETED -> REVERSED happens at most
+        // A second proposal is the machine's 409 (COMPLETED -> REVERSED happens at most
         // once ever, P4-TSK-009): a command refused with nothing written - refused moves,
         // reversed does not. The mutation counting every reverse invocation fails here.
         assertThat(reverse(operator, transferId, reasonBody("operator error, documented"))
@@ -303,6 +308,10 @@ class TransferMetersDatabaseTest {
      * {@code Authorization} write (the `P4-TSK-009` fixture), and returns its stepped-up token.
      */
     private String operator(String login) throws Exception {
+        return staff(login, RoleName.LEDGER_OPERATOR);
+    }
+
+    private String staff(String login, RoleName role) throws Exception {
         assertThat(register(login).statusCode()).isEqualTo(201);
         try (Connection app = DatabaseRoles.application();
                 SecurityContext.Scope actor = SecurityContext.enterSystem();
@@ -311,8 +320,7 @@ class TransferMetersDatabaseTest {
                                 Correlation.startingWith(CorrelationId.generate(IDS)))) {
             app.setAutoCommit(false);
             IdentityId identity = IdentityId.of(UUID.fromString(identityIdOf(app, login)));
-            authorization.assign(app, identity, RoleName.LEDGER_OPERATOR, identity,
-                    "test fixture");
+            authorization.assign(app, identity, role, identity, "test fixture");
             app.commit();
         }
         // The reversal is an operator act, MULTI_FACTOR (P17-TSK-102): the operator steps up.
@@ -474,15 +482,19 @@ class TransferMetersDatabaseTest {
         return send(request.build());
     }
 
+    /** Proposes the transfer's reversal (P17-TSK-031): keyed. */
     private HttpResponse<String> reverse(String token, String transferId, String body)
             throws Exception {
+        return keyedPost("/v1/transfers/" + transferId + "/reversal", token, body);
+    }
+
+    private HttpResponse<String> keyedPost(String path, String token, String body) throws Exception {
         HttpRequest request =
                 HttpRequest.newBuilder()
-                        .uri(URI.create(
-                                "http://localhost:" + port + "/v1/transfers/" + transferId
-                                        + "/reversal"))
+                        .uri(URI.create("http://localhost:" + port + path))
                         .header("Content-Type", "application/json")
                         .header("Authorization", "Bearer " + token)
+                        .header(IdempotencyKeyHeader.NAME, someKey())
                         .POST(HttpRequest.BodyPublishers.ofString(body))
                         .build();
         return send(request);

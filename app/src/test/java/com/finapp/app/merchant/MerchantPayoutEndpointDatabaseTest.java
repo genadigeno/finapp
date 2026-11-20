@@ -172,6 +172,48 @@ class MerchantPayoutEndpointDatabaseTest {
     }
 
     @Test
+    @DisplayName("four eyes above the threshold (P17-TSK-031): an operator's 12,000.00 payout is a keyed proposal, nothing held"
+            + " or sent; the proposer cannot approve; a controller's approval dispatches it and a lost approval retried under"
+            + " its key replays the one payout; a decided proposal is decided once; a rejection moves nothing")
+    void anOperatorPayoutAboveTheThresholdIsFourEyes() throws Exception {
+        Merchant merchant = funded("15000.00");
+        String operator = sessionWith(RoleName.LEDGER_OPERATOR);
+        String controller = sessionWith(RoleName.FINANCIAL_CONTROLLER);
+
+        HttpResponse<String> proposed = operatorPayout(merchant.id(), operator,
+                "{\"amount\":\"12000.00\",\"currency\":\"EUR\",\"reason\":\"quarter-end sweep\"}");
+        assertThat(proposed.statusCode()).as(proposed.body()).isEqualTo(201);
+        assertThat(field(proposed.body(), "status")).isEqualTo("PROPOSED");
+        assertThat(payoutsOf(merchant)).as("nothing held or sent for a proposal").isZero();
+        String proposal = field(proposed.body(), "id");
+        assertThat(post("/v1/operator/payout-proposals/" + proposal + "/approval", "{\"reason\":\"mine\"}", operator,
+                UUID.randomUUID().toString()).statusCode()).as("the proposer's population holds no approval").isEqualTo(403);
+
+        String approvalKey = UUID.randomUUID().toString();
+        HttpResponse<String> approved = post("/v1/operator/payout-proposals/" + proposal + "/approval",
+                "{\"reason\":\"agreed: the sweep is due\"}", controller, approvalKey);
+        assertThat(approved.statusCode()).as(approved.body()).isEqualTo(200);
+        HttpResponse<String> lost = post("/v1/operator/payout-proposals/" + proposal + "/approval",
+                "{\"reason\":\"agreed: the sweep is due\"}", controller, approvalKey);
+        assertThat(lost.body()).as("the original outcome").isEqualTo(approved.body());
+        assertThat(payoutsOf(merchant)).as("exactly one payout for the approval").isEqualTo(1);
+        // A second approval under a new key is the decided proposal's 409 - judged before the payable, which the first
+        // approval's 12,000.00 has left short of another (the refund door's finding, P17-TSK-031).
+        HttpResponse<String> again = post("/v1/operator/payout-proposals/" + proposal + "/approval",
+                "{\"reason\":\"again\"}", controller, UUID.randomUUID().toString());
+        assertThat(again.statusCode()).as(again.body()).isEqualTo(409);
+        assertThat(again.body()).contains("merchant.PayoutProposalAlreadyDecided");
+        assertThat(payoutsOf(merchant)).isEqualTo(1);
+
+        String rejectedOne = field(operatorPayout(merchant.id(), operator,
+                "{\"amount\":\"11000.00\",\"currency\":\"EUR\",\"reason\":\"another sweep\"}").body(), "id");
+        HttpResponse<String> rejected = post("/v1/operator/payout-proposals/" + rejectedOne + "/rejection",
+                "{\"reason\":\"not due yet\"}", controller, UUID.randomUUID().toString());
+        assertThat(field(rejected.body(), "status")).isEqualTo("REJECTED");
+        assertThat(payoutsOf(merchant)).as("a rejection moves nothing").isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("an operator pays out on the merchant's behalf, reasoned; without a reason it is 422")
     void anOperatorPaysOutWithAReason() throws Exception {
         Merchant merchant = funded("100.00");

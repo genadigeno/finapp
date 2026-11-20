@@ -66,7 +66,25 @@ public enum TransfersErrorCode implements ErrorCode {
     NOT_REVERSIBLE(
             "transfers.NotReversible",
             409,
-            "The transfer is not in a state that can be reversed.");
+            "The transfer is not in a state that can be reversed."),
+
+    /** A second reversal proposal while one is open (`P17-TSK-031`): one open proposal per transfer. */
+    REVERSAL_ALREADY_PROPOSED(
+            "transfers.ReversalAlreadyProposed",
+            409,
+            "The transfer already has an open reversal proposal; decide it first."),
+
+    /** A decision on a decided reversal proposal (`P17-TSK-031`): decided once. */
+    REVERSAL_ALREADY_DECIDED(
+            "transfers.ReversalAlreadyDecided",
+            409,
+            "The reversal proposal is already decided."),
+
+    /** The proposer deciding their own reversal proposal (`P17-TSK-031`, INV-AUD-04). */
+    REVERSAL_SELF_DECISION(
+            "transfers.ReversalSelfDecision",
+            409,
+            "A reversal is decided by a person who did not propose it.");
 
     private final String code;
     private final int status;

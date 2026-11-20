@@ -139,13 +139,13 @@ class BnplMerchantReadDatabaseTest {
         BnplApplicationClient.Merchant merchant = world.merchant();
         Purchased purchased = purchase(merchant);
         String operator = world.client.operatorSession(authorization, RoleName.MERCHANT_ADMINISTRATOR);
-        assertThat(world.client.call("POST", "/v1/operator/merchants/" + merchant.id() + "/suspension",
-                "{\"reason\":\"risk review\"}", operator).statusCode()).isEqualTo(200);
+        assertThat(world.client.post("/v1/operator/merchants/" + merchant.id() + "/suspension",
+                "{\"reason\":\"risk review\"}", operator, java.util.UUID.randomUUID().toString()).statusCode()).isEqualTo(200);
         HttpResponse<String> refused = read(merchant.apiKey(), purchased.purchase());
         assertThat(refused.statusCode()).as(refused.body()).isEqualTo(401);
         assertThat(beyondThePath(refused)).doesNotContain("600.00", purchased.purchase());
-        assertThat(world.client.call("POST", "/v1/operator/merchants/" + merchant.id() + "/reinstatement",
-                "{\"reason\":\"review closed\"}", operator).statusCode()).isEqualTo(200);
+        assertThat(world.client.post("/v1/operator/merchants/" + merchant.id() + "/reinstatement",
+                "{\"reason\":\"review closed\"}", operator, java.util.UUID.randomUUID().toString()).statusCode()).isEqualTo(200);
         assertThat(read(merchant.apiKey(), purchased.purchase()).statusCode()).isEqualTo(200);
     }
 

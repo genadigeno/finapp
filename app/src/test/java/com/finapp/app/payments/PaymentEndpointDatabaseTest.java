@@ -844,7 +844,7 @@ class PaymentEndpointDatabaseTest {
         // The customer holds no PAYMENT_REFUND: the wall answers before the machine.
         assertThat(
                         post("/v1/payments/" + id + "/void",
-                                        "{\"reason\":\"sneaky\"}", token, false)
+                                        "{\"reason\":\"sneaky\"}", token, true)
                                 .statusCode())
                 .isEqualTo(403);
 
@@ -855,7 +855,7 @@ class PaymentEndpointDatabaseTest {
         String reason = "authorization stranded by a crashed capture chain";
         HttpResponse<String> voided =
                 post("/v1/payments/" + id + "/void",
-                        "{\"reason\":\"" + reason + "\"}", operator, false);
+                        "{\"reason\":\"" + reason + "\"}", operator, true);
         assertThat(voided.statusCode()).as(voided.body()).isEqualTo(200);
         assertThat(field(voided.body(), "status")).isEqualTo("FAILED");
 
@@ -877,12 +877,12 @@ class PaymentEndpointDatabaseTest {
         // Unknown and malformed are one 404 - nothing about existence leaks on this wall.
         assertThat(
                         post("/v1/payments/" + UUID.randomUUID() + "/void",
-                                        "{\"reason\":\"gone\"}", operator, false)
+                                        "{\"reason\":\"gone\"}", operator, true)
                                 .statusCode())
                 .isEqualTo(404);
         assertThat(
                         post("/v1/payments/not-a-uuid/void",
-                                        "{\"reason\":\"gone\"}", operator, false)
+                                        "{\"reason\":\"gone\"}", operator, true)
                                 .statusCode())
                 .isEqualTo(404);
 
@@ -895,7 +895,7 @@ class PaymentEndpointDatabaseTest {
         assertThat(field(confirm(token, succeeded).body(), "status")).isEqualTo("SUCCEEDED");
         HttpResponse<String> refused =
                 post("/v1/payments/" + succeeded + "/void",
-                        "{\"reason\":\"too late\"}", operator, false);
+                        "{\"reason\":\"too late\"}", operator, true);
         assertThat(refused.statusCode()).isEqualTo(409);
         assertThat(refused.body()).contains("payments.NotCancellable");
     }
