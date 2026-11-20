@@ -7063,6 +7063,41 @@
           }
         }
       },
+      "identity.CsrfRejected": {
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                },
+                {
+                  "properties": {
+                    "code": {
+                      "const": "identity.CsrfRejected"
+                    },
+                    "status": {
+                      "const": 403
+                    },
+                    "type": {
+                      "const": "https://finapp.example/problems/identity.CsrfRejected"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "description": "[403] The request was refused as a possible cross-site request.",
+        "headers": {
+          "X-Client-Correlation-Id": {
+            "$ref": "#/components/headers/X-Client-Correlation-Id"
+          },
+          "X-Correlation-Id": {
+            "$ref": "#/components/headers/X-Correlation-Id"
+          }
+        }
+      },
       "identity.FactorRequiredForRole": {
         "content": {
           "application/problem+json": {
