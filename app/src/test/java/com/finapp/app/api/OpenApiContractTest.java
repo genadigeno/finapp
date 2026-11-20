@@ -1071,6 +1071,21 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/assessments",
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/policies/versions",
                         ApiVersion.CURRENT_PREFIX + "/operator/risk/screening-lists/{listVersionId}",
+                        // P17-TSK-035: the credit, lending and BNPL read gaps - the investigators' lists and reads and the
+                        // approvers' servicing queues; the scorecard list and a purchase's refunds are GETs on existing paths.
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/decision-requests",
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/policies/versions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/policies/versions/{versionId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/scorecards/{versionId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loan-applications",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/schedule",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/{id}/statements",
+                        ApiVersion.CURRENT_PREFIX + "/operator/loans/servicing-requests",
+                        ApiVersion.CURRENT_PREFIX + "/operator/lending/terms/versions",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-applications",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/servicing-requests",
                         // P17-TSK-014: the staff directory, its detail, the lookup and the role catalogue (IDENTITY_READ).
                         ApiVersion.CURRENT_PREFIX + "/operator/identities",
                         ApiVersion.CURRENT_PREFIX + "/operator/identities/{id}",

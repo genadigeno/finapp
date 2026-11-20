@@ -14090,6 +14090,47 @@
         },
         "type": "object"
       },
+      "BnplAgreementHeadView": {
+        "properties": {
+          "agreementId": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "closureReason": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "obligationId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "purchaseId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BnplAgreementListView": {
         "properties": {
           "agreements": {
@@ -14097,6 +14138,20 @@
               "$ref": "#/components/schemas/BnplAgreementSummaryView"
             },
             "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "BnplAgreementPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BnplAgreementHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -14265,6 +14320,58 @@
           "product",
           "sessionToken"
         ],
+        "type": "object"
+      },
+      "BnplApplicationHeadView": {
+        "properties": {
+          "applicationId": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "closureReason": {
+            "type": "string"
+          },
+          "decisionRequestId": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "plan": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string"
+          },
+          "termsVersionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplApplicationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BnplApplicationHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "BnplApplicationView": {
@@ -16213,6 +16320,93 @@
         },
         "type": "object"
       },
+      "BnplPurchaseRefundPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BnplPurchaseRefundView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplPurchaseRefundView": {
+        "properties": {
+          "agreementId": {
+            "type": "string"
+          },
+          "agreementVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "amount": {
+            "type": "string"
+          },
+          "cancelledBilled": {
+            "type": "string"
+          },
+          "cancelledUnbilled": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "door": {
+            "type": "string"
+          },
+          "excess": {
+            "type": "string"
+          },
+          "excessTo": {
+            "type": "string"
+          },
+          "feeReturned": {
+            "type": "string"
+          },
+          "interestAccruedReleased": {
+            "type": "string"
+          },
+          "interestDueReleased": {
+            "type": "string"
+          },
+          "journalEntryId": {
+            "type": "string"
+          },
+          "payableDebit": {
+            "type": "string"
+          },
+          "purchaseId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "refundId": {
+            "type": "string"
+          },
+          "refundedBefore": {
+            "type": "string"
+          },
+          "requestedBy": {
+            "type": "string"
+          },
+          "scheduleVersion": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "valueDate": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BnplRefundBody": {
         "properties": {
           "amount": {
@@ -16576,6 +16770,52 @@
           "sequence": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BnplServicingRequestPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BnplServicingRequestView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BnplServicingRequestView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reasonSummary": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectKind": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -18746,6 +18986,71 @@
         ],
         "type": "object"
       },
+      "CreditDecisionRequestHeadView": {
+        "properties": {
+          "closureReason": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decisionId": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "pinnedModelVersionId": {
+            "type": "string"
+          },
+          "pinnedPolicyVersionId": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "requestedAmount": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string"
+          },
+          "termMonths": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CreditDecisionRequestPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CreditDecisionRequestHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CreditDecisionRequestView": {
         "properties": {
           "approvedAmount": {
@@ -19176,6 +19481,73 @@
           "maximumDataAgeSeconds": {
             "format": "int64",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "CreditPolicyVersionHeadView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreditPolicyVersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CreditPolicyVersionHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CreditPolicyVersionView": {
+        "properties": {
+          "policy": {
+            "$ref": "#/components/schemas/CreditPolicyView"
+          },
+          "version": {
+            "$ref": "#/components/schemas/CreditPolicyVersionHeadView"
           }
         },
         "type": "object"
@@ -22984,6 +23356,49 @@
         ],
         "type": "object"
       },
+      "LoanApplicationHeadView": {
+        "properties": {
+          "applicationId": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "decisionRequestId": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string"
+          },
+          "termsVersionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoanApplicationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LoanApplicationHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "LoanApplicationView": {
         "properties": {
           "applicationId": {
@@ -23185,6 +23600,41 @@
         },
         "type": "object"
       },
+      "LoanHeadView": {
+        "properties": {
+          "bucket": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "defaulted": {
+            "type": "boolean"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "loanId": {
+            "type": "string"
+          },
+          "openedAt": {
+            "type": "string"
+          },
+          "partyId": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "LoanListView": {
         "properties": {
           "loans": {
@@ -23282,6 +23732,20 @@
         },
         "type": "object"
       },
+      "LoanPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LoanHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "LoanRepaymentBody": {
         "properties": {
           "amount": {
@@ -23327,6 +23791,52 @@
             "type": "integer"
           },
           "verdict": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoanServicingRequestPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LoanServicingRequestView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoanServicingRequestView": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reasonSummary": {
+            "type": "string"
+          },
+          "repaymentId": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectKind": {
             "type": "string"
           }
         },
@@ -23568,6 +24078,62 @@
           "version": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "LoanTermsVersionHeadView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LoanTermsVersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LoanTermsVersionHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
           }
         },
         "type": "object"
@@ -32209,6 +32775,50 @@
         },
         "type": "object"
       },
+      "ScorecardAttributeView": {
+        "properties": {
+          "absentPoints": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "bands": {
+            "items": {
+              "$ref": "#/components/schemas/ScorecardBandView"
+            },
+            "type": "array"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ScorecardBandView": {
+        "properties": {
+          "codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "lower": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "points": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "upper": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "ScorecardDecisionRequest": {
         "properties": {
           "reason": {
@@ -32265,6 +32875,80 @@
           "version": {
             "format": "int32",
             "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "ScorecardVersionHeadView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "effectiveFrom": {
+            "type": "string"
+          },
+          "effectiveTo": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "versionId": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ScorecardVersionPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScorecardVersionHeadView"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ScorecardVersionView": {
+        "properties": {
+          "attributes": {
+            "items": {
+              "$ref": "#/components/schemas/ScorecardAttributeView"
+            },
+            "type": "array"
+          },
+          "basePoints": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "version": {
+            "$ref": "#/components/schemas/ScorecardVersionHeadView"
           }
         },
         "type": "object"
@@ -40124,6 +40808,100 @@
         }
       }
     },
+    "/v1/operator/bnpl-agreements": {
+      "get": {
+        "operationId": "listBnplAgreementsForOperator",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "merchantId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplAgreementPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl-agreements/servicing-requests": {
+      "get": {
+        "operationId": "listBnplServicingRequests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplServicingRequestPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/bnpl-agreements/write-offs": {
       "get": {
         "operationId": "listPendingBnplWriteOffs",
@@ -40731,6 +41509,49 @@
         }
       }
     },
+    "/v1/operator/bnpl-applications": {
+      "get": {
+        "operationId": "listBnplApplications",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplApplicationPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/bnpl-disputes": {
       "get": {
         "operationId": "listBnplDisputes",
@@ -40929,6 +41750,47 @@
       }
     },
     "/v1/operator/bnpl-purchases/{id}/refunds": {
+      "get": {
+        "operationId": "listBnplPurchaseRefunds",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplPurchaseRefundPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "refundBnplPurchaseForMerchant",
         "parameters": [
@@ -41160,6 +42022,57 @@
         }
       }
     },
+    "/v1/operator/credit/decision-requests": {
+      "get": {
+        "operationId": "listCreditDecisionRequests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "product",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditDecisionRequestPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/credit/decisions/{id}/explanation": {
       "get": {
         "operationId": "explanation",
@@ -41290,6 +42203,84 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/policies/versions": {
+      "get": {
+        "operationId": "listCreditPolicyVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "product",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditPolicyVersionPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/policies/versions/{versionId}": {
+      "get": {
+        "operationId": "readCreditPolicyVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditPolicyVersionView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }
@@ -41612,6 +42603,47 @@
       }
     },
     "/v1/operator/credit/scorecards": {
+      "get": {
+        "operationId": "listScorecardVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScorecardVersionPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      },
       "post": {
         "operationId": "proposeScorecard",
         "parameters": [
@@ -41644,6 +42676,33 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/credit/scorecards/{versionId}": {
+      "get": {
+        "operationId": "readScorecardVersion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "versionId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScorecardVersionView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }
@@ -43613,6 +44672,57 @@
         }
       }
     },
+    "/v1/operator/lending/terms/versions": {
+      "get": {
+        "operationId": "listLoanTermsVersions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "product",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanTermsVersionPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/lending/terms/{versionId}/approval": {
       "post": {
         "operationId": "approveLoanTerms",
@@ -43695,6 +44805,151 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LoanTermsReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loan-applications": {
+      "get": {
+        "operationId": "listLoanApplications",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanApplicationPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans": {
+      "get": {
+        "operationId": "listLoansForOperator",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "partyId",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/servicing-requests": {
+      "get": {
+        "operationId": "listLoanServicingRequests",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanServicingRequestPage"
                 }
               }
             },
@@ -44116,6 +45371,68 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LoanReplayView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}/schedule": {
+      "get": {
+        "operationId": "readLoanScheduleForOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/loans/{id}/statements": {
+      "get": {
+        "operationId": "readLoanStatementsForOperator",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatementListView"
                 }
               }
             },

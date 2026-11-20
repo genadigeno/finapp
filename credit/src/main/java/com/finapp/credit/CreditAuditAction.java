@@ -118,7 +118,24 @@ public enum CreditAuditAction implements AuditableAction {
     POLICY_READ(
             "credit.PolicyRead",
             "A holder of CREDIT_INVESTIGATE read the credit policy in force at an instant, or now (`P15-TSK-039`,"
-                    + " INV-AUD-01); written in the read's own transaction.",
+                    + " INV-AUD-01) - since P17-TSK-035 also a page of the policy versions (target credit_policy_versions,"
+                    + " the filter and the count served) or one version by its identifier; written in the read's own"
+                    + " transaction.",
+            false),
+
+    DECISION_REQUESTS_READ(
+            "credit.DecisionRequestsRead",
+            "A holder of CREDIT_INVESTIGATE read a page of the decision requests (P17-TSK-035, ADR-C132 decision 5): each"
+                    + " request's party, product, status, requested amount and decision - never a declared income or"
+                    + " expenditure, a score or an attribute; written once per page in the read's own transaction, the"
+                    + " summary naming the filter and the count served.",
+            false),
+
+    SCORECARD_READ(
+            "credit.ScorecardRead",
+            "A holder of CREDIT_INVESTIGATE read a page of the scorecard model versions or one version with its points"
+                    + " table (P17-TSK-035) - the model a decision scores by, CONFIDENTIAL as the policy is; written in the"
+                    + " read's own transaction.",
             false),
 
     REVIEW_CASES_READ(

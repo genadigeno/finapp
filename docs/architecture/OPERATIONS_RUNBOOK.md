@@ -342,7 +342,10 @@ clears.
 
 **A later version** - always two people. Person A proposes the whole body,
 `POST /v1/operator/credit/policies` (or `/v1/operator/credit/scorecards`) with a key and a reason;
-person B, a **different** holder, approves at `…/{versionId}/approval` - the proposer is refused
+person B, a **different** holder, finds it - `GET /v1/operator/credit/policies/versions?status=PROPOSED` (or
+`GET /v1/operator/credit/scorecards?status=PROPOSED`), each version naming its proposer - reads what they approve at
+`…/policies/versions/{versionId}` (or `…/scorecards/{versionId}`, the points table), each read recorded (`P17-TSK-035`;
+until then a scorecard had no read at all), and approves at `…/{versionId}/approval` - the proposer is refused
 `403 credit.SelfApprovalRefused`, at the domain and by the `CHECK`. The activation retires the
 predecessor in the same transaction; requests already past `SUBMITTED` keep the versions they
 pinned, only new ones see the successor. One proposal waits per product (or family): a second is
@@ -471,6 +474,8 @@ versions is `ACTIVE`, and **no migration activates one**: production starts with
    predecessor in the same transaction. The activation waits for any application or offer pinning the predecessor; every
    later offer pins the new version, and existing agreements keep theirs.
 3. `GET /v1/operator/lending/terms?product=&at=` reads the version in force now, or at any past instant.
+   `GET /v1/operator/lending/terms/versions?status=PROPOSED` is the approver's list (`P17-TSK-035`), each version naming its
+   proposer; the proposal's whole body by its identifier is `P17-TSK-116`'s.
 
 **`finapp.lending.terms.active{product}` at 0** for a product the environment offers is the `LendingTermsNoneActive` alert (enabled per
 environment by the `lending_offered` target label, §7.4); NaN means the read failed, never "none".
@@ -627,6 +632,13 @@ account on its own date in its pinned zone - read in one read-only `REPEATABLE R
 `lending.ReportRead` before the answer. A malformed or missing date is `422 api.ValidationFailed`, unrecorded; a date the
 platform has not had is answered empty (`known: false`), recorded. The portfolio ties the book to the ledger
 (`tiesToProducts`) and the trial balance through the date (`trialBalanceZero`): either false is an incident under §7.7.
+
+*Added by `P17-TSK-035`.* **Finding the accounts and the proposals behind the figures**: `GET /v1/operator/loans?bucket=&state=&partyId=`
+and `GET /v1/operator/loan-applications?status=` (`LENDING_INVESTIGATE`) page the accounts and applications newest first -
+a loan's `bucket` as the servicing step last recorded it - and `GET /v1/operator/loans/{id}/schedule` and `/statements` read
+one account as its borrower does; each serving recorded, the reader's own party withheld and never read
+(`403 lending.SelfDealingRefused`, recorded `FAILED`). The approver's queue of waivers, amendments and repayment reversals is
+`GET /v1/operator/loans/servicing-requests` (`LOAN_SERVICE_APPROVE`), oldest first, each naming its proposer.
 
 | Failure scenario (`PHASE_11_PLAN.md` §14) | Alert | Procedure |
 |---|---|---|
@@ -884,6 +896,12 @@ platform has not had is answered empty (`known: false`), recorded; a read that f
   late fees released, the excess to the wallet or the credit balance, the fee returned, the payable debited, and the
   impact on outstanding as their own entries left it (`tiesToLedger`).
 - **delinquency** - `ACTIVE` obligations by recorded bucket, the defaulted among them, and their due sums from the ledger.
+
+*Added by `P17-TSK-035`.* **Finding the agreements and the proposals**: `GET /v1/operator/bnpl-agreements?status=&merchantId=`,
+`GET /v1/operator/bnpl-applications?status=` and one purchase's refunds, `GET /v1/operator/bnpl-purchases/{id}/refunds`
+(`BNPL_INVESTIGATE`), each page recorded, the reader's own party withheld and never read (`403 bnpl.SelfDealingRefused`); the
+approver's queue of waivers and repayment reversals, `GET /v1/operator/bnpl-agreements/servicing-requests`
+(`BNPL_SERVICE_APPROVE`), oldest first, each naming its proposer.
 
 | Failure scenario (`PHASE_12_PLAN.md` §14) | Alert | Procedure |
 |---|---|---|

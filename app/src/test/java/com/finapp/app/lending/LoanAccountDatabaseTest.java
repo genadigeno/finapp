@@ -428,6 +428,104 @@ class LoanAccountDatabaseTest {
     }
 
     @Test
+    @DisplayName("an investigator reads a disbursed loan as its borrower does (P17-TSK-035): the schedule the same body, an"
+            + " instalment loan's statements and another version 404; the loan found by its party and its recorded bucket, the"
+            + " applications and loans walked in the tables' order with the reader's own party withheld; every serving"
+            + " recorded; the borrower made an investigator refused their own loan and their own party, recorded FAILED")
+    void anInvestigatorReadsTheLoanAsItsBorrowerDoes() throws Exception {
+        CreditFixtures.Customer customer = customers.consentingCustomer();
+        String offer = offered(customer, loan("3000.00", 12, 10));
+        String hash = field(client.get(OFFERS + "/" + offer, customer.token()).body(), "termsSha256");
+        HttpResponse<String> accepted = accept(customer.token(), offer, hash, null, key());
+        assertThat(accepted.statusCode()).as(accepted.body()).isEqualTo(201);
+        String loanId = field(accepted.body(), "loanId");
+        new LoanDisbursementSchedule(disbursements, lendingTransactions, disbursementMetrics, Duration.ofSeconds(5), 100,
+                Duration.ofMinutes(1)).sweepOnce();
+        assertThat(scalar("SELECT status FROM lending.loan WHERE id = ?::uuid", loanId)).isEqualTo("ACTIVE");
+
+        com.finapp.app.api.OperatorReadClient operators = new com.finapp.app.api.OperatorReadClient(port, authorization);
+        com.finapp.app.api.OperatorReadClient.Operator investigator = operators.operator(RoleName.LENDING_OFFICER);
+        String operatorLoans = "/v1/operator/loans";
+        HttpResponse<String> schedule = operators.get(operatorLoans + "/" + loanId + "/schedule", investigator.token());
+        assertThat(schedule.statusCode()).as(schedule.body()).isEqualTo(200);
+        assertThat(schedule.body()).as("the borrower's own view, served whole")
+                .isEqualTo(client.get(LOANS + "/" + loanId + "/schedule", customer.token()).body());
+        assertThat(operators.get(operatorLoans + "/" + loanId + "/schedule?version=2", investigator.token()).statusCode())
+                .isEqualTo(404);
+        assertThat(com.finapp.app.api.OperatorReadClient.problem(
+                operators.get(operatorLoans + "/" + loanId + "/statements", investigator.token()), 404))
+                .as("an instalment loan has no statements").isEqualTo("lending.NotFound");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.LoanRead' AND target_id = ?"
+                + " AND actor_id = ?", loanId, investigator.identity().toString())).as("the one serving, recorded").isEqualTo(1);
+
+        String party = customer.party().toString();
+        var byParty = operators.walk(operatorLoans + "?partyId=" + party, investigator.token());
+        assertThat(byParty.each("loanId")).contains(loanId);
+        assertThat(byParty.items()).filteredOn(item -> item.path("loanId").asString().equals(loanId)).singleElement()
+                .satisfies(item -> {
+                    assertThat(item.path("status").asString()).isEqualTo("ACTIVE");
+                    assertThat(item.path("bucket").asString()).as("nothing past due yet").isEqualTo("CURRENT");
+                    assertThat(item.path("defaulted").asBoolean()).isFalse();
+                });
+        assertThat(operators.walk(operatorLoans + "?partyId=" + party + "&bucket=CURRENT", investigator.token())
+                .each("loanId")).contains(loanId);
+        assertThat(operators.walk(operatorLoans + "?partyId=" + party + "&bucket=B4_90_PLUS", investigator.token()).items())
+                .isEmpty();
+        var loans = operators.walk(operatorLoans + "?limit=2", investigator.token());
+        assertThat(loans.each("loanId")).as("every loan but the reader's party's, once, in the declared order")
+                .containsExactlyElementsOf(com.finapp.app.api.OperatorReadClient.column("SELECT id::text FROM lending.loan"
+                        + " WHERE party_id <> ? ORDER BY opened_at DESC, id DESC", investigator.party()));
+        var applications = operators.walk("/v1/operator/loan-applications?limit=2", investigator.token());
+        assertThat(applications.each("applicationId")).containsExactlyElementsOf(com.finapp.app.api.OperatorReadClient.column(
+                "SELECT id::text FROM lending.loan_application WHERE party_id <> ? ORDER BY submitted_at DESC, id DESC",
+                investigator.party()));
+        assertThat(applications.each("partyId")).contains(party);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.LoansRead' AND actor_id = ?",
+                investigator.identity().toString())).isEqualTo(byParty.pages() + 2 + loans.pages());
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.ApplicationsRead'"
+                + " AND actor_id = ?", investigator.identity().toString())).isEqualTo(applications.pages());
+
+        var terms = operators.walk("/v1/operator/lending/terms/versions?limit=1", investigator.token());
+        assertThat(terms.each("versionId")).as("the suite activated each product's terms").isNotEmpty()
+                .containsExactlyElementsOf(com.finapp.app.api.OperatorReadClient.column(
+                        "SELECT id::text FROM lending.loan_terms_version ORDER BY proposed_at DESC, id DESC"));
+        assertThat(terms.each("proposedBy")).containsExactlyElementsOf(com.finapp.app.api.OperatorReadClient.column(
+                "SELECT proposed_by FROM lending.loan_terms_version ORDER BY proposed_at DESC, id DESC"));
+        assertThat(terms.items()).allSatisfy(item -> assertThat(item.has("decidedBy")).isFalse());
+        com.finapp.app.api.OperatorReadClient.Operator approver = operators.operator(RoleName.LOAN_SERVICING_AGENT);
+        var queue = operators.walk("/v1/operator/loans/servicing-requests?status=PROPOSED&limit=2", approver.token());
+        assertThat(queue.each("id")).as("every proposal awaiting a decision but the reader's party's, oldest first")
+                .containsExactlyElementsOf(com.finapp.app.api.OperatorReadClient.column("SELECT p.id::text FROM ("
+                        + " SELECT w.id, w.loan_id, w.proposed_at FROM lending.waiver w WHERE NOT EXISTS (SELECT 1 FROM"
+                        + " lending.waiver_decision d WHERE d.waiver_id = w.id) UNION ALL SELECT a.id, a.loan_id, a.proposed_at"
+                        + " FROM lending.loan_amendment a WHERE NOT EXISTS (SELECT 1 FROM lending.loan_amendment_decision d"
+                        + " WHERE d.amendment_id = a.id) UNION ALL SELECT r.id, r.loan_id, r.proposed_at FROM"
+                        + " lending.repayment_reversal r WHERE r.status = 'PROPOSED') p JOIN lending.loan l ON l.id = p.loan_id"
+                        + " WHERE l.party_id <> ? ORDER BY p.proposed_at, p.id", approver.party()));
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.ServicingRequestsRead'"
+                + " AND actor_id = ?", approver.identity().toString())).isEqualTo(queue.pages());
+        assertThat(operators.get("/v1/operator/loans/servicing-requests", investigator.token()).statusCode())
+                .as("the queue is its approvers'").isEqualTo(403);
+        assertThat(operators.get(operatorLoans, approver.token()).statusCode()).as("the lists are the investigator's")
+                .isEqualTo(403);
+        assertThat(operators.get(operatorLoans, null).statusCode()).isEqualTo(401);
+
+        java.util.UUID borrower = java.util.UUID.fromString(scalar(
+                "SELECT id::text FROM identity.identity WHERE party_id = ?::uuid", party));
+        operators.grant(borrower, RoleName.LENDING_OFFICER);
+        assertThat(com.finapp.app.api.OperatorReadClient.problem(
+                operators.get(operatorLoans + "/" + loanId + "/schedule", customer.token()), 403))
+                .isEqualTo("lending.SelfDealingRefused");
+        assertThat(com.finapp.app.api.OperatorReadClient.problem(
+                operators.get(operatorLoans + "?partyId=" + party, customer.token()), 403))
+                .isEqualTo("lending.SelfDealingRefused");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation = 'lending.SelfDealingRefused'"
+                + " AND actor_id = ? AND outcome = 'FAILED'", borrower.toString())).isEqualTo(2);
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE operation IN ('lending.LoanRead',"
+                + " 'lending.LoansRead') AND actor_id = ?", borrower.toString())).as("nothing served to them").isZero();
+    }
+
+    @Test
     @DisplayName("the disbursement waits on credit's own profile row (L0) before the loan: behind a transaction holding the"
             + " party's credit_profile it waits holding no loan lock, and posts once released")
     void disbursementWaitsOnCreditsProfileLock() throws Exception {
