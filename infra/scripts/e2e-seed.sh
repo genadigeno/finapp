@@ -1,6 +1,7 @@
 #!/bin/sh
-# TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112, P17-TSK-115,
-# P17-TSK-117, P17-TSK-119; finapp-admin-panel docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4, B5.5, B7.4, B8.6, B9.4).
+# TEST-ONLY. The Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112, P17-TSK-113,
+# P17-TSK-115, P17-TSK-117, P17-TSK-119; finapp-admin-panel docs/FINAPP_BACKEND_WORK.md B2.1, B3.5, B4.4, B5.5, B6.7, B7.4, B8.6,
+# B9.4).
 #
 #   infra/scripts/e2e-seed.sh <scenario>...
 #
@@ -92,6 +93,12 @@
 #   booked-trade      KIND ONLY, and only where the rehearsal named an FX provider and a reference feed. A fresh customer's 10.00 EUR
 #                     conversion to USD, funded by a 12.50 EUR card top-up and priced from the stack's own reference rate and FX
 #                     provider: a BOOKED trade, whose provenance the console's RECONCILIATION_OPERATOR reads -> FX_TRADE_ID
+#   kyc-review        a fresh customer, consented to KYC processing, whose case is IN_REVIEW on one sanctions check answered HIT, with
+#                     that check's open review task: the console's KYC_REVIEWER resolves the task, then decides the case
+#                     -> KYC_CASE_ID, KYC_REVIEW_TASK_ID, KYC_CHECK_ID, KYC_CUSTOMER_ID
+#   screening-review  a counterparty screening IN_REVIEW on a HIT, requested by a fresh customer: the console's KYC_REVIEWER releases
+#                     or blocks it -> COUNTERPARTY_SCREENING_ID
+#   kyc               each of the two once
 #
 # THE CREDIT SCENARIOS CHANGE THE STACK'S PERSONAL_LOAN POLICY, AND HOLD ONE VERSION PER PRODUCT PENDING. No test stack has a credit
 # bureau or a financial-data provider - the platform refuses either's URL until it holds what a pull needs (unresolved questions
@@ -130,6 +137,15 @@
 # stack configures a corridor provider or a verification provider - neither compose nor any kind scope - so none can be made; a
 # planted one would book an outflow no customer made. Its trace waits for a stack with both; until then the console tests the trace
 # against its own stubs (P17-TSK-119's record).
+#
+# THE KYC SCENARIOS ARE PLANTED: NO TEST STACK RUNS A CASE'S CHECKS OR SCREENS A COUNTERPARTY. A case's checks are run by no
+# production path and asked of a verification provider no test stack configures; a screening is requested only by a cross-border
+# beneficiary's registration, which needs a corridor provider as well. So both review states are planted as the platform leaves them
+# (kyc-review.sql, counterparty-screening.sql) - new kyc rows only, on both stacks - while the customers and the consent go through
+# their doors. Everything the console does to them is the platform's own doors, as E2eSeedKycDatabaseTest proves.
+#
+# NOT SEEDED YET: THE KYC CUSTOMER'S ACCOUNT, TRANSFERS AND CONSENT HISTORY (P17-TSK-121). They are read through the operator doors
+# P17-TSK-026 and P17-TSK-027 add, which this script's line does not have yet; they follow once both are merged.
 #
 # THE DISPUTE NEEDS THE CARD PSP, AND ONLY KIND HAS ONE. A local stack configures no card or tokenisation provider, so no card payment
 # exists there; open-dispute is refused on compose. On kind the rehearsal's simulator is the card PSP. A dispute is the network's word
@@ -189,7 +205,7 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 SEED="$ROOT/infra/scripts/e2e-seed"
 TARGET=${E2E_SEED_TARGET:-compose}
-SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy, all, closable-period, prior-period-adjustment, proposed-mapping, draft-submission, accounting-break, finance, onboardable-organisation, active-merchant, proposed-destination, merchants, open-dispute, review-case, proposed-credit-policy, proposed-lending-terms, proposed-bnpl-terms, credit, proposed-fx-policy, proposed-corridor-policy, fx-enable-request, corridor-enable-request, fx or booked-trade"
+SCENARIOS="abandoned-event, parked-record, parsed-file, fee-break, factorless-holding, sod-conflict, open-alert, investigated-case, overridable-assessment, proposed-policy, all, closable-period, prior-period-adjustment, proposed-mapping, draft-submission, accounting-break, finance, onboardable-organisation, active-merchant, proposed-destination, merchants, open-dispute, review-case, proposed-credit-policy, proposed-lending-terms, proposed-bnpl-terms, credit, proposed-fx-policy, proposed-corridor-policy, fx-enable-request, corridor-enable-request, fx, booked-trade, kyc-review, screening-review or kyc"
 
 say() { printf '%s\n' "e2e-seed: $*" >&2; }
 refuse() { printf '%s\n' "e2e-seed: refused: $*" >&2; exit 2; }
@@ -212,6 +228,7 @@ for scenario in "$@"; do
         active-merchant|proposed-destination|merchants) HTTP=yes ;;
         review-case|proposed-credit-policy|proposed-lending-terms|proposed-bnpl-terms|credit) HTTP=yes ;;
         proposed-fx-policy|proposed-corridor-policy|fx-enable-request|corridor-enable-request|fx) HTTP=yes ;;
+        kyc-review|screening-review|kyc) HTTP=yes ;;
         booked-trade)
             HTTP=yes
             [ "$TARGET" = kind ] || refuse "booked-trade needs an FX provider and a reference feed, and only kind's FX scopes have them (its simulator): a local stack configures neither, so no conversion can be priced"
@@ -971,6 +988,42 @@ seed_booked_trade() {
     printf 'FX_TRADE_ID=%s\n' "$trade"
 }
 
+# A fresh customer, consented through the consent door, and its case planted IN_REVIEW on a HIT with the check's open task.
+seed_kyc_review() {
+    administrator
+    applicant_login=$(value LOGIN "$(seed_http register-bare applicant)")
+    applicant=$(identity_of "$applicant_login")
+    uuid_like "$applicant" || { say "the applicant's id came out '$applicant'"; exit 1; }
+    consented=$(value CONSENTED "$(seed_http kyc-consent applicant)")
+    [ "$consented" = KYC_PROCESSING ] || { say "the applicant's consent printed '$consented'"; exit 1; }
+    task=$(plant kyc-review.sql -v identity="$applicant" | tr -d '[:space:]')
+    uuid_like "$task" || { say "the case's plant printed '$task'"; exit 1; }
+    reviewed=$(psql_seed -c "SELECT case_id FROM kyc.review_task WHERE id = '$task'" | tr -d '[:space:]')
+    hit=$(psql_seed -c "SELECT check_id FROM kyc.review_task WHERE id = '$task'" | tr -d '[:space:]')
+    uuid_like "$reviewed" && uuid_like "$hit" || { say "the task's case and check came out '$reviewed' '$hit'"; exit 1; }
+    customer=$(psql_seed -c "SELECT customer_id FROM kyc.kyc_case WHERE id = '$reviewed'" | tr -d '[:space:]')
+    uuid_like "$customer" || { say "the case's customer came out '$customer'"; exit 1; }
+    say "KYC case $reviewed IN_REVIEW for customer $customer: sanctions check $hit HIT, review task $task OPEN - resolve it, then decide"
+    printf 'KYC_CASE_ID=%s
+KYC_REVIEW_TASK_ID=%s
+KYC_CHECK_ID=%s
+KYC_CUSTOMER_ID=%s
+' "$reviewed" "$task" "$hit" "$customer"
+}
+
+# A screening planted IN_REVIEW on a HIT, requested by a fresh customer - so the console's reviewer is another person.
+seed_screening_review() {
+    administrator
+    remitter_login=$(value LOGIN "$(seed_http register-bare remitter)")
+    remitter=$(identity_of "$remitter_login")
+    uuid_like "$remitter" || { say "the remitter's id came out '$remitter'"; exit 1; }
+    screening=$(plant counterparty-screening.sql -v requester="$remitter" | tr -d '[:space:]')
+    uuid_like "$screening" || { say "the screening's plant printed '$screening'"; exit 1; }
+    say "counterparty screening $screening IN_REVIEW on a HIT, requested by customer $remitter - release or block it"
+    printf 'COUNTERPARTY_SCREENING_ID=%s
+' "$screening"
+}
+
 # booked-trade's provider and feed, judged before any scenario touches the stack.
 for scenario in "$@"; do
     [ "$scenario" != booked-trade ] || fx_feeds
@@ -1010,6 +1063,9 @@ for scenario in "$@"; do
         corridor-enable-request) seed_corridor_enable_request ;;
         fx) seed_proposed_fx_policy; seed_proposed_corridor_policy; seed_fx_enable_request; seed_corridor_enable_request ;;
         booked-trade) seed_booked_trade ;;
+        kyc-review) seed_kyc_review ;;
+        screening-review) seed_screening_review ;;
+        kyc) seed_kyc_review; seed_screening_review ;;
         all) seed_abandoned_event; seed_parked_record; seed_parsed_file; seed_fee_break; seed_factorless_holding; seed_sod_conflict
              seed_open_alert; seed_investigated_case; seed_overridable_assessment; seed_proposed_policy ;;
     esac

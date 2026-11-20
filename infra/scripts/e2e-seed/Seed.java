@@ -26,7 +26,7 @@ import javax.net.ssl.TrustManagerFactory;
 
 /**
  * TEST-ONLY. The HTTP half of the Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112,
- * P17-TSK-115, P17-TSK-117, P17-TSK-119): every
+ * P17-TSK-113, P17-TSK-115, P17-TSK-117, P17-TSK-119): every
  * effect the platform has a door for, through that door - registration, a second factor, a step-up, a role grant, a risk policy
  * proposed and activated, a case opened and taken; and the books' finance acts - a GL mapping version, a manual adjustment, a month's
  * nil reports, a month locked and closed by four eyes, a prior-period adjustment, a regulatory obligation and its validated return. And
@@ -34,7 +34,8 @@ import javax.net.ssl.TrustManagerFactory;
  * And the credit desks' - the reference scorecard approved, a credit policy, lending terms and BNPL terms proposed and decided by four
  * eyes, and a customer's stepped-up credit request (P17-TSK-117). And the FX controller's - a pricing policy and a corridor policy
  * proposed and decided by four eyes, a pair and a corridor disabled and their enabling proposed, and a customer's conversion
- * (P17-TSK-119). A single source file run by {@code infra/scripts/e2e-seed.sh}
+ * (P17-TSK-119). And a customer's consent to KYC processing, which every case's customer has given (P17-TSK-113). A single source
+ * file run by {@code infra/scripts/e2e-seed.sh}
  * ({@code java --source 21}), never compiled into anything and named by no module's main source set (E2eSeedStaysTestOnlyTest).
  *
  * <p>It has no route to the database and must not have one. What only the database can answer - a test identity's id, which no API
@@ -115,6 +116,7 @@ public final class Seed {
             case "propose-enable" -> seed.proposeEnable(rest[0], rest[1], rest[2]);
             case "decide-enable" -> seed.decideEnable(rest[0], rest[1], rest[2], rest[3]);
             case "fx-trade" -> seed.fxTrade(one(rest));
+            case "kyc-consent" -> seed.kycConsent(one(rest));
             default -> throw new IllegalArgumentException("unknown command " + args[3]);
         }
     }
@@ -1005,6 +1007,20 @@ public final class Seed {
             throw new IllegalStateException("the conversion did not answer a BOOKED trade: " + converted.body());
         }
         System.out.println("FX_TRADE_ID=" + trade);
+    }
+
+    /**
+     * The customer's consent to KYC processing, through the consent door, against the text's first version: the grant a case's
+     * opening requires (KycCaseService), so the case the shell plants for this customer has the consent a real one has.
+     */
+    private void kycConsent(String who) throws Exception {
+        String session = signIn(publicBase, who);
+        Answer granted = expect("KYC consent of " + who, post(publicBase, "/v1/me/consents",
+                "{\"purpose\":\"KYC_PROCESSING\",\"textVersion\":1}", session, null), 201);
+        if (!"KYC_PROCESSING".equals(field(granted.body(), "purpose"))) {
+            throw new IllegalStateException("the consent door answered another purpose: " + granted.body());
+        }
+        System.out.println("CONSENTED=KYC_PROCESSING");
     }
 
     private static String letters(int count) {

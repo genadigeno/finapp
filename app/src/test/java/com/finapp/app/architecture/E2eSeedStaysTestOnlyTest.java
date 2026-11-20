@@ -2,12 +2,14 @@ package com.finapp.app.architecture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.finapp.kyc.KycPolicyVersion;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeAll;
@@ -27,7 +29,7 @@ import org.junit.jupiter.api.Test;
  * assessment (`P17-TSK-110`) by {@code E2eSeedRiskDatabaseTest}, the finance plants (`P17-TSK-112`) by {@code E2eSeedFinanceDatabaseTest},
  * the merchant plants and the dispute's statement (`P17-TSK-115`) by {@code E2eSeedMerchantDatabaseTest}, the credit desks' doors and
  * the review case (`P17-TSK-117`) by {@code E2eSeedCreditDatabaseTest}, the FX desks' doors and the booked trade (`P17-TSK-119`) by
- * {@code E2eSeedFxDatabaseTest}; the script's run against a
+ * {@code E2eSeedFxDatabaseTest}, the KYC review states (`P17-TSK-113`) by {@code E2eSeedKycDatabaseTest}; the script's run against a
  * running stack is the console's end-to-end run.
  */
 @Tag("architecture")
@@ -79,10 +81,10 @@ class E2eSeedStaysTestOnlyTest {
         assertThat(plants).extracting(file -> file.getFileName().toString())
                 .containsExactlyInAnyOrder("abandoned-event.sql", "parked-record.sql", "held-role.sql", "risk-alert.sql",
                         "sealed-assessment.sql", "fx-rates.sql", "accounting-break.sql", "merchant-organisation.sql",
-                        "payout-destination.sql", "customer-verdict.sql");
+                        "payout-destination.sql", "customer-verdict.sql", "kyc-review.sql", "counterparty-screening.sql");
         for (Path plant : plants) {
             String text = EvidenceCitations.read(plant);
-            assertThat(text).as("%s says what it is", plant.getFileName()).containsPattern("\\A-- TEST-ONLY \\(P17-TSK-1(06|08|10|12|15)\\)");
+            assertThat(text).as("%s says what it is", plant.getFileName()).containsPattern("\\A-- TEST-ONLY \\(P17-TSK-1(06|08|10|12|13|15)\\)");
             String statements = text.replaceAll("(?m)--.*$", "").replaceAll("'[^']*'", "''").strip();
             assertThat(statements.chars().filter(c -> c == ';').count()).as("%s is one statement", plant.getFileName()).isEqualTo(1);
             assertThat(statements).as("%s ends in that statement", plant.getFileName()).endsWith(";");
@@ -247,6 +249,63 @@ class E2eSeedStaysTestOnlyTest {
                 .doesNotContainPattern("(?i)UPDATE (credit|lending|bnpl)\\.");
         assertThat(script).as("the states no running finapp can reach are named, not seeded").contains(
                 "NOT SEEDED: A LOAN, A BNPL AGREEMENT, AND WHAT HANGS ON THEM");
+    }
+
+    @Test
+    @DisplayName("P17-TSK-113: the review states are new kyc rows, as the platform leaves them - the case IN_REVIEW on a HIT with its open"
+            + " task, for a PENDING customer of the identity named; the screening IN_REVIEW on a HIT, never a beneficiary's - under the"
+            + " platform's policy version")
+    void theReviewStatesArePlantedAsNewKycRows() {
+        String review = EvidenceCitations.read(root.resolve(SEED + "kyc-review.sql")).replaceAll("(?m)--.*$", "");
+        assertThat(inserted(review)).as("the case, its check and its task, and nothing else")
+                .containsExactly("kyc.kyc_case", "kyc.verification_check", "kyc.review_task");
+        assertThat(review).as("for a PENDING customer of the identity named, so a decision has a customer to make ACTIVE or REJECTED")
+                .contains("WHERE i.id = :'identity'::uuid AND c.status = 'PENDING'")
+                .contains("'IN_REVIEW', '" + KycPolicyVersion.CURRENT.value() + "'")
+                .contains("'SANCTIONS', 'HIT'").contains("'OPEN', now()");
+        String screening = EvidenceCitations.read(root.resolve(SEED + "counterparty-screening.sql")).replaceAll("(?m)--.*$", "");
+        assertThat(inserted(screening)).as("the screening and its one attempt, and nothing else")
+                .containsExactly("kyc.counterparty_screening", "kyc.counterparty_screening_attempt");
+        assertThat(screening).as("IN_REVIEW on a HIT under the platform's policy version, requested by the person the shell names")
+                .contains("'IN_REVIEW', 'HIT', 'AUTOMATIC', '" + KycPolicyVersion.CURRENT.value() + "'")
+                .contains(":'requester'");
+        assertThat(screening).as("its reference the seed's own, so no beneficiary listener acts on its decision")
+                .contains("'e2e-seed-' || seed.id").doesNotContain("xb-beneficiary-");
+    }
+
+    @Test
+    @DisplayName("P17-TSK-113: what the KYC scenarios hand a plant or splice into a query is checked first - the applicant, after its"
+            + " consent went through the door; the plant's task; the task's case and check; the remitter - and the customer history is"
+            + " named as owed")
+    void theKycValuesAreCheckedBeforeSql() {
+        int applicantChecked = script.indexOf("uuid_like \"$applicant\" ||");
+        int consented = script.indexOf("[ \"$consented\" = KYC_PROCESSING ] ||");
+        int reviewPlanted = script.indexOf("plant kyc-review.sql -v identity=\"$applicant\"");
+        assertThat(applicantChecked).as("the applicant is checked").isPositive();
+        assertThat(consented).as("its consent granted through the door, and checked").isGreaterThan(applicantChecked);
+        assertThat(reviewPlanted).as("and only then its case planted").isGreaterThan(consented);
+        int taskChecked = script.indexOf("uuid_like \"$task\" ||");
+        assertThat(taskChecked).as("the plant's task is checked").isGreaterThan(reviewPlanted);
+        assertThat(script.indexOf("WHERE id = '$task'")).as("before it reaches SQL").isGreaterThan(taskChecked);
+        int caseChecked = script.indexOf("uuid_like \"$reviewed\" && uuid_like \"$hit\" ||");
+        assertThat(caseChecked).as("the task's case is checked").isGreaterThan(taskChecked);
+        assertThat(script.indexOf("WHERE id = '$reviewed'")).as("before it reaches SQL").isGreaterThan(caseChecked);
+        int remitterChecked = script.indexOf("uuid_like \"$remitter\" ||");
+        assertThat(remitterChecked).as("the remitter is checked").isPositive();
+        assertThat(script.indexOf("plant counterparty-screening.sql -v requester=\"$remitter\"")).as("and only then planted")
+                .isGreaterThan(remitterChecked);
+        assertThat(script).as("the customer's account, transfers and consent history are named as owed, not planted")
+                .contains("NOT SEEDED YET: THE KYC CUSTOMER'S ACCOUNT, TRANSFERS AND CONSENT HISTORY (P17-TSK-121)");
+    }
+
+    /** The tables a plant's statement inserts into, in order. */
+    private static List<String> inserted(String statement) {
+        Matcher insert = Pattern.compile("(?i)INSERT INTO ([a-z_]+\\.[a-z_]+)").matcher(statement);
+        List<String> tables = new java.util.ArrayList<>();
+        while (insert.find()) {
+            tables.add(insert.group(1));
+        }
+        return tables;
     }
 
     @Test
