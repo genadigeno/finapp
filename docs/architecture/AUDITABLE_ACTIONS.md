@@ -573,6 +573,13 @@ needs none: nobody decided anything when the cooling-off elapsed, and the decisi
 on the trail as the proposal and the approval. No record ever carries the provider reference or
 its suffix (`INV-AUD-02`).
 
+**Not audited: the operator's reads of a merchant's standing and arrangements** - the merchant (`GET /v1/operator/merchants/{id}`),
+its payout destinations and API keys, its fee schedule. Each serves what the operators who act on it already decide, masked
+where the column is partial (a destination's suffix, never its reference), and a denied permission is the interceptor's own
+record, `identity.AuthorizationDenied`. `P17-TSK-114` kept the rule for the approver's read of an open destination change
+(`GET /v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}`, `PAYOUT_DESTINATION_APPROVE`), and for the
+proposer and issuer it names on those views - "audited as the merchant reads are" (`BACKLOG.md`).
+
 **One of the three payout actions requires a reason, and it is the operator's**
 (`P6-TSK-012`, ADR-0057). A merchant paying out its own payable with its own key is doing the
 ordinary thing the surface exists for, and the record names the key that acted — the first

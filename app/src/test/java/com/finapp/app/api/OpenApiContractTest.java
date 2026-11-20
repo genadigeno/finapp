@@ -822,6 +822,9 @@ class OpenApiContractTest {
                         // key reaches any of it, and no route returns the provider reference.
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/merchants/{merchantId}/payout-destinations",
+                        // P17-TSK-114: the open change read by its approver (PAYOUT_DESTINATION_APPROVE).
+                        ApiVersion.CURRENT_PREFIX
+                                + "/operator/merchants/{merchantId}/payout-destinations/{destinationId}",
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/merchants/{merchantId}/payout-destinations"
                                 + "/{destinationId}/approval",

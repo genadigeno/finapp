@@ -303,6 +303,79 @@ class PayoutDestinationEndpointDatabaseTest {
     }
 
     @Test
+    @DisplayName("P17-TSK-114: every view names the proposer; the approver reads the open change by its id, masked and"
+            + " unrecorded - and nothing else at an id, nor without the approve permission")
+    void theApproverReadsTheOpenChange() throws Exception {
+        String merchant = merchant();
+        String other = merchant();
+        String proposerLogin = operatorLogin(RoleName.MERCHANT_ADMINISTRATOR);
+        String proposer = elevatedSessionOf(proposerLogin);
+        String proposerId = identityIdOf(proposerLogin);
+        String approver = sessionWith(RoleName.MERCHANT_ADMINISTRATOR);
+        providerTokenises("pdr_read-1");
+
+        HttpResponse<String> proposed = propose(merchant, proposer, "pdg_read1", someKey());
+        assertThat(proposed.statusCode()).isEqualTo(201);
+        assertThat(field(proposed.body(), "proposedBy")).isEqualTo(proposerId);
+        String destination = field(proposed.body(), "id");
+        HttpResponse<String> listed = get(base(merchant), proposer);
+        assertThat(listed.body()).contains("\"proposedBy\":\"" + proposerId + "\"");
+        long records = count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?", destination);
+
+        HttpResponse<String> read = get(base(merchant) + "/" + destination, approver);
+        assertThat(read.statusCode()).as(read.body()).isEqualTo(200);
+        assertThat(field(read.body(), "id")).isEqualTo(destination);
+        assertThat(field(read.body(), "status")).isEqualTo("PROPOSED");
+        assertThat(field(read.body(), "displaySuffix")).isEqualTo("3000");
+        assertThat(field(read.body(), "proposedBy"))
+                .as("the console disables the proposer's own approval in advance")
+                .isEqualTo(proposerId);
+        assertThat(read.body())
+                .as("masked as the list serves it: never the provider reference, never the proposal's reason")
+                .doesNotContain("pdr_read-1")
+                .doesNotContain("the merchant's new account");
+        assertThat(count("SELECT count(*) FROM platform.audit_record WHERE target_id = ?", destination))
+                .as("unrecorded, as the merchant reads beside it are")
+                .isEqualTo(records);
+
+        // Without the approve permission: the one 403; no session and the merchant's own key: 401.
+        String ledgerOperator = sessionWith(RoleName.LEDGER_OPERATOR);
+        assertThat(get(base(merchant) + "/" + destination, ledgerOperator).statusCode()).isEqualTo(403);
+        assertThat(send(HttpRequest.newBuilder()
+                                .uri(URI.create("http://localhost:" + port + base(merchant) + "/" + destination))
+                                .GET()
+                                .build())
+                        .statusCode())
+                .isEqualTo(401);
+        HttpResponse<String> issued =
+                post("/v1/operator/merchants/" + merchant + "/api-keys", null, proposer, someKey());
+        String merchantKey = field(issued.body(), "keyId") + "." + field(issued.body(), "secret");
+        assertThat(get(base(merchant) + "/" + destination, merchantKey).statusCode()).isEqualTo(401);
+
+        // Another merchant's, unknown and malformed: the one 404.
+        HttpResponse<String> foreign = get(base(other) + "/" + destination, approver);
+        HttpResponse<String> unknown = get(base(merchant) + "/" + IDS.next(), approver);
+        HttpResponse<String> malformed = get(base(merchant) + "/not-a-uuid", approver);
+        for (HttpResponse<String> response : java.util.List.of(foreign, unknown, malformed)) {
+            assertThat(response.statusCode()).isEqualTo(404);
+        }
+        assertThat(normalised(foreign.body())).isEqualTo(normalised(unknown.body())).isEqualTo(normalised(malformed.body()));
+
+        // Approved and cooling off is still the open change; the proposer is still the proposer.
+        assertThat(decide(merchant, destination, "approval", approver).statusCode()).isEqualTo(200);
+        HttpResponse<String> coolingOff = get(base(merchant) + "/" + destination, approver);
+        assertThat(coolingOff.statusCode()).isEqualTo(200);
+        assertThat(field(coolingOff.body(), "status")).isEqualTo("APPROVED");
+        assertThat(field(coolingOff.body(), "proposedBy")).isEqualTo(proposerId);
+
+        // Once it is no longer open, nothing at its id.
+        assertThat(decide(merchant, destination, "withdrawal", proposer).statusCode()).isEqualTo(200);
+        HttpResponse<String> ended = get(base(merchant) + "/" + destination, approver);
+        assertThat(ended.statusCode()).isEqualTo(404);
+        assertThat(normalised(ended.body())).isEqualTo(normalised(unknown.body()));
+    }
+
+    @Test
     @DisplayName("another merchant's, unknown and malformed identifiers are one 404")
     void oneNotFound() throws Exception {
         String merchant = merchant();
@@ -355,6 +428,24 @@ class PayoutDestinationEndpointDatabaseTest {
     /** An operator on a {@code MULTI_FACTOR} session: the destination's acts need one, enrolled or not (P15-TSK-039). */
     private String sessionWith(RoleName role) throws Exception {
         return com.finapp.app.session.OperatorStepUp.elevated(tokenFrom(authenticate(operatorLogin(role)).body()), this::post);
+    }
+
+    /** The elevated session of an operator registered by {@link #operatorLogin}. */
+    private String elevatedSessionOf(String login) throws Exception {
+        return com.finapp.app.session.OperatorStepUp.elevated(tokenFrom(authenticate(login).body()), this::post);
+    }
+
+    /** The identity a login names - what a view naming its actor serves. */
+    private static String identityIdOf(String login) throws SQLException {
+        try (Connection app = DatabaseRoles.application();
+                PreparedStatement read =
+                        app.prepareStatement("SELECT id FROM identity.identity WHERE login_identifier = ?")) {
+            read.setString(1, login);
+            try (ResultSet row = read.executeQuery()) {
+                assertThat(row.next()).isTrue();
+                return row.getObject("id", UUID.class).toString();
+            }
+        }
     }
 
     /** Registers an identity and grants it {@code role}; returns the login. */

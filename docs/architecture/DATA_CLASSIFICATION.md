@@ -956,7 +956,7 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `merchant_api_key` | `algorithm` | `INTERNAL` | What produced the hash (`INV-IDN-02`) — a fixed vocabulary, and publishing it tells an attacker only what the code already says |
 | `merchant_api_key` | `status` | `CONFIDENTIAL` | Whether a counterparty's integration is live |
 | `merchant_api_key` | `issued_at` | `CONFIDENTIAL` | Dates a credential's life — correlates with an integration going live |
-| `merchant_api_key` | `issued_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s reasoning and its model. *(The Phase 12 → 13 transition gate, 2026-10-22, A5-F1: read in the key's authenticating lookup onto `AuthenticatedMerchant.issuedBy` - in memory, never printed (its `toString` omits it), never in a response or an audit summary - so the BNPL refund and dispute-accept doors refuse a key its customer's own party issued)* |
+| `merchant_api_key` | `issued_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s reasoning and its model. *(The Phase 12 → 13 transition gate, 2026-10-22, A5-F1: read in the key's authenticating lookup onto `AuthenticatedMerchant.issuedBy` - in memory, never printed (its `toString` omits it), never in a response or an audit summary - so the BNPL refund and dispute-accept doors refuse a key its customer's own party issued)* *(`P17-TSK-114`, 2026-11-19: served to staff on the operator's key list, under `MERCHANT_ADMINISTER`, by identifier - an employee's id, never a name; still never in a merchant's response or an audit summary)* |
 | `merchant_api_key` | `revoked_at` | `CONFIDENTIAL` | Dates a security judgement |
 | `merchant_api_key` | `scopes` | `CONFIDENTIAL` | What the key may do beyond reads and payouts (`BNPL_REFUND`, `P12-TSK-021`) - an insert-time fact; tells an attacker which credential moves money |
 | `merchant_api_key_event` | `id` | `INTERNAL` | A server-assigned ordinal |
@@ -1009,7 +1009,7 @@ column exists here and none ever will** (`INV-MER-02`); the payable is the ledge
 | `payout_destination` | `destination_reference` | `RESTRICTED-PII` | **The provider's reference for a bank account** — `payment_method.token_reference`'s reasoning for bank data: it resolves at the provider to where a merchant's money goes, so it is never in a log, an event payload or an API response, and `PayoutDestinationReference` carries that structurally. Refused by `CHECK` if shaped like an account number, so raw bank details cannot be stored here at all |
 | `payout_destination` | `display_suffix` | `RESTRICTED-PII` | **A partial account identifier** — `payment_method.display_suffix`'s reasoning: four characters an authorised operator reads to know which account they are approving, and its ceiling is still the account it partially names |
 | `payout_destination` | `status` | `CONFIDENTIAL` | Where a counterparty's money is in the middle of being redirected is itself sensitive — a pending change is the fact an attacker would most like to know is cooling off |
-| `payout_destination` | `proposed_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s reasoning and its model |
+| `payout_destination` | `proposed_by` | `RESTRICTED-PII` | The acting operator's identity — `audit_record.actor_id`'s reasoning and its model *(`P17-TSK-114`, 2026-11-19: served to staff on the operator's destination views by identifier, never a name)* |
 | `payout_destination` | `proposed_at` | `CONFIDENTIAL` | Dates a destination change |
 | `payout_destination` | `proposal_reason` | `RESTRICTED-PII` | **Free text written by a person** — `audit_record.reason`'s ceiling; kept on the row so the approver reads what they approve, and never returned by the API |
 | `payout_destination` | `approved_by` | `RESTRICTED-PII` | The second operator's identity — `audit_record.actor_id`'s model |
@@ -1178,6 +1178,17 @@ deliberately **not `platform.idempotency_record.response_body`** either, which i
 issuance claim records the key id alone rather than the response bytes every other keyed
 command records (`P6-TSK-002`; the database suite asserts it by sweeping every text column in
 every schema for the issued secret).
+
+**Actors served on the merchant views** (`P17-TSK-114`, 2026-11-19). The person behind a merchant's arrangement is served by
+identifier - an employee's id, never a name - to the staff who already act on it: a payout destination change names its
+`proposed_by` (`proposedBy`) on every operator view of it - the list, each decision's answer and the approver's read of the
+open change (`GET /v1/operator/merchants/{merchantId}/payout-destinations/{destinationId}`, `PAYOUT_DESTINATION_APPROVE`) -
+so the console disables the proposer's own approval in advance (`merchant.SelfApprovalRefused` stays the control); and a key
+on the operator's list names its `issued_by` (`issuedBy`, `MERCHANT_ADMINISTER`). Each stays `RESTRICTED-PII` at its column.
+Never a decider (`approved_by`, `ended_by`), never `proposal_reason`, never to a merchant; the approver's read serves the open
+change masked exactly as the list does - the display suffix, never `destination_reference`. The reads stay unrecorded, as the
+merchant reads beside them are. An operator's dispute view says whether its merchant answers it (`answeredByMerchant`,
+`INTERNAL`): a fact derived from the payment's credited account's purpose, never the account.
 
 ### `settlement` — the source register and the evidence intake — *added by `P8-TSK-002`*
 

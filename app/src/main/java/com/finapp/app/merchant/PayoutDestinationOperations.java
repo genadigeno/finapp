@@ -53,7 +53,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  */
 public final class PayoutDestinationOperations {
 
-    /** A destination as the operator reads it: masked, and never the provider reference. */
+    /**
+     * A destination as the operator reads it: masked, and never the provider reference. Since `P17-TSK-114` it names its
+     * proposer by identifier - an employee's id, never a name - so the console disables the proposer's own approval in
+     * advance; the approval's {@code merchant.SelfApprovalRefused} stays the control. Never the decider, never the reason.
+     */
     public record PayoutDestinationView(
             String id,
             String status,
@@ -61,7 +65,8 @@ public final class PayoutDestinationOperations {
             String proposedAt,
             String approvedAt,
             String coolingOffUntil,
-            String effectiveAt) {}
+            String effectiveAt,
+            String proposedBy) {}
 
     /** The merchant's destination arrangement: what payouts go to, and the open change. */
     public record PayoutDestinationsView(
@@ -196,6 +201,27 @@ public final class PayoutDestinationOperations {
     }
 
     /**
+     * The merchant's open change by its identifier, as the approver who decides it reads it (`P17-TSK-114`): proposed, or
+     * approved and cooling off - masked as the list serves it, with its proposer. Any other identifier - unknown, malformed,
+     * another merchant's, or a change no longer open (effective, superseded, rejected, withdrawn) - is the one 404: the read
+     * serves what the approve permission still bears on, and nothing of the merchant's history.
+     */
+    public PayoutDestinationView viewOpenChange(String rawMerchantId, String rawDestinationId) {
+        MerchantId merchant = merchantOrAbsent(rawMerchantId);
+        PayoutDestinationId id = destinationOrAbsent(rawDestinationId);
+        return inOneTransaction(
+                unitOfWork ->
+                        openChange(destinations.pendingFor(unitOfWork, merchant), id)
+                                .map(PayoutDestinationOperations::render)
+                                .orElseThrow(PayoutDestinationOperations::notFound));
+    }
+
+    /** The open change when it is the one named - the one definition of "open" being {@link PayoutDestinations#pendingFor}'s. */
+    static Optional<PayoutDestination> openChange(Optional<PayoutDestination> open, PayoutDestinationId named) {
+        return open.filter(change -> change.id().equals(named));
+    }
+
+    /**
      * Approves as the acting operator — who must not be the proposer ({@code INV-AUD-04}). The
      * self-approval's {@code DENIED} record commits before the {@code 409} is raised.
      */
@@ -270,7 +296,8 @@ public final class PayoutDestinationOperations {
         }
     }
 
-    private static PayoutDestinationView render(PayoutDestination destination) {
+    /** Package-private so what an operator reads can be proven with no database ({@code MerchantViewsNameTheirActorsTest}). */
+    static PayoutDestinationView render(PayoutDestination destination) {
         return new PayoutDestinationView(
                 destination.id().value().toString(),
                 destination.status().name(),
@@ -278,7 +305,8 @@ public final class PayoutDestinationOperations {
                 destination.proposedAt().toString(),
                 text(destination.approvedAt()),
                 text(destination.coolingOffUntil()),
-                text(destination.effectiveAt()));
+                text(destination.effectiveAt()),
+                destination.proposedBy());
     }
 
     private static String text(Optional<Instant> instant) {

@@ -1172,6 +1172,24 @@ class DisputeResponseDatabaseTest {
 
         Merchant merchant = merchant();
         UUID merchants = chargedBack(merchant.payable(), future());
+
+        // P17-TSK-114: the operator's view says whose answer each is, by the reach the acts below are judged against - on
+        // the dispute's read and on its payment's list alike.
+        HttpResponse<String> operatorsOwn = get("/v1/operator/disputes/" + topUp, operator());
+        assertThat(operatorsOwn.statusCode()).as(operatorsOwn.body()).isEqualTo(200);
+        assertThat(operatorsOwn.body()).contains("\"answeredByMerchant\":false");
+        HttpResponse<String> merchantsOwn = get("/v1/operator/disputes/" + merchants, operator());
+        assertThat(merchantsOwn.statusCode()).as(merchantsOwn.body()).isEqualTo(200);
+        assertThat(merchantsOwn.body()).contains("\"answeredByMerchant\":true");
+        HttpResponse<String> byPayment = get(
+                "/v1/operator/payments/" + field(merchantsOwn.body(), "paymentIntentId") + "/disputes", operator());
+        assertThat(byPayment.statusCode()).as(byPayment.body()).isEqualTo(200);
+        assertThat(byPayment.body()).contains("\"answeredByMerchant\":true").doesNotContain("\"answeredByMerchant\":false");
+        assertThat(get("/v1/operator/payments/" + field(operatorsOwn.body(), "paymentIntentId") + "/disputes", operator())
+                        .body())
+                .contains("\"answeredByMerchant\":false")
+                .doesNotContain("\"answeredByMerchant\":true");
+
         assertRefused(post(operatorPath(merchants, "acceptance"),
                         "{\"reason\":\"trying anyway\"}", operator(), someKey()),
                 409, "payments.DisputeAnsweredByItsMerchant");

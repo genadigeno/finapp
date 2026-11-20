@@ -48,8 +48,12 @@ public class MerchantApiKeyOperations {
         }
     }
 
-    /** A key as the operator lists it: metadata only — no secret, and no hash. */
-    public record KeyView(String keyId, String status, String issuedAt, String revokedAt, List<String> scopes) {}
+    /**
+     * A key as the operator lists it: metadata only — no secret, and no hash. Since `P17-TSK-114` it names who issued it, by
+     * identifier - an employee's id, never a name; still never in a merchant's response or an audit summary.
+     */
+    public record KeyView(
+            String keyId, String status, String issuedAt, String revokedAt, List<String> scopes, String issuedBy) {}
 
     /**
      * The permission each scope asks of its issuer BESIDE the route's {@code MERCHANT_ADMINISTER} (the Phase 12 -> 13
@@ -131,13 +135,15 @@ public class MerchantApiKeyOperations {
         }
     }
 
-    private static KeyView render(MerchantApiKey key) {
+    /** Package-private so what an operator reads can be proven with no database ({@code MerchantViewsNameTheirActorsTest}). */
+    static KeyView render(MerchantApiKey key) {
         return new KeyView(
                 key.id().value().toString(),
                 key.status().name(),
                 key.issuedAt().toString(),
                 key.revokedAt().map(Object::toString).orElse(null),
-                key.scopes().stream().map(Enum::name).sorted().toList());
+                key.scopes().stream().map(Enum::name).sorted().toList(),
+                key.issuedBy());
     }
 
     /** The named scopes - each one this platform knows, else {@code 422}; none named is none. */
