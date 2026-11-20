@@ -13902,6 +13902,47 @@
         ],
         "type": "object"
       },
+      "AccountRestrictionView": {
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "accountStatus": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reasonCode": {
+            "type": "string"
+          },
+          "restrictionId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AccountView": {
         "properties": {
           "id": {
@@ -16615,6 +16656,50 @@
         ],
         "type": "object"
       },
+      "BnplFeeAssignmentProposalView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "feeScheduleId": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "merchantName": {
+            "type": "string"
+          },
+          "merchantStatus": {
+            "type": "string"
+          },
+          "product": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "BnplFeeScheduleAssignmentRequest": {
         "properties": {
           "feeScheduleId": {
@@ -17518,6 +17603,54 @@
         "required": [
           "reason"
         ],
+        "type": "object"
+      },
+      "BnplRefundProposalView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "cumulativeAmount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "purchaseId": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "refundId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "thresholdVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "BnplRefundReport": {
@@ -21738,6 +21871,32 @@
             "type": "array"
           },
           "nextCursor": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "DiscardRecordView": {
+        "properties": {
+          "discardId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string"
+          },
+          "subjectKind": {
             "type": "string"
           }
         },
@@ -26672,6 +26831,44 @@
         },
         "type": "object"
       },
+      "MerchantClosureProposalView": {
+        "properties": {
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "merchantName": {
+            "type": "string"
+          },
+          "merchantStatus": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "MerchantDisputeList": {
         "properties": {
           "disputes": {
@@ -28501,6 +28698,57 @@
         },
         "type": "object"
       },
+      "PayoutProposalView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "merchantId": {
+            "type": "string"
+          },
+          "merchantName": {
+            "type": "string"
+          },
+          "merchantStatus": {
+            "type": "string"
+          },
+          "payoutId": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "thresholdVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "PayoutView": {
         "properties": {
           "amount": {
@@ -30099,6 +30347,54 @@
         "required": [
           "reason"
         ],
+        "type": "object"
+      },
+      "RefundProposalView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "cumulativeAmount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "paymentId": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "refundId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "thresholdVersion": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
         "type": "object"
       },
       "RefundRequest": {
@@ -36668,6 +36964,47 @@
         ],
         "type": "object"
       },
+      "TransferReversalProposalView": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "decidedAt": {
+            "type": "string"
+          },
+          "decisionReason": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string"
+          },
+          "proposedAt": {
+            "type": "string"
+          },
+          "proposedBy": {
+            "type": "string"
+          },
+          "proposedByCaller": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "transferId": {
+            "type": "string"
+          },
+          "transferStatus": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "TransferReversalReceipt": {
         "properties": {
           "proposalId": {
@@ -41282,6 +41619,33 @@
         }
       }
     },
+    "/v1/operator/account-restrictions/{id}": {
+      "get": {
+        "operationId": "readAccountRestriction",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountRestrictionView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/account-restrictions/{id}/approval": {
       "post": {
         "operationId": "approveAccountRestriction",
@@ -44852,6 +45216,33 @@
         }
       }
     },
+    "/v1/operator/bnpl-fee-schedule-proposals/{id}": {
+      "get": {
+        "operationId": "readBnplFeeAssignmentProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplFeeAssignmentProposalView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/bnpl-fee-schedule-proposals/{id}/approval": {
       "post": {
         "operationId": "approveBnplFeeAssignment",
@@ -45024,6 +45415,33 @@
               }
             },
             "description": "Created"
+          }
+        }
+      }
+    },
+    "/v1/operator/bnpl-refund-proposals/{id}": {
+      "get": {
+        "operationId": "readBnplRefundProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BnplRefundProposalView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }
@@ -46990,6 +47408,33 @@
         }
       }
     },
+    "/v1/operator/events/abandoned/{eventId}": {
+      "get": {
+        "operationId": "readAbandonedEvent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "eventId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AbandonedView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/events/abandoned/{eventId}/retry": {
       "post": {
         "operationId": "retryAbandonedEvent",
@@ -47105,6 +47550,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ActReceipt"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/events/discards/{discardId}": {
+      "get": {
+        "operationId": "readDeadLetterDiscard",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "discardId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscardRecordView"
                 }
               }
             },
@@ -47230,6 +47702,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ParkedPage"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/events/parked/{parkId}": {
+      "get": {
+        "operationId": "readParkedRecord",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "parkId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ParkedView"
                 }
               }
             },
@@ -50085,6 +50584,33 @@
         }
       }
     },
+    "/v1/operator/merchant-closures/{id}": {
+      "get": {
+        "operationId": "readMerchantClosureProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MerchantClosureProposalView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/merchant-closures/{id}/approval": {
       "post": {
         "operationId": "approveMerchantClosure",
@@ -51543,6 +52069,33 @@
         }
       }
     },
+    "/v1/operator/payout-proposals/{id}": {
+      "get": {
+        "operationId": "readPayoutProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutProposalView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/payout-proposals/{id}/approval": {
       "post": {
         "operationId": "approvePayoutProposal",
@@ -52786,6 +53339,33 @@
               }
             },
             "description": "Accepted"
+          }
+        }
+      }
+    },
+    "/v1/operator/refund-proposals/{id}": {
+      "get": {
+        "operationId": "readRefundProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefundProposalView"
+                }
+              }
+            },
+            "description": "OK"
           }
         }
       }
@@ -56547,6 +57127,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FetchAnswer"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/transfer-reversals/{id}": {
+      "get": {
+        "operationId": "readTransferReversalProposal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransferReversalProposalView"
                 }
               }
             },
