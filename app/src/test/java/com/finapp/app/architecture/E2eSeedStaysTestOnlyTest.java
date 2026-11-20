@@ -26,7 +26,8 @@ import org.junit.jupiter.api.Test;
  * {@code E2eSeedPlantsDatabaseTest}, the held role (`P17-TSK-108`) by {@code E2eSeedReviewsDatabaseTest}, the alert and the sealed
  * assessment (`P17-TSK-110`) by {@code E2eSeedRiskDatabaseTest}, the finance plants (`P17-TSK-112`) by {@code E2eSeedFinanceDatabaseTest},
  * the merchant plants and the dispute's statement (`P17-TSK-115`) by {@code E2eSeedMerchantDatabaseTest}, the credit desks' doors and
- * the review case (`P17-TSK-117`) by {@code E2eSeedCreditDatabaseTest}; the script's run against a
+ * the review case (`P17-TSK-117`) by {@code E2eSeedCreditDatabaseTest}, the FX desks' doors and the booked trade (`P17-TSK-119`) by
+ * {@code E2eSeedFxDatabaseTest}; the script's run against a
  * running stack is the console's end-to-end run.
  */
 @Tag("architecture")
@@ -118,6 +119,11 @@ class E2eSeedStaysTestOnlyTest {
         assertThat(borrowerChecked).as("the borrower is checked").isPositive();
         assertThat(script.indexOf("plant customer-verdict.sql -v identity=\"$borrower\"")).as("and only then planted")
                 .isGreaterThan(borrowerChecked);
+        // P17-TSK-119: the trader's verdict, the same way.
+        int traderChecked = script.indexOf("uuid_like \"$trader\" ||");
+        assertThat(traderChecked).as("the trader is checked").isPositive();
+        assertThat(script.indexOf("plant customer-verdict.sql -v identity=\"$trader\"")).as("and only then planted")
+                .isGreaterThan(traderChecked);
     }
 
     @Test
@@ -241,6 +247,54 @@ class E2eSeedStaysTestOnlyTest {
                 .doesNotContainPattern("(?i)UPDATE (credit|lending|bnpl)\\.");
         assertThat(script).as("the states no running finapp can reach are named, not seeded").contains(
                 "NOT SEEDED: A LOAN, A BNPL AGREEMENT, AND WHAT HANGS ON THEM");
+    }
+
+    @Test
+    @DisplayName("P17-TSK-119: the FX desks act through their doors - every version and enabling proposed by the seed's controller, a"
+            + " pending one withdrawn only by the rejection door, the conversion priced by the platform; booked-trade judged on kind's"
+            + " Secret before anything is touched - and nothing writes an FX or cross-border row")
+    void theFxDesksActThroughTheirDoors() {
+        String seed = EvidenceCitations.read(root.resolve(SEED + "Seed.java"));
+        String trade = seed.substring(seed.indexOf("private void fxTrade("), seed.indexOf("System.out.println(\"FX_TRADE_ID=\""));
+        assertThat(trade).as("the conversion is the customer's quote accepted, and neither body it sends names a rate")
+                .contains("\"/v1/me/fx/quotes\"").contains("\"/v1/me/fx/conversions\"")
+                .doesNotContainPattern("[rR]ate\\\\\":");
+        assertThat(seed).as("the policies are the runbook's version 1, on its provider and its rail (equal, by E2eSeedFxDatabaseTest)")
+                .contains("\\\"providers\\\":[\\\"fx-sim-a\\\"]").contains("\\\"rails\\\":[\\\"corridor-sim-a\\\"]");
+        assertThat(script).as("a version or an enabling left pending is withdrawn through the rejection door, by the seed's controller")
+                .contains("seed_http decide-version fxcontroller \"$1\" \"$left\" rejection")
+                .contains("seed_http decide-enable fxcontroller \"$1\" \"$3\" rejection");
+        assertThat(script.lines().map(String::strip).filter(line -> line.startsWith("withdraw_version ") || line.startsWith("in_force "))
+                .toList())
+                .as("every withdrawal and every version put in force names one of the two policy tables, as this script's own literals"
+                        + " - proposed_one() and in_force() splice them - the one pass-through in_force's own")
+                .containsExactlyInAnyOrder(
+                        "in_force fx-pricing fx.pricing_policy_version",
+                        "in_force corridor-policy crossborder.corridor_policy_version",
+                        "withdraw_version \"$1\" \"$2\"",
+                        "withdraw_version fx-pricing fx.pricing_policy_version",
+                        "withdraw_version corridor-policy crossborder.corridor_policy_version");
+        assertThat(script.lines().map(String::strip).filter(line -> line.matches("ENABLE_(PAIR|CORRIDOR)=.*")).toList())
+                .as("the enable requests' subjects, spliced into SQL, are the script's own literals, set once")
+                .containsExactly("ENABLE_PAIR=BHD-JPY", "ENABLE_CORRIDOR=GBP-USD-US");
+        int leftChecked = script.indexOf("[ -z \"$3\" ] || uuid_like \"$3\" ||");
+        assertThat(leftChecked).as("a pending request's id is checked").isPositive();
+        assertThat(script.indexOf("seed_http decide-enable fxcontroller \"$1\" \"$3\" rejection")).as("before it is withdrawn")
+                .isGreaterThan(leftChecked);
+        assertThat(script).as("nothing writes an FX or cross-border row: the doors make every version, request and trade")
+                .doesNotContainPattern("(?i)INSERT INTO (fx|crossborder)\\.").doesNotContainPattern("(?i)UPDATE (fx|crossborder)\\.");
+
+        int judged = script.indexOf("booked-trade)\n            HTTP=yes\n            [ \"$TARGET\" = kind ] || refuse");
+        assertThat(judged).as("booked-trade refused off kind, in the scenarios' judgement").isPositive();
+        assertThat(script.indexOf("psql")).as("before anything is touched").isGreaterThan(judged);
+        int feeds = script.indexOf("[ \"$scenario\" != booked-trade ] || fx_feeds");
+        assertThat(feeds).as("and on kind, its Secret judged").isPositive();
+        assertThat(script.indexOf("        booked-trade) seed_booked_trade ;;")).as("before any scenario runs").isGreaterThan(feeds);
+        assertThat(script).as("for the FX provider and the reference feed, their values never printed")
+                .contains("for name in FINAPP_FX_PROVIDER_URL FINAPP_FX_REFERENCE_URL; do")
+                .doesNotContainPattern("(say|printf|echo)[^\n]*\\$delivered\\b");
+        assertThat(script).as("the trace no test stack can reach is named, not seeded")
+                .contains("NOT SEEDED: A CROSS-BORDER PAYMENT, AND SO ITS TRACE");
     }
 
     @Test
