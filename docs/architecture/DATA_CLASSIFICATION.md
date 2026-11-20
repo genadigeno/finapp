@@ -670,6 +670,36 @@ and its record (ADR-0044); the money itself is the ledger posting `journal_entry
 
 **Served to staff by the transfer reads** (`P17-TSK-027`, 2026-11-20), under `TRANSFER_READ` on a `MULTI_FACTOR` session, every answer recorded. A customer's transfers in a window of at most 92 days (`GET /v1/operator/transfers`, `transfers.TransfersListed`) serve `id`, `source_account_id`, `destination_account_id`, `amount_minor` at its `scale` with its `currency`, `status`, `failure_reason` and `initiated_at`; one transfer (`GET /v1/operator/transfers/{id}`, `transfers.TransferRead`) adds `customer_id`, `journal_entry_id`, `reversal_entry_id` and `reversed_at`. **Never** `reference` - a person's free text, `RESTRICTED-PII` - nor `initiated_by` or `reversed_by`. The records name no amount.
 
+### The operator's money-act proposals and thresholds — *added by `P17-TSK-031`*
+
+**Four eyes before the existing effect** (ADR-0154): `transfers.transfer_reversal_proposal`, `merchant.merchant_closure_proposal`,
+`payments.refund_proposal`, `merchant.payout_proposal`, and the thresholds `payments.refund_four_eyes_threshold`,
+`merchant.payout_four_eyes_threshold`. One classification serves the shared columns:
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| each proposal | `id`, the subject's id (`transfer_id`, `merchant_id`, `intent_id`), `refund_id`, `payout_id` | `INTERNAL` | Identifiers of things |
+| each proposal | `proposal_reason`, `decision_reason` | `RESTRICTED-PII` | **A person's prose about somebody's money** - `journal_entry.reason`'s reasoning |
+| each proposal | `proposed_by`, `decided_by` | `RESTRICTED-PII` | An operator - `audit_record.actor_id`'s reasoning |
+| each proposal | `proposed_by_type`, `decided_by_type`, `status` | `CONFIDENTIAL` | That an operator moved to reverse, close, refund or pay out is a fact about a person's money |
+| each proposal | `proposed_at`, `decided_at` | `CONFIDENTIAL` | Dates an act against somebody's money |
+| each proposal | `proposal_correlation_id`, `decision_correlation_id`, `threshold_version` | `INTERNAL` | Trace and configuration identifiers |
+| `refund_proposal`, `payout_proposal` | `amount_minor`, `currency`, `scale`, `cumulative_minor` | `RESTRICTED-FINANCIAL` | The money asked - `journal_line.amount_minor`'s reasoning |
+| each threshold | `version`, `currency`, `scale`, `threshold_minor`, `recorded_at` | `INTERNAL` | Platform configuration, not a fact about anybody |
+
+### The BNPL money-act proposals, the BNPL refund threshold and the evidence's media type — *added by `P17-TSK-116`*
+
+**Two more acts on ADR-0154's pattern**: `bnpl.refund_proposal` and `merchant.bnpl_fee_assignment_proposal` take
+`P17-TSK-031`'s table above column for column (the subject's id is `purchase_id`, or `merchant_id` with `product` and
+`fee_schedule_id`, all `INTERNAL`; the BNPL refund proposal's money `RESTRICTED-FINANCIAL`, its `refund_id` `INTERNAL`);
+`bnpl.refund_four_eyes_threshold` is the payments threshold's twin (`INTERNAL`, platform configuration).
+
+**Served to staff** (`P17-TSK-116`): the raw actor id that proposed a servicing correction, a terms version or a capital
+contribution (`proposedBy`) to the holders of the permission that decides it - the write-off attestations' precedent - so
+an approver's console disables a proposer's own approval in advance; never a reason. `credit.credit_evidence.media_type`
+(credit V027) is `INTERNAL`: the provider's own name for the bytes, metadata - the content stays `RESTRICTED`, reachable
+only through `credit.read_evidence` with a reason.
+
 ### `transfers.beneficiary` — *added by `P4-TSK-006`*
 
 **A person's saved address book.** The row is a convenience, never a trust decision — and its

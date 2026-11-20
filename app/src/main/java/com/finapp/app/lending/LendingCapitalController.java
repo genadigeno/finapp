@@ -75,6 +75,17 @@ public class LendingCapitalController {
     }
 
     /**
+     * One capital contribution by its identifier (`P17-TSK-116`): what its approver reads before deciding, with its
+     * proposer. Under {@code LENDING_CAPITAL_ADMINISTER}, the approver's own permission.
+     */
+    @GetMapping(path = "/capital-contributions/{contributionId}")
+    @RequiresPermission(PermissionName.LENDING_CAPITAL_ADMINISTER)
+    public LendingCapitalDesk.ContributionView readCapitalContribution(
+            @PathVariable("contributionId") String contributionId) {
+        return desk.contribution(contributionId);
+    }
+
+    /**
      * The capital report: per supported currency the recognised capital, committed and outstanding principal, the
      * headroom and capital's lending-funded figure, with the capital proof's verdict; and the most recent contributions with
      * their derived recognition. Audited per serving ({@code lending.ReportRead}).

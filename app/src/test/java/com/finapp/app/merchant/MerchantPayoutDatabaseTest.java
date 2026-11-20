@@ -1720,7 +1720,8 @@ class MerchantPayoutDatabaseTest {
                 evidence,
                 auditWriter,
                 IDS,
-                clock);
+                clock,
+                (unitOfWork, amount) -> java.util.Optional.empty() /* P17-TSK-031: payout mechanics, never four eyes */);
     }
 
     /**

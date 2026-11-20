@@ -66,6 +66,41 @@ class BnplRefundDeskTest {
                 refunded.refund(), Optional.empty(), false, BnplRefunds.Kind.PARTIAL));
         assertThat(BnplRefundDesk.replayedOperator(BnplRefundDesk.stored(open).body())).isEqualTo(open);
         assertThat(open.purchaseStatus()).isEqualTo("PARTIALLY_REFUNDED");
+        assertThat(open.status()).isEqualTo("APPLIED");
+        assertThat(open.proposalId()).isNull();
+    }
+
+    @Test
+    @DisplayName("P17-TSK-116: a refund applied by a proposal's approval names the proposal; a receipt stored before the"
+            + " status existed replays APPLIED; a proposal's answer replays what it asks and never a refund's figures")
+    void theProposalReceiptsReplay() {
+        BnplRefunds.Refunded refunded = refunded(BnplRefunds.Kind.PARTIAL);
+        String proposal = IDS.next().toString();
+        BnplRefundDesk.BnplOperatorRefundView approved = BnplRefundDesk.operatorView(refunded, proposal);
+        assertThat(BnplRefundDesk.replayedOperator(BnplRefundDesk.stored(approved).body())).isEqualTo(approved);
+        assertThat(approved.status()).isEqualTo("APPLIED");
+        assertThat(approved.proposalId()).isEqualTo(proposal);
+
+        BnplRefundDesk.BnplOperatorRefundView applied = BnplRefundDesk.operatorView(refunded);
+        String stored = new String(BnplRefundDesk.stored(applied).body(), StandardCharsets.UTF_8);
+        String before = stored.substring(0, stored.lastIndexOf('|', stored.lastIndexOf('|') - 1));
+        assertThat(before.split("\\|", -1)).hasSize(16);
+        assertThat(BnplRefundDesk.replayedOperator(before.getBytes(StandardCharsets.UTF_8))).isEqualTo(applied);
+
+        com.finapp.bnpl.BnplPurchaseId purchase = com.finapp.bnpl.BnplPurchaseId.of(IDS.next());
+        com.finapp.bnpl.BnplRefundProposal proposed = com.finapp.bnpl.BnplRefundProposal.propose(IDS, Clock.systemUTC(),
+                purchase, eur(1_500_00), eur(1_500_00), 1, "goods came back",
+                new com.finapp.platform.security.Actor("operator-1", com.finapp.platform.security.ActorType.CUSTOMER),
+                "flow");
+        BnplRefundDesk.BnplOperatorRefundView view = BnplRefundDesk.proposalView(proposed);
+        byte[] receipt = BnplRefundDesk.stored(view).body();
+        assertThat(new String(receipt, StandardCharsets.UTF_8)).doesNotContain("goods came back").doesNotContain("operator-1");
+        assertThat(BnplRefundDesk.replayedOperator(receipt)).isEqualTo(view);
+        assertThat(view.status()).isEqualTo("PROPOSED");
+        assertThat(view.proposalId()).isEqualTo(proposed.id().value().toString());
+        assertThat(view.refundId()).isNull();
+        assertThat(view.agreementVersion()).isNull();
+        assertThat(view.amount()).isEqualTo("1500.00");
     }
 
     @Test
@@ -161,7 +196,7 @@ class BnplRefundDeskTest {
                 new com.finapp.platform.idempotency.IdempotentExecutor(claims(), Clock.systemUTC(), java.time.Duration.ofDays(1),
                         java.time.Duration.ofMinutes(1)),
                 built(BnplTransactions.class, new org.springframework.transaction.support.TransactionTemplate(noTransactions())),
-                new BnplRefundMetrics(registry));
+                new BnplRefundMetrics(registry), built(com.finapp.bnpl.BnplRefundProposals.class));
         BnplRefundController.BnplRefundBody body = new BnplRefundController.BnplRefundBody("40.00", "EUR", "goods returned");
         com.finapp.merchant.AuthenticatedMerchant merchant = new com.finapp.merchant.AuthenticatedMerchant(
                 com.finapp.merchant.MerchantId.of(merchantId), com.finapp.merchant.MerchantApiKeyId.of(IDS.next()),

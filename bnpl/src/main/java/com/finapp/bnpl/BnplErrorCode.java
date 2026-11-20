@@ -249,7 +249,19 @@ public enum BnplErrorCode implements ErrorCode {
      * A dispute a merchant or an operator resolved starts no cooldown.
      */
     DISPUTE_COOLING_OFF("bnpl.DisputeCoolingOff", 409,
-            "A dispute of this BNPL purchase was withdrawn too recently to open another.");
+            "A dispute of this BNPL purchase was withdrawn too recently to open another."),
+
+    /** A second refund proposal while one is open on the purchase (`P17-TSK-116`); nothing was written. */
+    REFUND_PROPOSAL_ALREADY_OPEN("bnpl.RefundProposalAlreadyOpen", 409,
+            "The BNPL purchase already has an open refund proposal; decide it first."),
+
+    /** A decision on a decided BNPL refund proposal (`P17-TSK-116`): decided once; nothing was written. */
+    REFUND_PROPOSAL_ALREADY_DECIDED("bnpl.RefundProposalAlreadyDecided", 409,
+            "The BNPL refund proposal is already decided."),
+
+    /** The proposer deciding their own BNPL refund proposal (`P17-TSK-116`, INV-AUD-04); nothing was written. */
+    REFUND_PROPOSAL_SELF_DECISION("bnpl.RefundProposalSelfDecision", 409,
+            "A BNPL refund proposal is decided by a person who did not propose it.");
 
     private final String code;
     private final int status;

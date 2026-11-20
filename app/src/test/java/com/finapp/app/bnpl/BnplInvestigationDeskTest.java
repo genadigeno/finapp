@@ -56,14 +56,16 @@ class BnplInvestigationDeskTest {
     private static final CurrencyCode EUR = CurrencyCode.of("EUR");
 
     @Test
-    @DisplayName("every door is behind BNPL_INVESTIGATE - the read, the explanation and the replay - and no other")
+    @DisplayName("every investigator's door is behind BNPL_INVESTIGATE - the read, the explanation and the replay - and the"
+            + " servicing agent's read (P17-TSK-116) behind BNPL_SERVICE; no other")
     void everyDoorIsBehindBnplInvestigate() {
         List<Method> doors = Arrays.stream(BnplInvestigationController.class.getDeclaredMethods())
                 .filter(method -> java.lang.reflect.Modifier.isPublic(method.getModifiers())).toList();
         assertThat(doors).extracting(Method::getName).containsExactlyInAnyOrder("investigateBnplAgreement",
-                "explainBnplAgreement", "replayBnplAgreement");
+                "explainBnplAgreement", "replayBnplAgreement", "readBnplAgreementForServicing");
         assertThat(doors).allSatisfy(door -> assertThat(door.getAnnotation(RequiresPermission.class).value())
-                .isEqualTo(PermissionName.BNPL_INVESTIGATE));
+                .isEqualTo(door.getName().equals("readBnplAgreementForServicing") ? PermissionName.BNPL_SERVICE
+                        : PermissionName.BNPL_INVESTIGATE));
     }
 
     @Test
@@ -90,7 +92,8 @@ class BnplInvestigationDeskTest {
     }
 
     @Test
-    @DisplayName("the views are closed: no member names a reason, a party, a wallet, a key or a proposer")
+    @DisplayName("the views are closed: no member names a reason, a party, a wallet, a key or a decider - and (P17-TSK-116)"
+            + " a waiver and a reversal name their proposer, so an approver sees whose proposal it decides")
     void theViewsAreClosed() {
         for (Class<?> view : BnplInvestigationDesk.class.getDeclaredClasses()) {
             if (!view.isRecord()) {
@@ -102,7 +105,12 @@ class BnplInvestigationDeskTest {
                     // closureReason is the obligation's closure CODE (REPAID, REFUNDED, ...), never a person's text.
                     .noneMatch(name -> (name.toLowerCase(java.util.Locale.ROOT).contains("reason")
                             && !name.equals("closureReason")) || name.contains("party") || name.contains("wallet")
-                            || name.contains("requestKey") || name.contains("proposedBy") || name.contains("decidedBy"));
+                            || name.contains("requestKey") || name.contains("decidedBy"));
+        }
+        for (Class<?> proposal : List.of(BnplInvestigationDesk.BnplExplainedWaiverView.class,
+                BnplInvestigationDesk.BnplExplainedReversalView.class)) {
+            assertThat(Arrays.stream(proposal.getRecordComponents()).map(RecordComponent::getName))
+                    .as(proposal.getSimpleName()).contains("proposedBy");
         }
     }
 

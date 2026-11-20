@@ -1043,7 +1043,7 @@ class WithdrawalDatabaseTest {
 
         // No surface exists either: the void door does not know withdrawals, and the
         // collection accepts no DELETE.
-        assertThat(post("/v1/payments/" + id + "/void", "{\"reason\":\"try\"}", f.token())
+        assertThat(post("/v1/payments/" + id + "/void", "{\"reason\":\"try\"}", f.token(), true)
                         .statusCode())
                 .isIn(403, 404);
         HttpRequest delete =

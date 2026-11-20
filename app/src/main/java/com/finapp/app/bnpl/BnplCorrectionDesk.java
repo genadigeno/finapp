@@ -71,7 +71,8 @@ public final class BnplCorrectionDesk {
             String proposedAt,
             String decidedAt,
             String journalEntryId,
-            String valueDate) {}
+            String valueDate,
+            String proposedBy) {}
 
     /**
      * A fee waiver as answered - and replayed: its machine, the fee and its instalment, the amount (an exact decimal), the
@@ -90,7 +91,8 @@ public final class BnplCorrectionDesk {
             String proposedAt,
             String decidedAt,
             String journalEntryId,
-            String closure) {}
+            String closure,
+            String proposedBy) {}
 
     // ------------------------------------------------------------------ the reversal's acts
 
@@ -328,7 +330,7 @@ public final class BnplCorrectionDesk {
                 reversal.status().name(), reversal.agreementVersion(), reversal.proposedAt().toString(),
                 reversal.decidedAt().map(Instant::toString).orElse(null),
                 reversal.entry().map(entry -> entry.value().toString()).orElse(null),
-                reversal.valueDate().map(LocalDate::toString).orElse(null));
+                reversal.valueDate().map(LocalDate::toString).orElse(null), reversal.proposedBy());
     }
 
     static BnplWaiverView view(BnplWaiver waiver, String closure) {
@@ -337,14 +339,17 @@ public final class BnplCorrectionDesk {
                 waiver.amount().toBigDecimal().toPlainString(), waiver.amount().currency().code(), waiver.status().name(),
                 waiver.agreementVersion(), waiver.proposedAt().toString(),
                 waiver.decidedAt().map(Instant::toString).orElse(null),
-                waiver.entry().map(entry -> entry.value().toString()).orElse(null), closure);
+                waiver.entry().map(entry -> entry.value().toString()).orElse(null), closure, waiver.proposedBy());
     }
 
-    /** The receipt: the view's fields, '|'-separated, an absent one empty. */
+    /**
+     * The receipt: the view's fields, '|'-separated, an absent one empty - the proposer last (`P17-TSK-116`), so a receipt
+     * stored before it replays with none named.
+     */
     static StoredResponse stored(BnplReversalView view) {
         String body = String.join("|", view.reversalId(), view.agreementId(), view.repaymentId(), view.status(),
                 Integer.toString(view.agreementVersion()), view.proposedAt(), nullable(view.decidedAt()),
-                nullable(view.journalEntryId()), nullable(view.valueDate()));
+                nullable(view.journalEntryId()), nullable(view.valueDate()), nullable(view.proposedBy()));
         return StoredResponse.of(body.getBytes(StandardCharsets.UTF_8), "text/plain");
     }
 
@@ -352,20 +357,21 @@ public final class BnplCorrectionDesk {
         String body = String.join("|", view.waiverId(), view.agreementId(), view.kind(), view.assessmentId(),
                 view.instalmentId(), view.amount(), view.currency(), view.status(),
                 Integer.toString(view.agreementVersion()), view.proposedAt(), nullable(view.decidedAt()),
-                nullable(view.journalEntryId()), nullable(view.closure()));
+                nullable(view.journalEntryId()), nullable(view.closure()), nullable(view.proposedBy()));
         return StoredResponse.of(body.getBytes(StandardCharsets.UTF_8), "text/plain");
     }
 
     static BnplReversalView replayedReversal(byte[] body) {
         String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", -1);
         return new BnplReversalView(fields[0], fields[1], fields[2], fields[3], Integer.parseInt(fields[4]), fields[5],
-                orNull(fields[6]), orNull(fields[7]), orNull(fields[8]));
+                orNull(fields[6]), orNull(fields[7]), orNull(fields[8]), fields.length > 9 ? orNull(fields[9]) : null);
     }
 
     static BnplWaiverView replayedWaiver(byte[] body) {
         String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", -1);
         return new BnplWaiverView(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5], fields[6], fields[7],
-                Integer.parseInt(fields[8]), fields[9], orNull(fields[10]), orNull(fields[11]), orNull(fields[12]));
+                Integer.parseInt(fields[8]), fields[9], orNull(fields[10]), orNull(fields[11]), orNull(fields[12]),
+                fields.length > 13 ? orNull(fields[13]) : null);
     }
 
     private static String nullable(String value) {

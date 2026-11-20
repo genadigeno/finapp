@@ -177,13 +177,16 @@ public final class SimulatedBureauAdapter implements CreditBureau {
         }
         byte[] received = response.body();
         boolean retainable = received.length > 0 && received.length <= MAX_EVIDENCE_BYTES;
+        // P17-TSK-116: the evidence names what the provider called it - the normaliser never sees a header.
+        java.util.Optional<String> contentType = response.headers().firstValue("Content-Type");
         if (response.statusCode() != 200) {
-            return unavailable(UnavailableCause.PROVIDER_ERROR, retainable ? received : null);
+            return unavailable(UnavailableCause.PROVIDER_ERROR, retainable ? received : null)
+                    .withEvidenceMediaType(contentType);
         }
         if (!retainable) {
             return unavailable(UnavailableCause.MALFORMED, null);
         }
-        return normalise(received, request.product().currency());
+        return normalise(received, request.product().currency()).withEvidenceMediaType(contentType);
     }
 
     /** Never the key, never a subject. */

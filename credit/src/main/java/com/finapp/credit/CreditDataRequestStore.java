@@ -56,7 +56,10 @@ public interface CreditDataRequestStore {
             Instant deadlineAt,
             boolean unavailableReported) {}
 
-    /** An evidence row to be born; the payload is absent exactly when consent was found withdrawn. */
+    /**
+     * An evidence row to be born; the payload - and its media type (`P17-TSK-116`, credit V027) - is absent exactly when
+     * consent was found withdrawn.
+     */
     record NewEvidence(
             CreditEvidenceId id,
             CreditDataRequestId dataRequest,
@@ -65,14 +68,16 @@ public interface CreditDataRequestStore {
             Optional<CreditEvidenceCipher.Encrypted> sealed,
             Optional<byte[]> checksum,
             int contentLength,
-            int retentionMonths) {
+            int retentionMonths,
+            Optional<String> mediaType) {
         public NewEvidence {
             Objects.requireNonNull(id, "id");
             Objects.requireNonNull(dataRequest, "dataRequest");
             Objects.requireNonNull(sealed, "sealed");
             Objects.requireNonNull(checksum, "checksum");
-            if (sealed.isPresent() != checksum.isPresent()) {
-                throw new IllegalArgumentException("evidence is sealed whole, or not at all");
+            Objects.requireNonNull(mediaType, "mediaType");
+            if (sealed.isPresent() != checksum.isPresent() || sealed.isPresent() != mediaType.isPresent()) {
+                throw new IllegalArgumentException("evidence is sealed whole, with its media type, or not at all");
             }
         }
 

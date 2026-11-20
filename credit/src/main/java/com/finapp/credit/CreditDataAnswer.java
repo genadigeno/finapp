@@ -21,6 +21,21 @@ import java.util.stream.Collectors;
 public sealed interface CreditDataAnswer permits CreditDataAnswer.Received, CreditDataAnswer.Partial, CreditDataAnswer.Unavailable {
 
     /**
+     * This answer with its evidence named by the provider's {@code Content-Type} (`P17-TSK-116`;
+     * {@link CreditEvidence#mediaTypeOf}) - an adapter's last step, after its normaliser, which never sees a header.
+     */
+    default CreditDataAnswer withEvidenceMediaType(Optional<String> contentType) {
+        return switch (this) {
+            case Received received -> new Received(received.providerCode(), received.normaliserVersion(),
+                    received.retrievedAt(), received.attributes(), received.evidence().withMediaType(contentType));
+            case Partial partial -> new Partial(partial.providerCode(), partial.normaliserVersion(), partial.retrievedAt(),
+                    partial.attributes(), partial.evidence().withMediaType(contentType));
+            case Unavailable unavailable -> new Unavailable(unavailable.cause(),
+                    unavailable.evidence().map(evidence -> evidence.withMediaType(contentType)));
+        };
+    }
+
+    /**
      * A complete answer: every attribute present.
      *
      * @param providerCode the source's code

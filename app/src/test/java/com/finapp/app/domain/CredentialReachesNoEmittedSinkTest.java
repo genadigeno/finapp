@@ -218,6 +218,13 @@ class CredentialReachesNoEmittedSinkTest {
                         // reason. Prose about a customer's account, never a credential; each toString counts it, never prints it.
                         "RestrictionProposalRequest",
                         "RestrictionDecisionRequest",
+                        // P17-TSK-031: a reversal's decision - the decider's reason, the TransferReversalRequest shape.
+                        "TransferReversalDecisionRequest",
+                        // P17-TSK-031: a refund proposal's decision - the decider's reason, nothing else.
+                        "RefundDecisionRequest",
+                        // P17-TSK-116: a BNPL refund proposal's and a BNPL fee assignment's decision - a reason, nothing else.
+                        "BnplRefundDecisionRequest",
+                        "BnplFeeAssignmentDecisionRequest",
                         // P17-TSK-015: ending another identity's session. A reason, and nothing else.
                         "SessionRevocationRequest",
                         // P17-TSK-111: a ledger adjustment's rejection with a reason. A reason, and nothing else.

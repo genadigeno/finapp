@@ -235,7 +235,8 @@ final class CreditWorld {
 
     private static CreditDataAnswer received(String provider, Duration ago, List<CreditAttribute> attributes) {
         return new CreditDataAnswer.Received(provider, 1, Instant.now().minus(ago), attributes,
-                new CreditEvidence("{\"answer\":\"test\"}".getBytes(StandardCharsets.UTF_8)));
+                // P17-TSK-116: the evidence names what its provider called it, as an adapter's answer does.
+                new CreditEvidence("{\"answer\":\"test\"}".getBytes(StandardCharsets.UTF_8), "application/json"));
     }
 
     /**

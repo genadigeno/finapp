@@ -252,26 +252,45 @@ public final class UnderwritingCases {
         List<Queued> queued = new ArrayList<>();
         // The row read past the page only says that more follow: its basis is not loaded, nor is it served or recorded.
         for (UnderwritingCase reviewCase : read.subList(0, Math.min(limit, read.size()))) {
-            SnapshotContent basis = CanonicalSnapshot.parse(snapshots.snapshotById(unitOfWork, reviewCase.basisSnapshot())
-                    .orElseThrow(() -> new IllegalStateException("a case's basis names a snapshot that exists"))
-                    .canonical());
-            PolicyEvaluation evaluation = evaluations.byAssessment(unitOfWork, reviewCase.basisAssessment())
-                    .orElseThrow(() -> new IllegalStateException("a case's basis is evaluated"));
-            List<CreditPolicy.PolicyRule> frozen = policies.policy(unitOfWork, evaluation.policyVersion())
-                    .orElseThrow(() -> new IllegalStateException("a basis pins a policy that exists"))
-                    .policy()
-                    .rules();
-            List<QueuedRule> rules = new ArrayList<>();
-            for (EvaluationResult.RuleResult result : evaluation.result().rules()) {
-                rules.add(new QueuedRule(result.ordinal(), result.ruleCode(), result.effect(),
-                        frozen.get(result.ordinal() - 1).reason(), result.state()));
-            }
-            queued.add(new Queued(reviewCase, basis.attributes(), rules));
+            queued.add(withBasis(unitOfWork, reviewCase));
         }
         record(unitOfWork, actor, CreditAuditAction.REVIEW_CASES_READ, QUEUE_TARGET,
                 status.map(Enum::name).orElse("ALL"), Optional.empty(), AuditOutcome.SUCCEEDED, correlation,
                 queueSummary(queued.stream().map(served -> served.reviewCase().id()).toList(), status, after.isPresent()));
         return new QueuePage(queued, more);
+    }
+
+    /**
+     * One case by its identifier, with its basis exactly as the queue serves it (`P17-TSK-116`: the case an underwriter
+     * decides, read in any status, without walking the queue's pages) - the serving recorded in
+     * {@code unitOfWork}, {@code credit.ReviewCaseRead}, its target the case.
+     *
+     * @throws CaseNotFound no case has the identifier
+     */
+    public Queued reviewCase(Connection unitOfWork, UnderwritingCaseId id, Actor actor, CorrelationId correlation) {
+        Queued served = withBasis(unitOfWork, find(unitOfWork, id));
+        record(unitOfWork, actor, CreditAuditAction.REVIEW_CASE_READ, CASE_TARGET, id.value().toString(), Optional.empty(),
+                AuditOutcome.SUCCEEDED, correlation, "review case read: status " + served.reviewCase().status().name());
+        return served;
+    }
+
+    /** A case with its basis: the snapshot's normalised attributes and the rules its evaluation ran, by the pinned policy. */
+    private Queued withBasis(Connection unitOfWork, UnderwritingCase reviewCase) {
+        SnapshotContent basis = CanonicalSnapshot.parse(snapshots.snapshotById(unitOfWork, reviewCase.basisSnapshot())
+                .orElseThrow(() -> new IllegalStateException("a case's basis names a snapshot that exists"))
+                .canonical());
+        PolicyEvaluation evaluation = evaluations.byAssessment(unitOfWork, reviewCase.basisAssessment())
+                .orElseThrow(() -> new IllegalStateException("a case's basis is evaluated"));
+        List<CreditPolicy.PolicyRule> frozen = policies.policy(unitOfWork, evaluation.policyVersion())
+                .orElseThrow(() -> new IllegalStateException("a basis pins a policy that exists"))
+                .policy()
+                .rules();
+        List<QueuedRule> rules = new ArrayList<>();
+        for (EvaluationResult.RuleResult result : evaluation.result().rules()) {
+            rules.add(new QueuedRule(result.ordinal(), result.ruleCode(), result.effect(),
+                    frozen.get(result.ordinal() - 1).reason(), result.state()));
+        }
+        return new Queued(reviewCase, basis.attributes(), rules);
     }
 
     /**

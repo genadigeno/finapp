@@ -1139,6 +1139,27 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-applications",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements",
                         ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/servicing-requests",
+                        // P17-TSK-031: a transfer reversal decided by four eyes.
+                        ApiVersion.CURRENT_PREFIX + "/operator/transfer-reversals/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/transfer-reversals/{id}/rejection",
+                        // P17-TSK-031: a merchant closure decided by four eyes.
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchant-closures/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchant-closures/{id}/rejection",
+                        // P17-TSK-031: a refund and an operator payout above the threshold, decided by four eyes.
+                        ApiVersion.CURRENT_PREFIX + "/operator/refund-proposals/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/refund-proposals/{id}/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/payout-proposals/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/payout-proposals/{id}/rejection",
+                        // P17-TSK-116: two BNPL acts decided by four eyes, and the reads an approver lacks.
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-refund-proposals/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-refund-proposals/{id}/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-fee-schedule-proposals/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-fee-schedule-proposals/{id}/rejection",
+                        ApiVersion.CURRENT_PREFIX + "/operator/lending/terms/{versionId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/lending/capital-contributions/{contributionId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/credit/review-cases/{id}",
+                        ApiVersion.CURRENT_PREFIX + "/operator/bnpl-agreements/{id}/servicing",
                         // P17-TSK-014: the staff directory, its detail, the lookup and the role catalogue (IDENTITY_READ).
                         ApiVersion.CURRENT_PREFIX + "/operator/identities",
                         ApiVersion.CURRENT_PREFIX + "/operator/identities/{id}",

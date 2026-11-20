@@ -209,6 +209,39 @@ class LoanTermsEndpointDatabaseTest {
     }
 
     @Test
+    @Order(5)
+    @DisplayName("P17-TSK-116: a terms version read by its identifier in any state - its proposer named, never a reason -"
+            + " by the second officer who decides it; closed to a LENDING_TREASURY_OFFICER, to no role and to no session;"
+            + " the unknown and the malformed one 404")
+    void aVersionIsReadByItsIdentifier() throws Exception {
+        String proposer = sessionWith(RoleName.LENDING_OFFICER);
+        String approver = sessionWith(RoleName.LENDING_OFFICER);
+        HttpResponse<String> proposed = post(TERMS, terms("CREDIT_LINE", "0.1234", Map.of()), proposer, someKey());
+        assertThat(proposed.statusCode()).as(proposed.body()).isIn(201, 409);
+        org.junit.jupiter.api.Assumptions.assumeTrue(proposed.statusCode() == 201,
+                "another suite's CREDIT_LINE proposal is pending on the shared database");
+        String id = field(proposed.body(), "id");
+        try {
+            HttpResponse<String> read = get(TERMS + "/" + id, approver);
+            assertThat(read.statusCode()).as(read.body()).isEqualTo(200);
+            assertThat(field(read.body(), "id")).isEqualTo(id);
+            assertThat(field(read.body(), "status")).isEqualTo("PROPOSED");
+            assertThat(field(read.body(), "proposedBy")).isEqualTo(LoanApplicationClient.scalar(
+                    "SELECT proposed_by FROM lending.loan_terms_version WHERE id = ?::uuid", id));
+            assertThat(read.body()).contains("\"nominalAnnualRate\":\"0.1234\"").doesNotContain("\"reason\"");
+            assertThat(get(TERMS + "/" + id, sessionWith(RoleName.LENDING_TREASURY_OFFICER)).statusCode())
+                    .as("treasury").isEqualTo(403);
+            assertThat(get(TERMS + "/" + id, sessionWith(null)).statusCode()).as("no role").isEqualTo(403);
+            assertThat(get(TERMS + "/" + id, null).statusCode()).as("no session").isEqualTo(401);
+            assertThat(get(TERMS + "/" + UUID.randomUUID(), approver).statusCode()).isEqualTo(404);
+            assertThat(get(TERMS + "/not-a-uuid", approver).statusCode()).isEqualTo(404);
+        } finally {
+            assertThat(post(TERMS + "/" + id + "/rejection", decision("read, not agreed"), approver, someKey())
+                    .statusCode()).as("the proposal decided, the product free again").isEqualTo(200);
+        }
+    }
+
+    @Test
     @Order(4)
     @DisplayName("every terms act under one key is one (INV-IDEM-01, the gate's idempotency clause): ten proposals, ten"
             + " rejections and ten approvals - each raced under one key - answer one receipt (or 409"

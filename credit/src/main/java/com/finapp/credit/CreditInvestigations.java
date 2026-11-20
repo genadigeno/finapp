@@ -68,7 +68,7 @@ public final class CreditInvestigations {
     public sealed interface EvidenceRead permits EvidenceRead.Served, EvidenceRead.NotFound, EvidenceRead.Unreadable {
 
         /** The plaintext, served and recorded. */
-        record Served(CreditEvidenceId evidence, byte[] content) implements EvidenceRead {}
+        record Served(CreditEvidenceId evidence, byte[] content, String mediaType) implements EvidenceRead {}
 
         /** No record, or a record with no readable evidence. */
         record NotFound() implements EvidenceRead {}
@@ -212,7 +212,8 @@ public final class CreditInvestigations {
                 correlation,
                 Optional.of("evidence " + evidence.get().value() + " of record " + record.value()
                         + (content == null ? " - could not be decrypted" : ""))));
-        return content == null ? new EvidenceRead.Unreadable() : new EvidenceRead.Served(evidence.get(), content);
+        return content == null ? new EvidenceRead.Unreadable()
+                : new EvidenceRead.Served(evidence.get(), content, reads.mediaTypeOf(unitOfWork, evidence.get()));
     }
 
     /**

@@ -412,6 +412,13 @@ class MerchantTenancyBatteryDatabaseTest {
                             "com.finapp.app.bnpl.BnplMerchantEndpointDatabaseTest#theDoorsAreClosed",
                             "id = ? AND merchant_id = ? (JdbcBnplEnablementStore; OwnershipIsScopedTest)"));
         }
+        // P17-TSK-116: the enablement read by its identifier, under the path's merchant.
+        table.put(
+                "GET /v1/operator/merchants/{merchantId}/bnpl-enablement/{enablementId}",
+                delegated(
+                        Kind.PAIRED,
+                        "com.finapp.app.bnpl.BnplMerchantEndpointDatabaseTest#theEnablementIsReadUnderItsMerchant",
+                        "id = ? AND merchant_id = ? (JdbcBnplEnablementStore.find; OwnershipIsScopedTest)"));
         table.put(
                 "PUT /v1/operator/merchants/{merchantId}/bnpl-fee-schedules/{product}",
                 delegated(

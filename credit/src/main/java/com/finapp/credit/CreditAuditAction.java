@@ -190,6 +190,13 @@ public enum CreditAuditAction implements AuditableAction {
                     + " the reason-code distribution or source availability (P10-TSK-020): counts and rates in one snapshot,"
                     + " never an amount, a score, an attribute or a party; written in the read's own transaction, so no"
                     + " report is served without its record. The summary names the report, the month and the row count.",
+            false),
+
+    REVIEW_CASE_READ(
+            "credit.ReviewCaseRead",
+            "A holder of CREDIT_UNDERWRITE read one review case by its identifier - its basis, the normalised attributes"
+                    + " and the rules the evaluation triggered, never raw evidence, as the queue serves it (P17-TSK-116);"
+                    + " written in the read's own transaction. Its target the case.",
             false);
 
     private final String code;

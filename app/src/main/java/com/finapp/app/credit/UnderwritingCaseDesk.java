@@ -132,6 +132,18 @@ public final class UnderwritingCaseDesk {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ReviewCasePage(List<ReviewCaseView> items, String nextCursor) {}
 
+    /**
+     * One case by its identifier, with its basis as the queue serves it (`P17-TSK-116`): what an underwriter decides, read
+     * in any status, without walking the queue's pages (`P17-TSK-042`). Recorded
+     * {@code credit.ReviewCaseRead} in the read's own transaction; an unknown or malformed case is the uniform {@code 404}.
+     */
+    public ReviewCaseView reviewCase(String rawId) {
+        UnderwritingCaseId id = caseId(rawId);
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        return view(guarded(() -> transactions.inTransaction(uow -> cases.reviewCase(uow, id, actor, correlation))));
+    }
+
     // ------------------------------------------------------------------ the acts
 
     public ReviewCaseReceipt assign(String idempotencyKey, String rawId) {

@@ -189,6 +189,7 @@ Detailed architectural decisions. The human-readable index of *what* was decided
 | [0151](ADR-0151-no-module-leaves-the-monolith-the-extraction-evaluation.md) | No module leaves the monolith: the service-extraction evaluation, each criterion read against the evidence, and what would reopen it | Accepted | 16 | Every module (the deployment topology) · Risk · Reconciliation · Payment Methods |
 | [0152](ADR-0152-the-books-first-month.md) | The books' first month: how many months before today the first accounting period opens, read only while none exists | Proposed | 17 | Accounting (periods) · the Operator Console's end-to-end seed |
 | [0153](ADR-0153-a-customer-accounts-restriction.md) | A customer account's restriction: suspension and reinstatement by four eyes, refusing new outflows at each command's own check | Accepted | 17 | Accounts (the agreement) · risk's account actions · transfers, payments, fx (their outflow checks) |
+| [0154](ADR-0154-the-operators-money-acts-by-four-eyes.md) | The operator's money acts: four eyes for a transfer reversal and a merchant closure, four eyes above a versioned per-currency threshold for a refund and an operator payout, and a key on every one | Accepted | 17 | Transfers · Payments · Merchant · Identity |
 
 *ADR-0063 is `X-TSK-005`'s. The Phase 7 → 8 transition reserved the number while that branch was
 unmerged, so Phase 8's decisions start at ADR-0064; the row arrived with the file when the branch

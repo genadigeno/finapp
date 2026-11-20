@@ -190,6 +190,21 @@ class LendingCapitalDatabaseTest {
         assertThat(count("SELECT count(*) FROM reconciliation.expectation WHERE operation_ref = ?", contribution))
                 .as("a proposal opens nothing").isZero();
 
+        // P17-TSK-116: the approver reads the contribution by its identifier before deciding - its proposer named, never a
+        // reason; under LENDING_CAPITAL_ADMINISTER, the treasury officer's one permission.
+        HttpResponse<String> pending = get(CONTRIBUTIONS + "/" + contribution, approver);
+        assertThat(pending.statusCode()).as(pending.body()).isEqualTo(200);
+        assertThat(field(pending.body(), "status")).isEqualTo("PROPOSED");
+        assertThat(field(pending.body(), "reference")).isEqualTo(reference);
+        assertThat(field(pending.body(), "proposedBy")).isEqualTo(one("SELECT proposed_by FROM"
+                + " lending.capital_contribution WHERE id = ?", UUID.fromString(contribution)));
+        assertThat(pending.body()).doesNotContain("seed capital");
+        assertThat(get(CONTRIBUTIONS + "/" + contribution, officer).statusCode())
+                .as("a LENDING_OFFICER holds no LENDING_CAPITAL_ADMINISTER").isEqualTo(403);
+        assertThat(get(CONTRIBUTIONS + "/" + contribution, null).statusCode()).as("no session").isEqualTo(401);
+        assertThat(get(CONTRIBUTIONS + "/" + UUID.randomUUID(), approver).statusCode()).isEqualTo(404);
+        assertThat(get(CONTRIBUTIONS + "/not-a-uuid", approver).statusCode()).isEqualTo(404);
+
         String approvalKey = key();
         HttpResponse<String> approved = post(CONTRIBUTIONS + "/" + contribution + "/approval",
                 decision("board minute 11"), approver, approvalKey);
@@ -205,6 +220,9 @@ class LendingCapitalDatabaseTest {
                 .isEqualTo("LENDING_CAPITAL_CONTRIBUTION:OPEN:INBOUND:100000:LENDING_CAPITAL:true");
         assertThat(headroomNow().capital())
                 .as("an approval is not capital: the ledger holds nothing new").isEqualTo(baseCapital);
+        HttpResponse<String> decided = get(CONTRIBUTIONS + "/" + contribution, proposer);
+        assertThat(field(decided.body(), "status")).as("P17-TSK-116: read in any state").isEqualTo("APPROVED");
+        assertThat(field(decided.body(), "recognition")).isEqualTo("AWAITING_FUNDS");
 
         UUID statement = acceptedStatement(capitalLine(1_000_00, reference));
         UUID entry = (UUID) one("SELECT journal_entry_id FROM settlement.batch WHERE id = ?", statement);

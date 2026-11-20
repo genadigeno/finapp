@@ -69,13 +69,33 @@ class BnplCorrectionDeskTest {
     }
 
     @Test
-    @DisplayName("the views are closed: no member names a reason, a party, a wallet or a proposer")
+    @DisplayName("the views are closed: no member names a reason, a party, a wallet or a decider - and (P17-TSK-116) each"
+            + " names its proposer, so an approver's console disables a proposer's own approval in advance")
     void theViewsAreClosed() {
         for (Class<?> view : List.of(BnplCorrectionDesk.BnplReversalView.class, BnplCorrectionDesk.BnplWaiverView.class)) {
             assertThat(Arrays.stream(view.getRecordComponents()).map(RecordComponent::getName))
                     .noneMatch(name -> name.contains("reason") || name.contains("party") || name.contains("wallet")
-                            || name.contains("proposedBy") || name.contains("decidedBy"));
+                            || name.contains("decidedBy"))
+                    .contains("proposedBy");
         }
+    }
+
+    @Test
+    @DisplayName("P17-TSK-116: the proposer is served and replayed; a receipt stored before it replays with none named")
+    void theProposerIsNamedAndOldReceiptsReplay() {
+        BnplCorrectionDesk.BnplReversalView reversal = BnplCorrectionDesk.view(reversal(BnplCorrectionStatus.PROPOSED));
+        assertThat(reversal.proposedBy()).isNotBlank();
+        String stored = new String(BnplCorrectionDesk.stored(reversal).body(), StandardCharsets.UTF_8);
+        String before = stored.substring(0, stored.lastIndexOf('|'));
+        assertThat(BnplCorrectionDesk.replayedReversal(before.getBytes(StandardCharsets.UTF_8)).proposedBy()).isNull();
+        BnplCorrectionDesk.BnplWaiverView waiver = BnplCorrectionDesk.view(waiver(BnplCorrectionStatus.PROPOSED), null);
+        assertThat(waiver.proposedBy()).isNotBlank();
+        String waived = new String(BnplCorrectionDesk.stored(waiver).body(), StandardCharsets.UTF_8);
+        assertThat(BnplCorrectionDesk.replayedWaiver(waived.substring(0, waived.lastIndexOf('|'))
+                .getBytes(StandardCharsets.UTF_8))).isEqualTo(new BnplCorrectionDesk.BnplWaiverView(waiver.waiverId(),
+                        waiver.agreementId(), waiver.kind(), waiver.assessmentId(), waiver.instalmentId(), waiver.amount(),
+                        waiver.currency(), waiver.status(), waiver.agreementVersion(), waiver.proposedAt(),
+                        waiver.decidedAt(), waiver.journalEntryId(), waiver.closure(), null));
     }
 
     @Test

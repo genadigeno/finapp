@@ -68,6 +68,9 @@ class BnplRefundsTest {
     private BnplRepayments repayments;
     private BnplRefunds refunds;
     private final Map<String, UUID> operatorParties = new LinkedHashMap<>();
+    /** The operator door's four-eyes threshold (`P17-TSK-116`): never above, unless a test says otherwise. */
+    private java.util.function.Function<Money, Optional<BnplRefundThresholds.Threshold>> threshold =
+            cumulative -> Optional.empty();
     private UUID party;
     private Actor customer;
     private UUID merchant;
@@ -100,7 +103,7 @@ class BnplRefundsTest {
                 world.wallets, world.book, closures, world.outbox, IDS, CLOCK);
         refunds = new BnplRefunds(world.refunds, world.servicing, world.purchases, world.terms.store(), world.merchants,
                 world.wallets, world.book, closures, (uow, actor) -> Optional.ofNullable(operatorParties.get(actor.id())),
-                world.outbox, world.audit, IDS, CLOCK);
+                world.outbox, world.audit, IDS, CLOCK, (unitOfWork, cumulative) -> threshold.apply(cumulative));
         party = UUID.randomUUID();
         customer = new Actor(party.toString(), ActorType.CUSTOMER);
         merchant = UUID.randomUUID();
@@ -467,6 +470,77 @@ class BnplRefundsTest {
             assertThat(record.actor()).isEqualTo(OPERATOR);
             assertThat(record.reason()).contains("the goods came back");
         });
+    }
+
+    @Test
+    @DisplayName("P17-TSK-116: the operator's refund whose amount, with every door's committed refunds, is above the four-eyes"
+            + " threshold is refused for a second person under B5 - nothing written; the merchant's door is never judged;"
+            + " the approval's step runs right after the refund row, naming it")
+    void theOperatorsRefundAboveTheThresholdIsForASecondPerson() {
+        Agreement p4 = payIn4();
+        operatorParties.put(OPERATOR.id(), UUID.randomUUID());
+        List<Money> judged = new ArrayList<>();
+        threshold = cumulative -> {
+            judged.add(cumulative);
+            return cumulative.compareTo(eur(200_00)) > 0
+                    ? Optional.of(new BnplRefundThresholds.Threshold(3, eur(200_00))) : Optional.empty();
+        };
+        // The merchant's own sale: above the operator's threshold, and never judged against it (ADR-0105 decision 9).
+        refundAt("2026-10-20T10:00:00Z", p4, "merchant", eur(250_00));
+        assertThat(judged).isEmpty();
+        assertThat(world.refunds.rows).hasSize(1);
+
+        world.now = Instant.parse("2026-10-20T11:00:00Z");
+        BnplRefundRequiresApprovalException above = (BnplRefundRequiresApprovalException) org.assertj.core.api.Assertions
+                .catchThrowable(() -> world.inTransaction(() -> refunds.byOperator(BnplApplicationFakes.UOW,
+                        p4.purchase(), request("op", eur(10_00)), OPERATOR, CORRELATION)));
+        assertThat(above).isNotNull();
+        assertThat(above.cumulative()).as("the merchant's 250.00 and this 10.00 together").isEqualTo(eur(260_00));
+        assertThat(above.threshold().version()).isEqualTo(3);
+        assertThat(above.getMessage()).doesNotContain("260").doesNotContain("10.00");
+        assertThat(world.refunds.rows).as("nothing written").hasSize(1);
+
+        List<UUID> stepped = new ArrayList<>();
+        Actor insider = new Actor("operator-of-the-customers-party", ActorType.CUSTOMER);
+        operatorParties.put(insider.id(), party);
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> world.inTransaction(() -> refunds.byOperator(
+                BnplApplicationFakes.UOW, p4.purchase(), request("insider", eur(10_00)), insider, CORRELATION,
+                (unitOfWork, refund) -> stepped.add(refund)))))
+                .as("an approver of the purchase's own party is refused as any operator is, before the step")
+                .isInstanceOf(BnplRefunds.SelfDealingRefused.class);
+        assertThat(stepped).isEmpty();
+        BnplRefund approved = world.inTransaction(() -> refunds.byOperator(BnplApplicationFakes.UOW, p4.purchase(),
+                request("approval", eur(10_00)), OPERATOR, CORRELATION, (unitOfWork, refund) -> {
+                    assertThat(world.refunds.rows).as("the refund row is written before the step").hasSize(2);
+                    stepped.add(refund);
+                })).refund();
+        assertThat(stepped).containsExactly(approved.id());
+        assertThat(judged).as("an approval is the second person: no threshold judged").hasSize(1);
+        assertThat(approved.amount()).isEqualTo(eur(10_00));
+    }
+
+    @Test
+    @DisplayName("P17-TSK-116: at or below the threshold the operator refunds as before; a currency with no threshold, or self-dealing"
+            + " above it, is judged first - an operator of the purchase's own party is refused as today, never proposed")
+    void theThresholdIsJudgedAfterSelfDealingAndTheBound() {
+        Agreement p4 = payIn4();
+        operatorParties.put(OPERATOR.id(), party);
+        threshold = cumulative -> Optional.of(new BnplRefundThresholds.Threshold(0, eur(0)));
+        world.now = Instant.parse("2026-10-20T10:00:00Z");
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> world.inTransaction(() -> refunds.byOperator(
+                BnplApplicationFakes.UOW, p4.purchase(), request("own", eur(10_00)), OPERATOR, CORRELATION))))
+                .isInstanceOf(BnplRefunds.SelfDealingRefused.class);
+        operatorParties.put(OPERATOR.id(), UUID.randomUUID());
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> world.inTransaction(() -> refunds.byOperator(
+                BnplApplicationFakes.UOW, p4.purchase(), request("too-much", eur(700_00)), OPERATOR, CORRELATION))))
+                .as("the bound first: a refund that could never apply is not proposed")
+                .isInstanceOf(BnplRefunds.RefundExceedsPurchase.class);
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(() -> world.inTransaction(() -> refunds.byOperator(
+                BnplApplicationFakes.UOW, p4.purchase(), request("closed", eur(10_00)), OPERATOR, CORRELATION))))
+                .as("fail closed").isInstanceOf(BnplRefundRequiresApprovalException.class);
+        threshold = cumulative -> Optional.empty();
+        assertThat(world.inTransaction(() -> refunds.byOperator(BnplApplicationFakes.UOW, p4.purchase(),
+                request("below", eur(10_00)), OPERATOR, CORRELATION)).refund().amount()).isEqualTo(eur(10_00));
     }
 
     @Test

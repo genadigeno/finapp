@@ -502,16 +502,37 @@ public final class PaymentService {
             PaymentIntentId intentId, RefundRequest body, String idempotencyKey) {
         Objects.requireNonNull(intentId, "intentId must not be null");
         Objects.requireNonNull(body, "body must not be null");
+        return dispatchRefund(intentId, parsedAmount(body.amount(), body.currency()), body.reason(), idempotencyKey,
+                Optional.empty());
+    }
+
+    /** The amount the refund door asks, parsed exactly - what a proposal above the threshold pins (`P17-TSK-031`). */
+    public Money refundAmountOf(RefundRequest body) {
+        return parsedAmount(body.amount(), body.currency());
+    }
+
+    /**
+     * A refund proposal's approval (`P17-TSK-031`, ADR-0154): the same command and the same refusals as the door, with the
+     * proposal's decision as the step inside its dispatch transaction - no threshold judged, this is the second person.
+     */
+    public RefundView approveRefund(PaymentIntentId intentId, Money amount, String reason, String idempotencyKey,
+            PaymentRefund.ApprovalStep approval) {
+        return dispatchRefund(intentId, amount, reason, idempotencyKey, Optional.of(approval));
+    }
+
+    private RefundView dispatchRefund(PaymentIntentId intentId, Money amount, String reason, String idempotencyKey,
+            Optional<PaymentRefund.ApprovalStep> approval) {
         PaymentRefund command = refund.getIfAvailable();
         if (command == null) {
             throw providerUnavailable();
         }
-        Money amount = parsedAmount(body.amount(), body.currency());
         PaymentRefund.RefundResult result;
         try {
             // NOT wrapped in a transaction: the command runs its own Tx1 / provider call /
             // Tx2 choreography (ADR-0046) - the confirm's discipline, refund form.
-            result = command.refund(intentId, amount, body.reason(), idempotencyKey);
+            result = approval.isPresent()
+                    ? command.refund(intentId, amount, reason, idempotencyKey, approval.get())
+                    : command.refund(intentId, amount, reason, idempotencyKey);
         } catch (UnknownPaymentException unknown) {
             throw paymentNotFound();
         } catch (PaymentNotRefundableException refused) {

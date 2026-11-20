@@ -182,7 +182,28 @@ public class MerchantPayoutBeans {
                 payoutEvidenceStore,
                 auditWriter,
                 ids,
+                clock,
+                // P17-TSK-031 (ADR-0154): the operator payout's four-eyes threshold, versioned in merchant V020.
+                new com.finapp.merchant.JdbcPayoutThresholds());
+    }
+
+    /** An operator payout above the threshold, by four eyes (`P17-TSK-031`, ADR-0154). */
+    @Bean
+    com.finapp.merchant.PayoutProposals payoutProposals(AuditWriter<Connection> auditWriter, IdGenerator ids, Clock clock) {
+        return new com.finapp.merchant.PayoutProposals(new com.finapp.merchant.JdbcPayoutProposalStore(), auditWriter, ids,
                 clock);
+    }
+
+    /** The operator payout door's four-eyes half (`P17-TSK-031`), each act in a transaction of its own. */
+    @Bean
+    PayoutDesk payoutDesk(
+            MerchantPayoutOperations merchantPayoutOperations,
+            com.finapp.merchant.PayoutProposals payoutProposals,
+            com.finapp.platform.idempotency.IdempotentExecutor idempotentExecutor,
+            PlatformTransactionManager transactionManager,
+            DataSource dataSource) {
+        return new PayoutDesk(merchantPayoutOperations, payoutProposals, idempotentExecutor,
+                new TransactionTemplate(transactionManager), dataSource);
     }
 
     @Bean

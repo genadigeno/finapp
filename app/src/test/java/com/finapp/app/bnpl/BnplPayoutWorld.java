@@ -180,7 +180,8 @@ final class BnplPayoutWorld implements AutoCloseable {
                 recorded, recorded, ids, clock, recorded);
         wire = new Counting(new SimulatedPayoutProvider(URI.create(scheme.baseUrl()), Duration.ofMillis(700), new byte[32]));
         payouts = new MerchantPayouts(transactions, executor, merchants, destinations, accounts, holds, payoutStore, wire,
-                outcomes, recorded, recorded, ids, clock);
+                outcomes, recorded, recorded, ids, clock,
+                (unitOfWork, amount) -> java.util.Optional.empty() /* P17-TSK-031: payout mechanics, never four eyes */);
         payables = new MerchantPayable(accounts, breakdowns);
         for (AccountPurpose purpose : List.of(AccountPurpose.PAYOUT_CLEARING, AccountPurpose.SETTLEMENT_CLEARING,
                 AccountPurpose.BNPL_MERCHANT_FEE_INCOME, AccountPurpose.CASH_AT_BANK, AccountPurpose.CHARGEBACK_RECOVERABLE)) {

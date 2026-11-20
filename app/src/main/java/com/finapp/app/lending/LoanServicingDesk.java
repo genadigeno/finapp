@@ -90,7 +90,8 @@ public final class LoanServicingDesk {
             int agreementVersion,
             String proposedAt,
             String decidedAt,
-            String journalEntryId) {}
+            String journalEntryId,
+            String proposedBy) {}
 
     /**
      * A loan as a servicing agent reads it: the account as its customer sees it - state, agreement, balances derived from
@@ -266,7 +267,7 @@ public final class LoanServicingDesk {
         return new Acted(decided.reversal(), decided.replayed());
     }
 
-    private static ReversalView view(RepaymentReversal reversal) {
+    static ReversalView view(RepaymentReversal reversal) {
         return new ReversalView(
                 reversal.id().toString(),
                 reversal.loan().value().toString(),
@@ -275,21 +276,26 @@ public final class LoanServicingDesk {
                 reversal.agreementVersion(),
                 reversal.proposedAt().toString(),
                 reversal.decidedAt().map(Instant::toString).orElse(null),
-                reversal.journalEntry().map(entry -> entry.value().toString()).orElse(null));
+                reversal.journalEntry().map(entry -> entry.value().toString()).orElse(null),
+                reversal.proposedBy());
     }
 
-    /** The receipt: the view's fields, '|'-separated, an absent one empty. */
-    private static StoredResponse stored(ReversalView view) {
+    /**
+     * The receipt: the view's fields, '|'-separated, an absent one empty - the proposer last (`P17-TSK-116`), so a receipt
+     * stored before it replays with none named.
+     */
+    static StoredResponse stored(ReversalView view) {
         String body = String.join("|", view.reversalId(), view.loanId(), view.repaymentId(), view.status(),
                 Integer.toString(view.agreementVersion()), view.proposedAt(), nullable(view.decidedAt()),
-                nullable(view.journalEntryId()));
+                nullable(view.journalEntryId()), nullable(view.proposedBy()));
         return StoredResponse.of(body.getBytes(StandardCharsets.UTF_8), "text/plain");
     }
 
-    private static ReversalView replayed(byte[] body) {
+    static ReversalView replayed(byte[] body) {
         String[] fields = new String(body, StandardCharsets.UTF_8).split("\\|", -1);
         return new ReversalView(fields[0], fields[1], fields[2], fields[3], Integer.parseInt(fields[4]), fields[5],
-                fields[6].isEmpty() ? null : fields[6], fields[7].isEmpty() ? null : fields[7]);
+                fields[6].isEmpty() ? null : fields[6], fields[7].isEmpty() ? null : fields[7],
+                fields.length > 8 && !fields[8].isEmpty() ? fields[8] : null);
     }
 
     private static String nullable(String value) {

@@ -3,6 +3,8 @@ package com.finapp.app.bnpl;
 import com.finapp.merchant.BnplEnablement;
 import com.finapp.merchant.BnplEnablementId;
 import com.finapp.merchant.BnplEnablements;
+import com.finapp.merchant.BnplFeeAssignmentProposal;
+import com.finapp.merchant.BnplFeeAssignments;
 import com.finapp.merchant.BnplPricing;
 import com.finapp.merchant.FeeCurrencyMismatchException;
 import com.finapp.merchant.FeeScheduleId;
@@ -24,8 +26,13 @@ import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.CorrelationId;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
+import java.time.Instant;
+import java.util.HexFormat;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -43,24 +50,52 @@ import lombok.RequiredArgsConstructor;
  * <p><strong>The key's type</strong> is the session actor's - {@code CUSTOMER} for an operator session today (the
  * platform does not yet issue {@code EMPLOYEE} actors to operator sessions; {@code BnplTermsDesk}'s note), so the
  * backlog's {@code merchant.bnpl-enablement:EMPLOYEE:<id>} reads {@code ...:CUSTOMER:<id>} until that debt is repaid, with
- * no change here. The fee schedule assignment carries no key: it converges through state, the existing
- * {@code .../fee-schedule} door's idiom.
+ * no change here.
+ *
+ * <p><strong>The BNPL fee assignment by four eyes</strong> (`P17-TSK-116`, ADR-0154's shape; finapp-admin-panel ADR-C135
+ * decision 3): the {@code PUT} no longer assigns - it judges what it can now (the merchant, the schedule, its currency,
+ * every version returning) and answers a keyed proposal, {@code PROPOSED} ({@value #FEE_PROPOSAL_SCOPE}), or
+ * {@code ASSIGNED} with nothing proposed when the pointer is there already. A holder of {@code FEE_SCHEDULE_APPROVE} who did
+ * not propose it approves ({@value #FEE_APPROVAL_SCOPE}) - {@code BnplPricing.assign} unchanged, under the approver, in
+ * the decision's transaction - or rejects ({@value #FEE_REJECTION_SCOPE}). It was unkeyed, converging through state; it is
+ * keyed now, a proposal being a new row (the `P17-TSK-031` precedent, replaced in place).
  */
 @RequiredArgsConstructor
 public final class MerchantBnplDesk {
 
     static final String SCOPE = "merchant.bnpl-enablement:";
 
+    /** The BNPL fee assignment's proposal: its key's scope (`P17-TSK-116`). */
+    static final String FEE_PROPOSAL_SCOPE = "merchant.bnpl-fee-assignment:";
+
+    /** The BNPL fee assignment's approval (`P17-TSK-116`). */
+    static final String FEE_APPROVAL_SCOPE = "merchant.bnpl-fee-assignment-approval:";
+
+    /** The BNPL fee assignment's rejection (`P17-TSK-116`). */
+    static final String FEE_REJECTION_SCOPE = "merchant.bnpl-fee-assignment-rejection:";
+
     @NonNull private final BnplEnablements enablements;
-    @NonNull private final BnplPricing pricing;
     @NonNull private final IdempotentExecutor executor;
     @NonNull private final BnplTransactions transactions;
+    @NonNull private final BnplFeeAssignments feeAssignments;
 
     /** An enablement act's receipt: the enablement, its merchant and its status. Never a reason or a person. */
     public record BnplEnablementReceipt(String id, String merchantId, String status) {}
 
-    /** Which schedule prices a merchant's BNPL product. */
-    public record BnplFeeScheduleView(String merchantId, String product, String feeScheduleId) {}
+    /**
+     * Which schedule prices - or, {@code PROPOSED}, is proposed to price - a merchant's BNPL product (`P17-TSK-116`):
+     * {@code ASSIGNED} when the pointer is there, {@code PROPOSED} or {@code REJECTED} for a proposal, {@code APPROVED} for
+     * one approved (the pointer moved), each naming its {@code proposalId}.
+     */
+    public record BnplFeeScheduleView(String merchantId, String product, String feeScheduleId, String status,
+            String proposalId) {}
+
+    /**
+     * A merchant's BNPL enablement as its approver reads it (`P17-TSK-116`): its status, who proposed and decided it, when -
+     * never a reason ({@code RESTRICTED-PII}).
+     */
+    public record BnplEnablementView(String id, String merchantId, String status, String proposedBy, String proposedAt,
+            String decidedBy, String decidedAt, String withdrawnBy, String withdrawnAt) {}
 
     // ------------------------------------------------------------------ the enablement
 
@@ -101,9 +136,12 @@ public final class MerchantBnplDesk {
 
     // ------------------------------------------------------------------ the BNPL fee schedule
 
-    /** Points the merchant's BNPL product at a schedule, reasoned; converges when it is already there. */
-    public BnplFeeScheduleView assignFeeSchedule(String rawMerchant, String rawProduct, UUID feeScheduleId,
-            String reason) {
+    /**
+     * Proposes pointing the merchant's BNPL product at a schedule, reasoned and keyed (`P17-TSK-116`): judged now, answered
+     * {@code PROPOSED}; {@code ASSIGNED} with nothing proposed when the pointer is there already.
+     */
+    public BnplFeeScheduleView assignFeeSchedule(String idempotencyKey, String rawMerchant, String rawProduct,
+            UUID feeScheduleId, String reason) {
         MerchantId merchant = merchantOrAbsent(rawMerchant);
         MerchantBnplProduct product = productOrAbsent(rawProduct);
         Objects.requireNonNull(feeScheduleId, "feeScheduleId must not be null");
@@ -115,9 +153,51 @@ public final class MerchantBnplDesk {
         }
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        FeeScheduleId assigned = guarded(() -> transactions.inTransaction(
-                uow -> pricing.assign(uow, merchant, product, schedule, reason, actor, correlation)));
-        return new BnplFeeScheduleView(merchant.value().toString(), product.name(), assigned.value().toString());
+        return feeKeyed(FEE_PROPOSAL_SCOPE, actor, idempotencyKey, String.join("|", "propose", merchant.value().toString(),
+                product.name(), schedule.value().toString(), digest(reason)), uow -> {
+                    BnplFeeAssignments.Proposed proposed = feeAssignments.propose(uow, merchant, product, schedule, reason,
+                            actor, correlation);
+                    return proposed.proposal().map(MerchantBnplDesk::feeView).orElseGet(() -> new BnplFeeScheduleView(
+                            merchant.value().toString(), product.name(), schedule.value().toString(), "ASSIGNED", null));
+                });
+    }
+
+    /** Approves a BNPL fee assignment proposal the caller did not propose (`P17-TSK-116`): the pointer moves. */
+    public BnplFeeScheduleView approveFeeAssignment(String idempotencyKey, String rawId, String reason) {
+        BnplFeeAssignmentProposal.Id id = feeProposalOrAbsent(rawId);
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        return feeKeyed(FEE_APPROVAL_SCOPE, actor, idempotencyKey, "approve|" + id.value() + "|" + digest(reason),
+                uow -> feeAssignments.approve(uow, id, reason, actor, correlation).map(MerchantBnplDesk::feeView)
+                        .orElseThrow(MerchantBnplDesk::notFound));
+    }
+
+    /** Rejects a BNPL fee assignment proposal the caller did not propose (`P17-TSK-116`): nothing changes. */
+    public BnplFeeScheduleView rejectFeeAssignment(String idempotencyKey, String rawId, String reason) {
+        BnplFeeAssignmentProposal.Id id = feeProposalOrAbsent(rawId);
+        Actor actor = SecurityContext.require();
+        CorrelationId correlation = correlation();
+        return feeKeyed(FEE_REJECTION_SCOPE, actor, idempotencyKey, "reject|" + id.value() + "|" + digest(reason),
+                uow -> feeAssignments.reject(uow, id, reason, actor, correlation).map(MerchantBnplDesk::feeView)
+                        .orElseThrow(MerchantBnplDesk::notFound));
+    }
+
+    // ------------------------------------------------------------------ the enablement read (`P17-TSK-116`)
+
+    /**
+     * The merchant's BNPL enablement by its identifier, as the approver reads it before deciding - the merchant in the
+     * path is in the statement, so another merchant's enablement is the uniform {@code 404}. A read: unkeyed, unaudited
+     * (no party's data; the enablement's acts are audited where they happen).
+     */
+    public BnplEnablementView readEnablement(String rawMerchant, String rawId) {
+        MerchantId merchant = merchantOrAbsent(rawMerchant);
+        BnplEnablementId id = enablementOrAbsent(rawId);
+        BnplEnablement enablement = transactions.inTransaction(uow -> enablements.find(uow, merchant, id))
+                .orElseThrow(MerchantBnplDesk::notFound);
+        return new BnplEnablementView(enablement.id().value().toString(), enablement.merchantId().value().toString(),
+                enablement.status().name(), enablement.proposedBy(), enablement.proposedAt().toString(),
+                enablement.decidedBy().orElse(null), enablement.decidedAt().map(Instant::toString).orElse(null),
+                enablement.withdrawnBy().orElse(null), enablement.withdrawnAt().map(Instant::toString).orElse(null));
     }
 
     // ------------------------------------------------------------------ plumbing
@@ -143,6 +223,33 @@ public final class MerchantBnplDesk {
         return new BnplEnablementReceipt(stored[0], stored[1], stored[2]);
     }
 
+    /**
+     * One keyed BNPL fee assignment act in one transaction (`P17-TSK-116`) - a lost response replays the stored answer; a
+     * refusal stores nothing.
+     */
+    private BnplFeeScheduleView feeKeyed(String scope, Actor actor, String idempotencyKey, String fingerprinted,
+            Function<Connection, BnplFeeScheduleView> act) {
+        IdempotencyKey key = new IdempotencyKey(scope + actor.keyedType().name() + ":" + actor.id(), idempotencyKey);
+        RequestFingerprint fingerprint = RequestFingerprint.sha256(fingerprinted.getBytes(StandardCharsets.UTF_8));
+        IdempotentExecutor.ExecutionOutcome outcome = guarded(() -> transactions.inTransaction(unitOfWork ->
+                executor.execute(unitOfWork, key, fingerprint, uow -> {
+                    BnplFeeScheduleView view = act.apply(uow);
+                    String stored = String.join("|", view.merchantId(), view.product(), view.feeScheduleId(), view.status(),
+                            view.proposalId() == null ? "" : view.proposalId());
+                    return CommandResult.succeeded(StoredResponse.of(stored.getBytes(StandardCharsets.UTF_8),
+                            "text/plain"));
+                })));
+        String[] stored = new String(outcome.body()
+                        .orElseThrow(() -> new IllegalStateException("a BNPL fee assignment act stores its answer")),
+                StandardCharsets.UTF_8).split("\\|", -1);
+        return new BnplFeeScheduleView(stored[0], stored[1], stored[2], stored[3], stored[4].isEmpty() ? null : stored[4]);
+    }
+
+    static BnplFeeScheduleView feeView(BnplFeeAssignmentProposal proposal) {
+        return new BnplFeeScheduleView(proposal.merchantId().value().toString(), proposal.product().name(),
+                proposal.feeScheduleId().value().toString(), proposal.status().name(), proposal.id().value().toString());
+    }
+
     private <R> R selfApprovalRecorded(Actor actor, Supplier<R> work) {
         try {
             return work.get();
@@ -162,6 +269,13 @@ public final class MerchantBnplDesk {
             return work.get();
         } catch (UnknownMerchantException | BnplEnablements.Unknown | UnknownFeeScheduleException unknown) {
             throw notFound();
+        } catch (BnplFeeAssignmentProposal.Refused refused) {
+            MerchantErrorCode code = switch (refused.reason()) {
+                case ALREADY_PROPOSED -> MerchantErrorCode.BNPL_FEE_PROPOSAL_ALREADY_OPEN;
+                case ALREADY_DECIDED -> MerchantErrorCode.BNPL_FEE_PROPOSAL_ALREADY_DECIDED;
+                case SELF_DECISION -> MerchantErrorCode.BNPL_FEE_PROPOSAL_SELF_DECISION;
+            };
+            throw new ApiException(code, "A BNPL fee assignment proposal act was refused", refused.getMessage());
         } catch (BnplEnablements.SelfApprovalRefused self) {
             throw new ApiException(MerchantErrorCode.SELF_APPROVAL_REFUSED,
                     "A merchant BNPL enablement's proposer tried to approve it", self.getMessage());
@@ -209,6 +323,28 @@ public final class MerchantBnplDesk {
             return BnplEnablementId.of(UUID.fromString(raw));
         } catch (IllegalArgumentException | NullPointerException malformed) {
             throw notFound();
+        }
+    }
+
+    /** A canonical UUIDv7 (ADR-0013), or the uniform 404. */
+    private static BnplFeeAssignmentProposal.Id feeProposalOrAbsent(String raw) {
+        try {
+            UUID parsed = UUID.fromString(raw);
+            if (parsed.toString().equals(raw) && parsed.version() == 7 && parsed.variant() == 2) {
+                return BnplFeeAssignmentProposal.Id.of(parsed);
+            }
+        } catch (IllegalArgumentException | NullPointerException malformed) {
+            // the uniform 404 below
+        }
+        throw notFound();
+    }
+
+    private static String digest(String text) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(String.valueOf(text).getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is a required JDK algorithm", impossible);
         }
     }
 

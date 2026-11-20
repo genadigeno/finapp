@@ -85,7 +85,7 @@ final class BnplConditionWorld {
         actingParties.put(BnplKeyIssuer.ID, BnplKeyIssuer.PARTY);
         refunds = new BnplRefunds(fakes.refunds, fakes.servicing, fakes.purchases, fakes.terms.store(), fakes.merchants,
                 fakes.wallets, fakes.book, closures, (uow, actor) -> Optional.ofNullable(actingParties.get(actor.id())),
-                fakes.outbox, fakes.audit, IDS, CLOCK);
+                fakes.outbox, fakes.audit, IDS, CLOCK, (unitOfWork, cumulative) -> Optional.empty());
         fakes.merchants.standings.put(merchant, BnplMerchants.Standing.ENABLED);
         payable = fakes.book.external("payable", IDS.next());
         fakes.merchants.payables.put(merchant, payable);

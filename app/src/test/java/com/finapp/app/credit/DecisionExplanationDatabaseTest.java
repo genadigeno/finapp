@@ -256,6 +256,13 @@ class DecisionExplanationDatabaseTest {
         assertThat(served.statusCode()).as(served.body()).isEqualTo(200);
         assertThat(new String(Base64.getDecoder().decode(CreditTestClient.field(served.body(), "contentBase64")),
                 StandardCharsets.UTF_8)).isEqualTo("{\"answer\":\"test\"}");
+        assertThat(CreditTestClient.field(served.body(), "mediaType"))
+                .as("P17-TSK-116: the media type the provider named, kept beside the bytes (credit V027)")
+                .isEqualTo("application/json");
+        try (Connection app = DatabaseRoles.application(); Statement statement = app.createStatement()) {
+            assertThat(statement.executeQuery("SELECT media_type FROM credit.credit_evidence LIMIT 1").next())
+                    .as("the media type alone is readable through V027's column grant - never the content").isTrue();
+        }
         CreditWorld.cipher = new CreditEvidenceCipher(new byte[32], 1, new java.security.SecureRandom());
         CreditTestClient.Customer other = client.customer(true);
         String unreadable = bureauRecordOf(decided(other, CreditProduct.PERSONAL_LOAN, eur(1_000_000)));
