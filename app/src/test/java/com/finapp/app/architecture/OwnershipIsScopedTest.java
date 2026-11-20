@@ -2512,7 +2512,7 @@ class OwnershipIsScopedTest {
                                     Scope.ADMINISTERED,
                                     "P17-TSK-116. A BNPL refund proposal by its id alone - another person's proposal by design."
                                         + " Standing in: PAYMENT_REFUND_APPROVE on a MULTI_FACTOR session, keyed, the proposer"
-                                        + " refused by the domain and bnpl V023's CHECK, every decision audited.")),
+                                        + " refused by the domain and bnpl V024's CHECK, every decision audited.")),
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplRefundProposalStore.lock",
                             new Entry(
@@ -2521,7 +2521,7 @@ class OwnershipIsScopedTest {
                                         + " start of the approval's T-ref: the id from the URL of POST"
                                         + " /v1/operator/bnpl-refund-proposals/{id}/approval or /rejection. Standing in:"
                                         + " PAYMENT_REFUND_APPROVE on a MULTI_FACTOR session, keyed, four eyes by the domain and"
-                                        + " bnpl V023's CHECK.")),
+                                        + " bnpl V024's CHECK.")),
                     Map.entry(
                             "com.finapp.bnpl.JdbcBnplRefundProposalStore.findOpenFor",
                             new Entry(

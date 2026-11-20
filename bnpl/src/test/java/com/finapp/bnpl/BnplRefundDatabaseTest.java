@@ -234,7 +234,7 @@ class BnplRefundDatabaseTest {
 
     @Test
     @DisplayName("P17-TSK-116: an operator's refund above the four-eyes threshold, with the merchant's refund before it, is a"
-            + " proposal - nothing refunded; a second proposal refused by V023's index; the proposer refused its own"
+            + " proposal - nothing refunded; a second proposal refused by V024's index; the proposer refused its own"
             + " approval; approved by another person, the refund applies once and the proposal names it; the approver's"
             + " lapsed claim retried under the same key replays the one refund, under another key is refused")
     void anOperatorsRefundAboveTheThresholdIsDecidedByASecondPerson() throws Exception {
@@ -357,7 +357,7 @@ class BnplRefundDatabaseTest {
     }
 
     @Test
-    @DisplayName("P17-TSK-116: bnpl V023 for every writer - a proposal decided by its proposer refused by the CHECK, a decided"
+    @DisplayName("P17-TSK-116: bnpl V024 for every writer - a proposal decided by its proposer refused by the CHECK, a decided"
             + " proposal is history, no DELETE; the threshold: v1 EUR 1,000.00 read, the latest version wins, a currency"
             + " with none fails closed")
     void v023HoldsForEveryWriter() throws Exception {

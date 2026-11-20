@@ -115,7 +115,7 @@ options" - each *(ruling)* below is this task's recommendation. Decisions 1-7 ar
 
 9. **The operator's BNPL refund: four eyes above a threshold** (finapp-admin-panel ADR-C135 decision 3 - a refund is a refund;
    OQ-9's "no four-eyes and no threshold review" for `POST /v1/operator/bnpl-purchases/{id}/refunds` is superseded). A
-   threshold of its own, `bnpl.refund_four_eyes_threshold` (bnpl V023, versioned per currency, seeded as payments V043's
+   threshold of its own, `bnpl.refund_four_eyes_threshold` (bnpl V024, versioned per currency, seeded as payments V043's
    values *(ruling)*: bnpl reads no other module's table). Judged **cumulatively** - with the purchase's committed refunds of
    every door - in T-ref under B5, the purchase's `FOR UPDATE` that already serialises its refunds, after the self-dealing rule
    and the bound, before B4: nothing further is locked or written, and T-ref rolls back whole. The **operator's door only**

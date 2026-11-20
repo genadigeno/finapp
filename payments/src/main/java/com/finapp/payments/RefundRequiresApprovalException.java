@@ -17,8 +17,9 @@ public final class RefundRequiresApprovalException extends RuntimeException {
     private final transient Money cumulative;
 
     public RefundRequiresApprovalException(RefundThresholds.Threshold threshold, Money cumulative) {
-        super("the refund, with the payment's refunds before it, is " + cumulative + " - above the four-eyes threshold of "
-                + threshold.amount() + " (version " + threshold.version() + ")");
+        // No amount in the message: money never reaches a text sink (MoneyReachesNoTextSinkTest); the figures are the accessors'.
+        super("the refund, with the payment's refunds before it, is above the four-eyes threshold (version "
+                + threshold.version() + ")");
         this.threshold = Objects.requireNonNull(threshold, "threshold");
         this.cumulative = Objects.requireNonNull(cumulative, "cumulative");
     }

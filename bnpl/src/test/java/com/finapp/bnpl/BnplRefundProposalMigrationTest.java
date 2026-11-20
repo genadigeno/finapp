@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 @DisplayName("bnpl refund_proposal migration reconciliation (P17-TSK-116)")
 class BnplRefundProposalMigrationTest {
 
-    private static final String MIGRATION = "db/migration/bnpl/V023__operator_bnpl_refund_four_eyes_above_a_threshold.sql";
+    private static final String MIGRATION = "db/migration/bnpl/V024__operator_bnpl_refund_four_eyes_above_a_threshold.sql";
 
     @Test
     @DisplayName("the status CHECK is the proposal's machine; four eyes and one open proposal are the schema's")

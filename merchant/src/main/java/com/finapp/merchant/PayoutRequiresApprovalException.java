@@ -17,8 +17,9 @@ public final class PayoutRequiresApprovalException extends RuntimeException {
     private final transient Money cumulative;
 
     public PayoutRequiresApprovalException(PayoutThresholds.Threshold threshold, Money cumulative) {
-        super("the operator's payout is " + cumulative + " - above the four-eyes threshold of "
-                + threshold.amount() + " (version " + threshold.version() + ")");
+        // No amount in the message: money never reaches a text sink (MoneyReachesNoTextSinkTest); the figures are the accessors'.
+        super("the operator's payout, with the merchant's payouts before it, is above the four-eyes threshold (version "
+                + threshold.version() + ")");
         this.threshold = Objects.requireNonNull(threshold, "threshold");
         this.cumulative = Objects.requireNonNull(cumulative, "cumulative");
     }
