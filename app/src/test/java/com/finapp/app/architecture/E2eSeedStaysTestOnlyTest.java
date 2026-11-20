@@ -24,8 +24,9 @@ import org.junit.jupiter.api.Test;
  * {@code src/main/resources/db/migration} ({@code migrator/build.gradle.kts}). So "ships nowhere" is "named by no {@code src/main}
  * file", which this holds by the seed's own markers. What the plants do is held on a real PostgreSQL - the dead letters by
  * {@code E2eSeedPlantsDatabaseTest}, the held role (`P17-TSK-108`) by {@code E2eSeedReviewsDatabaseTest}, the alert and the sealed
- * assessment (`P17-TSK-110`) by {@code E2eSeedRiskDatabaseTest}; the script's run against a running stack is the console's
- * end-to-end run.
+ * assessment (`P17-TSK-110`) by {@code E2eSeedRiskDatabaseTest}, the finance plants (`P17-TSK-112`) by {@code E2eSeedFinanceDatabaseTest},
+ * the merchant plants and the dispute's statement (`P17-TSK-115`) by {@code E2eSeedMerchantDatabaseTest}; the script's run against a
+ * running stack is the console's end-to-end run.
  */
 @Tag("architecture")
 @DisplayName("the end-to-end seed is test-only and stays so (P17-TSK-106)")
@@ -75,16 +76,42 @@ class E2eSeedStaysTestOnlyTest {
         List<Path> plants = files(root.resolve(SEED)).filter(file -> file.toString().endsWith(".sql")).toList();
         assertThat(plants).extracting(file -> file.getFileName().toString())
                 .containsExactlyInAnyOrder("abandoned-event.sql", "parked-record.sql", "held-role.sql", "risk-alert.sql",
-                        "sealed-assessment.sql", "fx-rates.sql", "accounting-break.sql");
+                        "sealed-assessment.sql", "fx-rates.sql", "accounting-break.sql", "merchant-organisation.sql",
+                        "payout-destination.sql", "customer-verdict.sql");
         for (Path plant : plants) {
             String text = EvidenceCitations.read(plant);
-            assertThat(text).as("%s says what it is", plant.getFileName()).containsPattern("\\A-- TEST-ONLY \\(P17-TSK-1(06|08|10|12)\\)");
+            assertThat(text).as("%s says what it is", plant.getFileName()).containsPattern("\\A-- TEST-ONLY \\(P17-TSK-1(06|08|10|12|15)\\)");
             String statements = text.replaceAll("(?m)--.*$", "").replaceAll("'[^']*'", "''").strip();
             assertThat(statements.chars().filter(c -> c == ';').count()).as("%s is one statement", plant.getFileName()).isEqualTo(1);
             assertThat(statements).as("%s ends in that statement", plant.getFileName()).endsWith(";");
-            assertThat(statements).as("%s inserts its own module's rows and does nothing else", plant.getFileName())
-                    .doesNotContainPattern("(?i)\\b(UPDATE|DELETE|TRUNCATE|ALTER|DROP|GRANT|CREATE)\\b");
+            assertThat(statements).as("%s takes nothing away and changes no schema", plant.getFileName())
+                    .doesNotContainPattern("(?i)\\b(DELETE|TRUNCATE|ALTER|DROP|GRANT|CREATE)\\b");
+            if (plant.getFileName().toString().equals(VERDICT)) {
+                continue;
+            }
+            assertThat(statements).as("%s inserts its own module's rows and changes none", plant.getFileName())
+                    .doesNotContainPattern("(?i)\\bUPDATE\\b");
         }
+    }
+
+    /** The one plant that changes a row (`P17-TSK-115`): a test identity's KYC verdict, which no door reaches on a test stack. */
+    private static final String VERDICT = "customer-verdict.sql";
+
+    @Test
+    @DisplayName("P17-TSK-115: the one plant that changes a row changes one status, of one PENDING customer, to ACTIVE - party's own machine"
+            + " edge, the verdict an approved case's decision writes - and nothing else")
+    void theVerdictChangesOneStatusAlongItsEdge() {
+        String verdict = EvidenceCitations.read(root.resolve(SEED + VERDICT)).replaceAll("(?m)--.*$", "").strip();
+        assertThat(verdict).as("one UPDATE, of party.customer").containsPattern("\\AUPDATE party\\.customer c\\s")
+                .containsOnlyOnce("UPDATE");
+        assertThat(verdict).as("its status and the instant it changed, nothing else")
+                .contains("SET status = 'ACTIVE', status_changed_at = GREATEST(clock_timestamp(), c.opened_at)")
+                .doesNotContain("SET party_id", ", party_id =", ", opened_at =", "kind", "display_name");
+        assertThat(verdict).as("only a PENDING customer of the identity named, so a re-run or another party changes nothing")
+                .contains("i.id = :'identity'::uuid AND c.party_id = i.party_id AND c.status = 'PENDING'");
+        int checked = script.indexOf("uuid_like \"$payer\" ||");
+        assertThat(checked).as("the identity is checked").isPositive();
+        assertThat(script.indexOf("plant customer-verdict.sql -v identity=\"$payer\"")).as("and only then planted").isGreaterThan(checked);
     }
 
     @Test
@@ -117,6 +144,14 @@ class E2eSeedStaysTestOnlyTest {
         assertThat(script.indexOf("plant accounting-break.sql -v month=\"$CURRENT_MONTH-01\" -v subject=\"$subject\""))
                 .as("and only then planted, its month one the books printed and month_like checked").isGreaterThan(subjectChecked);
         assertThat(script.indexOf("month_like \"$CURRENT_MONTH\"")).isPositive().isLessThan(subjectChecked);
+        // P17-TSK-115: the destination's merchant, proposer and reference, each checked by its shape first.
+        int destinationChecked = script.indexOf("uuid_like \"$owner\" && uuid_like \"$ONBOARDER_ID\" ||");
+        int referenceChecked = script.indexOf("grep -Eq '^pdr_[0-9a-f]{12}$'");
+        int destinationPlanted = script.indexOf(
+                "plant payout-destination.sql -v merchant=\"$owner\" -v proposer=\"$ONBOARDER_ID\" -v reference=\"$reference\"");
+        assertThat(destinationChecked).as("the destination's ids are checked").isPositive();
+        assertThat(referenceChecked).as("its reference is checked").isPositive();
+        assertThat(destinationPlanted).as("and only then planted").isGreaterThan(destinationChecked).isGreaterThan(referenceChecked);
         for (Path plant : files(root.resolve(SEED)).filter(file -> file.toString().endsWith(".sql")).toList()) {
             String statement = EvidenceCitations.read(plant).replaceAll("(?m)--.*$", "").replaceAll("'[^']*'", "''");
             assertThat(statement).as("%s takes its values only as quoted variables - no bare :name", plant.getFileName())
@@ -160,6 +195,37 @@ class E2eSeedStaysTestOnlyTest {
         assertThat(checked).as("a login's shape is checked before it reaches SQL").isPositive();
         assertThat(script.indexOf("WHERE login_identifier = '$login'")).isGreaterThan(checked);
         assertThat(script).as("the run's state, with its test identities' secrets, goes with the run").contains("trap cleanup EXIT");
+        // P17-TSK-115: the top-up's id and the dispute's reference, each checked before the database is asked about it.
+        int intentChecked = script.indexOf("uuid_like \"$intent\" ||");
+        assertThat(intentChecked).isPositive();
+        assertThat(script.indexOf("WHERE intent_id = '$intent'")).isGreaterThan(intentChecked);
+        int disputeChecked = script.indexOf("grep -Eq '^dp_e2e_[0-9a-f]{12}$'");
+        assertThat(disputeChecked).isPositive();
+        assertThat(script.indexOf("WHERE provider_dispute_reference = '$dispute'")).isGreaterThan(disputeChecked);
+        assertThat(seed).as("the provider's signing key is read from the run's state and printed nowhere")
+                .contains("state.resolve(\"provider-key\")").doesNotContainPattern("System\\.out\\.println\\([^)]*(signing|provider-key)");
+    }
+
+    @Test
+    @DisplayName("P17-TSK-115: the dispute is the card network's word - refused on compose, which has no card PSP; on kind the seed only"
+            + " states it to the rehearsal's simulator and hints that it exists, and the platform's own inquiry opens it")
+    void theDisputeIsTheNetworksWord() {
+        int judged = script.indexOf("open-dispute)\n            HTTP=yes\n            [ \"$TARGET\" = kind ] || refuse");
+        assertThat(judged).as("refused off kind, in the scenarios' judgement").isPositive();
+        assertThat(script.indexOf("psql")).as("before anything is touched").isGreaterThan(judged);
+        String simulator = EvidenceCitations.read(root.resolve("infra/scripts/kind-rehearsal/Simulator.java"));
+        assertThat(simulator).as("the simulator answers the adapter's dispute inquiry from what the seed stated, and its answers")
+                .contains("server.createContext(DISPUTES, Simulator::disputeInquiry)")
+                .contains("private static final String DISPUTES = \"/disputes/\"")
+                .contains("server.createContext(DISPUTE_RESPONSES, exchange -> answer(exchange, DISPUTE_RESPONSES,")
+                .contains("private static final Path DISPUTE_STATEMENTS = Path.of(\"/tmp/disputes\")");
+        assertThat(script).as("the seed states the dispute there, then hints").contains("cat > \"/tmp/disputes/$1\"' statement \"$dispute\"")
+                .contains("seed_http dispute-hint \"$operation\" \"$dispute\"");
+        String seed = EvidenceCitations.read(root.resolve(SEED + "Seed.java"));
+        assertThat(seed).as("in the adapter's own words: the statement's paths are the adapter's constants'")
+                .contains("\"/v1/providers/payments/webhooks\"").contains("\"stage\\\":\\\"needs_response\\\"");
+        assertThat(script).as("and nothing writes a dispute or a posting: the shell only reads the dispute the platform opened")
+                .doesNotContainPattern("(?i)INSERT INTO payments\\.").doesNotContainPattern("(?i)INSERT INTO ledger\\.");
     }
 
     @Test

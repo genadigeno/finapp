@@ -5,6 +5,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.KeyStore;
@@ -24,10 +25,12 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
 /**
- * TEST-ONLY. The HTTP half of the Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112): every
+ * TEST-ONLY. The HTTP half of the Operator Console's end-to-end seed (P17-TSK-106, P17-TSK-108, P17-TSK-110, P17-TSK-112,
+ * P17-TSK-115): every
  * effect the platform has a door for, through that door - registration, a second factor, a step-up, a role grant, a risk policy
  * proposed and activated, a case opened and taken; and the books' finance acts - a GL mapping version, a manual adjustment, a month's
- * nil reports, a month locked and closed by four eyes, a prior-period adjustment, a regulatory obligation and its validated return. A single source file run by {@code infra/scripts/e2e-seed.sh}
+ * nil reports, a month locked and closed by four eyes, a prior-period adjustment, a regulatory obligation and its validated return. And
+ * the merchant desks' - a merchant onboarded and keyed, a card top-up, and the card PSP's own word that it is disputed (P17-TSK-115). A single source file run by {@code infra/scripts/e2e-seed.sh}
  * ({@code java --source 21}), never compiled into anything and named by no module's main source set (E2eSeedStaysTestOnlyTest).
  *
  * <p>It has no route to the database and must not have one. What only the database can answer - a test identity's id, which no API
@@ -95,6 +98,11 @@ public final class Seed {
             case "propose-ppa" -> seed.proposePriorPeriodAdjustment(rest[0], rest[1], rest[2]);
             case "obligation" -> seed.obligation(rest[0], rest[1]);
             case "draft-submission" -> seed.draftSubmission(rest[0], rest[1], rest[2]);
+            case "onboard-merchant" -> seed.onboardMerchant(rest[0], rest[1]);
+            case "issue-key" -> seed.issueKey(rest[0], rest[1]);
+            case "top-up" -> seed.topUp(one(rest));
+            case "dispute-statement" -> seed.disputeStatement(rest[0], rest[1], rest[2]);
+            case "dispute-hint" -> seed.disputeHint(rest[0], rest[1]);
             default -> throw new IllegalArgumentException("unknown command " + args[3]);
         }
     }
@@ -582,6 +590,89 @@ public final class Seed {
             throw new IllegalStateException("the validation did not answer VALIDATED: " + validated.body());
         }
         System.out.println("SUBMISSION_ID=" + id);
+    }
+
+    // ---------------------------------------------------------------------------------------------- merchants and disputes (P17-TSK-115)
+
+    /** Onboards the organisation {@code partyId} names as a EUR merchant, as {@code who}, a MERCHANT_ADMINISTRATOR. Prints its id. */
+    private void onboardMerchant(String who, String partyId) throws Exception {
+        String name = "E2E Seed " + letters(8);
+        Answer onboarded = expect("onboarding of " + partyId, post(operatorBase, "/v1/operator/merchants",
+                "{\"partyId\":\"" + partyId + "\",\"legalName\":\"" + name + " GmbH\",\"displayName\":\"" + name
+                        + "\",\"settlementCurrency\":\"EUR\"}", elevated(who), key()), 201);
+        System.out.println("MERCHANT_ID=" + field(onboarded.body(), "merchantId"));
+    }
+
+    /**
+     * Issues the merchant an API key, as {@code who}. Prints the key's id only: the secret is answered once, and nothing here
+     * needs it - the console sees the key in the merchant's list, and revokes it there - so it is dropped unread.
+     */
+    private void issueKey(String who, String merchantId) throws Exception {
+        Answer issued = expect("API key of " + merchantId, post(operatorBase, "/v1/operator/merchants/" + merchantId + "/api-keys",
+                null, elevated(who), key()), 201);
+        System.out.println("MERCHANT_KEY_ID=" + field(issued.body(), "keyId"));
+    }
+
+    /** The top-up's amount: 12.50 EUR, the dispute statement's 1250 at scale 2. */
+    private static final String TOP_UP = "12.50";
+
+    /**
+     * A card top-up of 12.50 EUR into {@code who}'s own wallet, authorized and captured by the card PSP - a payment with no
+     * merchant, the kind an operator answers a dispute on (a merchant answers its own). {@code who} is a customer the shell made
+     * ACTIVE: the wallet opens through the accounts door, the card attaches through tokenisation. Prints the payment's id.
+     */
+    private void topUp(String who) throws Exception {
+        String session = signIn(publicBase, who);
+        expect("wallet of " + who, post(publicBase, "/v1/me/accounts", "{\"productType\":\"WALLET\",\"currency\":\"EUR\"}", session,
+                key()), 201);
+        String card = field(expect("card of " + who, post(publicBase, "/v1/me/payment-methods",
+                "{\"clientToken\":\"ctok_" + letters(12) + "\"}", session, null), 201).body(), "id");
+        String payment = field(expect("top-up of " + who, post(publicBase, "/v1/payments",
+                "{\"amount\":\"" + TOP_UP + "\",\"currency\":\"EUR\",\"paymentMethodId\":\"" + card + "\"}", session, key()), 200, 201)
+                .body(), "id");
+        expect("top-up confirmation", post(publicBase, "/v1/payments/" + payment + "/confirmation", null, session, null), 200, 409);
+        Instant deadline = Instant.now().plus(Duration.ofMinutes(2));
+        String status = field(expect("top-up read", get(publicBase, "/v1/payments/" + payment, session), 200).body(), "status");
+        while (!"SUCCEEDED".equals(status) && !"FAILED".equals(status) && Instant.now().isBefore(deadline)) {
+            Thread.sleep(1000);
+            status = field(expect("top-up read", get(publicBase, "/v1/payments/" + payment, session), 200).body(), "status");
+        }
+        if (!"SUCCEEDED".equals(status)) {
+            throw new IllegalStateException("the top-up " + payment + " ended " + status);
+        }
+        System.out.println("PAYMENT_ID=" + payment);
+    }
+
+    /**
+     * The card PSP's statement of a chargeback on the capture {@code operation} names, written to the run's state as
+     * {@code dispute-<dispute>.json} for the shell to hand the provider (kind's simulator answers the platform's inquiry with it):
+     * the network's stage {@code needs_response} (the platform's CHARGED_BACK, the stage that takes evidence and a representment),
+     * the whole {@code amountMinor} at EUR's scale, and the network's deadline a fortnight out - the card adapter's own words
+     * (CardDisputeStatement). Prints nothing.
+     */
+    private void disputeStatement(String operation, String dispute, String amountMinor) throws IOException {
+        String respondBy = Instant.now().plus(Duration.ofDays(14)).truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString();
+        Files.writeString(state.resolve("dispute-" + dispute + ".json"), "{\"status\":\"disputed\",\"operation\":\"" + operation
+                + "\",\"dispute\":\"" + dispute + "\",\"stage\":\"needs_response\",\"reasonCode\":\"fraudulent\",\"amountMinor\":\""
+                + amountMinor + "\",\"currency\":\"EUR\",\"scale\":2,\"respondBy\":\"" + respondBy + "\"}");
+    }
+
+    /**
+     * The card PSP's webhook that a dispute exists, signed as the provider signs: HMAC-SHA256 over {@code timestamp + "." + body}
+     * under the payment webhook key, which the shell read from the stack into the run's state ({@code provider-key}, the setting's
+     * base64 text, as the kind rehearsal's load client reads it). The hint names our capture and the network's dispute; the platform
+     * then asks the PSP for its statement, and that answer alone opens the dispute and posts the chargeback. Prints nothing.
+     */
+    private void disputeHint(String operation, String dispute) throws Exception {
+        byte[] signing = java.util.Base64.getDecoder().decode(Files.readString(state.resolve("provider-key")).strip());
+        String body = "{\"eventId\":\"evt_e2e_" + letters(12) + "\",\"operation\":\"" + operation + "\",\"status\":\"disputed\","
+                + "\"dispute\":\"" + dispute + "\"}";
+        String timestamp = Long.toString(Instant.now().getEpochSecond());
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(signing, "HmacSHA256"));
+        String signature = java.util.HexFormat.of().formatHex(mac.doFinal((timestamp + "." + body).getBytes(StandardCharsets.UTF_8)));
+        expect("dispute hint " + dispute, call("POST", publicBase + "/v1/providers/payments/webhooks", body,
+                Map.of("X-Provider-Timestamp", timestamp, "X-Provider-Signature", signature)), 204);
     }
 
     private static String letters(int count) {
