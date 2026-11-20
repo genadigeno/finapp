@@ -15,3 +15,5 @@ resources:
   - networkpolicy.yaml
   # The namespace's quota at its worst moment, counted as finapp-edge's is (manifest-policy/edge.rego's [edge-quota-*]).
   - resourcequota.yaml
+  # The cluster watcher's read of this namespace (P17-TSK-044): list and watch on its receiver's kinds, so the console's readiness is alerted.
+  - rbac-cluster-watch.yaml

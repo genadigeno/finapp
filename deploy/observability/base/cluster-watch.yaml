@@ -7,9 +7,11 @@
 # reach the log back end only through the API: a failed run's last lines, which the kubelet keeps in the pod's status
 # (terminationMessagePolicy: FallbackToLogsOnError on the Job), and the Job's and its pods' events.
 #
-# WHAT IT READS, AND NOTHING ELSE. The namespace finapp alone, list and watch, through the Role the application's own release grants it
-# (deploy/base/rbac-cluster-watch.yaml): the kinds k8s_cluster lists (it logs a refusal every few seconds for any it may not), and events. No
-# Secret, no ConfigMap, no pods/log, no way inside a pod. It writes nothing anywhere.
+# WHAT IT READS, AND NOTHING ELSE. The namespace finapp, list and watch, through the Role the application's own release grants it
+# (deploy/base/rbac-cluster-watch.yaml): the kinds k8s_cluster lists (it logs a refusal every few seconds for any it may not), and events.
+# And since P17-TSK-044 the namespace finapp-console, through the Role the console's own release grants it
+# (deploy/console/base/rbac-cluster-watch.yaml): k8s_cluster's kinds alone, so the console's ready replicas are read; no events there, and
+# no record of the console's is shipped. No Secret, no ConfigMap, no pods/log, no way inside a pod. It writes nothing anywhere.
 #
 # WHAT IT PUBLISHES. k8s_cluster's gauges on 8889 for the scraper (job finapp-cluster-watch): k8s_job_failed_pods, k8s_job_active_pods,
 # k8s_job_successful_pods and k8s_job_desired_successful_pods per Job, k8s_deployment_desired and the rest; the resource's attributes are
@@ -29,7 +31,8 @@ extensions:
 receivers:
   k8s_cluster:
     auth_type: serviceAccount
-    namespaces: [finapp]
+    # finapp-console since P17-TSK-044: the console's Deployment, for ConsoleReplicasUnavailable (infra/prometheus/rules/console.yml).
+    namespaces: [finapp, finapp-console]
     collection_interval: 15s
   k8s_objects:
     auth_type: serviceAccount

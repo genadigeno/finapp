@@ -135,11 +135,13 @@ deny contains msg if {
 	msg := sprintf("[obs-collector-ingress] %s has an ingress rule naming no port: every port of the collector, the peers' 4317 among them", [main.label(policy)])
 }
 
-# The platform's own receiver (P16-TSK-003): on 4319 every peer is the edge's controllers or the cluster watcher, exactly, never the
-# application (which has 4318) and never a namespace or a pod by any other label.
+# The platform's own receiver (P16-TSK-003): on 4319 every peer is the edge's controllers, the cluster watcher or (P17-TSK-044) the console
+# probe, exactly, never the application (which has 4318) and never a namespace or a pod by any other label.
 platform_senders := [
 	{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "finapp-edge"}}, "podSelector": {"matchLabels": {"finapp/role": "ingress-controller"}}},
 	{"podSelector": {"matchLabels": {"finapp/role": "cluster-watch"}}},
+	# The console probe's own lines (P17-TSK-044).
+	{"podSelector": {"matchLabels": {"finapp/role": "console-probe"}}},
 ]
 
 is_a_platform_sender(peer) if {
@@ -153,7 +155,7 @@ deny contains msg if {
 	rule_names_port(rule, 4319)
 	some peer in main.list_of(rule, "from")
 	not is_a_platform_sender(peer)
-	msg := sprintf("[obs-platform-ingress] %s admits the platform receiver's 4319 from something other than the edge's controllers and the cluster watcher", [main.label(policy)])
+	msg := sprintf("[obs-platform-ingress] %s admits the platform receiver's 4319 from something other than the edge's controllers, the cluster watcher and the console probe", [main.label(policy)])
 }
 
 # The second tier's receiver takes spans already scrubbed by a peer and scrubs nothing itself: only a collector of this namespace may
@@ -239,6 +241,8 @@ scrape_targets := [
 	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "telemetry-collector"}}}, "ports": {["TCP", 8888]}},
 	# The cluster watcher's gauges (P16-TSK-003).
 	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "cluster-watch"}}}, "ports": {["TCP", 8889]}},
+	# The console probe's answer (P17-TSK-044).
+	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "console-probe"}}}, "ports": {["TCP", 8889]}},
 	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "trace-store"}}}, "ports": {["TCP", 3200]}},
 	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "log-store"}}}, "ports": {["TCP", 3100]}},
 	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "alert-router"}}}, "ports": {["TCP", 9193]}},
@@ -297,6 +301,8 @@ store_admits := {
 	"metrics-scraper": [],
 	# The cluster watcher (P16-TSK-003), which holds a Kubernetes credential: the scraper on its exporter, nothing else.
 	"cluster-watch": [{"role": "metrics-scraper", "ports": {["TCP", 8889]}}],
+	# The console probe (P17-TSK-044), which holds no credential: the scraper on its exporter, nothing else.
+	"console-probe": [{"role": "metrics-scraper", "ports": {["TCP", 8889]}}],
 }
 
 # ------------------------------------------------------------------------------------------- the cluster watcher reaches two things
@@ -325,6 +331,36 @@ deny contains msg if {
 	some rule in main.list_of(policy.spec, "egress")
 	not reaches_a_cluster_watch_target(rule)
 	msg := sprintf("[obs-cluster-watch-egress] %s lets the cluster watcher reach something other than the collector's platform receiver or DNS", [main.label(policy)])
+}
+
+# ------------------------------------------------------------------------------------------- the console probe reaches three things
+
+# P17-TSK-044: the Operator Console's synthetic probe, which holds no credential, reaches the operator edge's controllers on their TLS listener
+# (its one request, through the edge's Service), the collector's platform receiver with its own lines, and its resolver - nothing else: not
+# the application, not the data tier, not the console's pods behind the edge's back, not another namespace. Every egress rule of a policy
+# that may select it is one of these, every peer exactly and every port its own, as the cluster watcher's are held above.
+console_probe_targets := [
+	{"peer": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "finapp-edge"}}, "podSelector": {"matchLabels": {"app.kubernetes.io/name": "finapp-edge-operator"}}}, "ports": {["TCP", 8443]}},
+	{"peer": {"podSelector": {"matchLabels": {"finapp/role": "telemetry-collector"}}}, "ports": {["TCP", 4319]}},
+	{"peer": {"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}}, "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}}}, "ports": {["UDP", 53], ["TCP", 53]}},
+]
+
+reaches_a_console_probe_target(rule) if {
+	some target in console_probe_targets
+	count(main.list_of(rule, "to")) > 0
+	every peer in main.list_of(rule, "to") {
+		peer == target.peer
+	}
+	main.ports_within(rule, target.ports)
+}
+
+deny contains msg if {
+	some policy in main.of_kind("NetworkPolicy")
+	in_namespace(policy)
+	may_select(policy, pod_labels("console-probe"))
+	some rule in main.list_of(policy.spec, "egress")
+	not reaches_a_console_probe_target(rule)
+	msg := sprintf("[obs-console-probe-egress] %s lets the console probe reach something other than the operator edge's listener, the collector's platform receiver or DNS", [main.label(policy)])
 }
 
 admitted_to_store(rule, role) if {

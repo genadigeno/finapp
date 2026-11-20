@@ -1,0 +1,81 @@
+# The Operator Console watched (P17-TSK-044; finapp-admin-panel docs/CONSOLE_RUNBOOK.md, Monitoring): the console keeps no server state and
+# emits no metrics of its own, so each signal is read from outside it - a synthetic probe through the operator edge, the cluster watcher's
+# view of its Deployment, and the operator edge's own counters for the console's Service. Each alert's procedure is OPERATIONS_RUNBOOK.md
+# section 11.68. CSP violation reports are not collected (that section says why), so no rule reads them.
+#
+# Unit-tested by promtool: infra/prometheus/tests/console.test.yml, run by infra/scripts/alert-rules-check.sh with every other case file; and
+# run through time with each rule's for by ConsoleAlertRulesTest, which also holds every threshold and for below to the manifests it is read
+# from, and every series and label to infra/prometheus/console-series.txt.
+#
+# A console down loses the operators their tool, never the platform: every act is still the operator API's, and nothing in flight is held by
+# the console. So the probe pages - nobody can work the queues through the console - and the rest ticket.
+#
+# Conventions:
+# - The deployed-fleet gate: count(up{job="finapp", env!="local"}) > 0, as platform.yml's EdgeUnscraped and ClusterWatchBlind have it. Compose
+#   runs no edge, no console and no probe, so a rule reading their absence is silent there.
+# - The edge's counters are per controller, labelled by the proxy's service name (finapp-console@file: the file provider's, which the
+#   operator edge's dynamic configuration defines); the scrape adds edge. A code's series is born at its first answer, so the first of a
+#   burst is not counted by increase(); the thresholds below count from the second.
+
+groups:
+  - name: console
+    labels:
+      owner: platform
+    rules:
+      - alert: ConsoleProbeFailing
+        # Aggregation: max() - every prober asks the same question, so one that reached the page answers it; the absent half has no labels
+        # GET /console/ has not answered 2xx through the operator edge for five minutes - a refused or timed-out connection, the edge's 502 or
+        # 503, a 404 from a missing route or an empty console - or no probe has answered at all on a deployed fleet, where the console's state
+        # is then unknown (the probe down, unscraped, or its series renamed): fail-closed, as EdgeUnscraped is. A result no longer given is
+        # dropped by the probe's exporter within a minute (deploy/observability/base/console-probe.yaml), so the page comes at most about a
+        # minute and a half past the five.
+        expr: >-
+          max(httpcheck_status{job="finapp-console-probe", http_status_class="2xx"}) < 1
+          or (absent(httpcheck_status{job="finapp-console-probe", http_status_class="2xx"}) and on() (count(up{job="finapp", env!="local"}) > 0))
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "The Operator Console does not answer through the operator edge"
+          description: "GET /console/ through the operator edge has not answered 2xx for 5 minutes, or no probe has answered. Operators have lost the console; the operator API still serves every act. See OPERATIONS_RUNBOOK.md section 11.68."
+      - alert: ConsoleReplicasUnavailable
+        # Aggregation: max by (k8s_namespace_name, k8s_deployment_name) - every watcher publishes the same Deployment; the absent half has no labels
+        # Fewer than two of the console's replicas available (ready: the Deployment states no minReadySeconds), the console's two being its
+        # redundancy - one pod still serves, and the next failure is an outage. A rollout never drops below two (maxUnavailable 0, maxSurge 1);
+        # an eviction the disruption budget admits drops to one until its replacement is ready, which the for outlasts. Or, while a watcher
+        # answers its scrape, no series of the Deployment at all: the console not deployed, or its namespace not readable by the watcher (its
+        # Role is the console's release's). A watcher down is ClusterWatchBlind's, so this half waits on one answering.
+        expr: >-
+          max by (k8s_namespace_name, k8s_deployment_name) (k8s_deployment_available{k8s_namespace_name="finapp-console", k8s_deployment_name="finapp-console"}) < 2
+          or (absent(k8s_deployment_available{k8s_namespace_name="finapp-console", k8s_deployment_name="finapp-console"}) and on() (max(up{job="finapp-cluster-watch"}) == 1))
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The Operator Console has fewer than two replicas available"
+          description: "Fewer than two finapp-console replicas have been available for 5 minutes, or the watcher sees no console Deployment. One more failure is an outage of the console. See OPERATIONS_RUNBOOK.md section 11.68."
+      - alert: ConsoleAssetsMissing
+        # Aggregation: sum() - counters are per controller, and the console is one Service behind both
+        # The console's nginx answers 404 only from /console/assets/ (try_files $uri =404): every other /console/** path falls back to
+        # index.html, and the operator edge routes GET /console and /console/** there and nothing else. So a 404 counted for the console's
+        # Service is a hashed asset that is not there - a release that forgot the previous release's assets, whose open pages then cannot
+        # load a lazy chunk. More than two within fifteen minutes; content-hashed assets a served page names never 404 otherwise.
+        expr: sum(increase(traefik_service_requests_total{job="finapp-edge", edge="operator", service="finapp-console@file", code="404"}[15m])) > 2
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The Operator Console's assets are answering 404"
+          description: "More than two requests for the console's hashed assets answered 404 at the operator edge within 15 minutes: open pages cannot load their chunks. See OPERATIONS_RUNBOOK.md section 11.68."
+      - alert: ConsoleServerErrors
+        # Aggregation: sum() - counters are per controller, and the console is one Service behind both
+        # The console's Service answering 5xx at the operator edge, the page's and the assets' together: a replica refusing or timing out (the
+        # proxy's 502 and 504), or nginx failing to read a file. More than two within fifteen minutes. All of it down is ConsoleProbeFailing's
+        # page as well; this one sees a console that half-answers.
+        expr: sum(increase(traefik_service_requests_total{job="finapp-edge", edge="operator", service="finapp-console@file", code=~"5.."}[15m])) > 2
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The Operator Console is answering server errors"
+          description: "More than two requests for the console answered 5xx at the operator edge within 15 minutes. See OPERATIONS_RUNBOOK.md section 11.68."

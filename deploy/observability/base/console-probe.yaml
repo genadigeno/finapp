@@ -1,0 +1,71 @@
+# The Operator Console's synthetic probe (P17-TSK-044; finapp-admin-panel docs/CONSOLE_RUNBOOK.md, Monitoring): the pinned collector image, a
+# third configuration, asking one question every 30 s - does GET /console/ answer 2xx through the operator edge? - and publishing the answer
+# for the scraper (job finapp-console-probe; infra/prometheus/rules/console.yml's ConsoleProbeFailing).
+#
+# WHY A POD OF ITS OWN, AND NOT THE CLUSTER WATCHER. The watcher is the one pod of the platform's namespaces with a Kubernetes credential, and
+# its reach is the collector's platform receiver and DNS alone (THREAT_MODEL.md T4); the probe needs the operator edge's listener and no
+# credential, so it runs where it holds none. And the console's two signals then fail apart: a watcher down blinds the readiness rule
+# (ClusterWatchBlind says so) while this probe still answers, and this pod down pages through ConsoleProbeFailing's absent half.
+#
+# WHAT IT ASKS. The operator edge's in-cluster Service (deploy/edge/base/controllers.yaml: 443 to the controllers' 8443), so the request takes
+# the edge's TLS listener, the operator-console router, its five middlewares and the console's Service, as an operator's does; not the
+# environment's load balancer or its DNS name, which no in-cluster probe can name for every environment. The edge's TLS options are
+# sniStrict, so the probe names the operator host as SNI (FINAPP_OPERATOR_HOST, the overlay's). It does NOT verify the certificate: its
+# question is availability, it sends no credential and reads a static page, the certificate's own expiry is cert-manager's series and
+# platform.yml's Certificate* rules, and no trust bundle reaches this namespace (OPERATIONS_RUNBOOK.md section 11.68 says what that leaves).
+# The source is a pod address, inside the private ranges the edge's internal-only allow-list admits; one request per 30 s is far inside
+# the operator routers' per-source limits.
+#
+# WHAT IT PUBLISHES. httpcheck's series on 8889: httpcheck_status per status class, 1 for the class the answer had and 0 for the others, all
+# 0 when the request failed (and httpcheck_error then counts it), and httpcheck_duration. A result not refreshed is dropped after
+# metric_expiration, so a probe that stops leaves no series and the rule's absent half reads it.
+#
+# N INSTANCES. One replica. At N every series is published N times under N instances and the rule takes max(): any prober that reached the
+# page answers the question. It holds no lease, writes nothing and decides nothing.
+#
+# ITS OWN LINES go to the collector's platform receiver, as the watcher's do (THREAT_MODEL.md section 6 item 43 (b)).
+extensions:
+  health_check:
+    endpoint: ${env:POD_IP}:13133
+
+receivers:
+  httpcheck:
+    collection_interval: 30s
+    targets:
+      - endpoint: https://finapp-edge-operator.finapp-edge.svc.cluster.local/console/
+        method: GET
+        timeout: 10s
+        tls:
+          insecure_skip_verify: true
+          server_name_override: ${env:FINAPP_OPERATOR_HOST}
+
+exporters:
+  prometheus:
+    endpoint: ${env:POD_IP}:8889
+    # Twice the collection interval: a live probe re-publishes every 30 s and never expires, and the series of an answer no longer given
+    # (a 200 after the page started failing) is gone within a minute, so max() does not read yesterday's success for long.
+    metric_expiration: 1m
+
+service:
+  extensions: [health_check]
+  telemetry:
+    resource:
+      attributes:
+        - name: service.name
+          value: finapp-console-probe
+        - name: k8s.pod.name
+          value: ${env:HOSTNAME}
+    logs:
+      level: warn
+      processors:
+        - batch:
+            exporter:
+              otlp:
+                protocol: http/protobuf
+                endpoint: http://finapp-collector.finapp-observability.svc.cluster.local:4319/v1/logs
+    metrics:
+      level: none
+  pipelines:
+    metrics:
+      receivers: [httpcheck]
+      exporters: [prometheus]

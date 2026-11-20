@@ -1,0 +1,18 @@
+# The series the console rules read (infra/prometheus/rules/console.yml, P17-TSK-044) that infra/prometheus/platform-components-series.txt does
+# not already hold. ConsoleAlertRulesTest holds every name the console rules read, and every label they select or group by, to a line here or
+# in that capture, or to a label the scrape adds (job and instance everywhere, env on kind, edge on the proxy's).
+#
+# NOT A CAPTURE. Unlike platform-components-series.txt, nothing below was read from a run: no image was pulled for this task (the owner's standing
+# rule). Each line is written from the pinned component's own documentation and source at the pinned version, and says which:
+# - httpcheck_status: collector-contrib 0.165.0's httpcheck receiver (its metadata.yaml: the metric httpcheck.status, a non-monotonic sum of
+#   unit 1, attributes http.url, http.status_code, http.method and http.status_class), as the prometheus exporter names it, with the
+#   otel_scope_* labels the capture shows that exporter adds.
+# - traefik_service_requests_total: Traefik v3.7's Prometheus metrics with addServicesLabels at its default, true (the operator edge's static
+#   file sets none of the three label switches), labelled code, method, protocol and service.
+# The capture of both from the pinned images is owed with the probe's run on kind (OPERATIONS_RUNBOOK.md section 11.68): until then a name or a
+# label that differs leaves ConsoleProbeFailing's absent half firing (it selects the same name and label), which pages on the first deployed
+# run - the safe direction - while ConsoleAssetsMissing and ConsoleServerErrors would stay silent, which is why the capture is owed by name.
+# collector sha256:e40d61f10c9a617cca1ffd1be4d7e2b3a4b0f0001798ff07e58cabe82e618cea (documentation, not captured)
+# traefik sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a (documentation, not captured)
+httpcheck_status{http_method=*,http_status_class=*,http_status_code=*,http_url=*,otel_scope_name=*,otel_scope_schema_url=*,otel_scope_version=*}
+traefik_service_requests_total{code=*,method=*,protocol=*,service=*}

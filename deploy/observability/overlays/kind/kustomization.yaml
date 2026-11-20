@@ -26,6 +26,11 @@ configMapGenerator:
       - LOKI_ENDPOINT=http://finapp-loki.finapp-observability.svc.cluster.local:3100/otlp
       # Long enough for a request's last span to arrive, short enough for the rehearsal to read the trace within a minute.
       - TAIL_DECISION_WAIT=10s
+  # The console probe's server name (P17-TSK-044): the operator host the kind edge's certificate is issued for
+  # (deploy/edge/overlays/kind/certificates.yaml), which the edge's sniStrict requires of every handshake.
+  - name: finapp-console-probe-target
+    literals:
+      - FINAPP_OPERATOR_HOST=operator.finapp.test
   - name: finapp-tempo-config
     files:
       - tempo.yaml
@@ -46,6 +51,7 @@ configMapGenerator:
   # and each ConfigMap under the margin on its own. Hashed, both: a changed rule rolls the scraper.
   - name: finapp-prometheus-rules
     files:
+      - rules/console.yml
       - rules/correctness.yml
       - rules/flows.yml
       - rules/platform.yml
@@ -64,26 +70,27 @@ configMapGenerator:
       - rules/settlement-reconciliation.yml
 
 patches:
-  # The quota follows the backends (deploy/observability/base/resourcequota.yaml shows the collector's and the cluster watcher's sum). Each of
+  # The quota follows the backends (deploy/observability/base/resourcequota.yaml shows the collector's, the cluster watcher's and the console probe's sum). Each of
   # Tempo, Loki, Prometheus and Alertmanager is one replica, Recreate, with no PodDisruptionBudget: at worst its pod and one replacing it after
-  # an eviction, 2 pods each. 8 + 4 x 2 = 16 pods; cpu 800m + 2 x (100m + 100m + 100m + 50m) requested and 8 + 2 x (1 + 1 + 1 + 0.5) limited;
-  # memory 3328Mi + 2 x (384Mi + 384Mi + 512Mi + 128Mi), requests equal to limits.
+  # an eviction, 2 pods each. 11 + 4 x 2 = 19 pods; cpu 1100m + 2 x (100m + 100m + 100m + 50m) requested and 11 + 2 x (1 + 1 + 1 + 0.5) limited;
+  # memory 4096Mi + 2 x (384Mi + 384Mi + 512Mi + 128Mi), requests equal to limits. (Read 16 pods, 1500m, 15 and 6144Mi until P17-TSK-044
+  # added the console probe to the base, 2026-11-19.)
   - target:
       kind: ResourceQuota
       name: finapp-observability
     patch: |-
       - op: replace
         path: /spec/hard/pods
-        value: "16"
+        value: "19"
       - op: replace
         path: /spec/hard/requests.cpu
-        value: 1500m
+        value: 1800m
       - op: replace
         path: /spec/hard/requests.memory
-        value: 6144Mi
+        value: 6912Mi
       - op: replace
         path: /spec/hard/limits.cpu
-        value: "15"
+        value: "18"
       - op: replace
         path: /spec/hard/limits.memory
-        value: 6144Mi
+        value: 6912Mi

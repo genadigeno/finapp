@@ -1449,7 +1449,8 @@ deny contains msg if {
 
 # THE CLUSTER WATCHER'S READ, EXACTLY (P16-TSK-003). Its account is a listed controller, so no rule written for a person's role reads its
 # role, and a controller's role is otherwise left alone: this rule reads it. List and watch on the kinds its receiver lists and on events,
-# in finapp alone, by a RoleBinding; a Secret, a ConfigMap, pods/log, a write, a wildcard or a ClusterRoleBinding is refused.
+# in finapp, by a RoleBinding; and since P17-TSK-044 the same in finapp-console (the console's readiness), by a RoleBinding there. A Secret, a
+# ConfigMap, pods/log, a write, a wildcard, a ClusterRoleBinding or a binding in any other namespace is refused.
 cluster_watch_account := {"namespace": "finapp-observability", "name": "finapp-cluster-watch"}
 
 cluster_watch_reads := {
@@ -1482,16 +1483,19 @@ deny contains msg if {
 	msg := sprintf("[rbac-cluster-watch] %s gives the cluster watcher %v %v in API group %v: it lists and watches the kinds its receiver reads, and nothing else", [label(role), verb, resource, group])
 }
 
-watch_bound_in_finapp(binding) if {
+# The namespaces the watcher reads, each granted by its own release: finapp by the application's, finapp-console by the console's.
+cluster_watch_namespaces := {"finapp", "finapp-console"}
+
+watch_bound_where_it_reads(binding) if {
 	binding.kind == "RoleBinding"
-	namespace_of(binding) == "finapp"
+	namespace_of(binding) in cluster_watch_namespaces
 }
 
 deny contains msg if {
 	some binding in rbac_bindings
 	binds_the_cluster_watch(binding)
-	not watch_bound_in_finapp(binding)
-	msg := sprintf("[rbac-cluster-watch] %s binds the cluster watcher other than by a RoleBinding in finapp", [label(binding)])
+	not watch_bound_where_it_reads(binding)
+	msg := sprintf("[rbac-cluster-watch] %s binds the cluster watcher other than by a RoleBinding in finapp or finapp-console", [label(binding)])
 }
 
 workload_accounts := {"finapp-app", "finapp-migrator"}

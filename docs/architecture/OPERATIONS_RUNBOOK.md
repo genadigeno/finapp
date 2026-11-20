@@ -3288,6 +3288,7 @@ latest; the run, as its record names it.
 | §11.65 | `platform` | 0 | 4 | 4 | — | — | — | — | no account |
 | §11.66 | `platform`, `payments`, `reconciliation` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-025) |
 | §11.67 | `platform` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-025) |
+| §11.68 | `platform` | 0 | 3 | 3 | — | — | — | — | postponed by the owner (PI-025) |
 | Provider callbacks are hints | `payments` | 0 | 6 | 6 | — | — | — | — | postponed by the owner (PI-024) |
 
 **The rows filled before the task's runs, read from their records, and what each counts.**
@@ -4689,6 +4690,98 @@ runs need (section 11.58) for eight hours.
   does not explain - a retry's leftovers, an unswept record, a duplicate. A task of its own; never a retention change to make it pass.
 - **The lag stayed high after the last fault**: a group that did not catch up within the load's last half hour (section 11.1.1's lag
   reading). Read which module's lag in `heap-lag.tsv`'s neighbours (Prometheus's own series, for the last six hours).
+
+### 11.68 The Operator Console watched: `ConsoleProbeFailing`, `ConsoleReplicasUnavailable`, `ConsoleAssetsMissing`, `ConsoleServerErrors`; CSP reports not collected (`P17-TSK-044`)
+
+*(Written by `P17-TSK-044`, 2026-11-19, from `infra/prometheus/rules/console.yml`, the console probe
+(`deploy/observability/base/console-probe.yaml`, `console-probe-workload.yaml`), the cluster watcher's read of the console's namespace
+(`deploy/observability/base/cluster-watch.yaml`, `deploy/console/base/rbac-cluster-watch.yaml`) and the operator edge's files; what the
+console needs is finapp-admin-panel `docs/CONSOLE_RUNBOOK.md` § Monitoring. **Nothing here has run on a cluster**: the probe, the capture
+of its series and the edge's per-service series, the rules' promtool cases and the policy checks over the new flows are owed with
+`P17-TST-001`'s run (`POSTPONED_ISSUES.md` PI-025). The rules have run through time on the build's own evaluator
+(`ConsoleAlertRulesTest`), which is not Prometheus.)*
+
+**What is read, and why there.** The console keeps no server state and emits no metric of its own, so every signal comes from outside
+it, and a console down loses the operators their tool, never the platform: every act is still the operator API's.
+
+- **A synthetic probe**, `finapp-console-probe` in `finapp-observability`: the pinned collector image with one receiver, asking
+  `GET https://finapp-edge-operator.finapp-edge.svc.cluster.local/console/` every 30 s - the operator edge's own Service, so the request
+  takes the edge's TLS listener, the console's router and its middlewares and the console's Service, as an operator's does - naming the
+  operator host as SNI (the edge is `sniStrict`; kind's overlay names `operator.finapp.test`). It holds **no credential** and reaches
+  only the edge's listener, the collector's platform receiver and DNS, so the cluster watcher, the one pod with a Kubernetes token, keeps
+  its reach; and the two console signals fail apart (a watcher down blinds readiness, never the probe). Job `finapp-console-probe`.
+  It does **not verify the certificate**: its question is availability, it sends nothing secret, and the certificate's expiry is
+  cert-manager's series (§11.8, `Certificate*`); a wrong certificate served is the one failure it cannot see.
+- **The console's readiness**, from the cluster watcher, which since this task also lists and watches its receiver's kinds in
+  `finapp-console` (no events) through a Role the console's own release grants: `k8s_deployment_available` for `finapp-console`.
+- **The operator edge's counters for the console's Service**, `traefik_service_requests_total{service="finapp-console@file"}` on the
+  proxy's management port (job `finapp-edge`, `edge="operator"`), on by default in the pinned proxy. The console's nginx answers 404 only
+  from `/console/assets/` (every other `/console/**` path falls back to `index.html`), so the Service's 404s are its assets' exactly; its
+  5xx are the page's and the assets' together. No router was split for this: a second console router would double its per-source limits
+  (`P17-TSK-103`) and is not needed to see the assets.
+
+| Alert | What it means | First response |
+|---|---|---|
+| `ConsoleProbeFailing` (page) | `GET /console/` through the operator edge has not answered 2xx for five minutes - refused, timed out, the edge's 502 or 503, a 404 - or, on a deployed fleet, no probe has answered at all. A result no longer given leaves the probe's exporter within a minute, so the page comes at most about a minute and a half past the five | "The console unreachable", below |
+| `ConsoleReplicasUnavailable` (ticket) | Fewer than two `finapp-console` replicas available for five minutes - the console's redundancy, its Deployment's replicas - or a watcher answering and no console Deployment seen. A rollout never drops below two; an eviction drops to one until its replacement is ready, which the five minutes outlast | "Fewer than two replicas", below |
+| `ConsoleAssetsMissing` (ticket) | More than two of the console's hashed assets answered 404 at the operator edge within fifteen minutes: open pages cannot load their lazy chunks. The first 404 of a code's burst is the series' birth and is not counted | "The assets' 404s and the console's 5xx", below |
+| `ConsoleServerErrors` (ticket) | More than two requests for the console answered 5xx at the operator edge within fifteen minutes: a replica refusing or too slow (the proxy's 502, 504), or nginx failing a read. All of it down is `ConsoleProbeFailing`'s page as well | "The assets' 404s and the console's 5xx", below |
+
+#### The console unreachable
+
+1. **The probe itself first.** No probe series at all (the alert's labels then name `job="finapp-console-probe"`): read
+   `up{job="finapp-console-probe"}` and the probe's own lines in Loki, `{service_name="finapp-console-probe"}`. A probe pod down or
+   crash-looping is the probe's incident, not the console's - but until it answers, the console's state is unknown, which is why it pages.
+   A handshake refused (`tls: unrecognized name`) means the overlay named no operator host, or the wrong one (`finapp-console-probe-target`).
+   A 403 is the edge's `internal-only` allow-list refusing the probe's pod address: an environment that narrows those ranges to its own
+   must keep its pod network in them, or the probe pages on a console that answers its operators.
+2. **Then the console's pods**: `ConsoleReplicasUnavailable`, `kubectl -n finapp-console get deployment,pods`. None ready: the image
+   (§11.32 for a refused one), a crash, the quota.
+3. **Then the edge's route**: `EdgeUnscraped` and `EdgeErrorRatioHigh` (§11.42) for the operator edge as a whole; the operator edge's
+   access lines for `RouterName="operator-console@file"` and their `DownstreamStatus`. A 404 on `/console/` itself is the route missing
+   (`operator-routes.yaml`'s `operator-console`, §11.26), a 502 or 504 the console's Service or its NetworkPolicy
+   (`deploy/console/base/networkpolicy.yaml` admits the operator controllers alone).
+4. **Tell the operators** the operator API serves every act meanwhile, and roll the console back by digest (finapp-admin-panel
+   `CONSOLE_RUNBOOK.md` § Rollback; §11.36 for the delivery) if a release caused it.
+
+#### Fewer than two replicas
+
+1. One available: a pod failing its probes or not scheduled. `kubectl -n finapp-console describe pod` names the reason (an image
+   refused at admission, the namespace's quota, a node). The console still serves; the next failure is an outage, so the fix is today's.
+2. No console Deployment seen while the watcher answers: the console was not deployed in this environment, or the watcher cannot read
+   `finapp-console` - the Role and RoleBinding `finapp-cluster-watch` there are the console's release's, and the watcher logs a refusal
+   every few seconds for a kind it may not list. A watcher down is `ClusterWatchBlind`'s (§11.41), and this rule waits for it.
+
+#### The assets' 404s and the console's 5xx
+
+1. **404s right after a release** are the release that forgot the previous release's assets (finapp-admin-panel `CONSOLE_RUNBOOK.md`,
+   release step 3): roll back to the previous image by digest, rebuild with the previous assets collected, release again. A tab left open
+   across two releases 404s by design (an image carries one previous release's assets); a reload fixes it, and one such tab never
+   reaches the threshold.
+2. **404s with no release**: the access lines for `RouterName="operator-console@file"` and `DownstreamStatus=404` give the paths
+   (never a query, never a client's address). A path that is no build's asset is someone asking for what is not there.
+3. **5xx**: which code. 502 and 504 are the proxy's - a replica refusing, gone or too slow - and `ConsoleReplicasUnavailable` usually
+   says which; a 500 is nginx's own and its pod's log says why (`kubectl logs`, no node agent ships it).
+
+**CSP violation reports are not collected, and why** (the backlog left it to this task's design, 2026-11-19). The console's policy is
+the console's own definition, copied byte for byte into the operator edge's `console-headers` and held there by
+`ConsoleHostingManifestsTest` and `edge.rego` - the control for `THREAT_MODEL.md` T48 - so adding `report-to` is a change to the
+console's repository first. The edge cannot collect reports itself: a collector would be a new, unauthenticated write door on the operator
+surface that anything on the internal network could fill, so the page it would drive could be forged; a report carries the page's
+address and a sample of the script, and the console's deep links carry identifiers; and browser extensions on operators' machines raise
+violations of their own, so the signal pages on noise. Meanwhile the policy is held where it can be: the console's catalogue proves no
+violation on every route in both themes before a release, the served header is held to the console's string, and `P17-TST-001`'s battery
+counts violations across its run (`PHASE_GATES.md` §5 Phase 17, criterion 3). Collecting them is a decision of its own - a console change
+naming the endpoint and a finapp collector that admits only its own reports, scrubs addresses and counts by directive - never a rule here.
+`ConsoleAlertRulesTest` holds that the policy names no report endpoint, so nothing is sent where nothing reads it.
+
+**What this does not cover.** The environment's load balancer and the operators' DNS name, which an in-cluster probe cannot take; a wrong
+certificate served (above); the console's own behaviour in a browser (finapp-admin-panel's catalogue and end-to-end runs); its
+accessibility. **Owed** (PI-025, with `P17-TST-001`'s run): the probe answering on `kind` through the real edge, red with the console
+scaled to zero and green again; the capture of `httpcheck_status` and `traefik_service_requests_total` from the pinned images into
+`infra/prometheus/console-series.txt` (today written from their documentation); `console.test.yml` under `alert-rules-check.sh`;
+`telemetry-check.sh` and `edge-check.sh` over the new flows and the watcher's second Role; and the probe's own memory and CPU measured
+(its numbers are the watcher's until then).
 
 ### 11.33 Rotations rehearsed on kind: running them, reading them, the last record (`P15-TSK-020`)
 

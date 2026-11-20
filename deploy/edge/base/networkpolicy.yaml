@@ -95,6 +95,19 @@ spec:
       ports:
         - protocol: TCP
           port: 8443
+    # The Operator Console's synthetic probe (P17-TSK-044), on the TLS listener alone, named rather than left to the ranges above: a pod's
+    # address in an ipBlock is the network plugin's to honour or not, and the probe must reach the page as an operator does. Its side is
+    # deploy/observability/base/networkpolicy.yaml's finapp-console-probe.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: finapp-observability
+          podSelector:
+            matchLabels:
+              finapp/role: console-probe
+      ports:
+        - protocol: TCP
+          port: 8443
     - from:
         - namespaceSelector:
             matchLabels:
