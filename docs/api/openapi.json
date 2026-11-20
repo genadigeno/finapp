@@ -23356,9 +23356,6 @@
           "kind": {
             "type": "string"
           },
-          "product": {
-            "type": "string"
-          },
           "proposedAt": {
             "type": "string"
           },
@@ -52910,7 +52907,7 @@
         }
       }
     },
-    "/v1/operator/pending-decisions/merchant.fee-assignments": {
+    "/v1/operator/pending-decisions/merchant/fee-assignments": {
       "get": {
         "operationId": "listPendingFeeAssignments",
         "parameters": [
@@ -52953,7 +52950,7 @@
         }
       }
     },
-    "/v1/operator/pending-decisions/merchant.fee-schedule-versions": {
+    "/v1/operator/pending-decisions/merchant/fee-schedule-versions": {
       "get": {
         "operationId": "listPendingFeeScheduleVersions",
         "parameters": [
