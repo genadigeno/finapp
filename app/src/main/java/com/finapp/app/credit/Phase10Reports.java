@@ -9,6 +9,7 @@ import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.id.IdGenerator;
@@ -73,12 +74,12 @@ public final class Phase10Reports {
     public record ReferralRow(String product, int policyVersion, long referred) {}
 
     public record OutcomesReport(
-            String month, long decisions, List<OutcomeRow> rows, List<ReferralRow> referrals, boolean truncated) {}
+            String month, String asOf, long decisions, List<OutcomeRow> rows, List<ReferralRow> referrals, boolean truncated) {}
 
     /** A month's decisions by product, the policy version each pinned and who decided; the referrals opened. */
     public OutcomesReport outcomes(String month) {
         YearMonth period = period(month);
-        return read("outcomes", period, uow -> {
+        return read("outcomes", period, (uow, asOf) -> {
             Timestamp from = start(period);
             Timestamp to = start(period.plusMonths(1));
             List<OutcomeRow> rows = new ArrayList<>();
@@ -124,7 +125,7 @@ public final class Phase10Reports {
                     }
                 }
             }
-            return new Served<>(new OutcomesReport(period.toString(), decisions, List.copyOf(rows), List.copyOf(referrals),
+            return new Served<>(new OutcomesReport(period.toString(), asOf, decisions, List.copyOf(rows), List.copyOf(referrals),
                     truncated), rows.size() + referrals.size());
         });
     }
@@ -134,12 +135,12 @@ public final class Phase10Reports {
     /** How many of one product's decisions carried one catalogued reason, and how many as their first. */
     public record ReasonRow(String product, String reasonCode, long decisions, long asPrimary) {}
 
-    public record ReasonsReport(String month, long decisions, List<ReasonRow> rows, boolean truncated) {}
+    public record ReasonsReport(String month, String asOf, long decisions, List<ReasonRow> rows, boolean truncated) {}
 
     /** A month's reason codes per product - every decision's, the platform's and a person's. */
     public ReasonsReport reasons(String month) {
         YearMonth period = period(month);
-        return read("reasons", period, uow -> {
+        return read("reasons", period, (uow, asOf) -> {
             Timestamp from = start(period);
             Timestamp to = start(period.plusMonths(1));
             List<ReasonRow> rows = new ArrayList<>();
@@ -162,7 +163,7 @@ public final class Phase10Reports {
                     }
                 }
             }
-            return new Served<>(new ReasonsReport(period.toString(), decisionsIn(uow, from, to), List.copyOf(rows),
+            return new Served<>(new ReasonsReport(period.toString(), asOf, decisionsIn(uow, from, to), List.copyOf(rows),
                     truncated), rows.size());
         });
     }
@@ -178,12 +179,12 @@ public final class Phase10Reports {
             String sourceKind, String provider, long dataRequests, long received, long unavailable,
             long consentWithdrawn, long awaiting, long reportedOverdue, long attempts, String availability) {}
 
-    public record SourcesReport(String month, long dataRequests, List<SourceRow> rows, boolean truncated) {}
+    public record SourcesReport(String month, String asOf, long dataRequests, List<SourceRow> rows, boolean truncated) {}
 
     /** A month's credit data requests by source kind and provider - the bureau-cost proxy's own counts. */
     public SourcesReport sources(String month) {
         YearMonth period = period(month);
-        return read("sources", period, uow -> {
+        return read("sources", period, (uow, asOf) -> {
             Timestamp from = start(period);
             Timestamp to = start(period.plusMonths(1));
             List<SourceRow> rows = new ArrayList<>();
@@ -222,7 +223,7 @@ public final class Phase10Reports {
                     dataRequests = found.getLong(1);
                 }
             }
-            return new Served<>(new SourcesReport(period.toString(), dataRequests, List.copyOf(rows), truncated),
+            return new Served<>(new SourcesReport(period.toString(), asOf, dataRequests, List.copyOf(rows), truncated),
                     rows.size());
         });
     }
@@ -234,7 +235,7 @@ public final class Phase10Reports {
 
     @FunctionalInterface
     private interface Read<R> {
-        Served<R> in(Connection unitOfWork) throws SQLException;
+        Served<R> in(Connection unitOfWork, String asOf) throws SQLException;
     }
 
     /** One snapshot, with its audit record in the same transaction. */
@@ -245,7 +246,9 @@ public final class Phase10Reports {
                 try (Statement snapshot = unitOfWork.createStatement()) {
                     snapshot.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
                 }
-                Served<R> served = work.in(unitOfWork);
+                // The snapshot's first statement: the database's instant of the snapshot every figure is read from.
+                String asOf = DatabaseTime.now(unitOfWork).toString();
+                Served<R> served = work.in(unitOfWork, asOf);
                 audit.append(unitOfWork, new AuditRecord(AuditId.next(ids), actor, Instant.now(clock),
                         CreditAuditAction.REPORT_READ, "credit_report", report, Optional.empty(), AuditOutcome.SUCCEEDED,
                         CorrelationContext.current()

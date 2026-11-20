@@ -325,6 +325,12 @@ A total order is what makes this well-defined at all, and ADR-0013 already suppl
 identifiers are UUIDv7 and therefore time-ordered, which is why keyset pagination is natural here
 rather than a compromise.
 
+### 7a. Every operator report states its as-of (`P17-TSK-039`, finapp-admin-panel ADR-C133 decision 5, gap G-04)
+
+An operator report - a `GET` under `/v1/operator/reports/`, the dead-letter queues and the accounting operational reports - answers a record with **`asOf`**, an ISO-8601 instant: **the database's**, never the serving instance's clock (ADR-0063). It is read as the report transaction's first statement (`DatabaseTime.now`, `statement_timestamp()`), so in a `REPEATABLE READ` snapshot it is the snapshot's instant and in a `READ COMMITTED` report every figure is at least that fresh; the risk reports and the operational reports read their own database instant. The console shows it on every tile of the overview. `EveryOperatorReportStatesItsAsOfTest` holds the reports to a register, each answering a record with a `String asOf`. The payments report's `generatedAt`, an instance's clock, was replaced in place by `asOf`; the FX position's `asOf` now reads the database.
+
+**The overview** is three reports under `PLATFORM_OVERVIEW_READ` (`OPERATIONS_VIEWER`'s one permission, gap G-151): `GET /v1/operator/reports/customers?date=` - every lifecycle status's standing count now, and the UTC day's openings and status changes after an opening (the platform keeps each customer's current status only, so a past day's standing counts are not served); `GET /v1/operator/reports/transfers?date=` - the UTC day's transfers by status and failure reason, counted and totalled exactly per currency at its stored scale, the day an identifier range on the UUIDv7 primary key; and `GET /v1/operator/reports/payments?date=` (`P17-TSK-032`'s, moved from `PAYMENT_READ`). `date` is required, an ISO date from 2000-01-01, else `422`. Each serving is recorded.
+
 ## 8. Deprecation — **Decided, not yet implemented** (first deprecation)
 
 Within a version, evolution is additive. Nothing is deprecated today, so no mechanism is built;

@@ -74,6 +74,7 @@ question, not a refactor.
 | `party.CustomerRegistered` | No | A party was registered and a customer relationship was opened for it. |
 | `party.OrganisationRegistered` | No | An organisation was registered, with the acting person recorded as its registrant. |
 | `party.ProfileChanged` | No | A party's own profile data was changed, recording which field and by whom. |
+| `party.CustomersReportRead` | No | A holder of `PLATFORM_OVERVIEW_READ` was served the customers report (`P17-TSK-039`; `GET /v1/operator/reports/customers?date=`): each lifecycle status's standing count and the UTC day's openings and changes, in the read's own transaction. Target the day; the summary the total - never a customer. |
 
 `party.CustomerRegistered` is **one action for two writes**, deliberately. `PHASE_1_PLAN.md` §4
 lists `RegisterParty` and `OpenCustomerRelationship` as separate commands, and they are — but
@@ -432,6 +433,7 @@ the open audit their own acts.
 | `transfers.BeneficiaryAdded` | No | A party saved a transfer destination; the record names the beneficiary and the destination account by identifier, never the display name. |
 | `transfers.BeneficiaryRemoved` | No | A party removed a saved transfer destination; the removed row survives as evidence. |
 | `transfers.TransferReversed` | **Yes** | An operator reversed a completed transfer with a recorded reason; the record names the transfer, the original entry and the reversal entry, never an amount. |
+| `transfers.TransfersReportRead` | No | A holder of `PLATFORM_OVERVIEW_READ` was served the transfers report (`P17-TSK-039`; `GET /v1/operator/reports/transfers?date=`): the UTC day's transfers by status and failure reason, counted and totalled per currency, in the read's own transaction. Target the day; the summary its row count - never a transfer or an amount. |
 
 Declared with the command whose design fixes its meaning (`P4-TSK-005`, `P4-TSK-007`) rather
 than with the module skeleton — `P4-TSK-001`'s recorded decision, the `accounts`/`P3-TSK-011`
@@ -515,7 +517,7 @@ identity's second factor (`INV-PAY-02`'s surface, `P4-TSK-007`'s step-up verbati
 | `payments.PaymentsListed` | No | A holder of `PAYMENT_READ` was served a page of the payment search (`P17-TSK-032`; `GET /v1/operator/payments`), written by `RecordedReads` in the read's own transaction - an unrecorded answer is refused by `UnrecordedReadAdvice`. Target the search (`party:<id>`, `merchant:<id>` or `all`); the summary the window, the status and rail named, whether the page continued a walk, how many it served and whether more remain - never an amount. |
 | `payments.PaymentRead` | No | A holder of `PAYMENT_READ` was served one payment with its attempt and the provider's references, its refunds, its latest routing decision and its disputes (`P17-TSK-032`; `GET /v1/operator/payments/{intentId}`), in the read's own transaction; an unknown or malformed id records nothing. Target the payment; the summary its status and counts - never an amount. |
 | `payments.DisputeQueueRead` | No | A holder of `DISPUTE_ADMINISTER` was served a page of the dispute queue (`P17-TSK-032`; `GET /v1/operator/disputes`), in the read's own transaction - `bnpl.DisputeQueueRead`'s shape. Target the stage read, or `all`; the summary the deadline bound, whether the page continued a walk, how many it served and whether more remain - never an amount. |
-| `payments.PaymentsReportRead` | No | A holder of `PAYMENT_READ` was served the payments report for a UTC day (`P17-TSK-032`; `GET /v1/operator/reports/payments?date=`): the day's payments by rail, attempt status and payment status, and the unknown-state backlog now, in the read's own transaction. Target the day; the summary its row counts - never an amount. |
+| `payments.PaymentsReportRead` | No | A holder of `PLATFORM_OVERVIEW_READ` (`PAYMENT_READ` until `P17-TSK-039`) was served the payments report for a UTC day (`P17-TSK-032`; `GET /v1/operator/reports/payments?date=`): the day's payments by rail, attempt status and payment status, and the unknown-state backlog now, in the read's own transaction. Target the day; the summary its row counts - never an amount. |
 | `payments.HeldPaymentsListed` | No | A holder of `RISK_INVESTIGATE` was served a page of the held card payments (`P17-TSK-032`; `GET /v1/operator/held-payments`): the open capture holds, the reader's own party's withheld, in the read's own transaction. The capture and void doors stay risk's (ADR-0112). The summary whether the page continued a walk, how many it served and whether more remain - never an amount. A reader the platform cannot place is `risk.SelfDealingRefused`, recorded `FAILED` in a transaction of its own, nothing served. |
 
 Declared with the commands whose designs fix their meaning (`P5-TSK-009`; the capture's

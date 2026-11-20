@@ -10,6 +10,7 @@ import com.finapp.platform.idempotency.IdempotencyKey;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.idempotency.RequestFingerprint;
 import com.finapp.platform.idempotency.StoredResponse;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.platform.telemetry.Spans;
@@ -79,7 +80,7 @@ public final class DeadLetterDesk {
     }
 
     /** The queues and the decisions waiting on them, oldest first. */
-    public record DeadLettersView(List<AbandonedView> abandoned, List<ParkedView> parked, List<DiscardView> standingDiscards) {}
+    public record DeadLettersView(String asOf, List<AbandonedView> abandoned, List<ParkedView> parked, List<DiscardView> standingDiscards) {}
 
     /** An act's receipt. */
     public record ActReceipt(String subject, String status) {}
@@ -89,13 +90,19 @@ public final class DeadLetterDesk {
 
     // ------------------------------------------------------------------ the read
 
+    /** The queues read, and the database's instant before the first of them. */
+    private record StampedRead(String asOf, DeadLetterOperations.DeadLetters letters) {}
+
     /** The queues. Recorded in the transaction of the read, so nothing is served unrecorded. */
     public DeadLettersView read() {
         Actor actor = SecurityContext.require();
         CorrelationId correlation = correlation();
-        DeadLetterOperations.DeadLetters read =
-                spans.within("deadletter.read", Map.of(), () -> transactions.inTransaction(uow -> operations.read(uow, actor, correlation)));
+        // The transaction's first statement is the database's instant the queues are at least as fresh as.
+        StampedRead stamped = spans.within("deadletter.read", Map.of(), () -> transactions.inTransaction(
+                uow -> new StampedRead(DatabaseTime.now(uow).toString(), operations.read(uow, actor, correlation))));
+        DeadLetterOperations.DeadLetters read = stamped.letters();
         return new DeadLettersView(
+                stamped.asOf(),
                 read.abandoned().stream()
                         .map(row -> new AbandonedView(row.eventId().toString(), row.aggregateId().toString(), row.eventType(), row.attempts(),
                                 row.abandonedAt().toString(), row.failureClass()))

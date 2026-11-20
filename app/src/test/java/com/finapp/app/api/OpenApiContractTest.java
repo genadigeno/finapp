@@ -849,6 +849,9 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/payments/{intentId}",
                         ApiVersion.CURRENT_PREFIX + "/operator/parties/{partyId}/payment-methods",
                         ApiVersion.CURRENT_PREFIX + "/operator/reports/payments",
+                        // P17-TSK-039: the overview's customers and transfers reports (PLATFORM_OVERVIEW_READ).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/customers",
+                        ApiVersion.CURRENT_PREFIX + "/operator/reports/transfers",
                         ApiVersion.CURRENT_PREFIX + "/operator/disputes",
                         ApiVersion.CURRENT_PREFIX + "/operator/held-payments",
                         ApiVersion.CURRENT_PREFIX + "/operator/routing-policy/versions/{version}",

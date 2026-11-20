@@ -108,6 +108,13 @@ public enum PartyAuditAction implements AuditableAction {
     PARTY_PROFILE_CHANGED(
             "party.ProfileChanged",
             "A party's own profile data was changed, recording which field and by whom.",
+            false),
+
+    /** An overview reader was served the customers report (`P17-TSK-039`, PLATFORM_OVERVIEW_READ) - counts, never a customer. */
+    CUSTOMERS_REPORT_READ(
+            "party.CustomersReportRead",
+            "An overview reader was served the customers report - counts by lifecycle status and a day's openings and changes,"
+                    + " never a customer (PLATFORM_OVERVIEW_READ); every serving is recorded, in the read's transaction.",
             false);
 
     private final String code;

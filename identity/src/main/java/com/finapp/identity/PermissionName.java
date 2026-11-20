@@ -120,16 +120,17 @@ public enum PermissionName {
      * Read payments on the operator surface (`P17-TSK-025`, served by `P17-TSK-032`; ADR-C132). Never {@link #PAYMENT_REFUND}.
      * Every read recorded. The {@code CUSTOMER_SUPPORT_AGENT}'s alone. Until `P17-TSK-032` it guarded no route, so it counted as
      * an act ({@link #guardsAnAct}) and its holder needed a factor: the rule failed towards one. Since `P17-TSK-032` every route
-     * under it reads - the payment search and one payment, a party's methods, the payments report - so it guards no act
-     * ({@code EveryOperatorActRequiresAFactorTest} holds the answer to the routes); the support role's other reads still do.
+     * under it reads - the payment search and one payment, a party's methods - so it guards no act
+     * ({@code EveryOperatorActRequiresAFactorTest} holds the answer to the routes); the support role's other reads still do. The
+     * payments report moved to {@link #PLATFORM_OVERVIEW_READ} at `P17-TSK-039`: its counts name no customer.
      */
     PAYMENT_READ,
 
     /**
-     * Read the cross-domain overview reports (`P17-TSK-025`; finapp-admin-panel ADR-C132 decision 2's name; the reports are
-     * `P17-TSK-039`'s, gap G-151). The {@code OPERATIONS_VIEWER}'s alone. It guards no route until `P17-TSK-039`, so it counts as
-     * an act and its holder needs a factor - the rule fails towards one, and no factorless holder is left behind when the reads
-     * arrive.
+     * Read the cross-domain overview reports (`P17-TSK-025`; finapp-admin-panel ADR-C132 decision 2's name; gap G-151). The
+     * {@code OPERATIONS_VIEWER}'s alone. It guarded no route until `P17-TSK-039`, so it counted as an act and its holder needed a
+     * factor - the rule failed towards one. Since `P17-TSK-039` it guards the overview's three reports - customers, transfers and
+     * payments, counts and totals that name no customer - every one a read, so it guards no act.
      */
     PLATFORM_OVERVIEW_READ,
 
@@ -866,7 +867,7 @@ public enum PermissionName {
      */
     public boolean guardsAnAct() {
         return switch (this) {
-            case ACCOUNTING_READ, FX_INVESTIGATE, AUDIT_READ, PAYMENT_READ -> false;
+            case ACCOUNTING_READ, FX_INVESTIGATE, AUDIT_READ, PAYMENT_READ, PLATFORM_OVERVIEW_READ -> false;
             default -> true;
         };
     }

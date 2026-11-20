@@ -148,7 +148,11 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/payments", PermissionName.PAYMENT_READ),
                     entry("GET /v1/operator/payments/{intentId}", PermissionName.PAYMENT_READ),
                     entry("GET /v1/operator/parties/{partyId}/payment-methods", PermissionName.PAYMENT_READ),
-                    entry("GET /v1/operator/reports/payments", PermissionName.PAYMENT_READ),
+                    // P17-TSK-039: the overview - the payments report moved here from PAYMENT_READ, its counts naming no
+                    // customer - and the customers and transfers reports, the OPERATIONS_VIEWER's one permission.
+                    entry("GET /v1/operator/reports/payments", PermissionName.PLATFORM_OVERVIEW_READ),
+                    entry("GET /v1/operator/reports/customers", PermissionName.PLATFORM_OVERVIEW_READ),
+                    entry("GET /v1/operator/reports/transfers", PermissionName.PLATFORM_OVERVIEW_READ),
                     entry("GET /v1/operator/disputes", PermissionName.DISPUTE_ADMINISTER),
                     entry("GET /v1/operator/held-payments", PermissionName.RISK_INVESTIGATE),
                     // Disputes: the operator's reads, each dispute shown audited (Phase 7, ADR-0061)

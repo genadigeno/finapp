@@ -37,8 +37,8 @@ class EveryCustomerReadIsRecordedTest {
             // P17-TSK-032: the payment reads under PAYMENT_READ.
             "PaymentReadController#listOperatorPayments", "payments.PaymentsListed",
             "PaymentReadController#viewOperatorPayment", "payments.PaymentRead",
-            "PaymentReadController#listPartyPaymentMethods", "paymentmethods.PaymentMethodsRead",
-            "PaymentReadController#readPaymentsReport", "payments.PaymentsReportRead");
+            "PaymentReadController#listPartyPaymentMethods", "paymentmethods.PaymentMethodsRead");
+    // P17-TSK-039: the payments report moved to PLATFORM_OVERVIEW_READ - its counts name no customer - and is recorded there.
 
     @Autowired private ApplicationContext context;
 

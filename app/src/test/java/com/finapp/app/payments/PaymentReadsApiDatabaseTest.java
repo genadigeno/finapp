@@ -168,28 +168,30 @@ class PaymentReadsApiDatabaseTest {
     }
 
     @Test
-    @DisplayName("the payments report counts the day's payments by rail and outcome and the unknown backlog, and is recorded")
+    @DisplayName("the payments report counts the day's payments by rail and outcome and the unknown backlog, states its as-of,"
+            + " and is recorded; the overview's reader reads it, a support agent no longer (P17-TSK-039)")
     void theReportCountsTheDay() throws Exception {
-        String support = sessionWith(RoleName.CUSTOMER_SUPPORT_AGENT).token();
+        String viewer = sessionWith(RoleName.OPERATIONS_VIEWER).token();
         UUID party = IDS.next();
         UUID payable = payable(IDS.next());
         payment(party, payable, "CAPTURE_UNKNOWN", 1);
         String today = LocalDate.now(CLOCK).toString();
 
-        HttpResponse<String> report = get("/v1/operator/reports/payments?date=" + today, support);
+        HttpResponse<String> report = get("/v1/operator/reports/payments?date=" + today, viewer);
         assertThat(report.statusCode()).as(report.body()).isEqualTo(200);
         assertThat(report.body())
                 .contains("\"date\":\"" + today + "\"")
-                .contains("\"generatedAt\":")
+                .containsPattern("\"asOf\":\"[0-9-]+T[0-9:.]+Z\"")
                 .contains("{\"rail\":\"card\",\"attemptStatus\":\"CAPTURE_UNKNOWN\",\"intentStatus\":\"PROCESSING\"")
                 .contains("{\"kind\":\"ATTEMPT\",\"status\":\"CAPTURE_UNKNOWN\"");
         assertThat(audits("payments.PaymentsReportRead", today)).isGreaterThanOrEqualTo(1);
         for (String refused : List.of("", "?date=yesterday", "?date=1999-12-31")) {
-            assertThat(get("/v1/operator/reports/payments" + refused, support).statusCode()).as(refused).isEqualTo(422);
+            assertThat(get("/v1/operator/reports/payments" + refused, viewer).statusCode()).as(refused).isEqualTo(422);
         }
-        assertThat(get("/v1/operator/reports/payments?date=" + today, sessionWith(RoleName.LEDGER_OPERATOR).token())
-                        .statusCode())
-                .isEqualTo(403);
+        for (RoleName refused : List.of(RoleName.LEDGER_OPERATOR, RoleName.CUSTOMER_SUPPORT_AGENT)) {
+            assertThat(get("/v1/operator/reports/payments?date=" + today, sessionWith(refused).token()).statusCode())
+                    .as("%s holds no PLATFORM_OVERVIEW_READ", refused).isEqualTo(403);
+        }
     }
 
     @Test

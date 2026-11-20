@@ -51,7 +51,8 @@ class RoleGrantNeedsAFactorTest {
 
     @Test
     @DisplayName("every role that can act needs one (P17-TSK-102: every act asks for a second factor, so a factorless holder's"
-            + " password would enrol a thief's), and every role that reads only behind a factor (P17-TSK-017) - today all of them")
+            + " password would enrol a thief's), and every role that reads only behind a factor (P17-TSK-017) - today all of them"
+            + " but the overview's reader (P17-TSK-039)")
     void whichRolesNeedAFactor() {
         assertThat(Arrays.stream(RoleName.values()).filter(RoleName::requiresEnrolledFactor).collect(Collectors.toSet()))
                 .as("the rule is the permissions' own: a role needs a factor exactly when one of them guards an act or reads only"
@@ -60,8 +61,8 @@ class RoleGrantNeedsAFactorTest {
                         .filter(role -> role.permissions().stream()
                                 .anyMatch(permission -> permission.guardsAnAct() || permission.readsBehindAFactor()))
                         .collect(Collectors.toSet()))
-                .as("and today that is every role")
-                .isEqualTo(Set.of(RoleName.values()));
+                .as("and today that is every role but OPERATIONS_VIEWER, whose one permission only reads (P17-TSK-039)")
+                .isEqualTo(java.util.EnumSet.complementOf(java.util.EnumSet.of(RoleName.OPERATIONS_VIEWER)));
         assertThat(Set.of(RoleName.MERCHANT_ADMINISTRATOR, RoleName.LEDGER_OPERATOR, RoleName.ADMINISTRATOR, RoleName.RISK_ANALYST))
                 .as("the four that needed one before P17-TSK-102 still do")
                 .allMatch(RoleName::requiresEnrolledFactor);
@@ -73,7 +74,9 @@ class RoleGrantNeedsAFactorTest {
         assertThat(Arrays.stream(PermissionName.values()).filter(permission -> !permission.guardsAnAct()))
                 .containsExactlyInAnyOrder(PermissionName.ACCOUNTING_READ, PermissionName.FX_INVESTIGATE, PermissionName.AUDIT_READ,
                         // P17-TSK-032: every route under it reads.
-                        PermissionName.PAYMENT_READ);
+                        PermissionName.PAYMENT_READ,
+                        // P17-TSK-039: the overview's three reports, each a read.
+                        PermissionName.PLATFORM_OVERVIEW_READ);
     }
 
     @Test
@@ -81,10 +84,21 @@ class RoleGrantNeedsAFactorTest {
             + " among them (P15-TSK-032, P17-TSK-102)")
     void aGrantWithNoFactorIsRefused() {
         for (RoleName role : RoleName.values()) {
-            assertThat(assign(role)).as(role.name()).isEqualTo(IdentityAdministration.RoleGrant.FACTOR_REQUIRED);
+            if (role.requiresEnrolledFactor()) {
+                assertThat(assign(role)).as(role.name()).isEqualTo(IdentityAdministration.RoleGrant.FACTOR_REQUIRED);
+            }
         }
         assertThat(grants).hasValue(0);
         assertThat(written).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a role whose every permission only reads is granted with no factor - the overview's reader (P17-TSK-039)")
+    void aReadOnlyRoleNeedsNoFactor() {
+        assertThat(RoleName.OPERATIONS_VIEWER.requiresEnrolledFactor()).isFalse();
+
+        assertThat(assign(RoleName.OPERATIONS_VIEWER)).isEqualTo(IdentityAdministration.RoleGrant.GRANTED);
+        assertThat(grants).hasValue(1);
     }
 
     @Test
@@ -197,8 +211,10 @@ class RoleGrantNeedsAFactorTest {
                     }
                     if (method.getName().equals("holdingsWithoutFactor")) {
                         // P15-TSK-032: a factorless administrator, and a factorless risk approver, are named by the check too;
-                        // since P17-TSK-102 every role that can act, which today is every role.
-                        assertThat((Set<RoleName>) args[1]).containsExactlyInAnyOrder(RoleName.values());
+                        // since P17-TSK-102 every role that can act - every role but the overview's reader (P17-TSK-039).
+                        assertThat((Set<RoleName>) args[1]).containsExactlyInAnyOrder(java.util.Arrays.stream(RoleName.values())
+                                .filter(RoleName::requiresEnrolledFactor).toArray(RoleName[]::new))
+                                .doesNotContain(RoleName.OPERATIONS_VIEWER);
                         return java.util.Collections.nCopies(standing,
                                 new RoleAssignmentStore.FactorlessHolding(SUBJECT, RoleName.LEDGER_OPERATOR, Instant.now(CLOCK)));
                     }

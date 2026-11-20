@@ -14434,6 +14434,9 @@
       },
       "BnplDelinquencyReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -15635,6 +15638,9 @@
       },
       "BnplMerchantFinancingReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -16124,6 +16130,9 @@
       },
       "BnplPortfolioReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "currencies": {
             "items": {
               "$ref": "#/components/schemas/BnplBookTie"
@@ -16284,6 +16293,9 @@
       },
       "BnplRefundReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -17649,6 +17661,9 @@
       },
       "ChargebackRatioReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "merchants": {
             "items": {
               "$ref": "#/components/schemas/MerchantChargebackRatio"
@@ -18461,6 +18476,9 @@
       },
       "CorridorReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "corridors": {
             "items": {
               "$ref": "#/components/schemas/CorridorRow"
@@ -19776,8 +19794,52 @@
         },
         "type": "object"
       },
+      "CustomerStatusRow": {
+        "properties": {
+          "changedOnDay": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "openedOnDay": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "standing": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "CustomersReportView": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/CustomerStatusRow"
+            },
+            "type": "array"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "DailySummaryReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -19853,6 +19915,9 @@
               "$ref": "#/components/schemas/AbandonedView"
             },
             "type": "array"
+          },
+          "asOf": {
+            "type": "string"
           },
           "parked": {
             "items": {
@@ -21728,6 +21793,9 @@
       },
       "FxRevenueReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "month": {
             "type": "string"
           },
@@ -22895,6 +22963,9 @@
       },
       "LendingAccrualReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -22972,6 +23043,9 @@
       },
       "LendingCapitalReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -23025,6 +23099,9 @@
       },
       "LendingDelinquencyReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "date": {
             "type": "string"
           },
@@ -23084,6 +23161,9 @@
       },
       "LendingPortfolioReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "currencies": {
             "items": {
               "$ref": "#/components/schemas/LendingBookTie"
@@ -25380,6 +25460,9 @@
       },
       "OutcomesReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "decisions": {
             "format": "int64",
             "type": "integer"
@@ -26063,10 +26146,10 @@
       },
       "PaymentsReportView": {
         "properties": {
-          "date": {
+          "asOf": {
             "type": "string"
           },
-          "generatedAt": {
+          "date": {
             "type": "string"
           },
           "outcomes": {
@@ -26757,6 +26840,9 @@
       },
       "PositionsReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "cash": {
             "items": {
               "$ref": "#/components/schemas/CashRow"
@@ -27483,6 +27569,9 @@
       },
       "ProviderCostsReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "costs": {
             "items": {
               "$ref": "#/components/schemas/ProviderCostRow"
@@ -27692,6 +27781,9 @@
       },
       "ReasonsReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "decisions": {
             "format": "int64",
             "type": "integer"
@@ -33486,6 +33578,9 @@
       },
       "SourcesReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "dataRequests": {
             "format": "int64",
             "type": "integer"
@@ -33762,6 +33857,9 @@
       },
       "SuspenseReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "currencies": {
             "items": {
               "$ref": "#/components/schemas/SuspenseReportCurrency"
@@ -34022,6 +34120,27 @@
         ],
         "type": "object"
       },
+      "TransferOutcomeRow": {
+        "properties": {
+          "amount": {
+            "type": "string"
+          },
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "TransferReversalRequest": {
         "properties": {
           "reason": {
@@ -34071,6 +34190,23 @@
         },
         "type": "object"
       },
+      "TransfersReportView": {
+        "properties": {
+          "asOf": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/TransferOutcomeRow"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "UnlockDecisionRequest": {
         "properties": {
           "reason": {
@@ -34107,6 +34243,9 @@
       },
       "UnmatchedReport": {
         "properties": {
+          "asOf": {
+            "type": "string"
+          },
           "groups": {
             "items": {
               "$ref": "#/components/schemas/UnmatchedReportGroup"
@@ -48601,6 +48740,33 @@
         }
       }
     },
+    "/v1/operator/reports/customers": {
+      "get": {
+        "operationId": "readCustomersReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomersReportView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/v1/operator/reports/fx/position": {
       "get": {
         "operationId": "readFxPositionReport",
@@ -48985,6 +49151,33 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RiskVelocityReportView"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/v1/operator/reports/transfers": {
+      "get": {
+        "operationId": "readTransfersReport",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransfersReportView"
                 }
               }
             },

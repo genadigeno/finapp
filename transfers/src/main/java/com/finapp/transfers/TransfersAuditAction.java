@@ -79,7 +79,14 @@ public enum TransfersAuditAction implements AuditableAction {
             "An operator reversed a completed transfer with a recorded reason; the record"
                     + " names the transfer, the original entry and the reversal entry, never"
                     + " an amount.",
-            true);
+            true),
+
+    /** An overview reader was served the transfers report (`P17-TSK-039`, PLATFORM_OVERVIEW_READ) - totals, never a transfer. */
+    TRANSFERS_REPORT_READ(
+            "transfers.TransfersReportRead",
+            "An overview reader was served a day's transfers report - counts and totals by outcome and currency, never a"
+                    + " transfer (PLATFORM_OVERVIEW_READ); every serving is recorded, in the read's transaction.",
+            false);
 
     private final String code;
     private final String description;

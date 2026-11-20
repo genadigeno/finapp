@@ -37,6 +37,7 @@ import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -199,7 +200,7 @@ public final class PaymentReadDesk {
 
     /** The payments report for a UTC day, and the unknown-state backlog as of {@code generatedAt}. */
     public record PaymentsReportView(
-            String date, String generatedAt, List<PaymentOutcomeRow> outcomes, List<PaymentUnknownRow> unknownBacklog) {}
+            String date, String asOf, List<PaymentOutcomeRow> outcomes, List<PaymentUnknownRow> unknownBacklog) {}
 
     /**
      * How many of the day's payments ended where: the attempt's rail - its provider: each declared rail is one provider's
@@ -390,7 +391,8 @@ public final class PaymentReadDesk {
         Instant from = day.atStartOfDay(ZoneOffset.UTC).toInstant();
         Instant to = day.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
         return inOneTransaction(uow -> {
-            Instant generatedAt = Instant.now(clock);
+            // The transaction's first statement: the database's instant every figure is at least as fresh as.
+            Instant asOf = DatabaseTime.now(uow);
             List<PaymentOutcomeRow> outcomes = collections.outcomes(uow, from, to).stream()
                     .map(count -> new PaymentOutcomeRow(
                             count.rail().map(RailId::value).orElse(null),
@@ -404,7 +406,7 @@ public final class PaymentReadDesk {
                     .toList();
             recordedReads.record(uow, PaymentsAuditAction.PAYMENTS_REPORT_READ, REPORT_TARGET, day.toString(),
                     "date=" + day + ", outcomes=" + outcomes.size() + ", unknown=" + backlog.size());
-            return new PaymentsReportView(day.toString(), generatedAt.toString(), outcomes, backlog);
+            return new PaymentsReportView(day.toString(), asOf.toString(), outcomes, backlog);
         });
     }
 

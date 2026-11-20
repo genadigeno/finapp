@@ -12,6 +12,7 @@ import com.finapp.platform.audit.AuditOutcome;
 import com.finapp.platform.audit.AuditRecord;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.correlation.CorrelationContext;
+import com.finapp.platform.persistence.DatabaseTime;
 import com.finapp.platform.security.Actor;
 import com.finapp.platform.security.SecurityContext;
 import com.finapp.sharedkernel.correlation.CorrelationId;
@@ -141,15 +142,15 @@ public final class LendingReports {
             boolean truncated) {}
 
     public record LendingPortfolioReport(
-            String date, boolean known, List<LendingPortfolioRow> rows, List<LendingBookTie> currencies,
+            String date, String asOf, boolean known, List<LendingPortfolioRow> rows, List<LendingBookTie> currencies,
             LendingProofCounts proofs) {}
 
     /** The loan book as of the end of {@code date}, tied to the ledger and carrying the proofs. */
     public LendingPortfolioReport portfolio(String date) {
         LocalDate day = date(date);
-        return read("portfolio", day, (uow, known) -> {
+        return read("portfolio", day, (uow, known, asOf) -> {
             if (!known) {
-                return new Served<>(new LendingPortfolioReport(day.toString(), false, List.of(), List.of(), null), 0);
+                return new Served<>(new LendingPortfolioReport(day.toString(), asOf, false, List.of(), List.of(), null), 0);
             }
             // The accounts by product, currency and state.
             Map<String, long[]> states = new TreeMap<>();
@@ -217,7 +218,7 @@ public final class LendingReports {
                         ledger.credit("LOAN_CREDIT_BALANCE"), ledger.equals(products), trial.getOrDefault(currency, true)));
             }
             LendingProofCounts read = proofs(uow);
-            return new Served<>(new LendingPortfolioReport(day.toString(), true, List.copyOf(rows), List.copyOf(currencies), read),
+            return new Served<>(new LendingPortfolioReport(day.toString(), asOf, true, List.copyOf(rows), List.copyOf(currencies), read),
                     rows.size());
         });
     }
@@ -233,14 +234,14 @@ public final class LendingReports {
             String product, String currency, int scale, String bucket, long accounts, long defaulted,
             long principalDueMinor, long interestDueMinor, long feesDueMinor, long dueMinor) {}
 
-    public record LendingDelinquencyReport(String date, boolean known, List<LendingDelinquencyRow> rows) {}
+    public record LendingDelinquencyReport(String date, String asOf, boolean known, List<LendingDelinquencyRow> rows) {}
 
     /** The book in servicing by days-past-due bucket as of the end of {@code date}, with its due sums from the ledger. */
     public LendingDelinquencyReport delinquency(String date) {
         LocalDate day = date(date);
-        return read("delinquency", day, (uow, known) -> {
+        return read("delinquency", day, (uow, known, asOf) -> {
             if (!known) {
-                return new Served<>(new LendingDelinquencyReport(day.toString(), false, List.of()), 0);
+                return new Served<>(new LendingDelinquencyReport(day.toString(), asOf, false, List.of()), 0);
             }
             String conditioned = "SELECT s.id, s.product, s.currency,"
                     + " COALESCE((SELECT c.bucket FROM lending.loan_condition_event c WHERE c.loan_id = s.id"
@@ -292,7 +293,7 @@ public final class LendingReports {
                         entry.getValue()[0], entry.getValue()[1], principal, interest, fees,
                         Math.addExact(Math.addExact(principal, interest), fees)));
             }
-            return new Served<>(new LendingDelinquencyReport(day.toString(), true, List.copyOf(rows)), rows.size());
+            return new Served<>(new LendingDelinquencyReport(day.toString(), asOf, true, List.copyOf(rows)), rows.size());
         });
     }
 
@@ -307,14 +308,14 @@ public final class LendingReports {
             String product, String currency, int scale, long accounts, long posted, long accruedMinor, long ledgerMinor,
             boolean ties) {}
 
-    public record LendingAccrualReport(String date, boolean known, List<LendingAccrualRow> rows) {}
+    public record LendingAccrualReport(String date, String asOf, boolean known, List<LendingAccrualRow> rows) {}
 
     /** The interest accrued for {@code date}, by product - the rows' totals tied to the ledger's. */
     public LendingAccrualReport accrual(String date) {
         LocalDate day = date(date);
-        return read("accrual", day, (uow, known) -> {
+        return read("accrual", day, (uow, known, asOf) -> {
             if (!known) {
-                return new Served<>(new LendingAccrualReport(day.toString(), false, List.of()), 0);
+                return new Served<>(new LendingAccrualReport(day.toString(), asOf, false, List.of()), 0);
             }
             List<LendingAccrualRow> rows = new ArrayList<>();
             try (PreparedStatement select = uow.prepareStatement("SELECT l.product, x.currency, x.scale, count(*),"
@@ -335,7 +336,7 @@ public final class LendingReports {
                     }
                 }
             }
-            return new Served<>(new LendingAccrualReport(day.toString(), true, List.copyOf(rows)), rows.size());
+            return new Served<>(new LendingAccrualReport(day.toString(), asOf, true, List.copyOf(rows)), rows.size());
         });
     }
 
@@ -354,14 +355,14 @@ public final class LendingReports {
             String currency, int scale, long recognisedMinor, long committedMinor, long outstandingMinor,
             long headroomMinor, long lendingFundedMinor, long writtenOffMinor) {}
 
-    public record LendingCapitalReport(String date, boolean known, List<LendingCapitalRow> rows) {}
+    public record LendingCapitalReport(String date, String asOf, boolean known, List<LendingCapitalRow> rows) {}
 
     /** The lending capital's headroom per supported currency as of the end of {@code date}. */
     public LendingCapitalReport capital(String date) {
         LocalDate day = date(date);
-        return read("capital", day, (uow, known) -> {
+        return read("capital", day, (uow, known, asOf) -> {
             if (!known) {
-                return new Served<>(new LendingCapitalReport(day.toString(), false, List.of()), 0);
+                return new Served<>(new LendingCapitalReport(day.toString(), asOf, false, List.of()), 0);
             }
             Map<String, Balances> ledger = new TreeMap<>();
             try (PreparedStatement select = uow.prepareStatement("SELECT a.currency, ln.scale, a.purpose,"
@@ -429,7 +430,7 @@ public final class LendingReports {
                         Math.subtractExact(Math.subtractExact(Math.subtractExact(recognised, commitment), outstanding), lost),
                         Math.addExact(Math.addExact(outstanding, commitment), lost), lost));
             }
-            return new Served<>(new LendingCapitalReport(day.toString(), true, List.copyOf(rows)), rows.size());
+            return new Served<>(new LendingCapitalReport(day.toString(), asOf, true, List.copyOf(rows)), rows.size());
         });
     }
 
@@ -440,7 +441,7 @@ public final class LendingReports {
 
     @FunctionalInterface
     private interface Read<R> {
-        Served<R> in(Connection snapshot, boolean known) throws SQLException;
+        Served<R> in(Connection snapshot, boolean known, String asOf) throws SQLException;
     }
 
     /**
@@ -455,8 +456,10 @@ public final class LendingReports {
         boolean[] known = new boolean[1];
         Served<R> served = transactions.inSnapshot(snapshot -> {
             try {
+                // The snapshot's first statement: the database's instant of the snapshot every figure is read from.
+                String asOf = DatabaseTime.now(snapshot).toString();
                 known[0] = reportable(snapshot, day);
-                return work.in(snapshot, known[0]);
+                return work.in(snapshot, known[0], asOf);
             } catch (SQLException failure) {
                 throw new IllegalStateException("a lending report could not be read: " + failure.getSQLState());
             }
