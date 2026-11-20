@@ -313,6 +313,9 @@ application serves: no `GET` there answers a bare array, a top-level `truncated`
 route with its reason - a list bounded by what it is (a closed vocabulary, one subject's children, one period's report), or one
 this section has not reached yet, named there so it is owed - and the table above lists exactly the routes answering a page.
 | `GET /v1/operator/fx/pricing-policies` (`P17-TSK-118`) | `FX_ADMINISTER` | version descending | 50 / 100 | None. Each version with its pairs and its proposer; the maximum is the capped list's old bound, so no page reads more than it did. Retrofitted in place from `{ versions, truncated }` (ADR-C133 decision 2), whose flag was never set |
+| `GET /v1/operator/merchants` (`P17-TSK-033`) | `MERCHANT_ADMINISTER` | onboarded at descending, merchant id descending | 50 / 200 | `status` (`ACTIVE`, `SUSPENDED`, `CLOSED`); `name` (a legal or display name, matched exactly - never a pattern or a prefix). Unrecorded, as one merchant's read is |
+| `GET /v1/operator/merchants/{merchantId}/payouts` (`P17-TSK-033`) | `MERCHANT_ADMINISTER` | created at descending, payout id descending | 50 / 200 | none: one merchant's payouts, each as the merchant's own read renders it. Every page recorded as the audit action merchant.PayoutsListed |
+| `GET /v1/operator/merchants/{merchantId}/transactions` (`P17-TSK-033`) | `MERCHANT_ADMINISTER` | posting date descending, journal entry id descending, currency ascending | 50 / 200 | `from`, `to` (posting dates, inclusive; `to` today UTC and `from` thirty days before it unless named; 31 days at most). A list, not a statement: no opening, closing or sum across pages. Every page recorded as the audit action merchant.TransactionsListed |
 
 All are keyset reads. `app`'s `OperatorCollection` is the one implementation of the request rules: the limit is refused above
 its maximum rather than reduced, and the cursor names its collection, so one collection's cursor is refused by another. Every

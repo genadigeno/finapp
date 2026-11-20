@@ -32,9 +32,10 @@ import java.util.UUID;
  */
 public final class JdbcMerchantPayoutStore implements MerchantPayoutStore<Connection> {
 
-    private static final String TABLE = "merchant.merchant_payout";
+    static final String TABLE = "merchant.merchant_payout";
 
-    private static final String COLUMNS =
+    /** The row's columns, read by name in {@link #map} - package-visible for {@link JdbcMerchantCollections} (`P17-TSK-033`). */
+    static final String COLUMNS =
             "id, merchant_id, amount_minor, currency, scale, destination_id, hold_reference,"
                     + " provider_idempotency_reference, provider_reference, status, failure_reason,"
                     + " requested_by, requested_by_type, reason, created_at, last_dispatched_at";
@@ -415,7 +416,7 @@ public final class JdbcMerchantPayoutStore implements MerchantPayoutStore<Connec
         }
     }
 
-    private static MerchantPayout map(ResultSet row) throws SQLException {
+    static MerchantPayout map(ResultSet row) throws SQLException {
         return MerchantPayout.rehydrate(
                 MerchantPayoutId.of(row.getObject("id", UUID.class)),
                 MerchantId.of(row.getObject("merchant_id", UUID.class)),

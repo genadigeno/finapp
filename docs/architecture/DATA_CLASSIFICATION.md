@@ -1190,6 +1190,18 @@ change masked exactly as the list does - the display suffix, never `destination_
 merchant reads beside them are. An operator's dispute view says whether its merchant answers it (`answeredByMerchant`,
 `INTERNAL`): a fact derived from the payment's credited account's purpose, never the account.
 
+**Served to staff by the merchant collections** (`P17-TSK-033`, 2026-11-20), under `MERCHANT_ADMINISTER`, the permission of every
+operator read of a merchant. The merchants (`GET /v1/operator/merchants`) serve what one merchant's read serves - its id,
+`display_name`, settlement currency and `status` - and `created_at` (`onboardedAt`, the list's order), each `CONFIDENTIAL`;
+`legal_name` is matched by the exact `name` filter and never served. A merchant's payouts (`GET …/{merchantId}/payouts[/{payoutId}]`,
+each page `merchant.PayoutsListed`, each payout `merchant.PayoutRead`) serve exactly what the merchant's own read of a payout
+serves - id, status, amount and currency (`RESTRICTED-FINANCIAL`), the destination's suffix (`RESTRICTED-PII`, never its
+reference), a failure reason and `created_at` - never `requested_by`, `reason`, `provider_reference` or the dispatch key. A
+merchant's transactions (`GET …/{merchantId}/transactions`, each page `merchant.TransactionsListed`) serve each movement on its
+payable exactly as its own statement renders it, with the payable's currency. A name typed into `name` travels in the query:
+an organisation's name, `CONFIDENTIAL`, never a person's (`PartyKind.ORGANISATION` gates onboarding; ADR-C132 decision 4 keeps
+personal identifiers out of URLs).
+
 ### `settlement` — the source register and the evidence intake — *added by `P8-TSK-002`*
 
 **The evidence store's rows** (ADR-0066): the seeded source identities, the received file's

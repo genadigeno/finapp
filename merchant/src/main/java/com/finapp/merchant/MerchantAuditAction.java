@@ -290,7 +290,42 @@ public enum MerchantAuditAction implements AuditableAction {
             "An operator assigned a merchant's BNPL product to a fee schedule whose versions return"
                     + " their fee on refund; the record names the merchant, the product and both"
                     + " schedules; the reason is required.",
-            true);
+            true),
+
+    /**
+     * A holder of {@code MERCHANT_ADMINISTER} was served a page of one merchant's payouts (`P17-TSK-033`, gap G-51;
+     * finapp-admin-panel ADR-C132 decision 5): a counterparty's money read across tenants by permission, recorded in the
+     * read's own transaction, so no page is served unrecorded. No reason: a read is not a decision. The target the merchant;
+     * the summary whether the page continued a walk, how many payouts it served and whether more remain - never an amount.
+     */
+    PAYOUTS_LISTED(
+            "merchant.PayoutsListed",
+            "A page of a merchant's payouts was served to an operator; the record names the merchant and a count, never an"
+                    + " amount.",
+            false),
+
+    /**
+     * A holder of {@code MERCHANT_ADMINISTER} was served one merchant's payout (`P17-TSK-033`, gap G-51), recorded in the
+     * read's own transaction. The target the payout; the summary its merchant and its status - never an amount. A payout of
+     * another merchant, an unknown or a malformed one records nothing.
+     */
+    PAYOUT_READ(
+            "merchant.PayoutRead",
+            "One of a merchant's payouts was served to an operator; the record names the payout, its merchant and its status,"
+                    + " never an amount.",
+            false),
+
+    /**
+     * A holder of {@code MERCHANT_ADMINISTER} was served a page of one merchant's transactions - the movements on its payable
+     * (`P17-TSK-033`, gap G-52) - recorded in the read's own transaction. The target the merchant; the summary the window,
+     * whether the page continued a walk, how many movements it served and whether more remain - never an amount. The
+     * merchant's own statement over its key stays unrecorded.
+     */
+    TRANSACTIONS_LISTED(
+            "merchant.TransactionsListed",
+            "A page of a merchant's transactions was served to an operator; the record names the merchant, the window and a"
+                    + " count, never an amount.",
+            false);
 
     private final String code;
     private final String description;
