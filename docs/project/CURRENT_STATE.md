@@ -700,6 +700,8 @@ since M0.1". Moved, not edited.)*
 
 **`P17-TSK-124` — The reads an approver lacks: a pending money-act proposal, an account restriction, a dead letter; the KYC case's audit target named (M17.10)** — `COMPLETE` (2026-11-20; added and marked `READY` at its design on the owner's "do both in parallel", beside `P17-TSK-040`; branch `P17-TSK-124` from master `31eb3ddeb`; record below under §Just completed). No next task is marked `READY` here: `-040` is the coordinator's, `-123`, `-125` and `-126` are in sessions of their own.
 
+**`P17-DOC-002` — The Phase 17 exit review** — `PLANNED` (unchanged). The exit review is drafted on branch `P17-DOC-002` (2026-11-20, [`reviews/PHASE_17_REVIEW.md`](reviews/PHASE_17_REVIEW.md)), pending `P17-TSK-040` and the owner's rulings. Its draft verdict: Phase 17 cannot exit yet. The flip is the owner's.
+
 **`P17-TSK-116` — Two BNPL acts for the money-control remediation; the reads an approver lacks; proposers named (M17.8)** — `COMPLETE` (2026-11-20; on the owner's "Continue to M17.9, do all Ms in parallel": M17.8's last unowned task, built in its own session; branch `P17-TSK-116` from `P17-TSK-031`; record below under §Just completed). No next task is marked `READY` here: `-040` depends on this task and `-035`, and is the coordinator's to mark.
 
 **`P17-TSK-031` — The money-control remediation (M7)** — `COMPLETE` (2026-11-20; marked `READY` at its design on the owner's "Continue to M17.7"; branch `P17-TSK-031` from `P17-TSK-028`; record below under §Just completed). M17.7's other tasks - `-032`, `-033`, `-114`, `-115` - are on their own branches; `P17-TSK-123`, split from this one, is `PLANNED`. No next task is marked `READY` here.
