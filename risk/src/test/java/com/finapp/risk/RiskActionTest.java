@@ -101,11 +101,13 @@ class RiskActionTest {
 
     @Test
     @DisplayName("what a case proposes: identity's three on a party's case, SUSPEND_MERCHANT on a merchant-abuse case,"
-            + " a held movement's resolution only where the case holds it; COLLECTIONS nothing; the gaps and the"
+            + " a held movement's resolution only where the case holds it; accounts' two on a party's case, on the party's"
+            + " own agreement (P17-TSK-028); COLLECTIONS nothing; the gaps and the"
             + " rescreening never")
     void whatEachCaseKindProposes() {
         Set<ActionKind> identity = EnumSet.of(ActionKind.SUSPEND_IDENTITY, ActionKind.REINSTATE_IDENTITY,
                 ActionKind.REVOKE_SESSIONS);
+        Set<ActionKind> account = EnumSet.of(ActionKind.SUSPEND_ACCOUNT, ActionKind.REINSTATE_ACCOUNT);
         Set<ActionKind> held = EnumSet.of(ActionKind.RELEASE_HELD_WITHDRAWAL, ActionKind.DENY_HELD_WITHDRAWAL,
                 ActionKind.CAPTURE_HELD_PAYMENT, ActionKind.VOID_HELD_PAYMENT);
         for (CaseKind kind : CaseKind.values()) {
@@ -116,6 +118,7 @@ class RiskActionTest {
                 Set<ActionKind> expected = EnumSet.noneOf(ActionKind.class);
                 if (subject == SubjectKind.PARTY && kind != CaseKind.MERCHANT_ABUSE && kind != CaseKind.COLLECTIONS) {
                     expected.addAll(identity);
+                    expected.addAll(account);
                 }
                 if (subject == SubjectKind.MERCHANT && kind == CaseKind.MERCHANT_ABUSE) {
                     expected.add(ActionKind.SUSPEND_MERCHANT);
@@ -127,8 +130,8 @@ class RiskActionTest {
             }
         }
         assertThat(Arrays.stream(ActionKind.values()).filter(kind -> !kind.available()))
-                .as("no owning command: accounts' suspension, crossborder's block").containsExactlyInAnyOrder(
-                        ActionKind.SUSPEND_ACCOUNT, ActionKind.REINSTATE_ACCOUNT, ActionKind.BLOCK_BENEFICIARY);
+                .as("no owning command: crossborder's block (accounts' two since P17-TSK-028)").containsExactlyInAnyOrder(
+                        ActionKind.BLOCK_BENEFICIARY);
 
         OverrideWorld.Taken fraud = world.partyCase(CaseKind.FRAUD);
         for (ActionKind refused : List.of(ActionKind.SUSPEND_ACCOUNT, ActionKind.REINSTATE_ACCOUNT,

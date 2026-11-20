@@ -86,7 +86,38 @@ public enum AccountsAuditAction implements AuditableAction {
             "accounts.AccountRead",
             "An operator read an agreement and its balances; the agreement, its customer and the as-of instant recorded, never"
                     + " an amount.",
-            false);
+            false),
+
+    /**
+     * A holder of {@code ACCOUNT_RESTRICT} proposed an agreement's suspension or reinstatement (`P17-TSK-028`, ADR-0153):
+     * the agreement the target, the proposer's reason the record's reason, the restriction, kind, code and customer the
+     * summary. Nothing moved yet.
+     */
+    RESTRICTION_PROPOSED(
+            "accounts.RestrictionProposed",
+            "An agreement's suspension or reinstatement was proposed, with a reason code and a reason; nothing moved yet.",
+            true),
+
+    /** A holder of {@code ACCOUNT_RESTRICT_APPROVE} rejected a restriction it did not propose (`P17-TSK-028`); nothing moved. */
+    RESTRICTION_REJECTED(
+            "accounts.RestrictionRejected",
+            "A proposed suspension or reinstatement was rejected by a second person, with a reason; nothing moved.",
+            true),
+
+    /**
+     * An agreement was suspended (`P17-TSK-028`, ADR-0153): approved by a second person, or by risk's approved
+     * {@code SUSPEND_ACCOUNT} under the platform. From this record on, new customer-initiated outflows are refused.
+     */
+    ACCOUNT_SUSPENDED(
+            "accounts.AccountSuspended",
+            "An agreement was suspended, by a second person's approval or risk's approved action; new outflows are refused.",
+            true),
+
+    /** An agreement was reinstated (`P17-TSK-028`): by a second person's approval or risk's approved {@code REINSTATE_ACCOUNT}. */
+    ACCOUNT_REINSTATED(
+            "accounts.AccountReinstated",
+            "A suspended agreement was reinstated, by a second person's approval or risk's approved action.",
+            true);
 
     private final String code;
     private final String description;

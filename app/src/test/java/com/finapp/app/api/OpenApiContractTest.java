@@ -1097,6 +1097,11 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/accounts/{id}/entries",
                         ApiVersion.CURRENT_PREFIX + "/operator/transfers",
                         ApiVersion.CURRENT_PREFIX + "/operator/transfers/{id}",
+                        // P17-TSK-028: an agreement's suspension and reinstatement, proposed and decided by four eyes.
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounts/{id}/suspension",
+                        ApiVersion.CURRENT_PREFIX + "/operator/accounts/{id}/reinstatement",
+                        ApiVersion.CURRENT_PREFIX + "/operator/account-restrictions/{id}/approval",
+                        ApiVersion.CURRENT_PREFIX + "/operator/account-restrictions/{id}/rejection",
                         // P17-TSK-014: the staff directory, its detail, the lookup and the role catalogue (IDENTITY_READ).
                         ApiVersion.CURRENT_PREFIX + "/operator/identities",
                         ApiVersion.CURRENT_PREFIX + "/operator/identities/{id}",

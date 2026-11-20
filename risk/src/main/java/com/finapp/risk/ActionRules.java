@@ -36,6 +36,12 @@ public final class ActionRules {
     /** Merchant's one, a merchant-abuse case's. */
     public static final Set<ActionKind> MERCHANT_KINDS = EnumSet.of(ActionKind.SUSPEND_MERCHANT);
 
+    /**
+     * Accounts' two (`P17-TSK-028`, ADR-0153 decision 5): proposed on a party's case, on <strong>an agreement of the
+     * case's party</strong>, named - the target asked, its holding judged at proposal through accounts' door.
+     */
+    public static final Set<ActionKind> ACCOUNT_KINDS = EnumSet.of(ActionKind.SUSPEND_ACCOUNT, ActionKind.REINSTATE_ACCOUNT);
+
     /** The case kinds that propose merchant's kind. */
     public static final Set<CaseKind> MERCHANT_CASES = EnumSet.of(CaseKind.MERCHANT_ABUSE);
 
@@ -77,7 +83,7 @@ public final class ActionRules {
         if (!action.available()) {
             return false;
         }
-        if (IDENTITY_KINDS.contains(action)) {
+        if (IDENTITY_KINDS.contains(action) || ACCOUNT_KINDS.contains(action)) {
             return PARTY_CASES.contains(kind) && subject == SubjectKind.PARTY;
         }
         if (MERCHANT_KINDS.contains(action)) {

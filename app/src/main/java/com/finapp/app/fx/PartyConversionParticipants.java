@@ -55,6 +55,11 @@ public final class PartyConversionParticipants implements ConversionParticipants
     }
 
     @Override
+    public void requireOutflowAdmitted(Connection unitOfWork, UUID customerId) {
+        new com.finapp.app.accounts.OutflowGate(parties, customerAccounts).requireForCustomer(unitOfWork, customerId);
+    }
+
+    @Override
     public Optional<LedgerAccountId> openIfAbsent(Connection unitOfWork, UUID customerId, CurrencyCode currency) {
         Objects.requireNonNull(currency, "currency must not be null");
         return customerAccounts.findLive(unitOfWork, customerId, ProductType.WALLET)

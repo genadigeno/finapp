@@ -31,4 +31,12 @@ public interface ConversionParticipants {
      * open one, none aborts) - empty when the customer holds no live agreement.
      */
     Optional<com.finapp.ledger.LedgerAccountId> openIfAbsent(Connection unitOfWork, UUID customerId, com.finapp.sharedkernel.money.CurrencyCode currency);
+
+    /**
+     * Refuses a new outflow from the customer's agreement while it is suspended (`P17-TSK-028`, ADR-0153): a
+     * conversion's or a cross-border credit's source, the agreement read {@code FOR SHARE} in the caller's transaction
+     * and held to commit, <strong>before</strong> the source wallet is resolved or any ledger row locked. Throws the
+     * platform's refusal. A reversal, a return or a completion never calls it.
+     */
+    void requireOutflowAdmitted(Connection unitOfWork, UUID customerId);
 }

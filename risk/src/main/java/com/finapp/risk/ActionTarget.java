@@ -18,7 +18,7 @@ public enum ActionTarget {
     /** A merchant. */
     MERCHANT,
 
-    /** A customer account (no owning command exists - {@link ActionKind#SUSPEND_ACCOUNT} is unavailable). */
+    /** A customer account - the agreement {@link ActionKind#SUSPEND_ACCOUNT} and {@link ActionKind#REINSTATE_ACCOUNT} act on (`P17-TSK-028`). */
     ACCOUNT,
 
     /** A cross-border beneficiary (no owning command exists - {@link ActionKind#BLOCK_BENEFICIARY} is unavailable). */

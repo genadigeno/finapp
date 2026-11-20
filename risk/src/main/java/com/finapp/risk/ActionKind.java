@@ -18,9 +18,9 @@ import java.util.stream.Collectors;
  *
  * <p><strong>Available</strong> means the owning domain has the command today. `P13-TSK-017` found three that do not and
  * recorded them unavailable - never proposable, never dispatched - rather than add a command to another domain (the
- * entry's out of scope): accounts has no door producing {@code SUSPENDED} (its machine names the state, no command
- * reaches it), and crossborder reaches {@code BLOCKED} only by kyc's screening outcome from {@code IN_REVIEW} - no
- * command blocks a beneficiary. Each is an owner item.
+ * entry's out of scope): accounts had no door producing {@code SUSPENDED} - built by `P17-TSK-028` (ADR-0153), so
+ * accounts' two are available since - and crossborder reaches {@code BLOCKED} only by kyc's screening outcome from
+ * {@code IN_REVIEW} - no command blocks a beneficiary, an owner item still.
  */
 public enum ActionKind {
 
@@ -33,11 +33,11 @@ public enum ActionKind {
     /** Revoke every session of the party's identities (C10). */
     REVOKE_SESSIONS(ActionTarget.PARTY, Domain.IDENTITY, true),
 
-    /** Suspend the account - <strong>unavailable</strong>: accounts has no suspension command (`P13-TSK-017`). */
-    SUSPEND_ACCOUNT(ActionTarget.ACCOUNT, Domain.ACCOUNTS, false),
+    /** Suspend the customer agreement - accounts' restriction machine (`P17-TSK-028`, ADR-0153; unavailable until then). */
+    SUSPEND_ACCOUNT(ActionTarget.ACCOUNT, Domain.ACCOUNTS, true),
 
-    /** Reinstate a suspended account - <strong>unavailable</strong>, as {@link #SUSPEND_ACCOUNT}. */
-    REINSTATE_ACCOUNT(ActionTarget.ACCOUNT, Domain.ACCOUNTS, false),
+    /** Reinstate a suspended customer agreement - as {@link #SUSPEND_ACCOUNT} (`P17-TSK-028`). */
+    REINSTATE_ACCOUNT(ActionTarget.ACCOUNT, Domain.ACCOUNTS, true),
 
     /** Suspend the merchant. */
     SUSPEND_MERCHANT(ActionTarget.MERCHANT, Domain.MERCHANT, true),

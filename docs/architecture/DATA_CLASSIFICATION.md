@@ -609,6 +609,29 @@ money is `ledger`'s and classified there.
 
 **Served to staff by the account reads** (`P17-TSK-027`, 2026-11-20; finapp-admin-panel ADR-C132 decision 5), under `ACCOUNT_READ` on a `MULTI_FACTOR` session, every answer recorded. A customer's agreements (`GET /v1/operator/customers/{id}/accounts`, `accounts.CustomerAccountsListed`) and one agreement (`GET /v1/operator/accounts/{id}`, `accounts.AccountRead`) serve every column above - `CONFIDENTIAL` at most - and the agreement's balances per currency, posted, held and available: `ledger`'s own figures (`RESTRICTED-FINANCIAL`), read through `BalanceDisplay` as of the database's instant, which the answer states. An agreement's ledger lines (`GET /v1/operator/accounts/{id}/entries`, `ledger.AccountLinesListed`) serve each line's entry id, entry type, posting and value dates, posting instant, direction and amount (`RESTRICTED-FINANCIAL`) - **never** the entry's `reference`, `reason` or actor (`RESTRICTED-PII`). The records name no amount.
 
+### `accounts.account_restriction` — *added by `P17-TSK-028`*
+
+**An agreement's suspension or reinstatement by four eyes** (ADR-0153). No amount: a restriction moves no money.
+
+| Table | Column | Level | Why |
+|---|---|---|---|
+| `account_restriction` | `id` | `INTERNAL` | An aggregate identifier |
+| `account_restriction` | `account_id` | `INTERNAL` | `customer_account.id` by value - an identifier of a thing |
+| `account_restriction` | `customer_id` | `INTERNAL` | The `customer_account.customer_id` reasoning verbatim |
+| `account_restriction` | `kind` | `CONFIDENTIAL` | That an operator moved to freeze a person's product - `customer_account.status`'s reasoning |
+| `account_restriction` | `reason_code` | `CONFIDENTIAL` | `FRAUD_SUSPECTED` or `AML_INVESTIGATION` is a fact about a person, not an enumeration technicality - the ceiling rule; never served to the customer (tipping-off) |
+| `account_restriction` | `proposal_reason` | `RESTRICTED-PII` | **A person's prose about a customer's account** - `journal_entry.reason`'s reasoning; screened for card-number and bank-account shapes |
+| `account_restriction` | `proposed_by` | `RESTRICTED-PII` | The operator - `audit_record.actor_id`'s reasoning |
+| `account_restriction` | `proposed_by_type` | `INTERNAL` | An enumeration member |
+| `account_restriction` | `proposed_at` | `CONFIDENTIAL` | Dates an act against a person's account |
+| `account_restriction` | `proposal_correlation_id` | `INTERNAL` | A trace identifier |
+| `account_restriction` | `status` | `CONFIDENTIAL` | As `kind` |
+| `account_restriction` | `decided_by` | `RESTRICTED-PII` | As `proposed_by` |
+| `account_restriction` | `decided_by_type` | `INTERNAL` | An enumeration member |
+| `account_restriction` | `decided_at` | `CONFIDENTIAL` | As `proposed_at` |
+| `account_restriction` | `decision_reason` | `RESTRICTED-PII` | As `proposal_reason` |
+| `account_restriction` | `decision_correlation_id` | `INTERNAL` | A trace identifier |
+
 ### `transfers.transfer` and `transfers.transfer_event` — *added by `P4-TSK-004`*
 
 **The first customer-commanded amounts outside the ledger schema.** The row is the judgement

@@ -309,7 +309,9 @@ public enum RoleName {
      * authority. {@code PHASE_13_PLAN.md} §11 first wrote the analyst's reads into every desk; one live role per identity
      * and pairwise-disjoint grants ({@code INV-AUD-03}, {@code RoleNameTest}) make the three desks a partition instead.
      */
-    RISK_ANALYST(EnumSet.of(PermissionName.RISK_INVESTIGATE, PermissionName.RISK_CASE_APPROVE)),
+    RISK_ANALYST(EnumSet.of(PermissionName.RISK_INVESTIGATE, PermissionName.RISK_CASE_APPROVE,
+            // P17-TSK-028 (ADR-0153; the owner's ruling of 2026-11-20): the analyst proposes an agreement's restriction.
+            PermissionName.ACCOUNT_RESTRICT)),
 
     /**
      * Administers risk policy and overrides decisions (`P13-TSK-001`, ADR-0108, ADR-0109): holds
@@ -322,7 +324,9 @@ public enum RoleName {
      * of the other populations' permissions and they hold none of these ({@code INV-AUD-03}); the override door serves
      * the assessment it overrides under {@code RISK_OVERRIDE}, so the officer needs no analyst's read.
      */
-    RISK_OFFICER(EnumSet.of(PermissionName.RISK_POLICY_ADMINISTER, PermissionName.RISK_OVERRIDE)),
+    RISK_OFFICER(EnumSet.of(PermissionName.RISK_POLICY_ADMINISTER, PermissionName.RISK_OVERRIDE,
+            // P17-TSK-028 (ADR-0153; the owner's ruling of 2026-11-20): the officer decides it - never the proposer.
+            PermissionName.ACCOUNT_RESTRICT_APPROVE)),
 
     /**
      * Approves and files regulatory reports (`P13-TSK-001`, ADR-0111, owner decision C4): holds

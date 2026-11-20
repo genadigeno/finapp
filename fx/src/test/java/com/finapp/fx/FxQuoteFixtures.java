@@ -121,6 +121,11 @@ final class FxQuoteFixtures {
     static ConversionParticipants everyoneActive() {
         return new ConversionParticipants() {
             @Override
+            public void requireOutflowAdmitted(Connection unitOfWork, UUID customerId) {
+                // P17-TSK-028: these fixtures' agreements are never suspended.
+            }
+
+            @Override
             public Optional<UUID> activeCustomer(Connection unitOfWork, UUID partyId) {
                 return Optional.of(partyId);
             }

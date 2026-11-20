@@ -99,6 +99,12 @@ public final class CheckoutPaymentParticipants implements PaymentParticipants<Co
         return instruments.payerWalletOwnedBy(unitOfWork, callerPartyId, currency);
     }
 
+    /** The payer's agreement is the real resolver's to judge (`P17-TSK-028`). */
+    @Override
+    public void requireOutflowAdmitted(Connection unitOfWork, UUID callerPartyId) {
+        instruments.requireOutflowAdmitted(unitOfWork, callerPartyId);
+    }
+
     /** Delegated unchanged: the instrument must still be the paying customer's own. */
     @Override
     public Optional<com.finapp.payments.ProviderReference> bankDestinationOwnedBy(

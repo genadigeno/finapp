@@ -253,9 +253,9 @@
  * {@link com.finapp.risk.ActionIssuer} - an approved override's action born {@code APPROVED}. T-act: the claim ONE
  * statement {@code FOR UPDATE SKIP LOCKED} on a due permit, committed; {@link com.finapp.risk.ActionDispatch} - the kind
  * to its port ({@link com.finapp.risk.IdentityActions}, {@link com.finapp.risk.MerchantActions},
- * {@link com.finapp.risk.HeldWithdrawalActions}, {@link com.finapp.risk.HeldPaymentActions}) on no transaction, the
- * caller entering the platform's actor; the outcome recorded once by a conditional edge. {@code SUSPEND_ACCOUNT},
- * {@code REINSTATE_ACCOUNT} and {@code BLOCK_BENEFICIARY} have no owning command and are unavailable
+ * {@link com.finapp.risk.HeldWithdrawalActions}, {@link com.finapp.risk.HeldPaymentActions}, and since `P17-TSK-028`
+ * {@link com.finapp.risk.AccountActions}) on no transaction, the caller entering the platform's actor; the outcome
+ * recorded once by a conditional edge. {@code BLOCK_BENEFICIARY} has no owning command and is unavailable
  * ({@link com.finapp.risk.ActionKind#available()}); {@code RESCREEN_PARTY} is the rescreening sweep's (`-022`).
  *
  * <p><strong>The rescreening</strong> (`P13-TSK-022`, {@code risk V018}; section 12.10 of the plan): T-list -

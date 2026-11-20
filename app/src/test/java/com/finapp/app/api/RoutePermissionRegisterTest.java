@@ -93,6 +93,11 @@ class RoutePermissionRegisterTest {
                     entry("GET /v1/operator/accounts/{id}/entries", PermissionName.ACCOUNT_READ),
                     entry("GET /v1/operator/transfers", PermissionName.TRANSFER_READ),
                     entry("GET /v1/operator/transfers/{id}", PermissionName.TRANSFER_READ),
+                    // P17-TSK-028: an agreement's restriction by four eyes - the analyst proposes, the officer decides.
+                    entry("POST /v1/operator/accounts/{id}/suspension", PermissionName.ACCOUNT_RESTRICT),
+                    entry("POST /v1/operator/accounts/{id}/reinstatement", PermissionName.ACCOUNT_RESTRICT),
+                    entry("POST /v1/operator/account-restrictions/{id}/approval", PermissionName.ACCOUNT_RESTRICT_APPROVE),
+                    entry("POST /v1/operator/account-restrictions/{id}/rejection", PermissionName.ACCOUNT_RESTRICT_APPROVE),
                     // P17-TSK-017: the audit trail, read - the AUDITOR's alone (ADR-C134; the owner, 2026-11-18).
                     entry("GET /v1/operator/audit-records", PermissionName.AUDIT_READ),
                     entry("GET /v1/operator/audit-records/{id}", PermissionName.AUDIT_READ),
@@ -787,6 +792,11 @@ class RoutePermissionRegisterTest {
             "GET /v1/operator/accounts/{id}/entries",
             "GET /v1/operator/transfers",
             "GET /v1/operator/transfers/{id}",
+            // P17-TSK-028: freezing and unfreezing a customer's money - acts on a factor, as every privileged act.
+            "POST /v1/operator/accounts/{id}/suspension",
+            "POST /v1/operator/accounts/{id}/reinstatement",
+            "POST /v1/operator/account-restrictions/{id}/approval",
+            "POST /v1/operator/account-restrictions/{id}/rejection",
             // P17-TSK-014: who holds the privileged roles, one of them, and who a login names - the same map, not on a password.
             "GET /v1/operator/identities",
             "GET /v1/operator/identities/{id}",

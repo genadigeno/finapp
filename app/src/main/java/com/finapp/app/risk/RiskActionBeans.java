@@ -8,6 +8,10 @@ import com.finapp.merchant.MerchantAdministration;
 import com.finapp.platform.audit.AuditWriter;
 import com.finapp.platform.idempotency.IdempotentExecutor;
 import com.finapp.platform.outbox.OutboxWriter;
+import com.finapp.accounts.AccountRestrictions;
+import com.finapp.accounts.CustomerAccountStore;
+import com.finapp.party.PartyStore;
+import com.finapp.risk.AccountActions;
 import com.finapp.risk.ActionDispatch;
 import com.finapp.risk.Cases;
 import com.finapp.risk.HeldPaymentActions;
@@ -83,13 +87,28 @@ public class RiskActionBeans {
                 ownersTransaction(transactionManager), dataSource);
     }
 
+    /** Accounts' door (`P17-TSK-028`, ADR-0153 decision 5): the restriction machine, keyed {@code risk.action:<id>}. */
+    @Bean
+    AccountActions accountActions(
+            AccountRestrictions accountRestrictions,
+            CustomerAccountStore<Connection> customerAccountStore,
+            PartyStore<Connection> partyStore,
+            IdempotentExecutor idempotentExecutor,
+            PlatformTransactionManager transactionManager,
+            DataSource dataSource) {
+        return new AccountRiskActions(accountRestrictions, customerAccountStore, partyStore, idempotentExecutor,
+                ownersTransaction(transactionManager), dataSource);
+    }
+
     @Bean
     ActionDispatch actionDispatch(
             IdentityActions identityActions,
             MerchantActions merchantActions,
             HeldWithdrawalActions heldWithdrawalActions,
-            HeldPaymentActions heldPaymentActions) {
-        return new ActionDispatch(identityActions, merchantActions, heldWithdrawalActions, heldPaymentActions);
+            HeldPaymentActions heldPaymentActions,
+            AccountActions accountActions) {
+        return new ActionDispatch(identityActions, merchantActions, heldWithdrawalActions, heldPaymentActions,
+                accountActions);
     }
 
     @Bean

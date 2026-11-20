@@ -151,6 +151,7 @@ public final class FxConversion {
 
         // 3. The wallets: the source must exist; the destination opens if absent (D28), inside
         //    this transaction, so a rolled-back conversion leaves no wallet behind.
+        participants.requireOutflowAdmitted(unitOfWork, customer); // P17-TSK-028: a new outflow, the agreement shared first
         LedgerAccountId source = participants.wallet(unitOfWork, customer, plan.source())
                 .orElseThrow(() -> new ConversionRefusal.Refused(ConversionRefusal.SOURCE_WALLET_MISSING));
         LedgerAccountId destination = participants.openIfAbsent(unitOfWork, customer, plan.destination())

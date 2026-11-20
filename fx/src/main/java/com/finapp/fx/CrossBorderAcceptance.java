@@ -85,6 +85,7 @@ public final class CrossBorderAcceptance {
         if (!availability.isAvailable(unitOfWork, AvailabilitySubject.pair(pair))) {
             throw new ConversionRefusal.Refused(ConversionRefusal.PAIR_SUSPENDED);
         }
+        participants.requireOutflowAdmitted(unitOfWork, customer); // P17-TSK-028: a new outflow, the agreement shared first
         LedgerAccountId wallet = participants.wallet(unitOfWork, customer, plan.source())
                 .orElseThrow(() -> new ConversionRefusal.Refused(ConversionRefusal.SOURCE_WALLET_MISSING));
         // Accepted on the database clock - the conditional is the one judgement of validity.

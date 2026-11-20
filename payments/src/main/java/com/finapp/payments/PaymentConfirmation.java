@@ -276,6 +276,9 @@ public final class PaymentConfirmation {
                     || !payer.currency().equals(intent.amount().currency())) {
                 throw new UnknownPaymentInstrumentException();
             }
+            // P17-TSK-028 (ADR-0153): a wallet payment is a new outflow - refused while the payer's agreement is
+            // suspended, under its share lock, taken here before the book pair's ledger rows (the closer's order).
+            participants.requireOutflowAdmitted(uow, callerPartyId);
         } else {
             kind =
                     participants

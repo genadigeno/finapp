@@ -73,7 +73,47 @@ public enum AccountsErrorCode implements ErrorCode {
     ACCOUNT_NOT_ACTIVE(
             "accounts.AccountNotActive",
             409,
-            "The account is not active; a wallet currency cannot be added to it.");
+            "The account is not active; a wallet currency cannot be added to it."),
+
+    /**
+     * A new outflow from a suspended agreement (`P17-TSK-028`, ADR-0153 decision 2): a withdrawal, a wallet payment, an FX
+     * conversion or a cross-border credit, refused in the command's own transaction under the agreement's share lock.
+     * Nothing is written; incoming money still lands. A {@code 409}: the caller's own agreement, so it discloses nothing.
+     */
+    OUTFLOW_SUSPENDED(
+            "accounts.OutflowSuspended",
+            409,
+            "The account is suspended; it cannot send money until it is reinstated."),
+
+    /** A restriction of a kind the agreement's status does not start from (`P17-TSK-028`): suspend a suspended one, reinstate an active one, either on a closed one. */
+    RESTRICTION_NOT_APPLICABLE(
+            "accounts.RestrictionNotApplicable",
+            409,
+            "The account's status does not admit this restriction."),
+
+    /** A second proposal while one is open (`P17-TSK-028`): one open proposal per agreement. */
+    RESTRICTION_ALREADY_PROPOSED(
+            "accounts.RestrictionAlreadyProposed",
+            409,
+            "The account already has an open restriction proposal; decide it first."),
+
+    /** A decision on a decided restriction (`P17-TSK-028`): decided once. */
+    RESTRICTION_ALREADY_DECIDED(
+            "accounts.RestrictionAlreadyDecided",
+            409,
+            "The restriction is already decided."),
+
+    /** The proposer deciding their own restriction (`P17-TSK-028`, INV-AUD-04). */
+    RESTRICTION_SELF_DECISION(
+            "accounts.RestrictionSelfDecision",
+            409,
+            "A restriction is decided by a person who did not propose it."),
+
+    /** A reason code of the other kind, or a missing, overlong or instrument-shaped reason (`P17-TSK-028`). */
+    RESTRICTION_REASON_INVALID(
+            "accounts.RestrictionReasonInvalid",
+            422,
+            "The restriction's reason code or reason is not acceptable.");
 
     private final String code;
     private final int status;
