@@ -111,6 +111,16 @@ public class ReconciliationAdministrationController {
         return desk.ruleSets(source, cursor, limit);
     }
 
+    /**
+     * One version with its whole content (`P17-TSK-127`): what a pending {@code reconciliation.RuleSet} names, read before it
+     * is decided. A read, so on a password session (the owner's D-6); unknown and malformed are one 404.
+     */
+    @GetMapping("/rule-sets/{id}")
+    @RequiresPermission(PermissionName.RECONCILIATION_ADMINISTER)
+    public ReconciliationAdministrationDesk.RuleSetVersion readReconciliationRuleSet(@PathVariable("id") String id) {
+        return desk.ruleSet(id);
+    }
+
     /** Proposes a new version: frozen at once, awaiting a different controller. */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/rule-sets", consumes = MediaType.APPLICATION_JSON_VALUE)

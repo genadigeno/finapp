@@ -1,6 +1,7 @@
 package com.finapp.app.bnpl;
 
 import com.finapp.app.api.DecimalText;
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.bnpl.AllocationAnomaly;
 import com.finapp.bnpl.BnplReasons;
@@ -190,7 +191,7 @@ public final class BnplWriteOffDesk {
         try {
             return transactions.inTransaction(unitOfWork -> PendingDecisions.page(PENDING,
                     writeOffs.pending(unitOfWork, actor, correlation, after, size + 1).stream()
-                            .map(found -> PendingDecisions.of(found.id(), "bnpl.WriteOff", found.proposedBy(), found.proposedAt(),
+                            .map(found -> PendingDecisions.of(found.id(), PendingDecisionKind.BNPL_WRITE_OFF, found.proposedBy(), found.proposedAt(),
                                     found.proposalReason(), found.agreement().value()))
                             .toList(), size));
         } catch (BnplWriteOffs.UnplacedReaderRefused unplaced) {

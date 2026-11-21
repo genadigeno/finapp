@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.annotation.Import;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -52,6 +53,7 @@ import tools.jackson.databind.JsonNode;
  */
 @Tag("slice")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Import(ContractExtensions.class) // P17-TSK-127: each operation's permission, factor and recorded read, from its annotations
 class OpenApiContractTest {
 
     static {
@@ -922,6 +924,8 @@ class OpenApiContractTest {
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/opening-position",
                         // P8-TSK-022: rule sets, reprocessing, requeue and replay.
                         ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/rule-sets",
+                        // P17-TSK-127: one version, read before it is decided (RECONCILIATION_ADMINISTER).
+                        ApiVersion.CURRENT_PREFIX + "/operator/reconciliation/rule-sets/{id}",
                         ApiVersion.CURRENT_PREFIX
                                 + "/operator/reconciliation/rule-sets/{id}/approval",
                         ApiVersion.CURRENT_PREFIX
@@ -991,6 +995,8 @@ class OpenApiContractTest {
                         // P9-TSK-015: the corridor doors (CROSSBORDER_ADMINISTER) and the customer's
                         // corridor discovery (a session).
                         ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-policies",
+                        // P17-TSK-127: one version, read before it is decided (CROSSBORDER_ADMINISTER).
+                        ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-policies/{id}",
                         ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-policies/{id}/approval",
                         ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridor-policies/{id}/rejection",
                         ApiVersion.CURRENT_PREFIX + "/operator/cross-border/corridors/{corridor}/availability",

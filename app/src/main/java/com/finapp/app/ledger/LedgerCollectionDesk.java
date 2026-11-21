@@ -3,6 +3,7 @@ package com.finapp.app.ledger;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.accounting.GlSnapshots;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.ledger.AccountPurpose;
 import com.finapp.ledger.LedgerAccountId;
@@ -346,7 +347,7 @@ public final class LedgerCollectionDesk {
         List<LedgerCollections.PendingAdjustment> rows = bounded(() -> snapshots.read(snapshot ->
                 collections.pendingAdjustments(snapshot, after, size + 1)));
         return PendingDecisions.page(PENDING_ADJUSTMENTS, rows.stream()
-                .map(row -> PendingDecisions.of(row.id().value(), "ledger.Adjustment", row.proposedBy(), row.proposedAt(),
+                .map(row -> PendingDecisions.of(row.id().value(), PendingDecisionKind.LEDGER_ADJUSTMENT, row.proposedBy(), row.proposedAt(),
                         row.reasonCode().name(), null))
                 .toList(), size);
     }
@@ -363,7 +364,7 @@ public final class LedgerCollectionDesk {
         List<LedgerCollections.PendingRebuild> rows = bounded(() -> snapshots.read(snapshot ->
                 collections.pendingRebuilds(snapshot, after, size + 1)));
         return PendingDecisions.page(PENDING_REBUILDS, rows.stream()
-                .map(row -> PendingDecisions.of(row.id().value(), "ledger.ProjectionRebuild", row.proposedBy(), row.proposedAt(),
+                .map(row -> PendingDecisions.of(row.id().value(), PendingDecisionKind.LEDGER_PROJECTION_REBUILD, row.proposedBy(), row.proposedAt(),
                         drift(row), row.account().value()))
                 .toList(), size);
     }

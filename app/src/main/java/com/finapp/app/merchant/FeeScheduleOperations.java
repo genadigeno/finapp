@@ -1,6 +1,7 @@
 package com.finapp.app.merchant;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.RecordedReads;
 import com.finapp.merchant.BackdatedFeeScheduleVersionException;
@@ -151,7 +152,8 @@ public class FeeScheduleOperations {
      * One version or assignment proposal as its approver reads it (`P17-TSK-123`): what was proposed, by whom, when and why;
      * its decision when decided (who and when, never the decider's reason); the schedule it names with every version; for a
      * version proposal its terms and, once approved, the version it minted; for an assignment the merchant's current
-     * pointer.
+     * pointer; and whether the reader proposed it ({@code proposedByCaller}, `P17-TSK-127`), so the console disables the
+     * proposer's own approve and reject - {@code merchant.SelfApprovalRefused} stays the control.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record FeeProposalView(
@@ -168,7 +170,8 @@ public class FeeScheduleOperations {
             String currentFeeScheduleId,
             ProposedFeeTermsView proposedTerms,
             String feeScheduleVersionId,
-            FeeScheduleDetailView feeSchedule) {}
+            FeeScheduleDetailView feeSchedule,
+            boolean proposedByCaller) {}
 
     @NonNull private final FeeSchedules feeSchedules;
     @NonNull private final TransactionTemplate transactions;
@@ -353,8 +356,12 @@ public class FeeScheduleOperations {
 
     /** One open proposal in the pending-decision shape: its subject the schedule or the merchant its doors name. */
     static PendingDecisions.PendingDecision pendingItem(FeeProposalStore.Pending row) {
-        return PendingDecisions.of(row.id(), row.kind().qualified(), row.proposedBy(), row.proposedAt(), row.reason(),
-                row.subjectId());
+        PendingDecisionKind kind = switch (row.kind()) {
+            case FEE_SCHEDULE_VERSION -> PendingDecisionKind.MERCHANT_FEE_SCHEDULE_VERSION;
+            case FEE_ASSIGNMENT -> PendingDecisionKind.MERCHANT_FEE_ASSIGNMENT;
+            case BNPL_FEE_ASSIGNMENT -> PendingDecisionKind.BNPL_FEE_ASSIGNMENT;
+        };
+        return PendingDecisions.of(row.id(), kind, row.proposedBy(), row.proposedAt(), row.reason(), row.subjectId());
     }
 
     /**
@@ -389,7 +396,8 @@ public class FeeScheduleOperations {
                                 proposal.roundingPolicy().policyName(), proposal.refundFeePolicy().name(),
                                 proposal.effectiveFrom().map(Instant::toString).orElse(null)),
                         proposal.mintedVersion().map(minted -> minted.value().toString()).orElse(null),
-                        renderDetail(feeSchedules.detail(uow, proposal.feeScheduleId())));
+                        renderDetail(feeSchedules.detail(uow, proposal.feeScheduleId())),
+                        PendingDecisions.proposedByCaller(proposal.proposedBy()));
             }
             case FeeProposalStore.FoundAssignment(FeeAssignmentProposal proposal) -> {
                 Optional<FeeProposalDecision> decision = proposal.decision();
@@ -401,7 +409,8 @@ public class FeeScheduleOperations {
                         decision.map(made -> made.decidedAt().toString()).orElse(null),
                         feeSchedules.assignmentOf(uow, proposal.merchantId()).map(current -> current.value().toString())
                                 .orElse(null),
-                        null, null, renderDetail(feeSchedules.detail(uow, proposal.feeScheduleId())));
+                        null, null, renderDetail(feeSchedules.detail(uow, proposal.feeScheduleId())),
+                        PendingDecisions.proposedByCaller(proposal.proposedBy()));
             }
         };
     }

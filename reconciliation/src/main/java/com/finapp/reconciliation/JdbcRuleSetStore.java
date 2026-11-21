@@ -433,6 +433,30 @@ public final class JdbcRuleSetStore implements RuleSetStore {
             throw new ReconciliationStorageException(
                     "could not read the source's rule set versions", failure);
         }
+        return withContent(unitOfWork, contents);
+    }
+
+    @Override
+    public Optional<VersionView> version(Connection unitOfWork, UUID ruleSetId) {
+        Objects.requireNonNull(ruleSetId, "ruleSetId must not be null");
+        Map<UUID, Content> contents = new LinkedHashMap<>();
+        try (PreparedStatement read =
+                unitOfWork.prepareStatement("SELECT " + COLUMNS + " FROM reconciliation.rule_set WHERE id = ?")) {
+            read.setObject(1, ruleSetId);
+            try (ResultSet rows = read.executeQuery()) {
+                if (rows.next()) {
+                    VersionRow version = row(rows);
+                    contents.put(version.id(), new Content(version));
+                }
+            }
+        } catch (SQLException failure) {
+            throw new ReconciliationStorageException("could not read the rule set version", failure);
+        }
+        return withContent(unitOfWork, contents).stream().findFirst();
+    }
+
+    /** The versions read, each with its lags, rules, tolerances, fee terms and thresholds, in the order they were read. */
+    private List<VersionView> withContent(Connection unitOfWork, Map<UUID, Content> contents) {
         if (contents.isEmpty()) {
             return List.of();
         }

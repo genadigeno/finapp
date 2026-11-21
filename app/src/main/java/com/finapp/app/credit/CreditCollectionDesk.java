@@ -2,6 +2,7 @@ package com.finapp.app.credit;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.RecordedReads;
 import com.finapp.credit.CreditAuditAction;
@@ -238,7 +239,7 @@ public final class CreditCollectionDesk {
      * ({@link PendingDecisions}); recorded {@code credit.PolicyRead}, as the version list is.
      */
     public PendingDecisions.PendingDecisionPage pendingPolicyVersions(String status, String cursor, String limit) {
-        return pending(status, cursor, limit, PENDING_POLICY_VERSIONS, "credit.PolicyVersion", CreditAuditAction.POLICY_READ,
+        return pending(status, cursor, limit, PENDING_POLICY_VERSIONS, PendingDecisionKind.CREDIT_POLICY_VERSION, CreditAuditAction.POLICY_READ,
                 "credit_policy_versions", collections::pendingPolicyVersions);
     }
 
@@ -247,7 +248,7 @@ public final class CreditCollectionDesk {
      * recorded {@code credit.ScorecardRead}, as the scorecard list is.
      */
     public PendingDecisions.PendingDecisionPage pendingScorecardVersions(String status, String cursor, String limit) {
-        return pending(status, cursor, limit, PENDING_SCORECARD_VERSIONS, "credit.ScorecardVersion",
+        return pending(status, cursor, limit, PENDING_SCORECARD_VERSIONS, PendingDecisionKind.CREDIT_SCORECARD_VERSION,
                 CreditAuditAction.SCORECARD_READ, "scorecard_model_versions", collections::pendingScorecardVersions);
     }
 
@@ -269,7 +270,7 @@ public final class CreditCollectionDesk {
             return read;
         });
         return PendingDecisions.page(PENDING_SECOND_APPROVALS, rows.stream()
-                .map(row -> PendingDecisions.of(row.caseId(), "credit.ReviewCaseDecision", row.firstDecidedBy(),
+                .map(row -> PendingDecisions.of(row.caseId(), PendingDecisionKind.CREDIT_REVIEW_CASE_DECISION, row.firstDecidedBy(),
                         row.firstDecidedAt(), row.firstReason(), row.decisionRequest()))
                 .toList(), size);
     }
@@ -285,7 +286,7 @@ public final class CreditCollectionDesk {
      * proposal's.
      */
     private PendingDecisions.PendingDecisionPage pending(String status, String cursor, String limit, String collection,
-            String kind, CreditAuditAction action, String targetType, PendingRead pending) {
+            PendingDecisionKind kind, CreditAuditAction action, String targetType, PendingRead pending) {
         PendingDecisions.pendingOnly(status, "PROPOSED");
         int size = PendingDecisions.limit(limit);
         Optional<CreditCollections.Cursor> after = PendingDecisions.position(collection, cursor)

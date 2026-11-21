@@ -11,6 +11,7 @@ import com.finapp.accounting.RunStatus;
 import com.finapp.accounting.ValuationRateSetStatus;
 import com.finapp.accounting.ValuationRateSetStore;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
@@ -79,11 +80,11 @@ public final class AccountingCollectionDesk {
     static final String PENDING_CLOSES = "pending.accounting.close-requests";
     static final String PENDING_REOPENS = "pending.accounting.reopen-requests";
     static final String PENDING_UNLOCKS = "pending.accounting.unlock-requests";
-    static final String MAPPING_VERSION_KIND = "accounting.MappingVersion";
-    static final String RATE_SET_KIND = "accounting.ValuationRateSet";
-    static final String CLOSE_KIND = "accounting.CloseRequest";
-    static final String REOPEN_KIND = "accounting.ReopenRequest";
-    static final String UNLOCK_KIND = "accounting.UnlockRequest";
+    static final PendingDecisionKind MAPPING_VERSION_KIND = PendingDecisionKind.ACCOUNTING_MAPPING_VERSION;
+    static final PendingDecisionKind RATE_SET_KIND = PendingDecisionKind.ACCOUNTING_VALUATION_RATE_SET;
+    static final PendingDecisionKind CLOSE_KIND = PendingDecisionKind.ACCOUNTING_CLOSE_REQUEST;
+    static final PendingDecisionKind REOPEN_KIND = PendingDecisionKind.ACCOUNTING_REOPEN_REQUEST;
+    static final PendingDecisionKind UNLOCK_KIND = PendingDecisionKind.ACCOUNTING_UNLOCK_REQUEST;
     /** The word each of these five queues answers to in {@code status}: their proposals' own {@code PROPOSED}. */
     static final String PENDING_WORD = "PROPOSED";
 
@@ -326,7 +327,7 @@ public final class AccountingCollectionDesk {
         List<AccountingCollections.PendingRow> read(Connection snapshot, Optional<AccountingCollections.PendingCursor> after, int limit);
     }
 
-    private PendingDecisions.PendingDecisionPage pending(String collection, String kind, String status, String cursor, String rawLimit,
+    private PendingDecisions.PendingDecisionPage pending(String collection, PendingDecisionKind kind, String status, String cursor, String rawLimit,
             PendingRead read) {
         PendingDecisions.pendingOnly(status, PENDING_WORD);
         int size = PendingDecisions.limit(rawLimit);

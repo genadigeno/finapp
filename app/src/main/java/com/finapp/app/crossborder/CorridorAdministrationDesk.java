@@ -3,6 +3,7 @@ package com.finapp.app.crossborder;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.DecimalText;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.crossborder.CorridorAvailability;
 import com.finapp.crossborder.CorridorAvailabilityStore;
 import com.finapp.crossborder.CorridorDirectory;
@@ -85,11 +86,12 @@ public final class CorridorAdministrationDesk {
 
     /**
      * One version and every corridor it holds, and who proposed it (`P17-TSK-118`: an identity's id, so the console
-     * disables the proposer's own approval - {@code crossborder.SelfApprovalRefused} stays the control). Never who
-     * decided it.
+     * disables the proposer's own approval - {@code crossborder.SelfApprovalRefused} stays the control) and whether the
+     * reader did ({@code proposedByCaller}, `P17-TSK-127`). Never who decided it.
      */
     public record CorridorPolicyView(
-            String id, int version, String status, String proposedBy, String proposedAt, List<CorridorView> corridors) {}
+            String id, int version, String status, String proposedBy, String proposedAt, List<CorridorView> corridors,
+            boolean proposedByCaller) {}
 
     /** One corridor, every term as the version froze it. */
     public record CorridorView(
@@ -114,11 +116,12 @@ public final class CorridorAdministrationDesk {
 
     /**
      * A corridor enable request as its approver reads it (`P17-TSK-118`): the corridor, the position, who proposed it,
-     * when and why, and the decision's instant and reason once decided ({@code null} until then). Never who decided it.
+     * when and why, and the decision's instant and reason once decided ({@code null} until then), and whether the reader
+     * proposed it ({@code proposedByCaller}, `P17-TSK-127`). Never who decided it.
      */
     public record CorridorEnableRequestView(
             String requestId, String corridor, String status, String proposedBy, String proposedAt, String reason,
-            String decidedAt, String decisionReason) {}
+            String decidedAt, String decisionReason, boolean proposedByCaller) {}
 
     /** The corridors on offer to a customer now. */
     public record OfferedCorridors(List<OfferedCorridor> corridors, boolean truncated) {}
@@ -147,6 +150,17 @@ public final class CorridorAdministrationDesk {
                 ? OperatorCollection.cursor(CORRIDOR_POLICIES, Integer.toString(served.get(served.size() - 1).row().version()))
                 : null;
         return new CorridorPolicyPage(served.stream().map(CorridorAdministrationDesk::view).toList(), next);
+    }
+
+    /**
+     * {@code GET /v1/operator/cross-border/corridor-policies/{id}} (`P17-TSK-127`): one version with every corridor it holds,
+     * as the version list serves it - what the pending-decision queue's {@code crossborder.CorridorPolicy} item names, read
+     * before its approver decides. Unknown and malformed are the one 404. Recording nothing, as the list never did.
+     */
+    public CorridorPolicyView policy(String rawId) {
+        CorridorPolicyId id = policyId(rawId);
+        return transactions.inTransaction(uow -> policies.version(uow, id)).map(CorridorAdministrationDesk::view)
+                .orElseThrow(CorridorAdministrationDesk::notFound);
     }
 
     /** The version a cursor resumes below; a cursor this collection did not serve is refused (422). */
@@ -241,7 +255,7 @@ public final class CorridorAdministrationDesk {
         return new CorridorEnableRequestView(
                 request.id().toString(), request.corridor().code(), request.status().name(), request.proposedBy(),
                 request.proposedAt().toString(), request.reason(), request.decidedAt().map(Instant::toString).orElse(null),
-                request.decisionReason().orElse(null));
+                request.decisionReason().orElse(null), PendingDecisions.proposedByCaller(request.proposedBy()));
     }
 
     public CorridorEnableReceipt approveEnable(String rawId, String reason) {
@@ -338,7 +352,8 @@ public final class CorridorAdministrationDesk {
                                 terms.screeningValidity().toHours(),
                                 terms.deliveryEstimate().toHours(),
                                 terms.requiredData().stream().map(Enum::name).sorted().toList()))
-                        .toList());
+                        .toList(),
+                PendingDecisions.proposedByCaller(version.row().proposedBy()));
     }
 
     private static OfferedCorridor offered(CorridorTerms terms) {

@@ -3,6 +3,7 @@ package com.finapp.app.fx;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.DecimalText;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisions;
 import com.finapp.fx.AvailabilityStore;
 import com.finapp.fx.AvailabilitySubject;
 import com.finapp.fx.FxAvailability;
@@ -108,11 +109,12 @@ public final class FxAdministrationDesk {
 
     /**
      * An enable request as its approver reads it (`P17-TSK-118`): the subject, the position, who proposed it, when and
-     * why, and the decision's instant and reason once decided ({@code null} until then). Never who decided it.
+     * why, and the decision's instant and reason once decided ({@code null} until then), and whether the reader proposed it
+     * ({@code proposedByCaller}, `P17-TSK-127`). Never who decided it.
      */
     public record EnableRequestView(
             String requestId, String subjectKind, String subject, String status, String proposedBy, String proposedAt,
-            String reason, String decidedAt, String decisionReason) {}
+            String reason, String decidedAt, String decisionReason, boolean proposedByCaller) {}
 
     // ------------------------------------------------------------------ pricing policy
 
@@ -224,7 +226,8 @@ public final class FxAdministrationDesk {
         return new EnableRequestView(
                 request.id().toString(), request.subject().kind().name(), request.subject().subject(),
                 request.status().name(), request.proposedBy(), request.proposedAt().toString(), request.reason(),
-                request.decidedAt().map(Instant::toString).orElse(null), request.decisionReason().orElse(null));
+                request.decidedAt().map(Instant::toString).orElse(null), request.decisionReason().orElse(null),
+                PendingDecisions.proposedByCaller(request.proposedBy()));
     }
 
     public EnableReceipt approveEnable(String rawId, String reason) {

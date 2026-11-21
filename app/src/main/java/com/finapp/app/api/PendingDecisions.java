@@ -1,6 +1,8 @@
 package com.finapp.app.api;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.finapp.platform.security.Actor;
+import com.finapp.platform.security.SecurityContext;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
@@ -20,10 +22,16 @@ import java.util.UUID;
  *   <li><strong>Limit</strong>: {@value #DEFAULT_LIMIT} unless named, {@value #MAX_LIMIT} at most, refused above
  *       ({@link OperatorCollection#limit}).
  *   <li><strong>Status</strong>: the queue is the pending status alone. A {@code status} parameter may name it, in the domain's
- *       own word; any other value is refused {@code 422 api.ValidationFailed} ({@link #pendingOnly}), never served as a
+ *       own word or as {@value #UNIFORM_STATUS} - the word every queue accepts (`P17-TSK-127`), so a client reading every queue
+ *       sends one word; any other value is refused {@code 422 api.ValidationFailed} ({@link #pendingOnly}), never served as a
  *       different list under the queue's name.
  *   <li><strong>Reason</strong>: {@code reasonSummary} is the proposer's reason cut to {@value #SUMMARY_LENGTH} characters, or
  *       null where the domain records none - never a free-text field beyond the proposer's own reason.
+ *   <li><strong>Kind</strong>: one of {@link PendingDecisionKind}, by constant, never by string (`P17-TSK-127`); the subject's
+ *       kind from the same list.
+ *   <li><strong>The caller</strong>: {@code proposedByCaller} says whether the reader is the proposer - judged against the
+ *       request's own actor, so the console disables the proposer's own approve and reject without comparing identities
+ *       itself; the decision doors' self-approval refusals stay the control.
  * </ul>
  *
  * <p>A proposal decided between the list and the click answers {@code 409} at its decision door - the existing conditional
@@ -34,6 +42,9 @@ public final class PendingDecisions {
     public static final int DEFAULT_LIMIT = 50;
     public static final int MAX_LIMIT = 200;
     public static final int SUMMARY_LENGTH = 120;
+
+    /** The status word every queue accepts beside its domain's own (`P17-TSK-127`): {@code PROPOSED}, 43 queues' own word. */
+    public static final String UNIFORM_STATUS = "PROPOSED";
 
     private PendingDecisions() {}
 
@@ -50,9 +61,12 @@ public final class PendingDecisions {
      * @param relatedId     a second identifier the kind's decision doors name, where the subject alone is not enough to reach
      *                      them - a repayment reversal's repayment, under {@code .../{subject}/repayments/{relatedId}/...};
      *                      null for every other kind. The one addition to ADR-C133 decision 3's six fields (`P17-TSK-040`).
+     * @param subjectKind   what {@code subjectId} names, in the domain's own word ({@code ACCOUNT}, {@code OUTBOX_EVENT}, ...),
+     *                      read with {@code kind}; null exactly where {@code subjectId} is (`P17-TSK-127`)
+     * @param proposedByCaller whether the reader is the proposer (`P17-TSK-127`); false where the reader is no actor
      */
     public record PendingDecision(String id, String kind, String proposedBy, String proposedAt, String reasonSummary,
-            String subjectId, String relatedId) {
+            String subjectId, String relatedId, String subjectKind, boolean proposedByCaller) {
 
         public PendingDecision {
             Objects.requireNonNull(id, "id");
@@ -70,17 +84,38 @@ public final class PendingDecisions {
         }
     }
 
-    /** An item from a domain row: the ids and the proposer as stored, the instant as stored. */
-    public static PendingDecision of(Object id, String kind, Object proposedBy, Instant proposedAt, String reason, Object subjectId) {
+    /** An item from a domain row: the ids and the proposer as stored, the instant as stored, the subject's kind the kind's one. */
+    public static PendingDecision of(Object id, PendingDecisionKind kind, Object proposedBy, Instant proposedAt, String reason,
+            Object subjectId) {
         return of(id, kind, proposedBy, proposedAt, reason, subjectId, null);
     }
 
     /** An item whose decision doors also name a second identifier ({@code relatedId}). */
-    public static PendingDecision of(Object id, String kind, Object proposedBy, Instant proposedAt, String reason, Object subjectId,
-            Object relatedId) {
-        return new PendingDecision(String.valueOf(id), kind, proposedBy == null ? null : String.valueOf(proposedBy),
-                proposedAt.toString(), summary(reason), subjectId == null ? null : String.valueOf(subjectId),
-                relatedId == null ? null : String.valueOf(relatedId));
+    public static PendingDecision of(Object id, PendingDecisionKind kind, Object proposedBy, Instant proposedAt, String reason,
+            Object subjectId, Object relatedId) {
+        return item(id, kind, proposedBy, proposedAt, reason, kind.subjectKind(subjectId), subjectId, relatedId);
+    }
+
+    /** An item of a kind whose subject's kind differs row by row ({@code fx.EnableRequest}, {@code deadletter.Discard}). */
+    public static PendingDecision ofSubject(Object id, PendingDecisionKind kind, Object proposedBy, Instant proposedAt,
+            String reason, String subjectKind, Object subjectId) {
+        return item(id, kind, proposedBy, proposedAt, reason, kind.subjectKind(subjectKind, subjectId), subjectId, null);
+    }
+
+    private static PendingDecision item(Object id, PendingDecisionKind kind, Object proposedBy, Instant proposedAt, String reason,
+            String subjectKind, Object subjectId, Object relatedId) {
+        String proposer = proposedBy == null ? null : String.valueOf(proposedBy);
+        return new PendingDecision(String.valueOf(id), kind.wire(), proposer, proposedAt.toString(), summary(reason),
+                subjectId == null ? null : String.valueOf(subjectId), relatedId == null ? null : String.valueOf(relatedId),
+                subjectKind, proposedByCaller(proposer));
+    }
+
+    /**
+     * Whether the request's own actor is {@code proposer} (`P17-TSK-127`): false where there is none, a system read. The actor
+     * is the request's, held for the request alone ({@link SecurityContext}), so the answer is the same on every instance.
+     */
+    public static boolean proposedByCaller(String proposer) {
+        return proposer != null && SecurityContext.current().map(Actor::id).filter(proposer::equals).isPresent();
     }
 
     /** The proposer's reason cut to {@value #SUMMARY_LENGTH} characters, or null where there is none. */
@@ -98,12 +133,15 @@ public final class PendingDecisions {
     }
 
     /**
-     * The queue's status parameter: absent, or the domain's own pending word ({@code PROPOSED}, {@code PENDING}, ...). Anything
-     * else is refused, so the queue never serves another status under its name.
+     * The queue's status parameter: absent, the domain's own pending word ({@code PROPOSED}, {@code VALIDATED}, ...), or
+     * {@value #UNIFORM_STATUS}, the word every queue accepts (`P17-TSK-127`). Anything else is refused, so the queue never
+     * serves another status under its name. No domain whose own word differs has a {@code PROPOSED} state of its own, so the
+     * uniform word never names a different status there.
      */
     public static void pendingOnly(String requested, String pendingWord) {
-        if (requested != null && !requested.equals(pendingWord)) {
-            throw OperatorCollection.invalid("status: this queue serves " + pendingWord + " alone");
+        if (requested != null && !requested.equals(pendingWord) && !requested.equals(UNIFORM_STATUS)) {
+            throw OperatorCollection.invalid("status: this queue serves " + pendingWord + " alone (" + UNIFORM_STATUS
+                    + " names it on every queue)");
         }
     }
 

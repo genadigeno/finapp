@@ -157,6 +157,9 @@ public interface RuleSetStore {
     List<VersionView> versions(
             Connection unitOfWork, UUID sourceId, java.util.OptionalInt beforeVersion, int limit);
 
+    /** One version by its id, content included (`P17-TSK-127`: what its approver reads before deciding); empty if unknown. */
+    Optional<VersionView> version(Connection unitOfWork, UUID ruleSetId);
+
     /** Where a page of the pending versions ended: the last one served, by when it was proposed and its id. */
     record PendingCursor(Instant proposedAt, UUID id) {
         public PendingCursor {

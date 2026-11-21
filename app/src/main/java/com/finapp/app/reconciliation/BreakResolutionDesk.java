@@ -2,6 +2,7 @@ package com.finapp.app.reconciliation;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
@@ -399,7 +400,7 @@ public class BreakResolutionDesk {
     static PendingDecisions.PendingDecision decisionView(ResolutionStore.PendingRow row) {
         boolean ofABatch = row.settlementBatchId().isPresent();
         return PendingDecisions.of(row.id(),
-                ofABatch ? "reconciliation.BatchRepudiation" : "reconciliation.BreakResolution",
+                ofABatch ? PendingDecisionKind.RECONCILIATION_BATCH_REPUDIATION : PendingDecisionKind.RECONCILIATION_BREAK_RESOLUTION,
                 row.proposedBy(), row.proposedAt(), row.reasonCode().name(),
                 (ofABatch ? row.settlementBatchId() : row.breakId()).orElse(null));
     }

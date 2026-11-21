@@ -54,6 +54,16 @@ public class CorridorAdministrationController {
         return desk.policies(cursor, limit);
     }
 
+    /**
+     * One version with every corridor it holds (`P17-TSK-127`): what a pending {@code crossborder.CorridorPolicy} names, read
+     * before it is decided. A read, so on a password session (the owner's D-6); unknown and malformed are one 404.
+     */
+    @GetMapping("/corridor-policies/{id}")
+    @RequiresPermission(PermissionName.CROSSBORDER_ADMINISTER)
+    public CorridorAdministrationDesk.CorridorPolicyView readCorridorPolicy(@PathVariable("id") String id) {
+        return desk.policy(id);
+    }
+
     /** Proposes a whole new version - keyed per principal; frozen from here. */
     @RequiresAssurance(AssuranceLevel.MULTI_FACTOR)
     @PostMapping(path = "/corridor-policies", consumes = MediaType.APPLICATION_JSON_VALUE)

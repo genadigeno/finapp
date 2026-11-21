@@ -28,7 +28,10 @@ public final class DecimalText {
     /** The bound a request field carrying a decimal string declares - wider than the shape, so the shape decides. */
     public static final int MAX_LENGTH = 32;
 
-    private static final Pattern PLAIN = Pattern.compile("\\d{1,15}(?:\\.\\d{1,9})?");
+    /** The plain shape, unanchored: also what the published contract states for a decimal string (`P17-TSK-127`). */
+    public static final String SHAPE = "\\d{1,15}(?:\\.\\d{1,9})?";
+
+    private static final Pattern PLAIN = Pattern.compile(SHAPE);
 
     private DecimalText() {}
 

@@ -1,5 +1,6 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.PendingDecisions.PendingDecision;
 import com.finapp.app.api.PendingDecisions.PendingDecisionPage;
@@ -40,28 +41,28 @@ public final class MerchantPendingDecisionDesk {
 
     /** The payout destination changes awaiting a decision. */
     public PendingDecisionPage payoutDestinations(String status, String cursor, String limit) {
-        return queue(PAYOUT_DESTINATIONS, "merchant.PayoutDestination", status, cursor, limit,
+        return queue(PAYOUT_DESTINATIONS, PendingDecisionKind.MERCHANT_PAYOUT_DESTINATION, status, cursor, limit,
                 collections::pendingPayoutDestinations);
     }
 
     /** The operator payouts above the four-eyes threshold awaiting a decision. */
     public PendingDecisionPage payoutProposals(String status, String cursor, String limit) {
-        return queue(PAYOUT_PROPOSALS, "merchant.PayoutProposal", status, cursor, limit, collections::pendingPayoutProposals);
+        return queue(PAYOUT_PROPOSALS, PendingDecisionKind.MERCHANT_PAYOUT_PROPOSAL, status, cursor, limit, collections::pendingPayoutProposals);
     }
 
     /** The merchant closures awaiting a decision. */
     public PendingDecisionPage closures(String status, String cursor, String limit) {
-        return queue(CLOSURES, "merchant.Closure", status, cursor, limit, collections::pendingClosures);
+        return queue(CLOSURES, PendingDecisionKind.MERCHANT_CLOSURE, status, cursor, limit, collections::pendingClosures);
     }
 
     /** The BNPL fee assignment proposals awaiting a decision (`P17-TSK-116`'s four eyes). */
     public PendingDecisionPage bnplFeeAssignments(String status, String cursor, String limit) {
-        return queue(BNPL_FEE_ASSIGNMENTS, "bnpl.FeeAssignment", status, cursor, limit, collections::pendingBnplFeeAssignments);
+        return queue(BNPL_FEE_ASSIGNMENTS, PendingDecisionKind.BNPL_FEE_ASSIGNMENT, status, cursor, limit, collections::pendingBnplFeeAssignments);
     }
 
     /** The merchant BNPL enablements awaiting a decision. */
     public PendingDecisionPage bnplEnablements(String status, String cursor, String limit) {
-        return queue(BNPL_ENABLEMENTS, "merchant.BnplEnablement", status, cursor, limit, collections::pendingBnplEnablements);
+        return queue(BNPL_ENABLEMENTS, PendingDecisionKind.MERCHANT_BNPL_ENABLEMENT, status, cursor, limit, collections::pendingBnplEnablements);
     }
 
     /** One store read of a queue. */
@@ -72,7 +73,7 @@ public final class MerchantPendingDecisionDesk {
     }
 
     private PendingDecisionPage queue(
-            String collection, String kind, String status, String cursor, String limit, PendingRead read) {
+            String collection, PendingDecisionKind kind, String status, String cursor, String limit, PendingRead read) {
         PendingDecisions.pendingOnly(status, PENDING);
         int size = PendingDecisions.limit(limit);
         Optional<MerchantCollections.PendingPosition> after = PendingDecisions.position(collection, cursor)

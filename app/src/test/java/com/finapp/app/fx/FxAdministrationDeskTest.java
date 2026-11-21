@@ -116,10 +116,10 @@ class FxAdministrationDeskTest {
 
         assertThat(desk.enableRequest(pending.toString())).isEqualTo(new FxAdministrationDesk.EnableRequestView(
                 pending.toString(), "PAIR", "GBP-JPY", "PROPOSED", "proposer-1", PROPOSED_AT.toString(),
-                "the provider recovered", null, null));
+                "the provider recovered", null, null, false));
         assertThat(desk.enableRequest(decided.toString())).isEqualTo(new FxAdministrationDesk.EnableRequestView(
                 decided.toString(), "PROVIDER", "fx-sim-a", "REJECTED", "proposer-2", PROPOSED_AT.toString(), "back up",
-                decidedAt.toString(), "not yet"));
+                decidedAt.toString(), "not yet", false));
 
         for (String unknown : List.of(IDS.next().toString(), "not-an-id")) {
             assertThatThrownBy(() -> desk.enableRequest(unknown))

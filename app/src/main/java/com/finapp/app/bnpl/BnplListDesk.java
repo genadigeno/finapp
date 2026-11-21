@@ -2,6 +2,7 @@ package com.finapp.app.bnpl;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.RecordedReads;
 import com.finapp.bnpl.BnplActingParty;
@@ -297,8 +298,8 @@ public final class BnplListDesk {
                 });
         return PendingDecisions.page(SERVICING_REQUESTS, rows.stream()
                 .map(row -> PendingDecisions.of(row.id(), switch (row.kind()) {
-                    case WAIVER -> "bnpl.Waiver";
-                    case REPAYMENT_REVERSAL -> "bnpl.RepaymentReversal";
+                    case WAIVER -> PendingDecisionKind.BNPL_WAIVER;
+                    case REPAYMENT_REVERSAL -> PendingDecisionKind.BNPL_REPAYMENT_REVERSAL;
                 }, row.proposedBy(), row.proposedAt(), row.reason(), row.agreement().value(), row.repayment().orElse(null)))
                 .toList(), size);
     }
@@ -315,7 +316,7 @@ public final class BnplListDesk {
         Optional<BnplOperatorLists.Cursor> after = pendingAfter(PENDING_TERMS_VERSIONS, cursor);
         List<BnplOperatorLists.PendingProposal> rows = transactions.inTransaction(
                 uow -> lists.pendingTermsVersions(uow, after, size + 1));
-        return pendingPage(PENDING_TERMS_VERSIONS, "bnpl.TermsVersion", rows, size);
+        return pendingPage(PENDING_TERMS_VERSIONS, PendingDecisionKind.BNPL_TERMS_VERSION, rows, size);
     }
 
     /**
@@ -334,7 +335,7 @@ public final class BnplListDesk {
                             "status=PROPOSED, continued=" + after.isPresent() + ", served=" + Math.min(size, read.size()));
                     return read;
                 });
-        return pendingPage(PENDING_REFUND_PROPOSALS, "bnpl.RefundProposal", rows, size);
+        return pendingPage(PENDING_REFUND_PROPOSALS, PendingDecisionKind.BNPL_REFUND_PROPOSAL, rows, size);
     }
 
     /**
@@ -354,10 +355,10 @@ public final class BnplListDesk {
                             "status=PROPOSED, continued=" + after.isPresent() + ", served=" + Math.min(size, read.size()));
                     return read;
                 });
-        return pendingPage(PENDING_DISPUTE_RESOLUTIONS, "bnpl.DisputeResolution", rows, size);
+        return pendingPage(PENDING_DISPUTE_RESOLUTIONS, PendingDecisionKind.BNPL_DISPUTE_RESOLUTION, rows, size);
     }
 
-    private static PendingDecisions.PendingDecisionPage pendingPage(String collection, String kind,
+    private static PendingDecisions.PendingDecisionPage pendingPage(String collection, PendingDecisionKind kind,
             List<BnplOperatorLists.PendingProposal> rows, int size) {
         return PendingDecisions.page(collection, rows.stream()
                 .map(row -> PendingDecisions.of(row.id(), kind, row.proposedBy(), row.proposedAt(), row.reason(), row.subject()))

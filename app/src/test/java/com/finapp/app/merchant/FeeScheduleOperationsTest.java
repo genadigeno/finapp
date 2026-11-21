@@ -289,10 +289,13 @@ class FeeScheduleOperationsTest {
         PendingDecisions.PendingDecision oneItem = page.items().get(0).id().equals(one) ? page.items().get(0)
                 : rest.items().get(0);
         assertThat(oneItem).isEqualTo(new PendingDecisions.PendingDecision(one, "merchant.FeeScheduleVersion",
-                ADMINISTRATOR.id(), CLOCK.instant().toString(), "annual repricing", first, null));
+                ADMINISTRATOR.id(), CLOCK.instant().toString(), "annual repricing", first, null, "FEE_SCHEDULE", false));
         assertThat(as(CONTROLLER, () -> desk.pendingAssignments(null, null, null)).items()).singleElement()
                 .isEqualTo(new PendingDecisions.PendingDecision(assignment, "merchant.FeeAssignment", ADMINISTRATOR.id(),
-                        CLOCK.instant().toString(), "standard terms", merchant, null));
+                        CLOCK.instant().toString(), "standard terms", merchant, null, "MERCHANT", false));
+        // P17-TSK-127: the proposer reading the queue is told it is theirs; the controller above was told it is not.
+        assertThat(as(ADMINISTRATOR, () -> desk.pendingAssignments("PROPOSED", null, null)).items()).singleElement()
+                .extracting(PendingDecisions.PendingDecision::proposedByCaller).isEqualTo(true);
         assertThatThrownBy(() -> as(CONTROLLER, () -> desk.pendingVersions("APPROVED", null, null)))
                 .isInstanceOf(ApiException.class);
         assertThatThrownBy(() -> as(CONTROLLER, () -> desk.pendingAssignments(null, page.nextCursor(), null)))

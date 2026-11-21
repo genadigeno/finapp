@@ -1,6 +1,7 @@
 package com.finapp.app.lending;
 
 import com.finapp.app.api.DecimalText;
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.lending.AllocationAnomaly;
 import com.finapp.lending.LendingCapitalAdministration;
@@ -195,7 +196,7 @@ public final class LoanWriteOffDesk {
             return transactions.inTransaction(unitOfWork -> {
                 snapshot(unitOfWork);
                 return PendingDecisions.page(PENDING, writeOffs.pending(unitOfWork, actor, correlation, after, size + 1).stream()
-                        .map(found -> PendingDecisions.of(found.id(), "lending.WriteOff", found.proposedBy(), found.proposedAt(),
+                        .map(found -> PendingDecisions.of(found.id(), PendingDecisionKind.LENDING_WRITE_OFF, found.proposedBy(), found.proposedAt(),
                                 found.proposalReason(), found.loan().value()))
                         .toList(), size);
             });

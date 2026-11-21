@@ -1,5 +1,6 @@
 package com.finapp.app.payments;
 
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.PendingDecisions.PendingDecision;
 import com.finapp.app.api.PendingDecisions.PendingDecisionPage;
@@ -25,7 +26,7 @@ public final class RefundProposalPendingDecisionDesk {
 
     static final String PENDING = "PROPOSED";
     static final String QUEUE = "pending.payments.refund-proposals";
-    static final String KIND = "payments.RefundProposal";
+    static final PendingDecisionKind KIND = PendingDecisionKind.PAYMENTS_REFUND_PROPOSAL;
 
     @NonNull private final PaymentCollections store;
     @NonNull private final TransactionTemplate transactions;

@@ -29,7 +29,7 @@ repository on 2026-11-21. Other documents cite this README by its older section 
 | 🏗️ **Shape** | One deployable modular monolith, `finapp-app`, run as **N ≥ 3 replicas**; a migration Job, `finapp-migrator`; and a static Operator Console, `finapp-console`, on the operator edge |
 | 🧩 **Modules** | **25 Gradle modules**: 22 domain or platform modules, the pure `creditmath`, the `migrator` and the `app` |
 | 🗄️ **Schema** | **388 forward-only Flyway migrations** across **21 schema-owning modules**, one PostgreSQL schema per module |
-| 🌐 **API** | **558 published paths, 604 operations** (456 of them on the operator surface), 871 schemas, in [`docs/api/openapi.json`](docs/api/openapi.json), generated from the running application and compared byte for byte on every build |
+| 🌐 **API** | **560 published paths, 606 operations** (458 of them on the operator surface), 871 schemas, in [`docs/api/openapi.json`](docs/api/openapi.json), generated from the running application and compared byte for byte on every build |
 | 📐 **Decisions** | **150 ADRs** in [`docs/adr/`](docs/adr/README.md): 148 `Accepted`, 2 `Proposed` |
 | 🔒 **Invariants** | **171 financial and platform invariants** (`INV-*`) in [`docs/domain/FINANCIAL_INVARIANTS.md`](docs/domain/FINANCIAL_INVARIANTS.md) |
 | 🧾 **Audit and errors** | **469 auditable actions** ([`AUDITABLE_ACTIONS.md`](docs/architecture/AUDITABLE_ACTIONS.md)) and **399 error codes** ([`ERROR_CONTRACT.md`](docs/architecture/ERROR_CONTRACT.md)), both reconciled with the code by guard tests |
@@ -38,11 +38,11 @@ repository on 2026-11-21. Other documents cite this README by its older section 
 
 ## 1.2 Where the project is
 
-**Phases 0 to 16 are `COMPLETE`. Phase 17, the Operator Console, is in progress: 49 of 51 items done.**
+**Phases 0 to 16 are `COMPLETE`. Phase 17, the Operator Console, is in progress: 50 of 52 items done.**
 
 ```
 Programme   ████████████████░  17 of 18 phases complete (0-16)
-Phase 17    ████████████████░  49 of 51 items - the end-to-end battery and the exit review open
+Phase 17    ████████████████░  50 of 52 items - the end-to-end battery and the exit review open
 ```
 
 | # | Phase | Status | What it delivered |
@@ -520,7 +520,7 @@ documentation is a large part of the result: why each part exists, and what woul
 - **17 of 18 phases are complete**: the foundations, identity, verification, the ledger, transfers, payments, merchants,
   cards and instant payments, settlement, FX and cross-border, credit, lending, buy-now-pay-later, risk and anti-money-
   laundering, accounting, production readiness, and scale and disaster recovery.
-- **Phase 17, the Operator Console** (the staff application), is nearly done: 49 of 51 items. The end-to-end test battery and the formal exit review remain.
+- **Phase 17, the Operator Console** (the staff application), is nearly done: 50 of 52 items. The end-to-end test battery and the formal exit review remain.
 - **Next**: a customer-facing web application, planned in its own project.
 
 **What it is not, yet:**
