@@ -103,9 +103,50 @@ final class OpenApiDocument {
         // rather than about the contract.
         stripControllerTags(document);
 
-        document.set("components", components(document.get("components")));
+        ObjectNode components = components(document.get("components"));
+        pendingDecisionVocabulary(components);
+        exactNumbers(components);
+        document.set("components", components);
 
         return canonicalJson(document);
+    }
+
+    /**
+     * The pending-decision shape's two vocabularies (`P17-TSK-127`), from {@link PendingDecisionKind}: every {@code kind} and
+     * every {@code subjectKind} an item can carry, as {@code x-extensible-enum} - an open list a client tolerates growing, not a
+     * closed {@code enum}, because a new four-eyes domain adds a kind without opening a new API version.
+     */
+    private static void pendingDecisionVocabulary(ObjectNode components) {
+        JsonNode properties = components.path("schemas").path("PendingDecision").path("properties");
+        if (!(properties.get("kind") instanceof ObjectNode kind) || !(properties.get("subjectKind") instanceof ObjectNode subject)) {
+            return;
+        }
+        ArrayNode kinds = kind.putArray("x-extensible-enum");
+        java.util.Arrays.stream(PendingDecisionKind.values()).map(PendingDecisionKind::wire).sorted().forEach(kinds::add);
+        ArrayNode subjects = subject.putArray("x-extensible-enum");
+        java.util.Arrays.stream(PendingDecisionKind.values()).flatMap(each -> each.subjectKinds().stream()).distinct().sorted()
+                .forEach(subjects::add);
+    }
+
+    /**
+     * A request field {@link ExactNumbers} binds (marked {@code x-exact-number} by {@code ContractExtensions}) as what it
+     * accepts (`P17-TSK-127`): a number or a string, the string's shape the one the binding enforces. OpenAPI 3.1's type list,
+     * so every bound springdoc derived for the number - a minimum, a maximum, a format - still holds for it.
+     */
+    private static void exactNumbers(ObjectNode components) {
+        JsonNode schemas = components.path("schemas");
+        schemas.values().forEach(schema -> schema.path("properties").values().forEach(property -> {
+            if (!(property instanceof ObjectNode field) || !field.has(ContractExtensions.EXACT_NUMBER)) {
+                return;
+            }
+            boolean decimal = field.get(ContractExtensions.EXACT_NUMBER).stringValue().equals("decimal");
+            ArrayNode types = MAPPER.createArrayNode().add(decimal ? "number" : "integer").add("string");
+            field.set("type", types);
+            field.put("pattern", "^" + (decimal ? DecimalText.SHAPE : ExactNumbers.MINOR_UNITS_SHAPE) + "$");
+            if (decimal) {
+                field.put("maxLength", DecimalText.MAX_LENGTH);
+            }
+        }));
     }
 
     private static void stripControllerTags(ObjectNode document) {

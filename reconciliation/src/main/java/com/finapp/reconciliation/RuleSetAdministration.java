@@ -377,6 +377,11 @@ public final class RuleSetAdministration {
         return store.versions(unitOfWork, sourceId, beforeVersion, limit);
     }
 
+    /** One version by its id, content included, lock-free (`P17-TSK-127`); empty if there is none. */
+    public java.util.Optional<RuleSetStore.VersionView> version(Connection unitOfWork, UUID ruleSetId) {
+        return store.version(unitOfWork, ruleSetId);
+    }
+
     /**
      * The versions awaiting a second controller, every source's, oldest proposal first (`P17-TSK-040`): a page of the one
      * pending-decision queue, lock-free.

@@ -1,5 +1,6 @@
 package com.finapp.app.transfers;
 
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.PendingDecisions.PendingDecision;
 import com.finapp.app.api.PendingDecisions.PendingDecisionPage;
@@ -25,7 +26,7 @@ public final class TransferReversalPendingDecisionDesk {
 
     static final String PENDING = "PROPOSED";
     static final String QUEUE = "pending.transfers.reversals";
-    static final String KIND = "transfers.Reversal";
+    static final PendingDecisionKind KIND = PendingDecisionKind.TRANSFERS_REVERSAL;
 
     @NonNull private final TransferReversalProposalStore<Connection> store;
     @NonNull private final TransactionTemplate transactions;

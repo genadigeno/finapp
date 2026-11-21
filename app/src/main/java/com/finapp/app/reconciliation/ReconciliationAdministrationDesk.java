@@ -2,6 +2,7 @@ package com.finapp.app.reconciliation;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.api.PlatformErrorCode;
@@ -104,7 +105,11 @@ public class ReconciliationAdministrationDesk {
             String status,
             String retiredRuleSetId) {}
 
-    /** One version and its whole content - what an approver reviews. */
+    /**
+     * One version and its whole content - what an approver reviews - and whether the reader proposed it
+     * ({@code proposedByCaller}, `P17-TSK-127`), so the console disables the proposer's own activation;
+     * {@code reconciliation.RuleSetActivationBySameActor} stays the control.
+     */
     public record RuleSetVersion(
             String ruleSetId,
             int version,
@@ -121,7 +126,8 @@ public class ReconciliationAdministrationDesk {
             List<RuleSetRule> rules,
             List<RuleSetTolerance> tolerances,
             List<RuleSetFeeTerms> feeSchedules,
-            Map<String, Long> severityThresholds) {}
+            Map<String, Long> severityThresholds,
+            boolean proposedByCaller) {}
 
     public record RuleSetRule(
             int priority,
@@ -172,6 +178,19 @@ public class ReconciliationAdministrationDesk {
                 served.stream().map(ReconciliationAdministrationDesk::version).toList(), next);
     }
 
+    /**
+     * {@code GET /v1/operator/reconciliation/rule-sets/{id}} (`P17-TSK-127`): one version with its whole content, as the
+     * version list serves it - what the pending-decision queue's {@code reconciliation.RuleSet} item names, read before its
+     * approver decides. Unknown and malformed are the one 404 ({@code reconciliation.RuleSetNotFound}). Recording nothing, as
+     * the version list records nothing: a rule set is configuration, naming no party.
+     */
+    public RuleSetVersion ruleSet(String rawRuleSetId) {
+        UUID id = ruleSetIdOf(rawRuleSetId);
+        return command(unitOfWork -> ruleSets.version(unitOfWork, id))
+                .map(ReconciliationAdministrationDesk::version)
+                .orElseThrow(() -> notFound(ReconciliationErrorCode.RULE_SET_NOT_FOUND));
+    }
+
     /** The pending-decision queue's cursor collection (`P17-TSK-040`). */
     static final String PENDING_RULE_SETS = "pending.reconciliation.rule-sets";
 
@@ -190,7 +209,7 @@ public class ReconciliationAdministrationDesk {
                 .map(position -> new RuleSetStore.PendingCursor(position.proposedAt(), position.id()));
         List<RuleSetStore.PendingVersion> rows = command(unitOfWork -> ruleSets.pending(unitOfWork, after, size + 1));
         return PendingDecisions.page(PENDING_RULE_SETS, rows.stream()
-                .map(row -> PendingDecisions.of(row.id(), "reconciliation.RuleSet", row.proposedBy(), row.proposedAt(),
+                .map(row -> PendingDecisions.of(row.id(), PendingDecisionKind.RECONCILIATION_RULE_SET, row.proposedBy(), row.proposedAt(),
                         null, row.sourceId()))
                 .toList(), size);
     }
@@ -410,7 +429,8 @@ public class ReconciliationAdministrationDesk {
                                         terms.scale(),
                                         terms.roundingPolicy()))
                         .toList(),
-                severities);
+                severities,
+                PendingDecisions.proposedByCaller(row.proposedBy()));
     }
 
     private static UUID ruleSetIdOf(String ruleSetId) {

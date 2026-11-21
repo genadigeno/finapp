@@ -281,6 +281,8 @@ class RoutePermissionRegisterTest {
                     // P8-TSK-022: the controller's doors - rule sets under four-eyes, reprocessing
                     // and requeue under ADMINISTER; the replay is the investigator's.
                     entry("GET /v1/operator/reconciliation/rule-sets", PermissionName.RECONCILIATION_ADMINISTER),
+                    // P17-TSK-127: one rule set version, read before it is decided.
+                    entry("GET /v1/operator/reconciliation/rule-sets/{id}", PermissionName.RECONCILIATION_ADMINISTER),
                     entry("POST /v1/operator/reconciliation/rule-sets", PermissionName.RECONCILIATION_ADMINISTER),
                     entry("POST /v1/operator/reconciliation/rule-sets/{id}/approval", PermissionName.RECONCILIATION_ADMINISTER),
                     entry("POST /v1/operator/reconciliation/rule-sets/{id}/rejection", PermissionName.RECONCILIATION_ADMINISTER),
@@ -368,6 +370,8 @@ class RoutePermissionRegisterTest {
                     // kill switch one person to stop and two to restart; held by FX_CONTROLLER beside the
                     // pricing policy (ADR-0080 section 4).
                     entry("GET /v1/operator/cross-border/corridor-policies", PermissionName.CROSSBORDER_ADMINISTER),
+                    // P17-TSK-127: one corridor policy version, read before it is decided.
+                    entry("GET /v1/operator/cross-border/corridor-policies/{id}", PermissionName.CROSSBORDER_ADMINISTER),
                     entry("POST /v1/operator/cross-border/corridor-policies", PermissionName.CROSSBORDER_ADMINISTER),
                     entry("POST /v1/operator/cross-border/corridor-policies/{id}/approval", PermissionName.CROSSBORDER_ADMINISTER),
                     entry("POST /v1/operator/cross-border/corridor-policies/{id}/rejection", PermissionName.CROSSBORDER_ADMINISTER),

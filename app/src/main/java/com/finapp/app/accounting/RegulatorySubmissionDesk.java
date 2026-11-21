@@ -20,6 +20,7 @@ import com.finapp.accounting.SubmissionStatus;
 import com.finapp.identity.PermissionName;
 import com.finapp.identity.RoleName;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
@@ -332,7 +333,7 @@ public final class RegulatorySubmissionDesk {
 
     /** The queue's cursor collection and its item's kind (`P17-TSK-040`). */
     static final String PENDING_COLLECTION = "pending.accounting.regulatory-submissions";
-    static final String PENDING_KIND = "accounting.RegulatorySubmission";
+    static final PendingDecisionKind PENDING_KIND = PendingDecisionKind.ACCOUNTING_REGULATORY_SUBMISSION;
 
     /**
      * What this controller can decide, never their own, in the one pending-decision shape (`P17-TSK-040`; ADR-C133 decision 3): the

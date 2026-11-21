@@ -1,5 +1,6 @@
 package com.finapp.app.merchant;
 
+import com.finapp.app.api.ExactNumbers;
 import com.finapp.platform.audit.AuditRecord;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
@@ -10,6 +11,7 @@ import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.time.Instant;
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 /**
  * The body creating an immutable fee schedule version (`P6-TSK-004`, ADR-0050 §4/§5).
@@ -19,6 +21,11 @@ import java.time.Instant;
  * field's declared type, so {@code 0.029} stays {@code 0.029} rather than becoming
  * {@code 0.028999999999999998}. A rate bound through a {@code double} would misprice every
  * capture very slightly, in a direction nobody chose.
+ *
+ * <p><strong>Both numbers also arrive as decimal strings</strong> (`P17-TSK-127`): {@code "0.029"} and
+ * {@code "250"} bind exactly as {@code 0.029} and {@code 250} do, so a browser client, which holds every
+ * JSON number as a double, can send any value exactly. The string is judged by {@code DecimalText}'s
+ * shape first; a fraction of a minor unit is refused rather than truncated ({@link ExactNumbers}).
  *
  * <p>The bounds here are {@code FeeRate}'s boundary copies — {@code [0, 1)} and at most
  * {@code FeeRate.MAX_SCALE} decimal places — so a mistyped decimal point is a {@code 422} at
@@ -47,8 +54,9 @@ public record CreateFeeScheduleVersionRequest(
                         inclusive = false,
                         message = "a fee rate of 1 or more leaves the merchant nothing")
                 @Digits(integer = 1, fraction = 6)
+                @JsonDeserialize(using = ExactNumbers.Decimal.class)
                 BigDecimal rate,
-        @NotNull @PositiveOrZero Long fixedAmountMinor,
+        @NotNull @PositiveOrZero @JsonDeserialize(using = ExactNumbers.MinorUnits.class) Long fixedAmountMinor,
         @NotBlank @Size(max = 50) String roundingPolicy,
         @NotBlank @Size(max = 50) String refundFeePolicy,
         Instant effectiveFrom,

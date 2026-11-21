@@ -2,6 +2,7 @@ package com.finapp.app.lending;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.RecordedReads;
 import com.finapp.lending.CreditLineStatements;
@@ -265,7 +266,7 @@ public final class LendingListDesk {
         List<LendingOperatorLists.TermsVersionHead> rows = transactions.inTransaction(
                 uow -> collections.pendingTermsVersions(uow, after, size + 1));
         return PendingDecisions.page(PENDING_TERMS_VERSIONS, rows.stream()
-                .map(head -> PendingDecisions.of(head.id().value(), "lending.TermsVersion", head.proposedBy(), head.proposedAt(),
+                .map(head -> PendingDecisions.of(head.id().value(), PendingDecisionKind.LENDING_TERMS_VERSION, head.proposedBy(), head.proposedAt(),
                         head.reason(), head.product().name()))
                 .toList(), size);
     }
@@ -282,7 +283,7 @@ public final class LendingListDesk {
         List<LendingOperatorLists.PendingContribution> rows = transactions.inTransaction(
                 uow -> collections.pendingCapitalContributions(uow, after, size + 1));
         return PendingDecisions.page(PENDING_CAPITAL_CONTRIBUTIONS, rows.stream()
-                .map(row -> PendingDecisions.of(row.id().value(), "lending.CapitalContribution", row.proposedBy(),
+                .map(row -> PendingDecisions.of(row.id().value(), PendingDecisionKind.LENDING_CAPITAL_CONTRIBUTION, row.proposedBy(),
                         row.proposedAt(), row.reason(), row.currency().code()))
                 .toList(), size);
     }
@@ -319,10 +320,10 @@ public final class LendingListDesk {
 
     /** One servicing proposal as a pending decision: the loan it corrects its subject, a reversal's repayment its related id. */
     private static PendingDecisions.PendingDecision servicingItem(LendingOperatorLists.ServicingRequest request) {
-        return PendingDecisions.of(request.id(), "lending." + switch (request.kind()) {
-            case WAIVER -> "Waiver";
-            case AMENDMENT -> "Amendment";
-            case REPAYMENT_REVERSAL -> "RepaymentReversal";
+        return PendingDecisions.of(request.id(), switch (request.kind()) {
+            case WAIVER -> PendingDecisionKind.LENDING_WAIVER;
+            case AMENDMENT -> PendingDecisionKind.LENDING_AMENDMENT;
+            case REPAYMENT_REVERSAL -> PendingDecisionKind.LENDING_REPAYMENT_REVERSAL;
         }, request.proposedBy(), request.proposedAt(), request.reason(), request.loan().value(), request.repayment().orElse(null));
     }
 

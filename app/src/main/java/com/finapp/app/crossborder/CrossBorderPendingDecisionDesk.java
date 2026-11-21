@@ -1,5 +1,6 @@
 package com.finapp.app.crossborder;
 
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.PendingDecisions.PendingDecision;
 import com.finapp.app.api.PendingDecisions.PendingDecisionPage;
@@ -32,13 +33,13 @@ public final class CrossBorderPendingDecisionDesk {
 
     /** The corridor enable requests awaiting a decision; the subject is the corridor ({@code EUR-USD-US}). */
     public PendingDecisionPage corridorEnableRequests(String status, String cursor, String limit) {
-        return queue(CORRIDOR_ENABLE_REQUESTS, "crossborder.CorridorEnableRequest", status, cursor, limit,
+        return queue(CORRIDOR_ENABLE_REQUESTS, PendingDecisionKind.CROSSBORDER_CORRIDOR_ENABLE_REQUEST, status, cursor, limit,
                 collections::pendingCorridorEnableRequests);
     }
 
     /** The corridor policy versions awaiting a decision; the subject is the version number. */
     public PendingDecisionPage corridorPolicies(String status, String cursor, String limit) {
-        return queue(CORRIDOR_POLICIES, "crossborder.CorridorPolicy", status, cursor, limit,
+        return queue(CORRIDOR_POLICIES, PendingDecisionKind.CROSSBORDER_CORRIDOR_POLICY, status, cursor, limit,
                 collections::pendingCorridorPolicies);
     }
 
@@ -50,7 +51,7 @@ public final class CrossBorderPendingDecisionDesk {
     }
 
     private PendingDecisionPage queue(
-            String collection, String kind, String status, String cursor, String limit, PendingRead read) {
+            String collection, PendingDecisionKind kind, String status, String cursor, String limit, PendingRead read) {
         PendingDecisions.pendingOnly(status, PENDING);
         int size = PendingDecisions.limit(limit);
         Optional<CrossBorderCollections.PendingPosition> after = PendingDecisions.position(collection, cursor)

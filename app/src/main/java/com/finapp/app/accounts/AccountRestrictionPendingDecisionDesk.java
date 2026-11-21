@@ -1,5 +1,6 @@
 package com.finapp.app.accounts;
 
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.PendingDecisions.PendingDecision;
 import com.finapp.app.api.PendingDecisions.PendingDecisionPage;
@@ -25,7 +26,7 @@ public final class AccountRestrictionPendingDecisionDesk {
 
     static final String PENDING = "PROPOSED";
     static final String QUEUE = "pending.accounts.restrictions";
-    static final String KIND = "accounts.Restriction";
+    static final PendingDecisionKind KIND = PendingDecisionKind.ACCOUNTS_RESTRICTION;
 
     @NonNull private final AccountRestrictionStore<Connection> store;
     @NonNull private final TransactionTemplate transactions;

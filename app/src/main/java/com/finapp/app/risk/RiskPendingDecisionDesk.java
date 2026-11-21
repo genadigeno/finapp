@@ -1,5 +1,6 @@
 package com.finapp.app.risk;
 
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.PendingDecisions.PendingDecision;
 import com.finapp.app.api.PendingDecisions.PendingDecisionPage;
@@ -57,40 +58,40 @@ public final class RiskPendingDecisionDesk {
 
     /** The alert suppressions awaiting approval; each is the alert's, its subject the alert. */
     public PendingDecisionPage suppressions(String status, String cursor, String limit) {
-        return queue(SUPPRESSIONS, "risk.Suppression", "PROPOSED", true, status, cursor, limit,
+        return queue(SUPPRESSIONS, PendingDecisionKind.RISK_SUPPRESSION, "PROPOSED", true, status, cursor, limit,
                 collections::pendingSuppressions);
     }
 
     /** The case dispositions awaiting a second person; the subject the case. */
     public PendingDecisionPage dispositions(String status, String cursor, String limit) {
-        return queue(DISPOSITIONS, "risk.Disposition", "PROPOSED", true, status, cursor, limit,
+        return queue(DISPOSITIONS, PendingDecisionKind.RISK_DISPOSITION, "PROPOSED", true, status, cursor, limit,
                 collections::pendingDispositions);
     }
 
     /** The case risk actions awaiting approval; the subject the case. */
     public PendingDecisionPage actions(String status, String cursor, String limit) {
-        return queue(ACTIONS, "risk.RiskAction", "PROPOSED", true, status, cursor, limit, collections::pendingRiskActions);
+        return queue(ACTIONS, PendingDecisionKind.RISK_ACTION, "PROPOSED", true, status, cursor, limit, collections::pendingRiskActions);
     }
 
     /** The decision overrides awaiting a decision; the subject the assessment. */
     public PendingDecisionPage overrides(String status, String cursor, String limit) {
-        return queue(OVERRIDES, "risk.Override", "PROPOSED", true, status, cursor, limit, collections::pendingOverrides);
+        return queue(OVERRIDES, PendingDecisionKind.RISK_OVERRIDE, "PROPOSED", true, status, cursor, limit, collections::pendingOverrides);
     }
 
     /** The regulatory reports in draft, awaiting approval; the subject the case; no reason. */
     public PendingDecisionPage reports(String status, String cursor, String limit) {
-        return queue(REPORTS, "risk.RegulatoryReport", "DRAFT", true, status, cursor, limit, collections::pendingReports);
+        return queue(REPORTS, PendingDecisionKind.RISK_REGULATORY_REPORT, "DRAFT", true, status, cursor, limit, collections::pendingReports);
     }
 
     /** The policy versions awaiting activation; the subject the operation. Not recorded. */
     public PendingDecisionPage policyVersions(String status, String cursor, String limit) {
-        return queue(POLICY_VERSIONS, "risk.PolicyVersion", "PROPOSED", false, status, cursor, limit,
+        return queue(POLICY_VERSIONS, PendingDecisionKind.RISK_POLICY_VERSION, "PROPOSED", false, status, cursor, limit,
                 collections::pendingPolicyVersions);
     }
 
     /** The screening list versions recorded and awaiting activation; the subject the list; no reason. Not recorded. */
     public PendingDecisionPage screeningListVersions(String status, String cursor, String limit) {
-        return queue(SCREENING_LIST_VERSIONS, "risk.ScreeningListVersion", "RECORDED", false, status, cursor, limit,
+        return queue(SCREENING_LIST_VERSIONS, PendingDecisionKind.RISK_SCREENING_LIST_VERSION, "RECORDED", false, status, cursor, limit,
                 collections::pendingScreeningListVersions);
     }
 
@@ -100,7 +101,7 @@ public final class RiskPendingDecisionDesk {
         List<RiskCollections.PendingProposal> read(Connection unitOfWork, Optional<RiskCollections.Cursor> after, int limit);
     }
 
-    private PendingDecisionPage queue(String collection, String kind, String pendingWord, boolean recorded, String status,
+    private PendingDecisionPage queue(String collection, PendingDecisionKind kind, String pendingWord, boolean recorded, String status,
             String cursor, String limit, PendingRead read) {
         PendingDecisions.pendingOnly(status, pendingWord);
         int size = PendingDecisions.limit(limit);

@@ -308,6 +308,11 @@ public final class CorridorPolicyAdministration {
         return store.versions(unitOfWork, beforeVersion, limit);
     }
 
+    /** One version by its id with its corridors, lock-free (`P17-TSK-127`); empty if there is none. */
+    public Optional<CorridorPolicyStore.VersionView> version(Connection unitOfWork, CorridorPolicyId id) {
+        return store.version(unitOfWork, id);
+    }
+
     /** The {@code ACTIVE} version with its corridors, if one exists. */
     public Optional<CorridorPolicyStore.VersionView> active(Connection unitOfWork) {
         return store.active(unitOfWork);

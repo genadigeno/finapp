@@ -2,6 +2,7 @@ package com.finapp.app.eventing;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
@@ -88,7 +89,7 @@ public final class DeadLetterDesk {
     static final String DISCARDS = "pending.deadletter.discards";
 
     /** A discard's kind in the pending-decision shape. */
-    static final String DISCARD_KIND = "deadletter.Discard";
+    static final PendingDecisionKind DISCARD_KIND = PendingDecisionKind.DEADLETTER_DISCARD;
 
     static final int DEFAULT_LIMIT = 50;
 
@@ -154,8 +155,8 @@ public final class DeadLetterDesk {
                 () -> transactions.inTransaction(uow -> operations.standingDiscards(uow, after, size, actor, correlation)));
         return new PendingDecisions.PendingDecisionPage(
                 page.rows().stream()
-                        .map(row -> PendingDecisions.of(row.discardId(), DISCARD_KIND, row.proposedBy(), row.proposedAt(), row.reason(),
-                                row.subjectId()))
+                        .map(row -> PendingDecisions.ofSubject(row.discardId(), DISCARD_KIND, row.proposedBy(), row.proposedAt(),
+                                row.reason(), row.kind().name(), row.subjectId()))
                         .toList(),
                 next(DISCARDS, page, row -> new DeadLetterStore.Position(row.proposedAt(), row.discardId())));
     }

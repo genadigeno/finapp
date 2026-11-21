@@ -12,6 +12,7 @@ import com.finapp.accounting.PriorPeriodAdjustments;
 import com.finapp.accounting.PriorPeriodPostings;
 import com.finapp.accounting.Side;
 import com.finapp.app.api.DecimalText;
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
@@ -166,7 +167,7 @@ public final class PriorPeriodAdjustmentDesk {
 
     /** The queue's cursor collection and its item's kind (`P17-TSK-040`). */
     static final String PENDING_COLLECTION = "pending.accounting.prior-period-adjustments";
-    static final String PENDING_KIND = "accounting.PriorPeriodAdjustment";
+    static final PendingDecisionKind PENDING_KIND = PendingDecisionKind.ACCOUNTING_PRIOR_PERIOD_ADJUSTMENT;
 
     /**
      * Those standing, oldest first - so one that can no longer post can be found - in the one pending-decision shape (`P17-TSK-040`;

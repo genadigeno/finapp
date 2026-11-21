@@ -1,5 +1,6 @@
 package com.finapp.app.fx;
 
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.app.api.PendingDecisions.PendingDecision;
 import com.finapp.app.api.PendingDecisions.PendingDecisionPage;
@@ -39,20 +40,21 @@ public final class FxPendingDecisionDesk {
                 .map(position -> new FxCollections.EnableRequestCursor(position.proposedAt(), position.id()));
         List<PendingDecision> items = transactions.inTransaction(uow -> collections.pendingEnableRequests(uow, after, size + 1))
                 .stream()
-                .map(request -> PendingDecisions.of(request.id(), "fx.EnableRequest", request.proposedBy(),
-                        request.proposedAt(), request.reason(), request.subject().subject()))
+                .map(request -> PendingDecisions.ofSubject(request.id(), PendingDecisionKind.FX_ENABLE_REQUEST,
+                        request.proposedBy(), request.proposedAt(), request.reason(), request.subject().kind().name(),
+                        request.subject().subject()))
                 .toList();
         return PendingDecisions.page(ENABLE_REQUESTS, items, size);
     }
 
     /** The pricing policy versions awaiting activation; the subject is the version number. */
     public PendingDecisionPage pricingPolicies(String status, String cursor, String limit) {
-        return queue(PRICING_POLICIES, "fx.PricingPolicy", status, cursor, limit, collections::pendingPricingPolicies);
+        return queue(PRICING_POLICIES, PendingDecisionKind.FX_PRICING_POLICY, status, cursor, limit, collections::pendingPricingPolicies);
     }
 
     /** The trade reversals awaiting a decision; the subject is the trade, which the reversal's doors name. */
     public PendingDecisionPage tradeReversals(String status, String cursor, String limit) {
-        return queue(TRADE_REVERSALS, "fx.TradeReversal", status, cursor, limit, collections::pendingTradeReversals);
+        return queue(TRADE_REVERSALS, PendingDecisionKind.FX_TRADE_REVERSAL, status, cursor, limit, collections::pendingTradeReversals);
     }
 
     /** One store read of a queue. */
@@ -62,7 +64,7 @@ public final class FxPendingDecisionDesk {
     }
 
     private PendingDecisionPage queue(
-            String collection, String kind, String status, String cursor, String limit, PendingRead read) {
+            String collection, PendingDecisionKind kind, String status, String cursor, String limit, PendingRead read) {
         PendingDecisions.pendingOnly(status, PENDING);
         int size = PendingDecisions.limit(limit);
         Optional<FxCollections.PendingPosition> after = PendingDecisions.position(collection, cursor)

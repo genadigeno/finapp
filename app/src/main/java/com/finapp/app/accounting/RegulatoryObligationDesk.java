@@ -11,6 +11,7 @@ import com.finapp.accounting.RegulatoryObligationStore;
 import com.finapp.accounting.RegulatoryObligations;
 import com.finapp.accounting.RegulatoryRuleType;
 import com.finapp.app.api.OperatorCollection;
+import com.finapp.app.api.PendingDecisionKind;
 import com.finapp.app.api.PendingDecisions;
 import com.finapp.platform.api.ApiException;
 import com.finapp.platform.correlation.CorrelationContext;
@@ -186,7 +187,7 @@ public final class RegulatoryObligationDesk {
 
     /** The queue's cursor collection and its item's kind (`P17-TSK-040`). */
     static final String PENDING_COLLECTION = "pending.accounting.regulatory-obligations";
-    static final String PENDING_KIND = "accounting.RegulatoryObligation";
+    static final PendingDecisionKind PENDING_KIND = PendingDecisionKind.ACCOUNTING_REGULATORY_OBLIGATION;
 
     /**
      * What this controller can decide, never their own, in the one pending-decision shape (`P17-TSK-040`; ADR-C133 decision 3): oldest

@@ -420,7 +420,11 @@ class OwnershipIsScopedTest {
                                         + " OfferIssuance.claim (the version the caller's own offer"
                                         + " request pinned) and PaymentAuthorization (the version the"
                                         + " owner's offer pinned, read through offerOwned) - none a"
-                                        + " request value.")),
+                                        + " request value; and P17-TSK-127's GET"
+                                        + " /v1/operator/cross-border/corridor-policies/{id}, the version"
+                                        + " the approver names behind"
+                                        + " @RequiresPermission(CROSSBORDER_ADMINISTER), a read, no lock,"
+                                        + " writing nothing.")),
                     Map.entry(
                             "com.finapp.crossborder.JdbcCorridorPolicyStore.view",
                             new Entry(
